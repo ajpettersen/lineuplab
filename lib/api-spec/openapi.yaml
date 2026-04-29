@@ -3,13 +3,22 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Baseball Lineup Manager API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: players
+    description: Player management
+  - name: games
+    description: Game management
+  - name: lineups
+    description: Lineup management
+  - name: stats
+    description: Season statistics and fairness metrics
+
 paths:
   /healthz:
     get:
@@ -24,6 +33,302 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /players:
+    get:
+      operationId: listPlayers
+      tags: [players]
+      summary: List all players
+      responses:
+        "200":
+          description: List of players
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Player"
+    post:
+      operationId: createPlayer
+      tags: [players]
+      summary: Create a new player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlayerBody"
+      responses:
+        "201":
+          description: Created player
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+        "400":
+          description: Invalid input
+
+  /players/{id}:
+    get:
+      operationId: getPlayer
+      tags: [players]
+      summary: Get a player by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Player
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePlayer
+      tags: [players]
+      summary: Update a player
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlayerBody"
+      responses:
+        "200":
+          description: Updated player
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+        "404":
+          description: Not found
+    delete:
+      operationId: deletePlayer
+      tags: [players]
+      summary: Delete a player
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /games:
+    get:
+      operationId: listGames
+      tags: [games]
+      summary: List all games
+      responses:
+        "200":
+          description: List of games
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Game"
+    post:
+      operationId: createGame
+      tags: [games]
+      summary: Create a new game
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGameBody"
+      responses:
+        "201":
+          description: Created game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+
+  /games/{id}:
+    get:
+      operationId: getGame
+      tags: [games]
+      summary: Get a game by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateGame
+      tags: [games]
+      summary: Update a game (e.g. mark as completed, set score)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGameBody"
+      responses:
+        "200":
+          description: Updated game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteGame
+      tags: [games]
+      summary: Delete a game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /games/{id}/lineup:
+    get:
+      operationId: getGameLineup
+      tags: [lineups]
+      summary: Get the lineup for a game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lineup entries for game
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineupEntry"
+        "404":
+          description: Not found
+
+  /games/{id}/lineup/generate:
+    post:
+      operationId: generateLineup
+      tags: [lineups]
+      summary: Generate a fair lineup for a game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateLineupBody"
+      responses:
+        "200":
+          description: Generated lineup entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineupEntry"
+        "400":
+          description: Not enough players or constraints cannot be satisfied
+
+  /games/{id}/lineup/save:
+    post:
+      operationId: saveLineup
+      tags: [lineups]
+      summary: Save (or replace) the lineup for a game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveLineupBody"
+      responses:
+        "200":
+          description: Saved lineup entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineupEntry"
+
+  /stats/season:
+    get:
+      operationId: getSeasonStats
+      tags: [stats]
+      summary: Get season-wide playing time and position fairness stats
+      responses:
+        "200":
+          description: Season stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeasonStats"
+
+  /stats/players:
+    get:
+      operationId: getPlayerStats
+      tags: [stats]
+      summary: Get per-player stats across the season
+      responses:
+        "200":
+          description: Per-player stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlayerStats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +339,308 @@ components:
       required:
         - status
 
+    Player:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        number:
+          type: ["integer", "null"]
+        eligiblePositions:
+          type: array
+          items:
+            type: string
+          description: List of positions this player can play
+        preferredPositions:
+          type: array
+          items:
+            type: string
+          description: Player's preferred positions (subset of eligible)
+        canPitch:
+          type: boolean
+        active:
+          type: boolean
+          description: Whether player is currently on the roster
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - eligiblePositions
+        - preferredPositions
+        - canPitch
+        - active
+        - createdAt
+
+    CreatePlayerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        number:
+          type: ["integer", "null"]
+        eligiblePositions:
+          type: array
+          items:
+            type: string
+        preferredPositions:
+          type: array
+          items:
+            type: string
+        canPitch:
+          type: boolean
+        active:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+      required:
+        - name
+        - eligiblePositions
+        - preferredPositions
+        - canPitch
+
+    UpdatePlayerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        number:
+          type: ["integer", "null"]
+        eligiblePositions:
+          type: array
+          items:
+            type: string
+        preferredPositions:
+          type: array
+          items:
+            type: string
+        canPitch:
+          type: boolean
+        active:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+
+    Game:
+      type: object
+      properties:
+        id:
+          type: integer
+        opponent:
+          type: string
+        gameDate:
+          type: string
+          format: date-time
+        location:
+          type: ["string", "null"]
+        innings:
+          type: integer
+          description: Number of innings in the game
+        status:
+          type: string
+          enum: [upcoming, completed, cancelled]
+        ourScore:
+          type: ["integer", "null"]
+        opponentScore:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - opponent
+        - gameDate
+        - innings
+        - status
+        - createdAt
+
+    CreateGameBody:
+      type: object
+      properties:
+        opponent:
+          type: string
+        gameDate:
+          type: string
+          format: date-time
+        location:
+          type: ["string", "null"]
+        innings:
+          type: integer
+        notes:
+          type: ["string", "null"]
+      required:
+        - opponent
+        - gameDate
+        - innings
+
+    UpdateGameBody:
+      type: object
+      properties:
+        opponent:
+          type: string
+        gameDate:
+          type: string
+          format: date-time
+        location:
+          type: ["string", "null"]
+        innings:
+          type: integer
+        status:
+          type: string
+          enum: [upcoming, completed, cancelled]
+        ourScore:
+          type: ["integer", "null"]
+        opponentScore:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+
+    LineupEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        gameId:
+          type: integer
+        playerId:
+          type: integer
+        playerName:
+          type: string
+        inning:
+          type: integer
+        position:
+          type: string
+          description: Defensive position (P, C, 1B, 2B, 3B, SS, LF, CF, RF, Bench)
+        battingOrder:
+          type: ["integer", "null"]
+      required:
+        - id
+        - gameId
+        - playerId
+        - playerName
+        - inning
+        - position
+
+    GenerateLineupBody:
+      type: object
+      properties:
+        availablePlayerIds:
+          type: array
+          items:
+            type: integer
+          description: IDs of players available for this game
+        innings:
+          type: integer
+        constraints:
+          $ref: "#/components/schemas/LineupConstraints"
+      required:
+        - availablePlayerIds
+        - innings
+
+    LineupConstraints:
+      type: object
+      properties:
+        maxInningsPerPosition:
+          type: integer
+          description: Max innings any player plays the same position
+          default: 2
+        maxInningsBench:
+          type: integer
+          description: Max innings a player can sit on the bench
+          default: 2
+        ensureAllPositions:
+          type: boolean
+          description: Ensure every eligible position is covered each inning
+          default: true
+        pitcherRotation:
+          type: boolean
+          description: Automatically rotate pitcher each inning
+          default: false
+
+    SaveLineupBody:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineupEntryInput"
+      required:
+        - entries
+
+    LineupEntryInput:
+      type: object
+      properties:
+        playerId:
+          type: integer
+        inning:
+          type: integer
+        position:
+          type: string
+        battingOrder:
+          type: ["integer", "null"]
+      required:
+        - playerId
+        - inning
+        - position
+
+    SeasonStats:
+      type: object
+      properties:
+        totalGames:
+          type: integer
+        completedGames:
+          type: integer
+        totalInnings:
+          type: integer
+        positionDistribution:
+          type: object
+          description: Map of position to total innings played across team
+          additionalProperties:
+            type: integer
+        fairnessScore:
+          type: number
+          description: 0-100 score indicating how equitable playing time and positions are
+      required:
+        - totalGames
+        - completedGames
+        - totalInnings
+        - positionDistribution
+        - fairnessScore
+
+    PlayerStats:
+      type: object
+      properties:
+        playerId:
+          type: integer
+        playerName:
+          type: string
+        playerNumber:
+          type: ["integer", "null"]
+        gamesPlayed:
+          type: integer
+        totalInnings:
+          type: integer
+        benchInnings:
+          type: integer
+        positionInnings:
+          type: object
+          description: Map of position to innings played
+          additionalProperties:
+            type: integer
+        inningsPitched:
+          type: integer
+      required:
+        - playerId
+        - playerName
+        - gamesPlayed
+        - totalInnings
+        - benchInnings
+        - positionInnings
+        - inningsPitched

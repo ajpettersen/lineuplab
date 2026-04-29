@@ -15,6 +15,27 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
+- **Charts**: Recharts
+- **Routing**: Wouter
+
+## App: Baseball Lineup Manager (DugoutManager)
+
+A travel baseball team defensive lineup manager for coaches. Features:
+- **Roster management**: Add/edit players with eligible and preferred positions, pitching eligibility
+- **Game scheduling**: Create games with date, location, innings
+- **Lineup generation**: Auto-generate fair rotational lineups using a fairness algorithm
+- **Season stats**: Track playing time, bench time, position distribution, and a fairness score
+- **Inning-by-inning grid**: Visual lineup display per game
+
+### Artifacts
+- `artifacts/baseball-lineup` — React+Vite frontend (preview at `/`)
+- `artifacts/api-server` — Express API server (at `/api`)
+
+### Database tables
+- `players` — team roster
+- `games` — game schedule
+- `lineup_entries` — per-game, per-inning position assignments
 
 ## Key Commands
 
