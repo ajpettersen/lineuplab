@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRoute, Link } from "wouter";
 import {
   DndContext,
@@ -39,13 +39,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
 const OUTFIELD = new Set(["LF", "CF", "RF"]);
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type Category = "Pitching" | "Infield" | "Outfield" | "Bench";
 function categoryFor(pos: string): Category {
@@ -100,6 +101,14 @@ export default function GameDetail() {
   // Drag-and-drop state: which entry is currently being dragged + its inning,
   // so droppable cells in the same inning can highlight as valid drop targets.
   const [activeDrag, setActiveDrag] = useState<{ entryId: number; inning: number } | null>(null);
+
+  // AI Assistant search bar state.
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  // Monotonically-increasing request id so a stale response from an earlier
+  // submission can't clobber the state set by a newer one.
+  const aiRequestIdRef = useRef(0);
   const sensors = useSensors(
     // Distance constraint lets a click pass through to the underlying button
     // (so tap-to-select still works) while a small movement triggers a drag.
@@ -149,6 +158,55 @@ export default function GameDetail() {
         onError: () => toast({ title: "Failed to generate lineup", variant: "destructive" }),
       }
     );
+  };
+
+  const handleAskAi = async () => {
+    const message = aiInput.trim();
+    if (!message) return;
+    if (editedLineup || previewLineup) {
+      const what = editedLineup ? "unsaved lineup edits" : "an unsaved lineup preview";
+      const ok = window.confirm(
+        `You have ${what}. Asking the assistant to regenerate may replace them. Continue?`,
+      );
+      if (!ok) return;
+    }
+    const myRequestId = ++aiRequestIdRef.current;
+    setAiLoading(true);
+    setAiAnswer(null);
+    try {
+      const resp = await fetch(`${BASE}/api/games/${id}/ai-assistant`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed (${resp.status})`);
+      }
+      const data = await resp.json();
+      // Drop stale responses: the user already submitted a newer question.
+      if (myRequestId !== aiRequestIdRef.current) return;
+      if (data.kind === "answer") {
+        setAiAnswer(data.text);
+      } else if (data.kind === "regenerate") {
+        setEditedLineup(null);
+        setSelectedEntryId(null);
+        setPreviewLineup(data.lineup);
+        setAiAnswer(data.explanation);
+        setAiInput("");
+      } else {
+        throw new Error("Unexpected response from assistant");
+      }
+    } catch (err) {
+      if (myRequestId !== aiRequestIdRef.current) return;
+      toast({
+        title: "Couldn't get a response",
+        description: err instanceof Error ? err.message : "Try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      if (myRequestId === aiRequestIdRef.current) setAiLoading(false);
+    }
   };
 
   const handleSaveLineup = (lineupToSave: typeof lineup) => {
@@ -517,6 +575,57 @@ export default function GameDetail() {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* AI Assistant search bar */}
+      <Card>
+        <CardContent className="p-3">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!aiLoading) handleAskAi();
+            }}
+          >
+            <Sparkles className="h-4 w-4 text-purple-500 shrink-0 ml-1" />
+            <Input
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              placeholder='Ask the assistant — e.g. "Why is Henry on the bench in inning 2?" or "Put Henry at catcher for the first 3 innings"'
+              disabled={aiLoading}
+              data-testid="input-ai-assistant"
+              className="flex-1"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={aiLoading || !aiInput.trim()}
+              data-testid="button-ai-ask"
+            >
+              {aiLoading ? "Thinking…" : "Ask"}
+            </Button>
+          </form>
+          {aiAnswer && (
+            <div
+              className="mt-3 p-3 rounded-md bg-purple-50 border border-purple-200 text-sm text-purple-900 flex items-start justify-between gap-3"
+              data-testid="ai-answer"
+            >
+              <div className="flex items-start gap-2 flex-1">
+                <Sparkles className="h-4 w-4 mt-0.5 text-purple-500 shrink-0" />
+                <p className="leading-snug">{aiAnswer}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiAnswer(null)}
+                className="text-purple-400 hover:text-purple-700 shrink-0"
+                aria-label="Dismiss assistant message"
+                data-testid="button-ai-dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

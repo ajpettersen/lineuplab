@@ -17,15 +17,29 @@ export interface GeneratedEntry {
   battingOrder: number | null;
 }
 
+/** Hard-pinned (playerId, inning, position) assignment that the generator must honor. */
+export interface PinnedAssignment {
+  playerId: number;
+  inning: number;
+  position: string;
+}
+
 /**
  * Greedy fair lineup generator.
  * Respects both inline constraints and stored DB constraints.
+ *
+ * `pinned` lets a caller (e.g. the AI assistant) hard-pin specific
+ * (playerId, inning, position) tuples before the greedy pass runs. Pinned
+ * field assignments are placed first; pinned "Bench" entries force that
+ * player to bench in that inning. Conflicting pins (same inning+position
+ * twice, or same player twice in one inning) are skipped after the first.
  */
 export function generateFairLineup(
   players: Player[],
   innings: number,
   constraints: LineupConstraints = {},
-  storedConstraints: LineupConstraint[] = []
+  storedConstraints: LineupConstraint[] = [],
+  pinned: PinnedAssignment[] = []
 ): GeneratedEntry[] {
   // --- Apply stored global constraint overrides ---
   const active = storedConstraints.filter((c) => c.active);
@@ -150,6 +164,37 @@ export function generateFairLineup(
       }
     }
 
+    // Apply pinned (playerId, position) tuples for THIS inning before the
+    // greedy pass, so the AI assistant / coach overrides are honored as hard
+    // constraints. A pinned "Bench" entry forces that player onto bench.
+    const pinnedThisInning = pinned.filter((p) => p.inning === inning);
+    const filledPositions = new Set<string>(); // skip these in the greedy pass
+    // Two-pass to make pin handling order-independent:
+    //   1. Apply Bench pins first (they always win conflicts).
+    //   2. Apply field pins, skipping any player that was bench-pinned and any
+    //      slot that was already filled. This guarantees one-position-per-player
+    //      and one-player-per-position per inning regardless of input order.
+    for (const pin of pinnedThisInning) {
+      if (pin.position !== "Bench") continue;
+      const player = players.find((p) => p.id === pin.playerId);
+      if (!player) continue;
+      forcedBench.add(pin.playerId);
+    }
+    for (const pin of pinnedThisInning) {
+      if (pin.position === "Bench") continue;
+      const player = players.find((p) => p.id === pin.playerId);
+      if (!player) continue;
+      if (forcedBench.has(pin.playerId)) continue; // bench pin wins
+      if (assignedThisInning.has(pin.playerId)) continue; // duplicate field pin
+      if (filledPositions.has(pin.position)) continue; // two pins for same slot
+      assignedThisInning.add(pin.playerId);
+      filledPositions.add(pin.position);
+      inningAssignments.push({ playerId: pin.playerId, inning, position: pin.position, battingOrder: null });
+      positionCount.get(pin.playerId)!.set(pin.position, (positionCount.get(pin.playerId)!.get(pin.position) ?? 0) + 1);
+      positionsPlayed.get(pin.playerId)!.add(pin.position);
+      totalInningsPlayed.set(pin.playerId, (totalInningsPlayed.get(pin.playerId) ?? 0) + 1);
+    }
+
     // Pitcher rotation: track who pitched last inning
     const lastPitcher = rotatePitcher && results.length > 0
       ? results.filter((e) => e.inning === inning - 1 && e.position === "P")[0]?.playerId ?? null
@@ -158,6 +203,7 @@ export function generateFairLineup(
     const positions = [...FIELD_POSITIONS];
 
     for (const pos of positions) {
+      if (filledPositions.has(pos)) continue;
       if (assignedThisInning.size >= fieldSlotsPerInning) break;
 
       const eligible = players

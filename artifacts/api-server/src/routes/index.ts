@@ -7,6 +7,7 @@ import statsRouter from "./stats";
 import historyRouter from "./history";
 import battingRouter from "./batting";
 import constraintsRouter from "./constraints";
+import aiAssistantRouter from "./ai-assistant";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(statsRouter);
 router.use(historyRouter);
 router.use(battingRouter);
 router.use(constraintsRouter);
+router.use(aiAssistantRouter);
 
 export default router;

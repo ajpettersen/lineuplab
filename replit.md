@@ -65,6 +65,27 @@ A travel baseball team defensive lineup manager for coaches. Features:
   opt-in. The schedule list shows a "Practice" or "Event" badge next to non-game items.
   Note: after a fresh deploy that adds the `games.type` column, existing rows default to
   `game`; run a one-shot reclassification (same regex on opponent strings) to backfill.
+- **AI Assistant search bar** (Game Detail page): a sparkle-icon input directly
+  below the game header. `POST /api/games/:id/ai-assistant` accepts `{message}`,
+  loads the game, active roster, current saved lineup, and active stored
+  constraints, and asks gpt-5.2 (with `response_format: json_object`) to either:
+  - return `{kind:"answer", text}` for "why" questions ("why is Henry on the
+    bench in inning 2?"), shown in a dismissible purple panel; OR
+  - return `{kind:"regenerate", explanation, pinned, lineup}` for instructions
+    ("put Henry at catcher for the first 3 innings", "bench Charlie inning 1").
+    The endpoint validates pinned `(playerId, inning, position)` tuples against
+    the active roster + valid positions, calls `generateFairLineup(..., pinned)`
+    with a new optional 5th param, and runs a feasibility check (every inning
+    must have all 9 field positions filled). If the pins are infeasible, the
+    endpoint falls back to `kind:"answer"` with a friendly explanation rather
+    than persisting a broken lineup. Regenerate responses set `previewLineup`
+    on the game-detail page, reusing the existing yellow Save/Discard banner.
+    The frontend uses a request-id ref to discard stale responses if the user
+    asks a second question before the first finishes, and prompts a confirm()
+    when there are unsaved edits or an active preview.
+  - The pinned-pass in `generateFairLineup` is order-independent: Bench pins are
+    applied first (always win conflicts), then field pins, with duplicate-player
+    and duplicate-position guards per inning.
 - **Editable game cards** with pencil icon for inline edit
 - **Inline lineup editing + drag-and-drop + copy to Sheets** (Game Detail page):
   every player in any saved/preview lineup is rendered as its own draggable tile
