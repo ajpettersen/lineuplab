@@ -32,6 +32,12 @@ A travel baseball team defensive lineup manager for coaches. Features:
 - **Roster management**: Add/edit players with eligible and preferred positions, pitching eligibility
 - **Game scheduling**: Create games with date, location, innings
 - **Lineup generation**: Auto-generate fair rotational lineups using a fairness algorithm
+- **Copy from previous game**: Start a new lineup from any past game's positions
+  (server endpoint `GET /api/games/with-lineups`, dialog picker on game-detail).
+  Players not in current active roster are dropped; innings truncated/padded to current game length.
+- **Post-game editing**: Recorded lineups remain editable after Mark Complete via
+  the same drag/tap-swap UI. Season stats aggregate from `lineup_entries` so any
+  saved edit immediately reflects what actually happened.
 - **Season stats**: Track playing time, bench time, position distribution, and a fairness score
 - **Inning-by-inning grid**: Visual lineup display per game
 

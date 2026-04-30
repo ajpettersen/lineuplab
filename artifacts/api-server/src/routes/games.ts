@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 import { z } from "zod";
-import { db, gamesTable } from "@workspace/db";
+import { db, gamesTable, lineupEntriesTable } from "@workspace/db";
 import {
   CreateGameBody,
   GetGameParams,
@@ -31,6 +31,27 @@ const router: IRouter = Router();
 router.get("/games", async (_req, res): Promise<void> => {
   const games = await db.select().from(gamesTable).orderBy(gamesTable.gameDate);
   res.json(games);
+});
+
+// Games that have at least one saved lineup entry. Used by the
+// "Copy from previous" picker on the game-detail page so a coach can start
+// a new lineup from a past game's positions. Must be defined BEFORE
+// "/games/:id" so it is not shadowed by the parametric route.
+router.get("/games/with-lineups", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      id: gamesTable.id,
+      opponent: gamesTable.opponent,
+      gameDate: gamesTable.gameDate,
+      innings: gamesTable.innings,
+      status: gamesTable.status,
+      entryCount: sql<number>`count(${lineupEntriesTable.id})::int`,
+    })
+    .from(gamesTable)
+    .innerJoin(lineupEntriesTable, eq(lineupEntriesTable.gameId, gamesTable.id))
+    .groupBy(gamesTable.id)
+    .orderBy(desc(gamesTable.gameDate));
+  res.json(rows);
 });
 
 router.post("/games", async (req, res): Promise<void> => {

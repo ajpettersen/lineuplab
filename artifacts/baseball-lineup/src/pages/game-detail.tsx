@@ -39,7 +39,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -94,6 +94,18 @@ export default function GameDetail() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<number[]>([]);
   const [previewLineup, setPreviewLineup] = useState<typeof lineup | null>(null);
+  // "Copy from previous game" picker state.
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyGames, setCopyGames] = useState<Array<{
+    id: number;
+    opponent: string;
+    gameDate: string;
+    innings: number;
+    status: string;
+    entryCount: number;
+  }> | null>(null);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copyApplyingId, setCopyApplyingId] = useState<number | null>(null);
   // Edits to a saved lineup (ad-hoc position swaps) live here until saved.
   const [editedLineup, setEditedLineup] = useState<typeof lineup | null>(null);
   // Click-to-swap selection: the entry id of the player picked first.
@@ -124,6 +136,86 @@ export default function GameDetail() {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
     setPreviewLineup(null);
     setGenerateOpen(true);
+  };
+
+  const openCopy = async () => {
+    if (editedLineup || previewLineup) {
+      const what = editedLineup ? "unsaved lineup edits" : "an unsaved lineup preview";
+      const ok = window.confirm(
+        `You have ${what}. Loading a previous lineup will replace them. Continue?`,
+      );
+      if (!ok) return;
+      setEditedLineup(null);
+      setPreviewLineup(null);
+      setSelectedEntryId(null);
+    }
+    setCopyOpen(true);
+    setCopyLoading(true);
+    setCopyGames(null);
+    try {
+      const resp = await fetch(`${BASE}/api/games/with-lineups`);
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      const data = await resp.json();
+      // Exclude the current game — copying from yourself is meaningless.
+      setCopyGames(data.filter((g: { id: number }) => g.id !== id));
+    } catch {
+      toast({ title: "Failed to load past games", variant: "destructive" });
+      setCopyOpen(false);
+    } finally {
+      setCopyLoading(false);
+    }
+  };
+
+  const applyCopyFrom = async (sourceGameId: number) => {
+    if (!game) return;
+    setCopyApplyingId(sourceGameId);
+    try {
+      const resp = await fetch(`${BASE}/api/games/${sourceGameId}/lineup`);
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      const sourceEntries: typeof lineup = await resp.json();
+
+      // Only keep entries for players who still exist AND are active in the
+      // current roster. The lineup grid otherwise filters them out and we'd
+      // end up with a misleading empty-looking preview.
+      const activeIds = new Set(players.filter((p) => p.active).map((p) => p.id));
+      const droppedPlayers = new Set<string>();
+      const kept = sourceEntries.filter((e) => {
+        if (activeIds.has(e.playerId)) return true;
+        droppedPlayers.add(e.playerName);
+        return false;
+      });
+
+      // Truncate or stretch innings to match the current game.
+      const trimmed = kept.filter((e) => e.inning <= game.innings);
+      const sourceInnings = sourceEntries.reduce((m, e) => Math.max(m, e.inning), 0);
+      const stretched: typeof lineup = trimmed.map((e, idx) => ({
+        ...e,
+        id: -(idx + 1), // negative ids mark this as an unsaved preview
+        gameId: id,
+      }));
+
+      setPreviewLineup(stretched);
+      setCopyOpen(false);
+      const warnings: string[] = [];
+      if (droppedPlayers.size > 0) {
+        warnings.push(
+          `${droppedPlayers.size} player${droppedPlayers.size === 1 ? "" : "s"} not on current roster were dropped`,
+        );
+      }
+      if (sourceInnings > game.innings) {
+        warnings.push(`only first ${game.innings} innings copied (source had ${sourceInnings})`);
+      } else if (sourceInnings < game.innings) {
+        warnings.push(`source had ${sourceInnings} innings — innings ${sourceInnings + 1}–${game.innings} are empty`);
+      }
+      toast({
+        title: "Lineup loaded — review and save",
+        description: warnings.join(". ") || undefined,
+      });
+    } catch {
+      toast({ title: "Failed to load that lineup", variant: "destructive" });
+    } finally {
+      setCopyApplyingId(null);
+    }
   };
 
   const handleGenerate = () => {
@@ -557,24 +649,24 @@ export default function GameDetail() {
                 </div>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {game.status === "upcoming" && (
+                <Button variant="outline" onClick={() => setCompleteOpen(true)}>
+                  <Trophy className="h-4 w-4 mr-2" />
+                  Mark Complete
+                </Button>
+              )}
+              {game.status !== "cancelled" && (
                 <>
-                  <Button variant="outline" onClick={() => setCompleteOpen(true)}>
-                    <Trophy className="h-4 w-4 mr-2" />
-                    Mark Complete
+                  <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
+                    <CopyIcon className="h-4 w-4 mr-2" />
+                    Copy from Previous
                   </Button>
-                  <Button onClick={openGenerate}>
+                  <Button onClick={openGenerate} data-testid="button-generate-lineup">
                     <Wand2 className="h-4 w-4 mr-2" />
-                    Generate Lineup
+                    {lineup.length > 0 ? "Replace Lineup" : "Generate Lineup"}
                   </Button>
                 </>
-              )}
-              {game.status === "completed" && lineup.length === 0 && (
-                <Button onClick={openGenerate}>
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Generate Lineup
-                </Button>
               )}
             </div>
           </div>
@@ -659,10 +751,17 @@ export default function GameDetail() {
       )}
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 gap-3">
-          <CardTitle className="text-base">
-            {displayLineup.length > 0 ? "Defensive Lineup" : "No Lineup Yet"}
-          </CardTitle>
+        <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
+          <div>
+            <CardTitle className="text-base">
+              {displayLineup.length > 0 ? "Defensive Lineup" : "No Lineup Yet"}
+            </CardTitle>
+            {displayLineup.length > 0 && game.status === "completed" && !previewLineup && !editedLineup && (
+              <p className="text-xs text-muted-foreground mt-1" data-testid="text-recorded-hint">
+                Recorded lineup — tap a player or drag to update what actually happened. Season stats reflect any changes you save.
+              </p>
+            )}
+          </div>
           {displayLineup.length > 0 && (
             <div className="flex items-center gap-2">
               {selectedEntry && (
@@ -692,10 +791,16 @@ export default function GameDetail() {
             <div className="text-center py-8 text-muted-foreground">
               <Wand2 className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p>No lineup generated yet.</p>
-              <Button className="mt-3" onClick={openGenerate}>
-                <Wand2 className="h-4 w-4 mr-2" />
-                Generate Lineup
-              </Button>
+              <div className="flex gap-2 justify-center mt-3 flex-wrap">
+                <Button variant="outline" onClick={openCopy}>
+                  <CopyIcon className="h-4 w-4 mr-2" />
+                  Copy from Previous
+                </Button>
+                <Button onClick={openGenerate}>
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  Generate Lineup
+                </Button>
+              </div>
             </div>
           ) : (
             <DndContext
@@ -953,6 +1058,68 @@ export default function GameDetail() {
                 {generateLineup.isPending ? "Generating..." : "Generate"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Copy From Previous Dialog */}
+      <Dialog open={copyOpen} onOpenChange={(o) => !o && setCopyOpen(false)}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Copy from a Previous Game
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Pick a past game and we'll preview its lineup here as a starting point.
+              Players who aren't on your current active roster will be dropped — you can review and save before anything is committed.
+            </p>
+            {copyLoading ? (
+              <div className="space-y-2">
+                <div className="h-14 bg-muted animate-pulse rounded-md" />
+                <div className="h-14 bg-muted animate-pulse rounded-md" />
+                <div className="h-14 bg-muted animate-pulse rounded-md" />
+              </div>
+            ) : !copyGames || copyGames.length === 0 ? (
+              <div className="text-center py-6 text-sm text-muted-foreground" data-testid="text-copy-empty">
+                No other games have a saved lineup yet.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2" data-testid="list-copy-games">
+                {copyGames.map((g) => {
+                  const inningMismatch = game && g.innings !== game.innings;
+                  return (
+                    <button
+                      type="button"
+                      key={g.id}
+                      onClick={() => applyCopyFrom(g.id)}
+                      disabled={copyApplyingId !== null}
+                      className="text-left p-3 rounded-md border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                      data-testid={`button-copy-game-${g.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">vs. {g.opponent}</span>
+                        {g.status === "completed" ? (
+                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-[10px] px-1.5 py-0">Played</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">Upcoming</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                        <span>{format(new Date(g.gameDate), "EEE, MMM d, yyyy")}</span>
+                        <span>{g.innings} innings{inningMismatch && ` (yours: ${game?.innings})`}</span>
+                        {copyApplyingId === g.id && <span className="text-primary">Loading…</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCopyOpen(false)}>Cancel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
