@@ -39,6 +39,12 @@ A travel baseball team defensive lineup manager for coaches. Features:
 - Season stats with position group breakdowns (C, MIF, CIF, OF, P, Bench)
 - Historical fielding import (CSV paste → aggregate innings)
 - Batting stats with AI image extraction (OpenAI vision)
+- **Roster bulk import (AI)**: on the Roster page, "Import Roster" opens a dialog where
+  the coach can paste freeform text OR upload a screenshot. `POST /api/players/extract`
+  routes either to a JSON text call or a multipart vision call (gpt-5.2) and returns
+  `{name, number, eligiblePositions, canPitch, notes}` per player. Editable preview
+  table lets the coach toggle positions, fix names/numbers, exclude rows, then
+  `POST /api/players/bulk` inserts them in one shot.
 - **Lineup constraints system**: global rules + player-specific rules + AI natural language parsing
   - Numeric global rules (max bench innings, max same position) use a popup dialog with slider when toggled on
   - Boolean global rules (no bench 2 of 3, all positions covered, rotate pitcher) toggle directly

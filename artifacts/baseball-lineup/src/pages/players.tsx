@@ -13,12 +13,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -30,10 +32,404 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { UserPlus, Trash2, ChevronRight, CircleUser } from "lucide-react";
+import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+type ExtractedPlayer = {
+  name: string;
+  number: number | null;
+  eligiblePositions: string[];
+  preferredPositions?: string[];
+  canPitch: boolean;
+  notes: string | null;
+  include: boolean;
+};
+
+function ImportRosterDialog({
+  open,
+  onClose,
+  existingPlayers,
+}: {
+  open: boolean;
+  onClose: () => void;
+  existingPlayers: ReadonlyArray<{ name: string; number?: number | null }>;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const existingKeys = new Set(
+    existingPlayers.map((p) => `${p.name.trim().toLowerCase()}|${p.number ?? ""}`)
+  );
+  const isDuplicate = (name: string, number: number | null) =>
+    existingKeys.has(`${name.trim().toLowerCase()}|${number ?? ""}`);
+  const [mode, setMode] = useState<"text" | "image">("text");
+  const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [extracted, setExtracted] = useState<ExtractedPlayer[] | null>(null);
+
+  const reset = () => {
+    setMode("text");
+    setText("");
+    setFile(null);
+    setFilePreview(null);
+    setExtracted(null);
+    setExtracting(false);
+    setSaving(false);
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  const handleFile = (f: File | null) => {
+    setFile(f);
+    if (f && f.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setFilePreview(typeof reader.result === "string" ? reader.result : null);
+      reader.readAsDataURL(f);
+    } else {
+      setFilePreview(null);
+    }
+  };
+
+  const extract = async () => {
+    setExtracting(true);
+    try {
+      let resp: Response;
+      if (mode === "image") {
+        if (!file) {
+          toast({ title: "Please choose an image", variant: "destructive" });
+          setExtracting(false);
+          return;
+        }
+        const fd = new FormData();
+        fd.append("file", file);
+        resp = await fetch(`${BASE}/api/players/extract`, { method: "POST", body: fd });
+      } else {
+        if (!text.trim()) {
+          toast({ title: "Please paste your roster", variant: "destructive" });
+          setExtracting(false);
+          return;
+        }
+        resp = await fetch(`${BASE}/api/players/extract`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+      }
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error ?? "Extraction failed");
+      }
+      const { extracted: rows } = (await resp.json()) as { extracted: Omit<ExtractedPlayer, "include">[] };
+      if (!rows || rows.length === 0) {
+        toast({ title: "No players found in input", variant: "destructive" });
+        setExtracting(false);
+        return;
+      }
+      setExtracted(
+        rows.map((r) => {
+          const name = r.name ?? "";
+          const number = r.number ?? null;
+          const dup = isDuplicate(name, number);
+          return {
+            name,
+            number,
+            eligiblePositions: Array.isArray(r.eligiblePositions) ? r.eligiblePositions : [],
+            canPitch: !!r.canPitch,
+            notes: dup ? "Already on roster" : r.notes ?? null,
+            include: !dup,
+          };
+        })
+      );
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : "Extraction failed", variant: "destructive" });
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const togglePos = (idx: number, pos: string) => {
+    setExtracted((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      const cur = next[idx]!;
+      const has = cur.eligiblePositions.includes(pos);
+      next[idx] = {
+        ...cur,
+        eligiblePositions: has
+          ? cur.eligiblePositions.filter((p) => p !== pos)
+          : [...cur.eligiblePositions, pos],
+      };
+      return next;
+    });
+  };
+
+  const updateRow = (idx: number, patch: Partial<ExtractedPlayer>) => {
+    setExtracted((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx]!, ...patch };
+      return next;
+    });
+  };
+
+  const importAll = async () => {
+    if (!extracted) return;
+    const toImport = extracted.filter((p) => p.include && p.name.trim());
+    if (toImport.length === 0) {
+      toast({ title: "No players selected to import", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const resp = await fetch(`${BASE}/api/players/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          players: toImport.map((p) => ({
+            name: p.name.trim(),
+            number: p.number,
+            eligiblePositions: p.eligiblePositions,
+            preferredPositions: [],
+            canPitch: p.canPitch,
+            notes: p.notes,
+          })),
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error ?? "Import failed");
+      }
+      const { created = [], skipped = [] } = (await resp.json()) as {
+        created: unknown[];
+        skipped: { name: string; reason: string }[];
+      };
+      qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
+      const skippedSuffix =
+        skipped.length > 0 ? ` (skipped ${skipped.length} duplicate${skipped.length === 1 ? "" : "s"})` : "";
+      toast({
+        title: `Imported ${created.length} player${created.length === 1 ? "" : "s"}${skippedSuffix}`,
+      });
+      handleClose();
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : "Import failed", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const includedCount = extracted?.filter((p) => p.include).length ?? 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Import Roster
+          </DialogTitle>
+          <DialogDescription>
+            Paste your roster as text or upload a screenshot — we&apos;ll pull names, numbers, and positions for you to review.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!extracted ? (
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={mode === "text" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMode("text")}
+                data-testid="button-mode-text"
+              >
+                Paste Text
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "image" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMode("image")}
+                data-testid="button-mode-image"
+              >
+                <ImageIcon className="h-4 w-4 mr-1.5" />
+                Upload Image
+              </Button>
+            </div>
+
+            {mode === "text" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>Roster text</Label>
+                <Textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={`One player per line, e.g.:\n1 Smith, John P/SS\n23 Bobby Jones - 1B, 2B\n#7 Mike Davis OF\nAlex Lee #15 catcher`}
+                  rows={10}
+                  data-testid="input-import-text"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Most formats work — name, number, and positions in any order.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <Label>Roster image</Label>
+                <label className="flex flex-col items-center justify-center gap-2 p-8 rounded-lg border-2 border-dashed border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  {filePreview ? (
+                    <img src={filePreview} alt="Roster preview" className="max-h-64 rounded-md" />
+                  ) : (
+                    <>
+                      <Upload className="h-8 w-8 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        {file ? file.name : "Click to upload a screenshot or photo"}
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+                    data-testid="input-import-file"
+                  />
+                </label>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              <Button onClick={extract} disabled={extracting} data-testid="button-extract">
+                {extracting ? "Reading..." : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-1.5" />
+                    Extract with AI
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Found <span className="font-semibold text-foreground">{extracted.length}</span> player{extracted.length === 1 ? "" : "s"}. Review and adjust before importing.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setExtracted(null)}>
+                Start over
+              </Button>
+            </div>
+
+            <div className="border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr className="text-left">
+                    <th className="p-2 w-10"></th>
+                    <th className="p-2">Name</th>
+                    <th className="p-2 w-20">#</th>
+                    <th className="p-2">Positions</th>
+                    <th className="p-2 w-16 text-center">Pitch</th>
+                    <th className="p-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {extracted.map((row, i) => (
+                    <tr key={i} className={`border-t ${row.include ? "" : "opacity-40"}`} data-testid={`row-extracted-${i}`}>
+                      <td className="p-2 align-top">
+                        <Checkbox
+                          checked={row.include}
+                          onCheckedChange={(v) => updateRow(i, { include: !!v })}
+                          data-testid={`checkbox-include-${i}`}
+                        />
+                      </td>
+                      <td className="p-2 align-top">
+                        <Input
+                          value={row.name}
+                          onChange={(e) => updateRow(i, { name: e.target.value })}
+                          className="h-8"
+                          data-testid={`input-name-${i}`}
+                        />
+                        {row.notes && (
+                          <p className="text-xs text-muted-foreground mt-1 italic">{row.notes}</p>
+                        )}
+                      </td>
+                      <td className="p-2 align-top">
+                        <Input
+                          type="number"
+                          value={row.number ?? ""}
+                          onChange={(e) =>
+                            updateRow(i, {
+                              number: e.target.value === "" ? null : parseInt(e.target.value),
+                            })
+                          }
+                          className="h-8"
+                          data-testid={`input-number-${i}`}
+                        />
+                      </td>
+                      <td className="p-2 align-top">
+                        <div className="flex flex-wrap gap-1">
+                          {ALL_POSITIONS.map((pos) => {
+                            const on = row.eligiblePositions.includes(pos);
+                            return (
+                              <button
+                                key={pos}
+                                type="button"
+                                onClick={() => togglePos(i, pos)}
+                                className={`px-1.5 py-0.5 rounded text-xs border transition-colors ${
+                                  on
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "border-border text-muted-foreground hover:border-primary/50"
+                                }`}
+                                data-testid={`button-pos-${i}-${pos}`}
+                              >
+                                {pos}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td className="p-2 align-top text-center">
+                        <Checkbox
+                          checked={row.canPitch}
+                          onCheckedChange={(v) => updateRow(i, { canPitch: !!v })}
+                          data-testid={`checkbox-pitch-${i}`}
+                        />
+                      </td>
+                      <td className="p-2 align-top">
+                        <button
+                          type="button"
+                          onClick={() => setExtracted((prev) => prev?.filter((_, j) => j !== i) ?? null)}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label="Remove row"
+                          data-testid={`button-remove-${i}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              <Button onClick={importAll} disabled={saving || includedCount === 0} data-testid="button-import">
+                {saving ? "Importing..." : `Import ${includedCount} player${includedCount === 1 ? "" : "s"}`}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function AddPlayerDialog({
   open,
@@ -202,6 +598,7 @@ export default function Players() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const handleDelete = () => {
@@ -226,10 +623,16 @@ export default function Players() {
           <h1 className="text-3xl font-bold">Roster</h1>
           <p className="text-muted-foreground mt-1">{players.length} players</p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
-          <UserPlus className="h-4 w-4 mr-2" />
-          Add Player
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="button-open-import">
+            <Sparkles className="h-4 w-4 mr-2" />
+            Import Roster
+          </Button>
+          <Button onClick={() => setAddOpen(true)}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add Player
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -308,6 +711,12 @@ export default function Players() {
       )}
 
       <AddPlayerDialog open={addOpen} onClose={() => setAddOpen(false)} />
+
+      <ImportRosterDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        existingPlayers={players}
+      />
 
       <AlertDialog open={deleteId != null} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
