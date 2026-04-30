@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useListPlayers } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +49,7 @@ const CONSTRAINT_CATEGORY: Record<string, string> = {
   global_rotate_pitcher: "global",
   global_ensure_positions: "global",
   global_no_bench_two_of_three: "global",
+  global_equity_weight: "global",
   player_must_play: "player",
   player_cannot_play: "player",
   player_min_field: "player",
@@ -64,6 +65,7 @@ const TYPE_LABELS: Record<string, string> = {
   global_rotate_pitcher: "Rotate pitcher",
   global_ensure_positions: "All positions covered",
   global_no_bench_two_of_three: "No bench 2 of 3 innings",
+  global_equity_weight: "Fairness dial",
   player_must_play: "Must play position",
   player_cannot_play: "Cannot play position",
   player_min_field: "Min field innings",
@@ -152,6 +154,110 @@ function ValuePromptDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---- Fairness dial: 0 = best lineup, 50 = balanced, 100 = most equitable ----
+function FairnessSection({ constraints, onRefresh }: { constraints: Constraint[]; onRefresh: () => void }) {
+  // Pick the most recently created active row in case duplicates exist (defensive).
+  const existing = [...constraints]
+    .filter((c) => c.type === "global_equity_weight" && c.active)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  const initial = existing?.value ?? 50;
+  const [value, setValue] = useState(initial);
+
+  // Serialize commits so rapid slider drags don't race (each commit had been
+  // reading a stale snapshot of `constraints`, leaking duplicate rows).
+  const pendingRef = useRef<Promise<void>>(Promise.resolve());
+  // Track in-flight commits so we don't clobber the user's drag with a stale
+  // refetch while a save is pending.
+  const inFlightRef = useRef(0);
+
+  // Sync the slider once the constraint list arrives (or when another tab edits
+  // it), but never while we have an unsaved commit pending.
+  useEffect(() => {
+    if (inFlightRef.current === 0 && existing?.value != null && existing.value !== value) {
+      setValue(existing.value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing?.value]);
+
+  const persist = (v: number) => {
+    const description = v <= 25
+      ? `Generator favors best lineup (fairness ${v}/100)`
+      : v >= 75
+        ? `Generator favors equal playing time (fairness ${v}/100)`
+        : `Balanced lineup vs fairness (${v}/100)`;
+    inFlightRef.current += 1;
+    pendingRef.current = pendingRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        // Always re-fetch the live list and remove ALL rows of this type before
+        // inserting a fresh one. Single-row invariant.
+        const resp = await fetch(`${BASE}/api/constraints`);
+        const all: Constraint[] = await resp.json();
+        const stale = all.filter((c) => c.type === "global_equity_weight");
+        await Promise.all(stale.map((c) => apiDelete(`/api/constraints/${c.id}`)));
+        await apiPost("/api/constraints", {
+          type: "global_equity_weight",
+          rule: "weight",
+          value: v,
+          description,
+          active: true,
+        });
+      })
+      .finally(() => {
+        inFlightRef.current = Math.max(0, inFlightRef.current - 1);
+        if (inFlightRef.current === 0) onRefresh();
+      });
+  };
+
+  const label =
+    value <= 20 ? "Best lineup" :
+    value <= 40 ? "Lean toward best" :
+    value <= 60 ? "Balanced" :
+    value <= 80 ? "Lean toward fair" :
+    "Most equitable";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-primary" />
+          Fairness Dial
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Decide how strongly the generator should equalize playing time. Lower values keep
+          stronger players in their preferred spots; higher values rotate everyone evenly.
+        </p>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm text-muted-foreground">Best lineup</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-primary" data-testid="text-equity-value">{value}</span>
+            <span className="text-xs uppercase tracking-wide text-muted-foreground" data-testid="text-equity-label">{label}</span>
+          </div>
+          <span className="text-sm text-muted-foreground">Most equitable</span>
+        </div>
+        <Slider
+          value={[value]}
+          min={0}
+          max={100}
+          step={5}
+          onValueChange={([v]) => setValue(v)}
+          onValueCommit={([v]) => persist(v)}
+          data-testid="slider-equity"
+        />
+        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Info className="h-3 w-3 mt-0.5 shrink-0" />
+          <span>
+            Default is 50 (balanced). Players still keep their eligible/preferred positions and
+            other rules (max bench, no bench 2-of-3, etc.) are always enforced regardless of this dial.
+          </span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -599,6 +705,9 @@ export default function Constraints() {
         <h1 className="text-3xl font-bold">Lineup Constraints</h1>
         <p className="text-muted-foreground mt-1">Rules applied automatically whenever you generate a lineup</p>
       </div>
+
+      {/* Fairness dial */}
+      <FairnessSection constraints={constraints} onRefresh={refresh} />
 
       {/* Global presets */}
       <GlobalPresetsSection constraints={constraints} onRefresh={refresh} />

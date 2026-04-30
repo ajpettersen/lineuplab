@@ -42,7 +42,7 @@ type ExtractedPlayer = {
   name: string;
   number: number | null;
   eligiblePositions: string[];
-  preferredPositions?: string[];
+  preferredPositions: string[];
   canPitch: boolean;
   notes: string | null;
   include: boolean;
@@ -142,6 +142,7 @@ function ImportRosterDialog({
             name,
             number,
             eligiblePositions: Array.isArray(r.eligiblePositions) ? r.eligiblePositions : [],
+            preferredPositions: [],
             canPitch: !!r.canPitch,
             notes: dup ? "Already on roster" : r.notes ?? null,
             include: !dup,
@@ -155,18 +156,28 @@ function ImportRosterDialog({
     }
   };
 
-  const togglePos = (idx: number, pos: string) => {
+  // Tri-state cycle on a position chip: off → eligible → preferred → off
+  const cyclePos = (idx: number, pos: string) => {
     setExtracted((prev) => {
       if (!prev) return prev;
       const next = [...prev];
       const cur = next[idx]!;
-      const has = cur.eligiblePositions.includes(pos);
-      next[idx] = {
-        ...cur,
-        eligiblePositions: has
-          ? cur.eligiblePositions.filter((p) => p !== pos)
-          : [...cur.eligiblePositions, pos],
-      };
+      const isEligible = cur.eligiblePositions.includes(pos);
+      const isPreferred = cur.preferredPositions.includes(pos);
+      let eligible = cur.eligiblePositions;
+      let preferred = cur.preferredPositions;
+      if (!isEligible) {
+        // off → eligible
+        eligible = [...eligible, pos];
+      } else if (!isPreferred) {
+        // eligible → preferred (still eligible)
+        preferred = [...preferred, pos];
+      } else {
+        // preferred → off
+        eligible = eligible.filter((p) => p !== pos);
+        preferred = preferred.filter((p) => p !== pos);
+      }
+      next[idx] = { ...cur, eligiblePositions: eligible, preferredPositions: preferred };
       return next;
     });
   };
@@ -197,7 +208,7 @@ function ImportRosterDialog({
             name: p.name.trim(),
             number: p.number,
             eligiblePositions: p.eligiblePositions,
-            preferredPositions: [],
+            preferredPositions: p.preferredPositions,
             canPitch: p.canPitch,
             notes: p.notes,
           })),
@@ -326,6 +337,14 @@ function ImportRosterDialog({
               </Button>
             </div>
 
+            <p className="text-xs text-muted-foreground -mb-1">
+              Tap a position to cycle: <span className="text-muted-foreground">off</span> →{" "}
+              <span className="text-foreground font-medium">eligible</span> →{" "}
+              <span className="text-primary font-medium">★ preferred</span>. Preferred positions
+              are where the player ideally plays — the lineup generator will favor them when
+              fairness allows.
+            </p>
+
             <div className="border rounded-md overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
@@ -375,19 +394,36 @@ function ImportRosterDialog({
                       <td className="p-2 align-top">
                         <div className="flex flex-wrap gap-1">
                           {ALL_POSITIONS.map((pos) => {
-                            const on = row.eligiblePositions.includes(pos);
+                            const eligible = row.eligiblePositions.includes(pos);
+                            const preferred = row.preferredPositions.includes(pos);
+                            const state: "off" | "eligible" | "preferred" = preferred
+                              ? "preferred"
+                              : eligible
+                                ? "eligible"
+                                : "off";
                             return (
                               <button
                                 key={pos}
                                 type="button"
-                                onClick={() => togglePos(i, pos)}
-                                className={`px-1.5 py-0.5 rounded text-xs border transition-colors ${
-                                  on
-                                    ? "bg-primary text-primary-foreground border-primary"
-                                    : "border-border text-muted-foreground hover:border-primary/50"
+                                onClick={() => cyclePos(i, pos)}
+                                title={
+                                  state === "off"
+                                    ? `Click to mark ${pos} as eligible`
+                                    : state === "eligible"
+                                      ? `Click to mark ${pos} as preferred`
+                                      : `Click to remove ${pos}`
+                                }
+                                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border transition-colors ${
+                                  state === "preferred"
+                                    ? "bg-primary text-primary-foreground border-primary ring-1 ring-primary/40"
+                                    : state === "eligible"
+                                      ? "bg-secondary text-secondary-foreground border-secondary"
+                                      : "border-border text-muted-foreground hover:border-primary/50"
                                 }`}
                                 data-testid={`button-pos-${i}-${pos}`}
+                                data-state={state}
                               >
+                                {state === "preferred" && <span aria-hidden>★</span>}
                                 {pos}
                               </button>
                             );

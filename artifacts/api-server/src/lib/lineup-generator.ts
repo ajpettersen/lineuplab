@@ -32,11 +32,19 @@ export function generateFairLineup(
 
   const findGlobal = (type: string) => active.find((c) => c.type === type);
 
+  // For singleton settings like the equity dial, defensively pick the newest row
+  // if duplicates somehow exist (concurrent tabs, manual API calls, etc.).
+  const findGlobalNewest = (type: string) =>
+    active
+      .filter((c) => c.type === type)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+
   const maxBenchConstraint = findGlobal("global_max_bench");
   const maxPositionConstraint = findGlobal("global_max_position");
   const rotatePitcherConstraint = findGlobal("global_rotate_pitcher");
   const ensurePositionsConstraint = findGlobal("global_ensure_positions");
   const noBenchTwoOfThree = !!findGlobal("global_no_bench_two_of_three");
+  const equityWeightConstraint = findGlobalNewest("global_equity_weight");
 
   const maxPerPosition = maxPositionConstraint?.value ?? constraints.maxInningsPerPosition ?? 2;
   const maxBench = maxBenchConstraint?.value ?? constraints.maxInningsBench ?? 2;
@@ -46,6 +54,17 @@ export function generateFairLineup(
   const rotatePitcher = rotatePitcherConstraint
     ? rotatePitcherConstraint.rule === "on"
     : (constraints.pitcherRotation ?? false);
+
+  // Equity dial: 0 = ignore fairness, prefer best player at each spot.
+  // 50 = balanced (default, matches legacy behavior).
+  // 100 = strong fairness pressure.
+  const equityRaw = equityWeightConstraint?.value ?? 50;
+  const equity = Math.min(1, Math.max(0, equityRaw / 100));
+  // At e=0.5 the fairness multiplier is 1.0 (legacy behavior); at e=0 it's 0; at e=1 it's 2.
+  const fairnessMultiplier = equity * 2;
+  // When equity drops below 0.5, preferred positions get a real bonus (up to +25 at e=0).
+  // At e>=0.5, preferred is only a tiebreaker (legacy behavior).
+  const preferredBonus = Math.max(0, (0.5 - equity) * 50);
 
   // Player-specific constraints
   const cannotPlayMap = new Map<number, Set<string>>();
@@ -98,8 +117,8 @@ export function generateFairLineup(
   const scorePlayer = (playerId: number, inning: number, _isLastInning: boolean) => {
     const bench = benchCount.get(playerId) ?? 0;
     const total = totalInningsPlayed.get(playerId) ?? 0;
-    // Prefer players with more bench time and less field time
-    let score = bench * 10 - total;
+    // Fairness component — scaled by the equity dial.
+    let score = (bench * 10 - total) * fairnessMultiplier;
     // Boost if they have a min-field requirement not yet met
     const minField = minFieldMap.get(playerId);
     if (minField != null) {
@@ -158,8 +177,14 @@ export function generateFairLineup(
           // Check if player must play this position (boost priority)
           const aMust = mustPlayMap.get(a.id)?.has(pos) && !positionsPlayed.get(a.id)?.has(pos) ? 20 : 0;
           const bMust = mustPlayMap.get(b.id)?.has(pos) && !positionsPlayed.get(b.id)?.has(pos) ? 20 : 0;
-          const scoreDiff = (scorePlayer(b.id, inning, isLastInning) + bMust) - (scorePlayer(a.id, inning, isLastInning) + aMust);
+          // Preferred-position bonus scales up as the equity dial drops below 50.
+          const aPref = a.preferredPositions.includes(pos) ? preferredBonus : 0;
+          const bPref = b.preferredPositions.includes(pos) ? preferredBonus : 0;
+          const scoreDiff =
+            (scorePlayer(b.id, inning, isLastInning) + bMust + bPref) -
+            (scorePlayer(a.id, inning, isLastInning) + aMust + aPref);
           if (scoreDiff !== 0) return scoreDiff;
+          // Final tiebreaker: still prefer preferred positions (matches legacy at e>=0.5)
           const aPreferred = a.preferredPositions.includes(pos) ? -1 : 0;
           const bPreferred = b.preferredPositions.includes(pos) ? -1 : 0;
           return aPreferred - bPreferred;

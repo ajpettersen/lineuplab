@@ -44,7 +44,16 @@ A travel baseball team defensive lineup manager for coaches. Features:
   routes either to a JSON text call or a multipart vision call (gpt-5.2) and returns
   `{name, number, eligiblePositions, canPitch, notes}` per player. Editable preview
   table lets the coach toggle positions, fix names/numbers, exclude rows, then
-  `POST /api/players/bulk` inserts them in one shot.
+  `POST /api/players/bulk` inserts them in one shot. Position chips in the preview
+  are tri-state: tap once to mark eligible, again to mark preferred (★), again to
+  remove — preferred positions are persisted alongside eligible ones.
+- **Lineup Fairness dial**: on the Constraints page, a 0–100 slider ("Best lineup" ↔
+  "Most equitable", default 50) controls how strongly the generator equalizes playing
+  time. Persisted as a single `global_equity_weight` constraint. The generator scales
+  its fairness term by `equity*2` (so 50 = legacy behavior) and adds a preferred-position
+  bonus only when equity < 50, smoothly trading fairness for "best lineup". Slider
+  commits are serialized client-side and re-fetch the live list to delete duplicates,
+  enforcing a single-row invariant.
 - **Lineup constraints system**: global rules + player-specific rules + AI natural language parsing
   - Numeric global rules (max bench innings, max same position) use a popup dialog with slider when toggled on
   - Boolean global rules (no bench 2 of 3, all positions covered, rotate pitcher) toggle directly
