@@ -4,6 +4,8 @@ import playersRouter from "./players";
 import gamesRouter from "./games";
 import lineupsRouter from "./lineups";
 import statsRouter from "./stats";
+import historyRouter from "./history";
+import battingRouter from "./batting";
 
 const router: IRouter = Router();
 
@@ -12,5 +14,7 @@ router.use(playersRouter);
 router.use(gamesRouter);
 router.use(lineupsRouter);
 router.use(statsRouter);
+router.use(historyRouter);
+router.use(battingRouter);
 
 export default router;

@@ -1,3 +1,5 @@
 export * from "./players";
 export * from "./games";
 export * from "./lineup_entries";
+export * from "./historical_fielding";
+export * from "./batting_stats";
