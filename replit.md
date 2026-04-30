@@ -32,10 +32,22 @@ A travel baseball team defensive lineup manager for coaches. Features:
 - `artifacts/baseball-lineup` — React+Vite frontend (preview at `/`)
 - `artifacts/api-server` — Express API server (at `/api`)
 
+### Features
+- Roster management with eligible/preferred positions
+- Game scheduling
+- Fair lineup generation (fairness algorithm)
+- Season stats with position group breakdowns (C, MIF, CIF, OF, P, Bench)
+- Historical fielding import (CSV paste → aggregate innings)
+- Batting stats with AI image extraction (OpenAI vision)
+- **Lineup constraints system**: global rules + player-specific rules + AI natural language parsing
+
 ### Database tables
 - `players` — team roster
 - `games` — game schedule
 - `lineup_entries` — per-game, per-inning position assignments
+- `historical_fielding` — imported historical fielding data
+- `batting_stats` — batting stats per player per game
+- `lineup_constraints` — persisted lineup generation rules (global + player-specific)
 
 ## Key Commands
 

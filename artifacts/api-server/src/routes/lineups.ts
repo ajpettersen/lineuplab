@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
-import { db, gamesTable, playersTable, lineupEntriesTable } from "@workspace/db";
+import { db, gamesTable, playersTable, lineupEntriesTable, lineupConstraintsTable } from "@workspace/db";
 import {
   GetGameLineupParams,
   GenerateLineupParams,
@@ -82,7 +82,9 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     return;
   }
 
-  const generated = generateFairLineup(players, innings, constraints ?? {});
+  // Load stored constraints from DB
+  const storedConstraints = await db.select().from(lineupConstraintsTable).where(eq(lineupConstraintsTable.active, true));
+  const generated = generateFairLineup(players, innings, constraints ?? {}, storedConstraints);
 
   // Return as lineup entries with player names (not saved yet)
   const playerMap = new Map(players.map((p) => [p.id, p.name]));

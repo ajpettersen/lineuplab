@@ -6,7 +6,8 @@ import {
   CalendarDays, 
   BarChart2, 
   Menu,
-  Shield
+  Shield,
+  SlidersHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -19,6 +20,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/players", label: "Roster", icon: Users },
     { href: "/games", label: "Schedule", icon: CalendarDays },
     { href: "/stats", label: "Season Stats", icon: BarChart2 },
+    { href: "/constraints", label: "Constraints", icon: SlidersHorizontal },
   ];
 
   return (

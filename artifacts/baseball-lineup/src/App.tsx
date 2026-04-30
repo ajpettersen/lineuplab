@@ -10,6 +10,7 @@ import Games from "@/pages/games";
 import NewGame from "@/pages/new-game";
 import GameDetail from "@/pages/game-detail";
 import Stats from "@/pages/stats";
+import Constraints from "@/pages/constraints";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ function Router() {
         <Route path="/games/:id" component={GameDetail} />
         <Route path="/games" component={Games} />
         <Route path="/stats" component={Stats} />
+        <Route path="/constraints" component={Constraints} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
