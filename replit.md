@@ -66,6 +66,20 @@ A travel baseball team defensive lineup manager for coaches. Features:
   Note: after a fresh deploy that adds the `games.type` column, existing rows default to
   `game`; run a one-shot reclassification (same regex on opponent strings) to backfill.
 - **Editable game cards** with pencil icon for inline edit
+- **Inline lineup editing + copy to Sheets** (Game Detail page): players in any
+  saved/preview lineup are click-to-swap. Tap a cell to select it (ring around the
+  player), then tap another cell in the SAME inning to swap their positions, or tap
+  an empty position cell (rendered as a dashed `+` while a swap is pending) to move
+  the selected player there. Cross-inning taps show a toast and re-anchor the
+  selection without applying the edit. Local edits live in `editedLineup` state and
+  surface an amber "Unsaved changes" banner with Save Changes / Discard. Display
+  precedence is `previewLineup ?? editedLineup ?? lineup`. Generating a new lineup
+  while edits are pending prompts a confirm() dialog before discarding them.
+  A "Copy" button in the lineup card builds a TSV (header `Inning\tP\tC\t1B\t2B\t3B\tSS\tLF\tCF\tRF\tBench`,
+  6 inning rows, full names, multi-bench comma-joined) and writes it to the
+  clipboard via `navigator.clipboard.writeText` with a hidden-textarea +
+  `execCommand('copy')` fallback for non-secure contexts. The TSV pastes directly
+  into Google Sheets / Excel.
 
 ### Database tables
 - `players` — team roster

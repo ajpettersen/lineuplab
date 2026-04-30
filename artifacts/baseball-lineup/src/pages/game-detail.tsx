@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -69,6 +69,10 @@ export default function GameDetail() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<number[]>([]);
   const [previewLineup, setPreviewLineup] = useState<typeof lineup | null>(null);
+  // Edits to a saved lineup (ad-hoc position swaps) live here until saved.
+  const [editedLineup, setEditedLineup] = useState<typeof lineup | null>(null);
+  // Click-to-swap selection: the entry id of the player picked first.
+  const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [ourScore, setOurScore] = useState("");
   const [opponentScore, setOpponentScore] = useState("");
@@ -83,6 +87,14 @@ export default function GameDetail() {
     if (selectedPlayerIds.length === 0) {
       toast({ title: "Select at least one player", variant: "destructive" });
       return;
+    }
+    if (editedLineup) {
+      const ok = window.confirm(
+        "You have unsaved lineup edits. Generating a new lineup will discard them. Continue?",
+      );
+      if (!ok) return;
+      setEditedLineup(null);
+      setSelectedEntryId(null);
     }
     generateLineup.mutate(
       {
@@ -129,10 +141,122 @@ export default function GameDetail() {
           toast({ title: "Lineup saved" });
           setGenerateOpen(false);
           setPreviewLineup(null);
+          setEditedLineup(null);
+          setSelectedEntryId(null);
         },
         onError: () => toast({ title: "Failed to save lineup", variant: "destructive" }),
       }
     );
+  };
+
+  // Tap a player → tap another cell in the same inning → swap their positions.
+  // Tap an empty cell after selecting a player → move that player there.
+  const handleCellClick = (target: { entryId?: number; inning: number; position: string }) => {
+    const current = previewLineup ?? editedLineup ?? lineup;
+
+    // Nothing selected yet: only player cells select; empty cells are no-ops.
+    if (selectedEntryId == null) {
+      if (target.entryId != null) setSelectedEntryId(target.entryId);
+      return;
+    }
+    // Tapped the same cell twice — clear selection.
+    if (target.entryId === selectedEntryId) {
+      setSelectedEntryId(null);
+      return;
+    }
+    const sourceEntry = current.find((e) => e.id === selectedEntryId);
+    if (!sourceEntry) {
+      setSelectedEntryId(null);
+      return;
+    }
+    if (sourceEntry.inning !== target.inning) {
+      toast({
+        title: "Pick a cell in the same inning to swap",
+        description: "Players can only swap within the same inning.",
+        variant: "destructive",
+      });
+      // Re-anchor selection on the new player if they tapped one
+      setSelectedEntryId(target.entryId ?? null);
+      return;
+    }
+
+    let next: typeof current;
+    if (target.entryId != null) {
+      // Swap two players in the same inning
+      const targetEntry = current.find((e) => e.id === target.entryId)!;
+      next = current.map((e) => {
+        if (e.id === sourceEntry.id) return { ...e, position: targetEntry.position };
+        if (e.id === targetEntry.id) return { ...e, position: sourceEntry.position };
+        return e;
+      });
+    } else {
+      // Move source player into an empty position
+      next = current.map((e) =>
+        e.id === sourceEntry.id ? { ...e, position: target.position } : e
+      );
+    }
+
+    if (previewLineup) setPreviewLineup(next);
+    else setEditedLineup(next);
+    setSelectedEntryId(null);
+  };
+
+  const handleCopyLineup = async () => {
+    const data = previewLineup ?? editedLineup ?? lineup;
+    if (data.length === 0) {
+      toast({ title: "Nothing to copy yet", variant: "destructive" });
+      return;
+    }
+    const inningCount = game?.innings ?? 6;
+    const header = ["Inning", ...FIELD_POSITIONS, "Bench"].join("\t");
+    const rows = Array.from({ length: inningCount }, (_, i) => i + 1).map((inning) => {
+      const cells = FIELD_POSITIONS.map((pos) => {
+        const e = data.find((x) => x.inning === inning && x.position === pos);
+        return e ? e.playerName : "";
+      });
+      const bench = data
+        .filter((x) => x.inning === inning && x.position === "Bench")
+        .map((x) => x.playerName)
+        .join(", ");
+      return [String(inning), ...cells, bench].join("\t");
+    });
+    const tsv = [header, ...rows].join("\n");
+    const showSuccess = () =>
+      toast({ title: "Lineup copied", description: "Paste it into Google Sheets." });
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tsv);
+        showSuccess();
+        return;
+      }
+      throw new Error("Clipboard API unavailable");
+    } catch {
+      // Fallback: hidden textarea + execCommand (works in non-secure contexts / older browsers)
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = tsv;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        ta.style.left = "-1000px";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (ok) {
+          showSuccess();
+          return;
+        }
+      } catch {
+        // fall through to toast
+      }
+      toast({ title: "Copy failed — clipboard not available", variant: "destructive" });
+    }
+  };
+
+  const discardEdits = () => {
+    setEditedLineup(null);
+    setSelectedEntryId(null);
   };
 
   const handleMarkComplete = () => {
@@ -163,11 +287,22 @@ export default function GameDetail() {
   for (let i = 1; i <= innings; i++) {
     lineupByInning[i] = {};
   }
-  const displayLineup = previewLineup ?? lineup;
+  const displayLineup = previewLineup ?? editedLineup ?? lineup;
+  // Map (inning, position) -> entry, so cells know their entry id for swap.
+  const cellByInningPos: Record<number, Record<string, typeof displayLineup[number]>> = {};
   for (const entry of displayLineup) {
     if (!lineupByInning[entry.inning]) lineupByInning[entry.inning] = {};
     lineupByInning[entry.inning][entry.position] = entry.playerName;
+    if (!cellByInningPos[entry.inning]) cellByInningPos[entry.inning] = {};
+    // For non-bench positions there's at most one entry; for bench we render
+    // the multi-player path separately so this single-cell map is fine.
+    if (entry.position !== "Bench") {
+      cellByInningPos[entry.inning][entry.position] = entry;
+    }
   }
+  const selectedEntry = selectedEntryId != null
+    ? displayLineup.find((e) => e.id === selectedEntryId)
+    : undefined;
 
   if (gameLoading) {
     return (
@@ -259,23 +394,56 @@ export default function GameDetail() {
 
       {/* Lineup Grid */}
       {previewLineup && (
-        <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg" data-testid="banner-preview">
           <span className="text-sm text-yellow-800 font-medium">Preview — lineup not saved yet</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPreviewLineup(null)}>Discard</Button>
-            <Button size="sm" onClick={() => handleSaveLineup(previewLineup)} disabled={saveLineup.isPending}>
+            <Button variant="outline" size="sm" onClick={() => { setPreviewLineup(null); setSelectedEntryId(null); }}>Discard</Button>
+            <Button size="sm" onClick={() => handleSaveLineup(previewLineup)} disabled={saveLineup.isPending} data-testid="button-save-preview">
               <Save className="h-4 w-4 mr-1" />
               {saveLineup.isPending ? "Saving..." : "Save Lineup"}
             </Button>
           </div>
         </div>
       )}
+      {!previewLineup && editedLineup && (
+        <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="banner-edited">
+          <span className="text-sm text-amber-800 font-medium">Unsaved changes — you've moved players around</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={discardEdits} data-testid="button-discard-edits">Discard</Button>
+            <Button size="sm" onClick={() => handleSaveLineup(editedLineup)} disabled={saveLineup.isPending} data-testid="button-save-edits">
+              <Save className="h-4 w-4 mr-1" />
+              {saveLineup.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0 gap-3">
           <CardTitle className="text-base">
             {displayLineup.length > 0 ? "Defensive Lineup" : "No Lineup Yet"}
           </CardTitle>
+          {displayLineup.length > 0 && (
+            <div className="flex items-center gap-2">
+              {selectedEntry && (
+                <span className="text-xs text-muted-foreground hidden sm:inline" data-testid="text-swap-hint">
+                  Swapping <span className="font-medium text-foreground">{selectedEntry.playerName.split(" ")[0]}</span> — tap another cell in inning {selectedEntry.inning}
+                  <button
+                    type="button"
+                    className="ml-2 inline-flex items-center text-muted-foreground hover:text-foreground"
+                    onClick={() => setSelectedEntryId(null)}
+                    title="Cancel swap"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              <Button variant="outline" size="sm" onClick={handleCopyLineup} data-testid="button-copy-lineup">
+                <ClipboardCopy className="h-4 w-4 mr-1.5" />
+                Copy
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {lineupLoading ? (
@@ -302,43 +470,83 @@ export default function GameDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => (
-                    <tr key={inning} className="border-t border-border/50">
-                      <td className="py-2 pr-3 font-semibold text-muted-foreground">{inning}</td>
-                      {FIELD_POSITIONS.map((pos) => {
-                        const playerName = lineupByInning[inning]?.[pos];
-                        return (
-                          <td key={pos} className="py-1.5 px-1 text-center">
-                            {playerName ? (
-                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${positionColor(pos)}`}>
-                                {playerName.split(" ")[0]}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground/40 text-xs">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td className="py-1.5 px-1 text-center">
-                        {lineupByInning[inning]?.["Bench"] ? (
-                          <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-                            {lineupByInning[inning]["Bench"].split(" ")[0]}
-                          </span>
-                        ) : (
-                          // Multiple bench players
+                  {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => {
+                    const isSwapInning = selectedEntry?.inning === inning;
+                    return (
+                      <tr key={inning} className="border-t border-border/50">
+                        <td className="py-2 pr-3 font-semibold text-muted-foreground">{inning}</td>
+                        {FIELD_POSITIONS.map((pos) => {
+                          const entry = cellByInningPos[inning]?.[pos];
+                          const isSelected = entry?.id === selectedEntryId;
+                          // Empty cells become valid drop targets only while swapping in this inning
+                          const isEmptyDropTarget = !entry && isSwapInning;
+                          const baseClasses = "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap min-w-[2.5rem] transition-all";
+                          const ringClasses = isSelected
+                            ? "ring-2 ring-primary ring-offset-1"
+                            : isSwapInning && entry
+                              ? "ring-1 ring-primary/40 hover:ring-primary"
+                              : "";
+                          return (
+                            <td key={pos} className="py-1.5 px-1 text-center">
+                              {entry ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCellClick({ entryId: entry.id, inning, position: pos })}
+                                  className={`${baseClasses} ${positionColor(pos)} ${ringClasses} cursor-pointer hover:opacity-90`}
+                                  data-testid={`cell-${inning}-${pos}`}
+                                  data-entry-id={entry.id}
+                                  data-selected={isSelected ? "true" : "false"}
+                                  title={`${entry.playerName} — tap to swap`}
+                                >
+                                  {entry.playerName.split(" ")[0]}
+                                </button>
+                              ) : isEmptyDropTarget ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCellClick({ inning, position: pos })}
+                                  className="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap min-w-[2.5rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
+                                  data-testid={`cell-${inning}-${pos}-empty`}
+                                  title={`Move here`}
+                                >
+                                  +
+                                </button>
+                              ) : (
+                                <span className="text-muted-foreground/40 text-xs">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="py-1.5 px-1 text-center">
                           <div className="flex flex-wrap gap-1 justify-center">
                             {displayLineup
                               .filter((e) => e.inning === inning && e.position === "Bench")
-                              .map((e) => (
-                                <span key={e.id} className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-                                  {e.playerName.split(" ")[0]}
-                                </span>
-                              ))}
+                              .map((e) => {
+                                const isSelected = e.id === selectedEntryId;
+                                const ringClasses = isSelected
+                                  ? "ring-2 ring-primary ring-offset-1"
+                                  : isSwapInning
+                                    ? "ring-1 ring-primary/40 hover:ring-primary"
+                                    : "";
+                                return (
+                                  <button
+                                    key={e.id}
+                                    type="button"
+                                    onClick={() => handleCellClick({ entryId: e.id, inning, position: "Bench" })}
+                                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600 ${ringClasses} cursor-pointer hover:opacity-90`}
+                                    data-testid={`cell-${inning}-Bench-${e.id}`}
+                                    data-entry-id={e.id}
+                                    data-selected={isSelected ? "true" : "false"}
+                                    title={`${e.playerName} — tap to swap`}
+                                  >
+                                    {e.playerName.split(" ")[0]}
+                                  </button>
+                                );
+                              })}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
