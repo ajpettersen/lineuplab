@@ -6,9 +6,12 @@ import {
   getListGamesQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,9 +22,34 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CalendarDays, ChevronRight, MapPin, Trash2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CalendarDays,
+  ChevronRight,
+  MapPin,
+  Trash2,
+  Pencil,
+  Link2,
+  Check,
+  AlertCircle,
+} from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "completed") return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completed</Badge>;
@@ -29,12 +57,327 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
 }
 
+type Game = {
+  id: number;
+  opponent: string;
+  gameDate: string;
+  location: string | null;
+  innings: number;
+  status: string;
+  ourScore: number | null;
+  opponentScore: number | null;
+  notes: string | null;
+};
+
+// ── iCal import dialog ──────────────────────────────────────────
+type ICalEvent = {
+  uid: string;
+  summary: string;
+  opponent: string;
+  gameDate: string;
+  location: string | null;
+};
+
+function ICalImportDialog({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const [url, setUrl] = useState("");
+  const [innings, setInnings] = useState("6");
+  const [loading, setLoading] = useState(false);
+  const [events, setEvents] = useState<ICalEvent[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handlePreview = async () => {
+    setError(null);
+    setEvents([]);
+    setSelected(new Set());
+    setLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/games/import-ical/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ icalUrl: url.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setError(data.error ?? "Failed to load calendar"); return; }
+      if (data.length === 0) { setError("No events found in this calendar."); return; }
+      setEvents(data);
+      setSelected(new Set(data.map((e: ICalEvent) => e.uid)));
+    } catch {
+      setError("Could not reach the calendar URL. Make sure it is publicly accessible.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleAll = (checked: boolean) => {
+    setSelected(checked ? new Set(events.map((e) => e.uid)) : new Set());
+  };
+
+  const handleImport = async () => {
+    const toImport = events.filter((e) => selected.has(e.uid));
+    if (toImport.length === 0) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`${BASE}/api/games/import-ical/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ games: toImport, innings: parseInt(innings) }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: `${toImport.length} game${toImport.length !== 1 ? "s" : ""} imported` });
+      onImported();
+      onClose();
+      setUrl("");
+      setEvents([]);
+      setSelected(new Set());
+    } catch {
+      toast({ title: "Import failed", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Link2 className="h-4 w-4" />
+            Import from Calendar Link
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 flex-1 overflow-hidden">
+          <p className="text-sm text-muted-foreground">
+            Paste a public iCal (.ics) URL from your league scheduling system, Google Calendar, or any calendar app.
+          </p>
+
+          <div className="flex gap-2">
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com/calendar.ics"
+              className="flex-1"
+              onKeyDown={(e) => e.key === "Enter" && handlePreview()}
+            />
+            <Button onClick={handlePreview} disabled={loading || !url.trim()}>
+              {loading ? "Loading..." : "Load"}
+            </Button>
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 p-3 bg-destructive/10 text-destructive rounded-lg text-sm border border-destructive/20">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {events.length > 0 && (
+            <div className="flex flex-col gap-3 flex-1 overflow-hidden">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={selected.size === events.length}
+                    onCheckedChange={(v) => toggleAll(!!v)}
+                  />
+                  <span className="text-sm font-medium">{events.length} events found — {selected.size} selected</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Default innings:</Label>
+                  <Select value={innings} onValueChange={setInnings}>
+                    <SelectTrigger className="w-16 h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[4, 5, 6, 7].map((n) => (
+                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5 overflow-y-auto pr-1">
+                {events.map((ev) => (
+                  <label
+                    key={ev.uid}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selected.has(ev.uid) ? "border-primary/40 bg-primary/5" : "border-border bg-background opacity-60"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={selected.has(ev.uid)}
+                      onCheckedChange={(v) => {
+                        const next = new Set(selected);
+                        v ? next.add(ev.uid) : next.delete(ev.uid);
+                        setSelected(next);
+                      }}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">vs. {ev.opponent}</p>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <CalendarDays className="h-3 w-3" />
+                          {format(new Date(ev.gameDate), "EEE, MMM d, yyyy · h:mm a")}
+                        </span>
+                        {ev.location && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {ev.location}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {events.length > 0 && (
+          <DialogFooter className="pt-2 border-t">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleImport} disabled={saving || selected.size === 0}>
+              <Check className="h-4 w-4 mr-1" />
+              {saving ? "Importing..." : `Import ${selected.size} Game${selected.size !== 1 ? "s" : ""}`}
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Edit game dialog ────────────────────────────────────────────
+function EditGameDialog({
+  game,
+  onClose,
+  onSaved,
+}: {
+  game: Game;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [opponent, setOpponent] = useState(game.opponent);
+  const [gameDate, setGameDate] = useState(() => {
+    // Convert to datetime-local format
+    const d = new Date(game.gameDate);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
+  const [location, setLocation] = useState(game.location ?? "");
+  const [innings, setInnings] = useState(String(game.innings));
+  const [notes, setNotes] = useState(game.notes ?? "");
+  const [status, setStatus] = useState(game.status);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!opponent.trim()) { toast({ title: "Opponent required", variant: "destructive" }); return; }
+    setSaving(true);
+    try {
+      const r = await fetch(`${BASE}/api/games/${game.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          opponent: opponent.trim(),
+          gameDate: new Date(gameDate).toISOString(),
+          location: location.trim() || null,
+          innings: parseInt(innings) || 6,
+          notes: notes.trim() || null,
+          status,
+        }),
+      });
+      if (!r.ok) throw new Error();
+      toast({ title: "Game updated" });
+      onSaved();
+      onClose();
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Game</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label>Opponent</Label>
+            <Input value={opponent} onChange={(e) => setOpponent(e.target.value)} placeholder="Team name" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Date & Time</Label>
+              <Input type="datetime-local" value={gameDate} onChange={(e) => setGameDate(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Innings</Label>
+              <Input type="number" min="1" max="9" value={innings} onChange={(e) => setInnings(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Location</Label>
+            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Field or address" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="upcoming">Upcoming</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Notes</Label>
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main page ───────────────────────────────────────────────────
 export default function Games() {
   const { data: games = [], isLoading } = useListGames();
   const deleteGame = useDeleteGame();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [editGame, setEditGame] = useState<Game | null>(null);
+  const [showIcal, setShowIcal] = useState(false);
 
   const upcoming = games.filter((g) => g.status === "upcoming");
   const past = games.filter((g) => g.status !== "upcoming").reverse();
@@ -53,6 +396,8 @@ export default function Games() {
       }
     );
   };
+
+  const refresh = () => qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
 
   const GameCard = ({ g }: { g: typeof games[0] }) => (
     <Card className="border-border hover:border-primary/30 transition-colors">
@@ -87,6 +432,15 @@ export default function Games() {
             </div>
           </Link>
           <div className="flex items-center gap-1 ml-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-primary"
+              onClick={(e) => { e.preventDefault(); setEditGame(g as Game); }}
+              title="Edit game"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
             <Link href={`/games/${g.id}`}>
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <ChevronRight className="h-4 w-4" />
@@ -108,17 +462,23 @@ export default function Games() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold">Schedule</h1>
           <p className="text-muted-foreground mt-1">{games.length} games this season</p>
         </div>
-        <Link href="/games/new">
-          <Button>
-            <CalendarDays className="h-4 w-4 mr-2" />
-            Add Game
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowIcal(true)}>
+            <Link2 className="h-4 w-4 mr-2" />
+            Import Calendar
           </Button>
-        </Link>
+          <Link href="/games/new">
+            <Button>
+              <CalendarDays className="h-4 w-4 mr-2" />
+              Add Game
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {isLoading ? (
@@ -132,9 +492,14 @@ export default function Games() {
           <CardContent className="flex flex-col items-center gap-3 text-center">
             <CalendarDays className="h-12 w-12 text-muted-foreground/50" />
             <p className="text-muted-foreground">No games scheduled yet.</p>
-            <Link href="/games/new">
-              <Button><CalendarDays className="h-4 w-4 mr-2" /> Add First Game</Button>
-            </Link>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowIcal(true)}>
+                <Link2 className="h-4 w-4 mr-2" /> Import Calendar
+              </Button>
+              <Link href="/games/new">
+                <Button><CalendarDays className="h-4 w-4 mr-2" /> Add First Game</Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -154,6 +519,23 @@ export default function Games() {
         </>
       )}
 
+      {/* iCal import dialog */}
+      <ICalImportDialog
+        open={showIcal}
+        onClose={() => setShowIcal(false)}
+        onImported={refresh}
+      />
+
+      {/* Edit dialog */}
+      {editGame && (
+        <EditGameDialog
+          game={editGame}
+          onClose={() => setEditGame(null)}
+          onSaved={refresh}
+        />
+      )}
+
+      {/* Delete confirm */}
       <AlertDialog open={deleteId != null} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

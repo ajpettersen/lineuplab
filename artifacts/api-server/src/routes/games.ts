@@ -8,6 +8,7 @@ import {
   UpdateGameBody,
   DeleteGameParams,
 } from "@workspace/api-zod";
+import ical from "node-ical";
 
 const router: IRouter = Router();
 
@@ -35,6 +36,71 @@ router.post("/games", async (req, res): Promise<void> => {
     })
     .returning();
   res.status(201).json(game);
+});
+
+// Parse iCal URL and return events as game candidates (no DB write)
+router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
+  const { icalUrl } = req.body;
+  if (!icalUrl || typeof icalUrl !== "string") {
+    res.status(400).json({ error: "icalUrl required" });
+    return;
+  }
+  try {
+    const events = await ical.async.fromURL(icalUrl);
+    const games: {
+      uid: string;
+      summary: string;
+      opponent: string;
+      gameDate: string;
+      location: string | null;
+    }[] = [];
+
+    for (const [uid, event] of Object.entries(events)) {
+      if (event.type !== "VEVENT") continue;
+      const e = event as ical.VEvent;
+      const start = e.start;
+      if (!start) continue;
+      const summary = e.summary ?? "vs. TBD";
+      // Try to extract opponent from summary: "vs X" / "@ X" / "v X" / just use full summary
+      const opponentMatch = summary.match(/(?:vs\.?\s*|@\s*|v\.?\s*)(.+)/i);
+      const opponent = opponentMatch ? opponentMatch[1].trim() : summary;
+      games.push({
+        uid,
+        summary,
+        opponent,
+        gameDate: new Date(start).toISOString(),
+        location: e.location ?? null,
+      });
+    }
+
+    games.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime());
+    res.json(games);
+  } catch (err) {
+    res.status(422).json({ error: "Failed to fetch or parse calendar. Check the URL and try again." });
+  }
+});
+
+// Bulk create games from iCal import (confirmed selection)
+router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
+  const { games, innings = 6 } = req.body;
+  if (!Array.isArray(games) || games.length === 0) {
+    res.status(400).json({ error: "games array required" });
+    return;
+  }
+  const inserted = await db
+    .insert(gamesTable)
+    .values(
+      games.map((g: { opponent: string; gameDate: string; location?: string | null }) => ({
+        opponent: g.opponent,
+        gameDate: g.gameDate,
+        location: g.location ?? null,
+        innings,
+        status: "upcoming" as const,
+        notes: null,
+      }))
+    )
+    .returning();
+  res.status(201).json(inserted);
 });
 
 router.get("/games/:id", async (req, res): Promise<void> => {
