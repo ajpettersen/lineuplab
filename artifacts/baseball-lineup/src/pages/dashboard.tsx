@@ -21,7 +21,8 @@ export default function Dashboard() {
   const { data: seasonStats } = useGetSeasonStats();
   const { data: playerStats = [] } = useGetPlayerStats();
 
-  const completedGames = games.filter((g) => g.status === "completed");
+  const actualGames = games.filter((g) => g.type === "game");
+  const completedGames = actualGames.filter((g) => g.status === "completed");
   const upcomingGames = games.filter((g) => g.status === "upcoming");
   const wins = completedGames.filter((g) => (g.ourScore ?? 0) > (g.opponentScore ?? 0)).length;
 
@@ -52,7 +53,7 @@ export default function Dashboard() {
             <CalendarDays className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-foreground">{games.length}</div>
+            <div className="text-3xl font-bold text-foreground">{actualGames.length}</div>
             <p className="text-xs text-muted-foreground mt-1">{completedGames.length} completed</p>
           </CardContent>
         </Card>

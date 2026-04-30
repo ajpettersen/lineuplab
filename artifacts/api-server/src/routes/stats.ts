@@ -36,7 +36,9 @@ function posGroupInnings(hist: {
 }
 
 router.get("/stats/season", async (_req, res): Promise<void> => {
-  const games = await db.select().from(gamesTable);
+  const allRows = await db.select().from(gamesTable);
+  // Only actual games count toward "Total Games" — practices and other events are excluded.
+  const games = allRows.filter((g) => g.type === "game");
   const totalGames = games.length;
   const completedGames = games.filter((g) => g.status === "completed").length;
 
