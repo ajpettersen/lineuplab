@@ -56,20 +56,22 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
     }[] = [];
 
     for (const [uid, event] of Object.entries(events)) {
-      if (event.type !== "VEVENT") continue;
+      if (!event || event.type !== "VEVENT") continue;
       const e = event as ical.VEvent;
       const start = e.start;
       if (!start) continue;
-      const summary = e.summary ?? "vs. TBD";
+      const summary = String(e.summary ?? "vs. TBD");
+      const locationRaw = e.location;
+      const location = locationRaw == null ? null : String(locationRaw);
       // Try to extract opponent from summary: "vs X" / "@ X" / "v X" / just use full summary
       const opponentMatch = summary.match(/(?:vs\.?\s*|@\s*|v\.?\s*)(.+)/i);
-      const opponent = opponentMatch ? opponentMatch[1].trim() : summary;
+      const opponent = opponentMatch ? opponentMatch[1]!.trim() : summary;
       games.push({
         uid,
         summary,
         opponent,
         gameDate: new Date(start).toISOString(),
-        location: e.location ?? null,
+        location,
       });
     }
 
@@ -92,7 +94,7 @@ router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
     .values(
       games.map((g: { opponent: string; gameDate: string; location?: string | null }) => ({
         opponent: g.opponent,
-        gameDate: g.gameDate,
+        gameDate: new Date(g.gameDate),
         location: g.location ?? null,
         innings,
         status: "upcoming" as const,

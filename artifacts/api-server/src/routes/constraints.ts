@@ -86,7 +86,7 @@ Available positions: ${positions.join(", ")}
 
 Return a JSON object (no markdown) with these fields:
 {
-  "type": one of ["player_must_play", "player_cannot_play", "player_min_field", "player_bench_first", "player_bench_last", "global_max_bench", "global_max_position", "global_min_field", "global_rotate_pitcher", "global_ensure_positions"],
+  "type": one of ["player_must_play", "player_cannot_play", "player_min_field", "player_bench_first", "player_bench_last", "global_max_bench", "global_max_position", "global_min_field", "global_rotate_pitcher", "global_ensure_positions", "global_no_bench_two_of_three"],
   "playerId": number or null (match player by name from roster, null for global rules),
   "position": string or null (one of the positions above, null if not position-specific),
   "rule": "must" | "must_not" | "min" | "max" | "on" | "off" | "first" | "last",
@@ -100,6 +100,7 @@ Examples:
 - "Max 2 innings on bench" → type: global_max_bench, rule: "max", value: 2
 - "Tyler must play shortstop" → type: player_must_play, playerId: <tyler's id>, position: "SS", rule: "must"
 - "Rotate the pitcher every inning" → type: global_rotate_pitcher, rule: "on"
+- "No one sits more than once every 3 innings" → type: global_no_bench_two_of_three, rule: "on"
 
 Return only the JSON object.`;
 

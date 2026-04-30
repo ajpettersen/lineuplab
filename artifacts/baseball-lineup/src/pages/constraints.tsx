@@ -16,6 +16,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Trash2, Plus, Sparkles, Info, Check, ShieldCheck } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -41,6 +48,7 @@ const CONSTRAINT_CATEGORY: Record<string, string> = {
   global_min_field: "global",
   global_rotate_pitcher: "global",
   global_ensure_positions: "global",
+  global_no_bench_two_of_three: "global",
   player_must_play: "player",
   player_cannot_play: "player",
   player_min_field: "player",
@@ -55,6 +63,7 @@ const TYPE_LABELS: Record<string, string> = {
   global_min_field: "Min field innings",
   global_rotate_pitcher: "Rotate pitcher",
   global_ensure_positions: "All positions covered",
+  global_no_bench_two_of_three: "No bench 2 of 3 innings",
   player_must_play: "Must play position",
   player_cannot_play: "Cannot play position",
   player_min_field: "Min field innings",
@@ -95,125 +104,244 @@ async function apiDelete(path: string) {
   await fetch(`${BASE}${path}`, { method: "DELETE" });
 }
 
+// ---- Dialog asking for a numeric value ----
+function ValuePromptDialog({
+  open,
+  title,
+  unit,
+  defaultValue,
+  min,
+  max,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  unit: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  onCancel: () => void;
+  onConfirm: (value: number) => void;
+}) {
+  const [value, setValue] = useState(defaultValue);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 py-2">
+          <div className="flex items-center gap-4">
+            <Slider
+              value={[value]}
+              min={min} max={max} step={1}
+              className="flex-1"
+              onValueChange={([v]) => setValue(v)}
+            />
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-3xl font-bold font-mono w-10 text-center">{value}</span>
+              <span className="text-sm text-muted-foreground">{unit}</span>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button onClick={() => onConfirm(value)}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---- Quick presets as UI toggles that create/remove DB constraints ----
 function GlobalPresetsSection({ constraints, onRefresh }: { constraints: Constraint[]; onRefresh: () => void }) {
   const { toast } = useToast();
+  const [valuePrompt, setValuePrompt] = useState<{
+    type: string;
+    title: string;
+    descTemplate: (v: number) => string;
+    defaultValue: number;
+  } | null>(null);
 
   const findGlobal = (type: string) => constraints.find((c) => c.type === type && c.active);
 
-  const toggle = async (type: string, rule: string, value: number | null, description: string, enabled: boolean) => {
+  // For boolean-only toggles
+  const toggleBoolean = async (type: string, description: string, enabled: boolean) => {
     const existing = constraints.find((c) => c.type === type);
     if (existing) {
-      if (enabled) {
-        // Update to active
-        await apiPatch(`/api/constraints/${existing.id}`, { active: true });
-      } else {
-        await apiPatch(`/api/constraints/${existing.id}`, { active: false });
-      }
+      await apiPatch(`/api/constraints/${existing.id}`, { active: enabled });
     } else if (enabled) {
-      await apiPost("/api/constraints", { type, rule, value, description, active: true });
+      await apiPost("/api/constraints", { type, rule: "on", value: null, description, active: true });
     }
     onRefresh();
   };
 
-  const updateValue = async (type: string, rule: string, value: number, description: string) => {
+  // For numeric toggles — opens dialog when turning on, just deactivates when turning off
+  const toggleNumeric = async (
+    type: string,
+    title: string,
+    descTemplate: (v: number) => string,
+    defaultValue: number,
+    newState: boolean
+  ) => {
     const existing = constraints.find((c) => c.type === type);
-    if (existing) {
-      await apiDelete(`/api/constraints/${existing.id}`);
+    const wasActive = !!existing?.active;
+    // Already in desired state — no-op (guards against duplicate fires)
+    if (wasActive === newState) return;
+
+    if (!newState) {
+      // Turning off — just deactivate, no dialog
+      if (existing) {
+        await apiPatch(`/api/constraints/${existing.id}`, { active: false });
+        onRefresh();
+      }
+      return;
     }
-    await apiPost("/api/constraints", { type, rule, value, description, active: true });
+    // Turning on — open dialog to ask the number
+    setValuePrompt({ type, title, descTemplate, defaultValue: existing?.value ?? defaultValue });
+  };
+
+  const handleValueConfirm = async (value: number) => {
+    if (!valuePrompt) return;
+    const { type, descTemplate } = valuePrompt;
+    const existing = constraints.find((c) => c.type === type);
+    if (existing) await apiDelete(`/api/constraints/${existing.id}`);
+    await apiPost("/api/constraints", {
+      type,
+      rule: "max",
+      value,
+      description: descTemplate(value),
+      active: true,
+    });
+    toast({ title: descTemplate(value) });
+    setValuePrompt(null);
     onRefresh();
-    toast({ title: `Updated: ${description}` });
+  };
+
+  // Edit existing numeric value
+  const editNumeric = (
+    type: string,
+    title: string,
+    descTemplate: (v: number) => string,
+    currentValue: number
+  ) => {
+    setValuePrompt({ type, title, descTemplate, defaultValue: currentValue });
   };
 
   const maxBench = findGlobal("global_max_bench");
   const maxPosition = findGlobal("global_max_position");
   const rotatePitcher = findGlobal("global_rotate_pitcher");
   const ensurePositions = findGlobal("global_ensure_positions");
+  const noBenchTwoOfThree = findGlobal("global_no_bench_two_of_three");
+
+  const benchDescTemplate = (v: number) => `Max ${v} bench innings per game`;
+  const positionDescTemplate = (v: number) => `Max ${v} innings at same position`;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-primary" />
-          Global Rules
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">Applied automatically to every lineup you generate</p>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        {/* Max bench innings */}
-        <div className="flex items-start gap-4">
-          <Switch
-            checked={!!maxBench}
-            onCheckedChange={(v) => toggle("global_max_bench", "max", maxBench?.value ?? 2, `Max ${maxBench?.value ?? 2} bench innings per game`, v)}
-          />
-          <div className="flex-1">
-            <Label className="font-medium">Max bench innings per game</Label>
-            <p className="text-xs text-muted-foreground">Limits how many innings any player can sit on the bench</p>
-            {maxBench && (
-              <div className="mt-3 flex items-center gap-3">
-                <Slider
-                  value={[maxBench.value ?? 2]}
-                  min={1} max={6} step={1}
-                  className="w-40"
-                  onValueChange={([v]) => updateValue("global_max_bench", "max", v, `Max ${v} bench innings per game`)}
-                />
-                <span className="text-sm font-mono font-bold w-8">{maxBench.value ?? 2}</span>
-                <span className="text-xs text-muted-foreground">innings</span>
-              </div>
-            )}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            Global Rules
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Applied automatically to every lineup you generate</p>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          {/* Max bench innings */}
+          <div className="flex items-start gap-4">
+            <Switch
+              checked={!!maxBench}
+              onCheckedChange={(v) => toggleNumeric("global_max_bench", "How many max bench innings?", benchDescTemplate, 2, v)}
+            />
+            <div className="flex-1">
+              <Label className="font-medium">Max bench innings per game</Label>
+              <p className="text-xs text-muted-foreground">Limits how many innings any player can sit on the bench</p>
+              {maxBench && (
+                <button
+                  onClick={() => editNumeric("global_max_bench", "How many max bench innings?", benchDescTemplate, maxBench.value ?? 2)}
+                  className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+                >
+                  {maxBench.value} innings · edit
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Max same position */}
-        <div className="flex items-start gap-4">
-          <Switch
-            checked={!!maxPosition}
-            onCheckedChange={(v) => toggle("global_max_position", "max", maxPosition?.value ?? 2, `Max ${maxPosition?.value ?? 2} innings at same position`, v)}
-          />
-          <div className="flex-1">
-            <Label className="font-medium">Max innings at the same position</Label>
-            <p className="text-xs text-muted-foreground">Prevents a player from staying at the same spot all game</p>
-            {maxPosition && (
-              <div className="mt-3 flex items-center gap-3">
-                <Slider
-                  value={[maxPosition.value ?? 2]}
-                  min={1} max={6} step={1}
-                  className="w-40"
-                  onValueChange={([v]) => updateValue("global_max_position", "max", v, `Max ${v} innings at same position`)}
-                />
-                <span className="text-sm font-mono font-bold w-8">{maxPosition.value ?? 2}</span>
-                <span className="text-xs text-muted-foreground">innings</span>
-              </div>
-            )}
+          {/* Max same position */}
+          <div className="flex items-start gap-4">
+            <Switch
+              checked={!!maxPosition}
+              onCheckedChange={(v) => toggleNumeric("global_max_position", "Max innings at same position?", positionDescTemplate, 2, v)}
+            />
+            <div className="flex-1">
+              <Label className="font-medium">Max innings at the same position</Label>
+              <p className="text-xs text-muted-foreground">Prevents a player from staying at the same spot all game</p>
+              {maxPosition && (
+                <button
+                  onClick={() => editNumeric("global_max_position", "Max innings at same position?", positionDescTemplate, maxPosition.value ?? 2)}
+                  className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+                >
+                  {maxPosition.value} innings · edit
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Ensure all positions */}
-        <div className="flex items-start gap-4">
-          <Switch
-            checked={!!ensurePositions}
-            onCheckedChange={(v) => toggle("global_ensure_positions", v ? "on" : "off", null, "All 9 positions covered each inning", v)}
-          />
-          <div className="flex-1">
-            <Label className="font-medium">All 9 positions covered each inning</Label>
-            <p className="text-xs text-muted-foreground">Every defensive position is filled every inning</p>
+          {/* No bench 2 out of 3 */}
+          <div className="flex items-start gap-4">
+            <Switch
+              checked={!!noBenchTwoOfThree}
+              onCheckedChange={(v) => toggleBoolean("global_no_bench_two_of_three", "No player benched 2 out of any 3 innings", v)}
+            />
+            <div className="flex-1">
+              <Label className="font-medium">No bench 2 out of 3 innings</Label>
+              <p className="text-xs text-muted-foreground">No player should sit on the bench more than once in any 3-inning stretch</p>
+            </div>
           </div>
-        </div>
 
-        {/* Rotate pitcher */}
-        <div className="flex items-start gap-4">
-          <Switch
-            checked={!!rotatePitcher}
-            onCheckedChange={(v) => toggle("global_rotate_pitcher", v ? "on" : "off", null, "Rotate pitcher every inning", v)}
-          />
-          <div className="flex-1">
-            <Label className="font-medium">Rotate pitcher every inning</Label>
-            <p className="text-xs text-muted-foreground">Different pitcher each inning — no pitcher goes back-to-back</p>
+          {/* Ensure all positions */}
+          <div className="flex items-start gap-4">
+            <Switch
+              checked={!!ensurePositions}
+              onCheckedChange={(v) => toggleBoolean("global_ensure_positions", "All 9 positions covered each inning", v)}
+            />
+            <div className="flex-1">
+              <Label className="font-medium">All 9 positions covered each inning</Label>
+              <p className="text-xs text-muted-foreground">Every defensive position is filled every inning</p>
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+
+          {/* Rotate pitcher */}
+          <div className="flex items-start gap-4">
+            <Switch
+              checked={!!rotatePitcher}
+              onCheckedChange={(v) => toggleBoolean("global_rotate_pitcher", "Rotate pitcher every inning", v)}
+            />
+            <div className="flex-1">
+              <Label className="font-medium">Rotate pitcher every inning</Label>
+              <p className="text-xs text-muted-foreground">Different pitcher each inning — no pitcher goes back-to-back</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {valuePrompt && (
+        <ValuePromptDialog
+          key={valuePrompt.type + valuePrompt.defaultValue}
+          open={true}
+          title={valuePrompt.title}
+          unit="innings"
+          defaultValue={valuePrompt.defaultValue}
+          min={1}
+          max={6}
+          onCancel={() => setValuePrompt(null)}
+          onConfirm={handleValueConfirm}
+        />
+      )}
+    </>
   );
 }
 

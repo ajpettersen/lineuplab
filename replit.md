@@ -40,6 +40,11 @@ A travel baseball team defensive lineup manager for coaches. Features:
 - Historical fielding import (CSV paste → aggregate innings)
 - Batting stats with AI image extraction (OpenAI vision)
 - **Lineup constraints system**: global rules + player-specific rules + AI natural language parsing
+  - Numeric global rules (max bench innings, max same position) use a popup dialog with slider when toggled on
+  - Boolean global rules (no bench 2 of 3, all positions covered, rotate pitcher) toggle directly
+  - Lineup generator enforces "no player benched 2 of 3 innings" via score boost
+- **iCal schedule import**: paste a webcal/ICS URL → preview events → confirm to import as games
+- **Editable game cards** with pencil icon for inline edit
 
 ### Database tables
 - `players` — team roster

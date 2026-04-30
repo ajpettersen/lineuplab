@@ -36,6 +36,7 @@ export function generateFairLineup(
   const maxPositionConstraint = findGlobal("global_max_position");
   const rotatePitcherConstraint = findGlobal("global_rotate_pitcher");
   const ensurePositionsConstraint = findGlobal("global_ensure_positions");
+  const noBenchTwoOfThree = !!findGlobal("global_no_bench_two_of_three");
 
   const maxPerPosition = maxPositionConstraint?.value ?? constraints.maxInningsPerPosition ?? 2;
   const maxBench = maxBenchConstraint?.value ?? constraints.maxInningsBench ?? 2;
@@ -78,11 +79,23 @@ export function generateFairLineup(
   const totalInningsPlayed = new Map<number, number>(players.map((p) => [p.id, 0]));
   // Track which positions each player has played (for must_play satisfaction)
   const positionsPlayed = new Map<number, Set<string>>(players.map((p) => [p.id, new Set()]));
+  // Track which innings each player was benched in (for no-bench-2-of-3 rule)
+  const benchedInnings = new Map<number, Set<number>>(players.map((p) => [p.id, new Set()]));
 
   const results: GeneratedEntry[] = [];
   const fieldSlotsPerInning = Math.min(9, n);
 
-  const scorePlayer = (playerId: number, inning: number, isLastInning: boolean) => {
+  // Returns true if benching this player in this inning would put them on the bench
+  // 2 or more times within any 3-inning window covering this inning
+  const wouldViolateTwoOfThree = (playerId: number, inning: number): boolean => {
+    const benched = benchedInnings.get(playerId) ?? new Set();
+    // Windows ending at `inning`: [inning-2, inning-1, inning], [inning-1, inning, inning+1], [inning, inning+1, inning+2]
+    // We only need to look backwards since future innings haven't been assigned yet.
+    // If benched in either of the previous 2 innings, benching now creates a violation in some 3-window.
+    return benched.has(inning - 1) || benched.has(inning - 2);
+  };
+
+  const scorePlayer = (playerId: number, inning: number, _isLastInning: boolean) => {
     const bench = benchCount.get(playerId) ?? 0;
     const total = totalInningsPlayed.get(playerId) ?? 0;
     // Prefer players with more bench time and less field time
@@ -92,6 +105,10 @@ export function generateFairLineup(
     if (minField != null) {
       const fieldInnings = total - bench;
       if (fieldInnings < minField) score += (minField - fieldInnings) * 15;
+    }
+    // Strong boost if benching them now would violate 2-of-3 rule
+    if (noBenchTwoOfThree && wouldViolateTwoOfThree(playerId, inning)) {
+      score += 100;
     }
     return score;
   };
@@ -171,11 +188,50 @@ export function generateFairLineup(
       totalInningsPlayed.set(player.id, (totalInningsPlayed.get(player.id) ?? 0) + 1);
     }
 
+    // Hard-enforce "no bench 2 of 3" via swap pass:
+    // For any player who would violate when benched, try to swap them onto the field
+    // by ejecting a non-violator currently in a position the violator can play.
+    if (noBenchTwoOfThree) {
+      for (const p of players) {
+        if (assignedThisInning.has(p.id)) continue;
+        if (forcedBench.has(p.id)) continue;
+        if (!wouldViolateTwoOfThree(p.id, inning)) continue;
+        // Find a swap target: a field assignment held by a non-violator that p is eligible for
+        const swapIdx = inningAssignments.findIndex((e) => {
+          if (e.position === "Bench") return false;
+          if (forcedBench.has(e.playerId)) return false;
+          if (wouldViolateTwoOfThree(e.playerId, inning)) return false;
+          if (!p.eligiblePositions.includes(e.position)) return false;
+          if (cannotPlayMap.get(p.id)?.has(e.position)) return false;
+          if (rotatePitcher && e.position === "P" && p.id === lastPitcher) return false;
+          const posCount = positionCount.get(p.id)?.get(e.position) ?? 0;
+          if (posCount >= maxPerPosition) return false;
+          return true;
+        });
+        if (swapIdx === -1) continue;
+        const swapped = inningAssignments[swapIdx]!;
+        // Roll back the displaced player's bookkeeping
+        positionCount.get(swapped.playerId)!.set(
+          swapped.position,
+          (positionCount.get(swapped.playerId)!.get(swapped.position) ?? 1) - 1
+        );
+        totalInningsPlayed.set(swapped.playerId, (totalInningsPlayed.get(swapped.playerId) ?? 1) - 1);
+        assignedThisInning.delete(swapped.playerId);
+        // Insert violator
+        inningAssignments[swapIdx] = { playerId: p.id, inning, position: swapped.position, battingOrder: null };
+        positionCount.get(p.id)!.set(swapped.position, (positionCount.get(p.id)!.get(swapped.position) ?? 0) + 1);
+        positionsPlayed.get(p.id)!.add(swapped.position);
+        totalInningsPlayed.set(p.id, (totalInningsPlayed.get(p.id) ?? 0) + 1);
+        assignedThisInning.add(p.id);
+      }
+    }
+
     // Assign bench
     for (const p of players) {
       if (assignedThisInning.has(p.id)) continue;
       inningAssignments.push({ playerId: p.id, inning, position: "Bench", battingOrder: null });
       benchCount.set(p.id, (benchCount.get(p.id) ?? 0) + 1);
+      benchedInnings.get(p.id)!.add(inning);
     }
 
     results.push(...inningAssignments);
