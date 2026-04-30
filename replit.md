@@ -74,14 +74,15 @@ A travel baseball team defensive lineup manager for coaches. Features:
   paths funnel into a single `applyMove(sourceEntryId, target)` so the rules are
   identical:
     - field → empty field cell: source moves there.
-    - field → occupied field cell: source takes the position; the displaced
-      player drops to the BOTTOM of that inning's bench column. (Source's old
-      position becomes empty.)
+    - field → occupied field cell: SWAP positions; both players stay on the
+      field, they just exchange roles.
     - field → bench area (`bench-{inning}` drop zone): source goes to bench
       bottom; old field cell becomes empty.
     - field → specific bench tile: SWAP (preserves field occupancy).
     - bench → empty field: source moves there.
-    - bench → occupied field: source takes position; target → bench bottom.
+    - bench → occupied field: source takes position; target goes to bench
+      bottom (this is the only "displace to bench" case left, because there's
+      no field slot to give the target in exchange).
     - bench → bench area or bench tile: no-op.
   Cross-inning attempts show a destructive "same inning" toast and don't apply.
   Empty field cells render as dashed `+` drop hints only during an active drag

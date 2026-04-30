@@ -184,13 +184,13 @@ export default function GameDetail() {
    * Apply a player move within an inning. Used by both click-to-swap and drag-and-drop.
    * Returns true if the lineup was changed, false if the move was a no-op or rejected.
    *
-   * Semantics (preserved from the original click-to-swap behavior):
+   * Semantics:
    *   field  -> empty field cell : move source there
-   *   field  -> field player     : source takes target's pos; target drops to BOTTOM of bench
-   *   field  -> bench player     : swap (source onto bench, bench player onto field)
+   *   field  -> field player     : SWAP positions (both stay on the field)
+   *   field  -> bench player     : SWAP (source onto bench, bench player onto field)
    *   field  -> bench area       : source goes to bottom of bench
    *   bench  -> empty field cell : move bench player to that field pos
-   *   bench  -> field player     : source takes target's pos; target drops to bottom of bench
+   *   bench  -> field player     : source takes target's pos; target goes to bench bottom
    *   bench  -> bench player     : no-op
    *   bench  -> bench area       : no-op
    */
@@ -225,14 +225,24 @@ export default function GameDetail() {
           if (e.id === targetEntry.id) return { ...e, position: sourceEntry.position };
           return e;
         });
-      } else {
-        // Source takes target's field position; displaced target drops to BOTTOM of bench.
+      } else if (sourceEntry.position === "Bench") {
+        // Bench source onto field player → source takes the field pos,
+        // target moves to the bottom of the bench.
         next = current
           .filter((e) => e.id !== targetEntry.id)
           .map((e) =>
             e.id === sourceEntry.id ? { ...e, position: targetEntry.position } : e,
           )
           .concat([{ ...targetEntry, position: "Bench" }]);
+      } else {
+        // Field source onto field target → straight swap; both stay on the field.
+        const sourcePos = sourceEntry.position;
+        const targetPos = targetEntry.position;
+        next = current.map((e) => {
+          if (e.id === sourceEntry.id) return { ...e, position: targetPos };
+          if (e.id === targetEntry.id) return { ...e, position: sourcePos };
+          return e;
+        });
       }
     } else if (target.kind === "emptyField") {
       next = current.map((e) =>
