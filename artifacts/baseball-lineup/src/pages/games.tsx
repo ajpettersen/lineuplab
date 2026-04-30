@@ -449,9 +449,21 @@ export default function Games() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [editGame, setEditGame] = useState<Game | null>(null);
   const [showIcal, setShowIcal] = useState(false);
+  const [filter, setFilter] = useState<"all" | "game" | "practice" | "other">("all");
 
-  const upcoming = games.filter((g) => g.status === "upcoming");
-  const past = games.filter((g) => g.status !== "upcoming").reverse();
+  const counts = games.reduce(
+    (acc, g) => {
+      const k = (g.type ?? "game") as "game" | "practice" | "other";
+      acc[k] += 1;
+      acc.all += 1;
+      return acc;
+    },
+    { all: 0, game: 0, practice: 0, other: 0 },
+  );
+
+  const filtered = filter === "all" ? games : games.filter((g) => (g.type ?? "game") === filter);
+  const upcoming = filtered.filter((g) => g.status === "upcoming");
+  const past = filtered.filter((g) => g.status !== "upcoming").reverse();
 
   const handleDelete = () => {
     if (!deleteId) return;
@@ -538,21 +550,9 @@ export default function Games() {
         <div>
           <h1 className="text-3xl font-bold">Schedule</h1>
           <p className="text-muted-foreground mt-1">
-            {(() => {
-              const counts = games.reduce(
-                (acc, g) => {
-                  const k = (g.type ?? "game") as "game" | "practice" | "other";
-                  acc[k] += 1;
-                  return acc;
-                },
-                { game: 0, practice: 0, other: 0 },
-              );
-              const parts: string[] = [];
-              if (counts.game) parts.push(`${counts.game} game${counts.game !== 1 ? "s" : ""}`);
-              if (counts.practice) parts.push(`${counts.practice} practice${counts.practice !== 1 ? "s" : ""}`);
-              if (counts.other) parts.push(`${counts.other} event${counts.other !== 1 ? "s" : ""}`);
-              return parts.length === 0 ? "No items scheduled" : `${parts.join(" · ")} this season`;
-            })()}
+            {counts.all === 0
+              ? "Nothing scheduled yet"
+              : `${counts.all} item${counts.all !== 1 ? "s" : ""} this season`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -568,6 +568,37 @@ export default function Games() {
           </Link>
         </div>
       </div>
+
+      {games.length > 0 && !isLoading && (
+        <div className="flex flex-wrap gap-1.5 p-1 rounded-lg bg-muted w-fit">
+          {([
+            { key: "all" as const, label: "All", count: counts.all },
+            { key: "game" as const, label: "Games", count: counts.game },
+            { key: "practice" as const, label: "Practices", count: counts.practice },
+            { key: "other" as const, label: "Events", count: counts.other },
+          ]).map((opt) => {
+            const active = filter === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setFilter(opt.key)}
+                disabled={opt.count === 0 && opt.key !== "all"}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+                }`}
+              >
+                {opt.label}
+                <span className={`text-xs tabular-nums ${active ? "text-muted-foreground" : ""}`}>
+                  ({opt.count})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex flex-col gap-3">
@@ -590,6 +621,16 @@ export default function Games() {
             </div>
           </CardContent>
         </Card>
+      ) : filtered.length === 0 ? (
+        <Card className="py-10">
+          <CardContent className="flex flex-col items-center gap-2 text-center">
+            <CalendarDays className="h-10 w-10 text-muted-foreground/50" />
+            <p className="text-muted-foreground">
+              No {filter === "game" ? "games" : filter === "practice" ? "practices" : "events"} on the schedule.
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setFilter("all")}>Show all items</Button>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {upcoming.length > 0 && (
@@ -600,7 +641,9 @@ export default function Games() {
           )}
           {past.length > 0 && (
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Past Games</h2>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                {filter === "game" ? "Past Games" : "Past"}
+              </h2>
               {past.map((g) => <GameCard key={g.id} g={g} />)}
             </div>
           )}
