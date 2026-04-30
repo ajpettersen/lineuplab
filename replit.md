@@ -66,24 +66,46 @@ A travel baseball team defensive lineup manager for coaches. Features:
   Note: after a fresh deploy that adds the `games.type` column, existing rows default to
   `game`; run a one-shot reclassification (same regex on opponent strings) to backfill.
 - **Editable game cards** with pencil icon for inline edit
-- **Inline lineup editing + copy to Sheets** (Game Detail page): players in any
-  saved/preview lineup can be moved by tap-to-tap. Tap a cell to select it (ring
-  around the player), then tap another cell in the SAME inning. The selected player
-  takes the target position; if it was occupied by another field player, that player
-  drops to the BOTTOM of the same inning's bench so the coach can reassign them
-  later. (The source's old position becomes empty.) Tap an empty position cell
-  (rendered as a dashed `+` while a move is pending) to drop the selected player
-  there. A field-vs-bench tap acts as a normal swap (bench player onto field, field
-  player to bench). Bench-vs-bench is a no-op. Cross-inning taps show a toast and
-  re-anchor the selection without applying the edit. Local edits live in `editedLineup` state and
-  surface an amber "Unsaved changes" banner with Save Changes / Discard. Display
-  precedence is `previewLineup ?? editedLineup ?? lineup`. Generating a new lineup
-  while edits are pending prompts a confirm() dialog before discarding them.
-  A "Copy" button in the lineup card builds a TSV (header `Inning\tP\tC\t1B\t2B\t3B\tSS\tLF\tCF\tRF\tBench`,
-  6 inning rows, full names, multi-bench comma-joined) and writes it to the
-  clipboard via `navigator.clipboard.writeText` with a hidden-textarea +
-  `execCommand('copy')` fallback for non-secure contexts. The TSV pastes directly
-  into Google Sheets / Excel.
+- **Inline lineup editing + drag-and-drop + copy to Sheets** (Game Detail page):
+  every player in any saved/preview lineup is rendered as its own draggable tile
+  per inning. Coaches can either DRAG a tile (powered by `@dnd-kit/core`,
+  PointerSensor distance:5, TouchSensor delay:150 for touch) onto another tile in
+  the same inning, OR fall back to TAP-TO-MOVE (tap to select → tap target). Both
+  paths funnel into a single `applyMove(sourceEntryId, target)` so the rules are
+  identical:
+    - field → empty field cell: source moves there.
+    - field → occupied field cell: source takes the position; the displaced
+      player drops to the BOTTOM of that inning's bench column. (Source's old
+      position becomes empty.)
+    - field → bench area (`bench-{inning}` drop zone): source goes to bench
+      bottom; old field cell becomes empty.
+    - field → specific bench tile: SWAP (preserves field occupancy).
+    - bench → empty field: source moves there.
+    - bench → occupied field: source takes position; target → bench bottom.
+    - bench → bench area or bench tile: no-op.
+  Cross-inning attempts show a destructive "same inning" toast and don't apply.
+  Empty field cells render as dashed `+` drop hints only during an active drag
+  or pending tap-select. Local edits live in `editedLineup` state and surface an
+  amber "Unsaved changes" banner with Save Changes / Discard. Display precedence:
+  `previewLineup ?? editedLineup ?? lineup`. Generating a new lineup while edits
+  are pending prompts a confirm() dialog. A "Copy" button builds a TSV (header
+  `Inning\tP\tC\t1B\t2B\t3B\tSS\tLF\tCF\tRF\tBench`, full names, multi-bench
+  comma-joined) and writes it via `navigator.clipboard.writeText` with a
+  hidden-textarea + `execCommand('copy')` fallback for non-secure contexts.
+  Important backend invariant: `GET /api/games/:id/lineup` and the SELECT after
+  `POST /api/games/:id/lineup/save` order by `(inning, position, id ASC)` so the
+  insertion order of multiple bench rows in the same inning survives reload —
+  this is what preserves "displace to bottom of bench" across saves.
+- **Per-game Innings by Position tally** (Game Detail page, below the lineup
+  card): a second card titled "Innings by Position" lists every active player
+  in the displayed lineup with four colored count chips — Pitching, Infield
+  ({C,1B,2B,3B,SS}), Outfield ({LF,CF,RF}), Bench — and a Total column equal
+  to the game's innings. Updates live as the coach edits/previews/saves. Counts
+  are deduped per (player, inning) so totals can never exceed the game's innings
+  even with malformed data. Testids: `card-tally`, `tally-row-{playerId}`,
+  `tally-{playerId}-pitching|infield|outfield|bench`.
+- **Stat exclusions**: the dashboard "Total Games" stat counts only rows with
+  `games.type === "game"`, excluding practices and other calendar events.
 
 ### Database tables
 - `players` — team roster

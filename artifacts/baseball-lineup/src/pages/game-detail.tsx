@@ -1,5 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRoute, Link } from "wouter";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import {
   useGetGame,
   useGetGameLineup,
@@ -31,8 +43,17 @@ import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X 
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
-const POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "Bench"];
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
+const OUTFIELD = new Set(["LF", "CF", "RF"]);
+
+type Category = "Pitching" | "Infield" | "Outfield" | "Bench";
+function categoryFor(pos: string): Category {
+  if (pos === "P") return "Pitching";
+  if (INFIELD.has(pos)) return "Infield";
+  if (OUTFIELD.has(pos)) return "Outfield";
+  return "Bench";
+}
 
 function positionColor(pos: string) {
   const colors: Record<string, string> = {
@@ -76,6 +97,16 @@ export default function GameDetail() {
   const [completeOpen, setCompleteOpen] = useState(false);
   const [ourScore, setOurScore] = useState("");
   const [opponentScore, setOpponentScore] = useState("");
+  // Drag-and-drop state: which entry is currently being dragged + its inning,
+  // so droppable cells in the same inning can highlight as valid drop targets.
+  const [activeDrag, setActiveDrag] = useState<{ entryId: number; inning: number } | null>(null);
+  const sensors = useSensors(
+    // Distance constraint lets a click pass through to the underlying button
+    // (so tap-to-select still works) while a small movement triggers a drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Touch needs a hold delay so the page can still scroll vertically.
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+  );
 
   const openGenerate = () => {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
@@ -149,57 +180,53 @@ export default function GameDetail() {
     );
   };
 
-  // Tap a player → tap another cell in the same inning. The selected player takes the target
-  // position; if it was occupied (by a field player), the previous occupant drops to the bottom
-  // of the bench so they can be reassigned later. Field ↔ bench taps act as a normal swap.
-  // Tap an empty cell after selecting a player → move that player there.
-  const handleCellClick = (target: { entryId?: number; inning: number; position: string }) => {
-    const current = previewLineup ?? editedLineup ?? lineup;
+  /**
+   * Apply a player move within an inning. Used by both click-to-swap and drag-and-drop.
+   * Returns true if the lineup was changed, false if the move was a no-op or rejected.
+   *
+   * Semantics (preserved from the original click-to-swap behavior):
+   *   field  -> empty field cell : move source there
+   *   field  -> field player     : source takes target's pos; target drops to BOTTOM of bench
+   *   field  -> bench player     : swap (source onto bench, bench player onto field)
+   *   field  -> bench area       : source goes to bottom of bench
+   *   bench  -> empty field cell : move bench player to that field pos
+   *   bench  -> field player     : source takes target's pos; target drops to bottom of bench
+   *   bench  -> bench player     : no-op
+   *   bench  -> bench area       : no-op
+   */
+  type MoveTarget =
+    | { kind: "tile"; entryId: number; inning: number; position: string }
+    | { kind: "emptyField"; inning: number; position: string }
+    | { kind: "benchArea"; inning: number };
 
-    // Nothing selected yet: only player cells select; empty cells are no-ops.
-    if (selectedEntryId == null) {
-      if (target.entryId != null) setSelectedEntryId(target.entryId);
-      return;
-    }
-    // Tapped the same cell twice — clear selection.
-    if (target.entryId === selectedEntryId) {
-      setSelectedEntryId(null);
-      return;
-    }
-    const sourceEntry = current.find((e) => e.id === selectedEntryId);
-    if (!sourceEntry) {
-      setSelectedEntryId(null);
-      return;
-    }
+  const applyMove = (sourceEntryId: number, target: MoveTarget): boolean => {
+    const current = previewLineup ?? editedLineup ?? lineup;
+    const sourceEntry = current.find((e) => e.id === sourceEntryId);
+    if (!sourceEntry) return false;
     if (sourceEntry.inning !== target.inning) {
       toast({
         title: "Pick a cell in the same inning",
         description: "Players can only be moved within the same inning.",
         variant: "destructive",
       });
-      // Re-anchor selection on the new player if they tapped one
-      setSelectedEntryId(target.entryId ?? null);
-      return;
+      return false;
     }
 
     let next: typeof current;
-    if (target.entryId != null) {
-      const targetEntry = current.find((e) => e.id === target.entryId)!;
-      // Bench-to-bench is meaningless — just clear selection.
-      if (sourceEntry.position === "Bench" && targetEntry.position === "Bench") {
-        setSelectedEntryId(null);
-        return;
-      }
+    if (target.kind === "tile") {
+      if (target.entryId === sourceEntry.id) return false;
+      const targetEntry = current.find((e) => e.id === target.entryId);
+      if (!targetEntry) return false;
+      if (sourceEntry.position === "Bench" && targetEntry.position === "Bench") return false;
       if (targetEntry.position === "Bench") {
-        // Source (field) -> bench player. Treat as a swap so the bench player comes onto the field.
+        // Field source onto bench player → swap (preserve field slot occupancy).
         next = current.map((e) => {
           if (e.id === sourceEntry.id) return { ...e, position: "Bench" };
           if (e.id === targetEntry.id) return { ...e, position: sourceEntry.position };
           return e;
         });
       } else {
-        // Source takes target's field position; the displaced target drops to the BOTTOM of the bench
-        // for the same inning (re-inserted at the end of the array so it renders last).
+        // Source takes target's field position; displaced target drops to BOTTOM of bench.
         next = current
           .filter((e) => e.id !== targetEntry.id)
           .map((e) =>
@@ -207,16 +234,70 @@ export default function GameDetail() {
           )
           .concat([{ ...targetEntry, position: "Bench" }]);
       }
-    } else {
-      // Move source player into an empty position
+    } else if (target.kind === "emptyField") {
       next = current.map((e) =>
-        e.id === sourceEntry.id ? { ...e, position: target.position } : e
+        e.id === sourceEntry.id ? { ...e, position: target.position } : e,
       );
+    } else {
+      // benchArea: send source to bottom of bench (no-op if already on bench).
+      if (sourceEntry.position === "Bench") return false;
+      next = current
+        .filter((e) => e.id !== sourceEntry.id)
+        .concat([{ ...sourceEntry, position: "Bench" }]);
     }
 
     if (previewLineup) setPreviewLineup(next);
     else setEditedLineup(next);
+    return true;
+  };
+
+  // Tap-to-select fallback (kept alongside drag-and-drop for accessibility / quick taps).
+  const handleCellClick = (target: { entryId?: number; inning: number; position: string }) => {
+    if (selectedEntryId == null) {
+      if (target.entryId != null) setSelectedEntryId(target.entryId);
+      return;
+    }
+    if (target.entryId === selectedEntryId) {
+      setSelectedEntryId(null);
+      return;
+    }
+    const moveTarget: MoveTarget =
+      target.entryId != null
+        ? { kind: "tile", entryId: target.entryId, inning: target.inning, position: target.position }
+        : { kind: "emptyField", inning: target.inning, position: target.position };
+    const ok = applyMove(selectedEntryId, moveTarget);
+    if (!ok && target.entryId != null) {
+      // Re-anchor selection on the freshly tapped player when the move was rejected
+      // (e.g. cross-inning) — matches the previous behavior.
+      setSelectedEntryId(target.entryId);
+    } else {
+      setSelectedEntryId(null);
+    }
+  };
+
+  const handleDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    if (!id.startsWith("player-")) return;
+    const entryId = parseInt(id.slice("player-".length), 10);
+    const current = previewLineup ?? editedLineup ?? lineup;
+    const entry = current.find((x) => x.id === entryId);
+    if (entry) setActiveDrag({ entryId, inning: entry.inning });
+  };
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setActiveDrag(null);
     setSelectedEntryId(null);
+    if (!e.over) return;
+    const sourceId = String(e.active.id);
+    if (!sourceId.startsWith("player-")) return;
+    const sourceEntryId = parseInt(sourceId.slice("player-".length), 10);
+    const target = e.over.data.current as MoveTarget | undefined;
+    if (!target) return;
+    applyMove(sourceEntryId, target);
+  };
+
+  const handleDragCancel = () => {
+    setActiveDrag(null);
   };
 
   const handleCopyLineup = async () => {
@@ -299,21 +380,13 @@ export default function GameDetail() {
     );
   };
 
-  // Organize lineup into inning -> position map
   const innings = game?.innings ?? 6;
-  const lineupByInning: Record<number, Record<string, string>> = {};
-  for (let i = 1; i <= innings; i++) {
-    lineupByInning[i] = {};
-  }
   const displayLineup = previewLineup ?? editedLineup ?? lineup;
   // Map (inning, position) -> entry, so cells know their entry id for swap.
+  // Bench rows are NOT included here — bench is rendered as its own list.
   const cellByInningPos: Record<number, Record<string, typeof displayLineup[number]>> = {};
   for (const entry of displayLineup) {
-    if (!lineupByInning[entry.inning]) lineupByInning[entry.inning] = {};
-    lineupByInning[entry.inning][entry.position] = entry.playerName;
     if (!cellByInningPos[entry.inning]) cellByInningPos[entry.inning] = {};
-    // For non-bench positions there's at most one entry; for bench we render
-    // the multi-player path separately so this single-cell map is fine.
     if (entry.position !== "Bench") {
       cellByInningPos[entry.inning][entry.position] = entry;
     }
@@ -321,6 +394,33 @@ export default function GameDetail() {
   const selectedEntry = selectedEntryId != null
     ? displayLineup.find((e) => e.id === selectedEntryId)
     : undefined;
+
+  const draggedEntry = activeDrag != null
+    ? displayLineup.find((e) => e.id === activeDrag.entryId)
+    : undefined;
+
+  // Per-player innings count by category, for the "Innings by Position" tally below.
+  // Counted at most once per (player, inning) so totals never exceed the game's
+  // innings even if upstream data accidentally lists a player twice in one inning.
+  const tallyRows = useMemo(() => {
+    const map = new Map<
+      number,
+      { playerId: number; playerName: string; Pitching: number; Infield: number; Outfield: number; Bench: number }
+    >();
+    const seen = new Set<string>();
+    for (const e of displayLineup) {
+      const key = `${e.playerId}:${e.inning}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let row = map.get(e.playerId);
+      if (!row) {
+        row = { playerId: e.playerId, playerName: e.playerName, Pitching: 0, Infield: 0, Outfield: 0, Bench: 0 };
+        map.set(e.playerId, row);
+      }
+      row[categoryFor(e.position)] += 1;
+    }
+    return Array.from(map.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
+  }, [displayLineup]);
 
   if (gameLoading) {
     return (
@@ -476,91 +576,153 @@ export default function GameDetail() {
               </Button>
             </div>
           ) : (
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="text-left py-2 pr-3 text-muted-foreground font-medium text-xs w-16">Inning</th>
+                      {FIELD_POSITIONS.map((pos) => (
+                        <th key={pos} className="text-center py-2 px-1 text-muted-foreground font-medium text-xs w-20">{pos}</th>
+                      ))}
+                      <th className="text-center py-2 px-1 text-muted-foreground font-medium text-xs w-24">Bench</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => {
+                      const isHotInning =
+                        selectedEntry?.inning === inning || activeDrag?.inning === inning;
+                      const benchEntries = displayLineup.filter(
+                        (e) => e.inning === inning && e.position === "Bench",
+                      );
+                      return (
+                        <tr key={inning} className="border-t border-border/50">
+                          <td className="py-2 pr-3 font-semibold text-muted-foreground">{inning}</td>
+                          {FIELD_POSITIONS.map((pos) => {
+                            const entry = cellByInningPos[inning]?.[pos];
+                            return (
+                              <td key={pos} className="py-1.5 px-1 text-center">
+                                <FieldCell
+                                  inning={inning}
+                                  position={pos}
+                                  entry={entry}
+                                  selectedEntryId={selectedEntryId}
+                                  isHotInning={isHotInning}
+                                  draggedEntryId={activeDrag?.entryId ?? null}
+                                  onTileClick={(id) =>
+                                    handleCellClick({ entryId: id, inning, position: pos })
+                                  }
+                                  onEmptyClick={() =>
+                                    handleCellClick({ inning, position: pos })
+                                  }
+                                />
+                              </td>
+                            );
+                          })}
+                          <td className="py-1.5 px-1 text-center align-top">
+                            <BenchArea
+                              inning={inning}
+                              entries={benchEntries}
+                              selectedEntryId={selectedEntryId}
+                              isHotInning={isHotInning}
+                              draggedEntryId={activeDrag?.entryId ?? null}
+                              onTileClick={(id) =>
+                                handleCellClick({ entryId: id, inning, position: "Bench" })
+                              }
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <DragOverlay dropAnimation={null}>
+                {draggedEntry ? (
+                  <div
+                    className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${positionColor(draggedEntry.position)} shadow-lg ring-2 ring-primary cursor-grabbing`}
+                  >
+                    {draggedEntry.playerName.split(" ")[0]}
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Innings by Position tally */}
+      {displayLineup.length > 0 && (
+        <Card data-testid="card-tally">
+          <CardHeader>
+            <CardTitle className="text-base">Innings by Position</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr>
-                    <th className="text-left py-2 pr-3 text-muted-foreground font-medium text-xs w-16">Inning</th>
-                    {FIELD_POSITIONS.map((pos) => (
-                      <th key={pos} className="text-center py-2 px-1 text-muted-foreground font-medium text-xs w-20">{pos}</th>
-                    ))}
-                    <th className="text-center py-2 px-1 text-muted-foreground font-medium text-xs w-20">Bench</th>
+                  <tr className="text-muted-foreground text-xs">
+                    <th className="text-left py-2 pr-3 font-medium">Player</th>
+                    <th className="text-center py-2 px-2 font-medium">Pitching</th>
+                    <th className="text-center py-2 px-2 font-medium">Infield</th>
+                    <th className="text-center py-2 px-2 font-medium">Outfield</th>
+                    <th className="text-center py-2 px-2 font-medium">Bench</th>
+                    <th className="text-center py-2 pl-2 font-medium">Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => {
-                    const isSwapInning = selectedEntry?.inning === inning;
+                  {tallyRows.map((row) => {
+                    const total = row.Pitching + row.Infield + row.Outfield + row.Bench;
                     return (
-                      <tr key={inning} className="border-t border-border/50">
-                        <td className="py-2 pr-3 font-semibold text-muted-foreground">{inning}</td>
-                        {FIELD_POSITIONS.map((pos) => {
-                          const entry = cellByInningPos[inning]?.[pos];
-                          const isSelected = entry?.id === selectedEntryId;
-                          // Empty cells become valid drop targets only while swapping in this inning
-                          const isEmptyDropTarget = !entry && isSwapInning;
-                          const baseClasses = "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap min-w-[2.5rem] transition-all";
-                          const ringClasses = isSelected
-                            ? "ring-2 ring-primary ring-offset-1"
-                            : isSwapInning && entry
-                              ? "ring-1 ring-primary/40 hover:ring-primary"
-                              : "";
-                          return (
-                            <td key={pos} className="py-1.5 px-1 text-center">
-                              {entry ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleCellClick({ entryId: entry.id, inning, position: pos })}
-                                  className={`${baseClasses} ${positionColor(pos)} ${ringClasses} cursor-pointer hover:opacity-90`}
-                                  data-testid={`cell-${inning}-${pos}`}
-                                  data-entry-id={entry.id}
-                                  data-selected={isSelected ? "true" : "false"}
-                                  title={`${entry.playerName} — tap to move`}
-                                >
-                                  {entry.playerName.split(" ")[0]}
-                                </button>
-                              ) : isEmptyDropTarget ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleCellClick({ inning, position: pos })}
-                                  className="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap min-w-[2.5rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
-                                  data-testid={`cell-${inning}-${pos}-empty`}
-                                  title={`Move here`}
-                                >
-                                  +
-                                </button>
-                              ) : (
-                                <span className="text-muted-foreground/40 text-xs">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="py-1.5 px-1 text-center">
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {displayLineup
-                              .filter((e) => e.inning === inning && e.position === "Bench")
-                              .map((e) => {
-                                const isSelected = e.id === selectedEntryId;
-                                const ringClasses = isSelected
-                                  ? "ring-2 ring-primary ring-offset-1"
-                                  : isSwapInning
-                                    ? "ring-1 ring-primary/40 hover:ring-primary"
-                                    : "";
-                                return (
-                                  <button
-                                    key={e.id}
-                                    type="button"
-                                    onClick={() => handleCellClick({ entryId: e.id, inning, position: "Bench" })}
-                                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600 ${ringClasses} cursor-pointer hover:opacity-90`}
-                                    data-testid={`cell-${inning}-Bench-${e.id}`}
-                                    data-entry-id={e.id}
-                                    data-selected={isSelected ? "true" : "false"}
-                                    title={`${e.playerName} — tap to move`}
-                                  >
-                                    {e.playerName.split(" ")[0]}
-                                  </button>
-                                );
-                              })}
-                          </div>
+                      <tr
+                        key={row.playerId}
+                        className="border-t border-border/50"
+                        data-testid={`tally-row-${row.playerId}`}
+                      >
+                        <td className="py-1.5 pr-3 font-medium">{row.playerName}</td>
+                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-pitching`}>
+                          {row.Pitching > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-xs font-semibold">
+                              {row.Pitching}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-infield`}>
+                          {row.Infield > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">
+                              {row.Infield}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-outfield`}>
+                          {row.Outfield > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-semibold">
+                              {row.Outfield}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-bench`}>
+                          {row.Bench > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-semibold">
+                              {row.Bench}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className="text-center py-1.5 pl-2 font-semibold text-muted-foreground">
+                          {total}
                         </td>
                       </tr>
                     );
@@ -568,9 +730,12 @@ export default function GameDetail() {
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Pitching: P · Infield: C, 1B, 2B, 3B, SS · Outfield: LF, CF, RF
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Generate Dialog */}
       <Dialog open={generateOpen} onOpenChange={(o) => !o && setGenerateOpen(false)}>
@@ -688,6 +853,176 @@ export default function GameDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Drag-and-drop sub-components ─────────────────────────────────────────────
+
+type Entry = {
+  id: number;
+  playerId: number;
+  playerName: string;
+  inning: number;
+  position: string;
+};
+
+interface PlayerTileProps {
+  entry: Entry;
+  positionForColor: string;
+  isSelected: boolean;
+  isHotInning: boolean;
+  isBeingDragged: boolean;
+  onClick: (entryId: number) => void;
+  testId: string;
+}
+
+/** Draggable colored chip representing a single player in a lineup cell. */
+function PlayerTile({
+  entry,
+  positionForColor,
+  isSelected,
+  isHotInning,
+  isBeingDragged,
+  onClick,
+  testId,
+}: PlayerTileProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `player-${entry.id}`,
+  });
+  const ringClasses = isSelected
+    ? "ring-2 ring-primary ring-offset-1"
+    : isHotInning
+      ? "ring-1 ring-primary/40"
+      : "";
+  // Hide the original tile while it's flying around in the DragOverlay so we
+  // don't see two copies of the same chip.
+  const hideOriginal = isDragging || isBeingDragged;
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={() => onClick(entry.id)}
+      className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-all ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} touch-none cursor-grab active:cursor-grabbing hover:opacity-90`}
+      data-testid={testId}
+      data-entry-id={entry.id}
+      data-selected={isSelected ? "true" : "false"}
+      title={`${entry.playerName} — drag to move (or tap to select)`}
+      {...listeners}
+      {...attributes}
+    >
+      {entry.playerName.split(" ")[0]}
+    </button>
+  );
+}
+
+interface FieldCellProps {
+  inning: number;
+  position: string;
+  entry: Entry | undefined;
+  selectedEntryId: number | null;
+  isHotInning: boolean;
+  draggedEntryId: number | null;
+  onTileClick: (entryId: number) => void;
+  onEmptyClick: () => void;
+}
+
+/** A single non-bench position cell. Always droppable; renders a tile if filled. */
+function FieldCell({
+  inning,
+  position,
+  entry,
+  selectedEntryId,
+  isHotInning,
+  draggedEntryId,
+  onTileClick,
+  onEmptyClick,
+}: FieldCellProps) {
+  const dropId = `field-${inning}-${position}`;
+  const dropData = entry
+    ? { kind: "tile" as const, entryId: entry.id, inning, position }
+    : { kind: "emptyField" as const, inning, position };
+  const { isOver, setNodeRef } = useDroppable({ id: dropId, data: dropData });
+  const showEmptyHint = !entry && (isHotInning || isOver);
+  const overRing = isOver && isHotInning ? "ring-2 ring-primary ring-offset-1 bg-primary/5" : "";
+  return (
+    <div
+      ref={setNodeRef}
+      className={`min-h-[2.25rem] flex items-center justify-center rounded transition-colors ${overRing}`}
+    >
+      {entry ? (
+        <PlayerTile
+          entry={entry}
+          positionForColor={position}
+          isSelected={entry.id === selectedEntryId}
+          isHotInning={isHotInning}
+          isBeingDragged={entry.id === draggedEntryId}
+          onClick={onTileClick}
+          testId={`cell-${inning}-${position}`}
+        />
+      ) : showEmptyHint ? (
+        <button
+          type="button"
+          onClick={onEmptyClick}
+          className="inline-flex items-center justify-center px-2 py-1 rounded text-xs font-medium whitespace-nowrap min-w-[3rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
+          data-testid={`cell-${inning}-${position}-empty`}
+          title="Drop or tap to move here"
+        >
+          +
+        </button>
+      ) : (
+        <span className="text-muted-foreground/40 text-xs">—</span>
+      )}
+    </div>
+  );
+}
+
+interface BenchAreaProps {
+  inning: number;
+  entries: Entry[];
+  selectedEntryId: number | null;
+  isHotInning: boolean;
+  draggedEntryId: number | null;
+  onTileClick: (entryId: number) => void;
+}
+
+/** Bench column for an inning. The whole area is one big drop zone. */
+function BenchArea({
+  inning,
+  entries,
+  selectedEntryId,
+  isHotInning,
+  draggedEntryId,
+  onTileClick,
+}: BenchAreaProps) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `bench-${inning}`,
+    data: { kind: "benchArea" as const, inning },
+  });
+  const overRing = isOver && isHotInning ? "ring-2 ring-primary bg-primary/5" : "";
+  return (
+    <div
+      ref={setNodeRef}
+      className={`min-h-[2.25rem] rounded transition-colors px-1 py-1 ${overRing} ${isHotInning && entries.length === 0 ? "border border-dashed border-primary/40" : ""}`}
+      data-testid={`bench-${inning}`}
+    >
+      <div className="flex flex-wrap gap-1 justify-center">
+        {entries.map((e) => (
+          <PlayerTile
+            key={e.id}
+            entry={e}
+            positionForColor="Bench"
+            isSelected={e.id === selectedEntryId}
+            isHotInning={isHotInning}
+            isBeingDragged={e.id === draggedEntryId}
+            onClick={onTileClick}
+            testId={`cell-${inning}-Bench-${e.id}`}
+          />
+        ))}
+        {isHotInning && entries.length === 0 && (
+          <span className="text-xs text-primary/70">drop on bench</span>
+        )}
+      </div>
     </div>
   );
 }

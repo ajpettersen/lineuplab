@@ -39,7 +39,10 @@ router.get("/games/:id/lineup", async (req, res): Promise<void> => {
     .from(lineupEntriesTable)
     .innerJoin(playersTable, eq(lineupEntriesTable.playerId, playersTable.id))
     .where(eq(lineupEntriesTable.gameId, params.data.id))
-    .orderBy(lineupEntriesTable.inning, lineupEntriesTable.position);
+    // Tie-break by `id` so multiple "Bench" rows for the same inning are returned
+    // in insertion order — required for the "displace to bottom of bench" UX to
+    // survive a reload (the displaced entry is the most recently inserted = highest id).
+    .orderBy(lineupEntriesTable.inning, lineupEntriesTable.position, lineupEntriesTable.id);
   res.json(entries);
 });
 
@@ -156,7 +159,7 @@ router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
     .from(lineupEntriesTable)
     .innerJoin(playersTable, eq(lineupEntriesTable.playerId, playersTable.id))
     .where(eq(lineupEntriesTable.gameId, params.data.id))
-    .orderBy(lineupEntriesTable.inning, lineupEntriesTable.position);
+    .orderBy(lineupEntriesTable.inning, lineupEntriesTable.position, lineupEntriesTable.id);
 
   res.json(entries);
 });
