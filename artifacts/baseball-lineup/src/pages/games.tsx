@@ -166,7 +166,7 @@ function ICalImportDialog({
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/calendar.ics"
+              placeholder="https://… .ics  or  webcal://…"
               className="flex-1"
               onKeyDown={(e) => e.key === "Enter" && handlePreview()}
             />
@@ -174,6 +174,9 @@ function ICalImportDialog({
               {loading ? "Loading..." : "Load"}
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Tip: the URL must be the calendar's <span className="font-mono">.ics</span> export link (or a <span className="font-mono">webcal://</span> link), not the calendar's web page.
+          </p>
 
           {error && (
             <div className="flex items-start gap-2 p-3 bg-destructive/10 text-destructive rounded-lg text-sm border border-destructive/20">

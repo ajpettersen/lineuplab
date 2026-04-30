@@ -45,8 +45,39 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
     res.status(400).json({ error: "icalUrl required" });
     return;
   }
+  // Normalize: webcal:// → https://, trim whitespace
+  let url = icalUrl.trim();
+  if (url.startsWith("webcal://")) url = "https://" + url.slice("webcal://".length);
+  if (url.startsWith("webcals://")) url = "https://" + url.slice("webcals://".length);
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    res.status(400).json({ error: "URL must start with http://, https://, or webcal://" });
+    return;
+  }
   try {
-    const events = await ical.async.fromURL(icalUrl);
+    // Manual fetch with browser-like UA — many calendar hosts block default node user agents
+    const fetchRes = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; DugoutManager-iCal/1.0)",
+        Accept: "text/calendar, text/plain, */*",
+      },
+      redirect: "follow",
+    });
+    if (!fetchRes.ok) {
+      req.log.warn({ url, status: fetchRes.status }, "iCal fetch failed");
+      res.status(422).json({
+        error: `Calendar host returned HTTP ${fetchRes.status}. Check the URL is publicly accessible.`,
+      });
+      return;
+    }
+    const body = await fetchRes.text();
+    if (!body.includes("BEGIN:VCALENDAR")) {
+      req.log.warn({ url, bodyStart: body.slice(0, 100) }, "iCal response not a valid calendar");
+      res.status(422).json({
+        error: "URL did not return a valid iCalendar file. Make sure it's the .ics export link, not the calendar's web page.",
+      });
+      return;
+    }
+    const events = ical.sync.parseICS(body);
     const games: {
       uid: string;
       summary: string;
@@ -60,9 +91,18 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
       const e = event as ical.VEvent;
       const start = e.start;
       if (!start) continue;
-      const summary = String(e.summary ?? "vs. TBD");
-      const locationRaw = e.location;
-      const location = locationRaw == null ? null : String(locationRaw);
+      // node-ical sometimes returns properties as { val, params } objects instead of strings
+      const toStr = (v: unknown): string => {
+        if (v == null) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && "val" in v && typeof (v as { val: unknown }).val === "string") {
+          return (v as { val: string }).val;
+        }
+        return String(v);
+      };
+      const summary = toStr(e.summary) || "vs. TBD";
+      const locationStr = toStr(e.location);
+      const location = locationStr.length > 0 ? locationStr : null;
       // Try to extract opponent from summary: "vs X" / "@ X" / "v X" / just use full summary
       const opponentMatch = summary.match(/(?:vs\.?\s*|@\s*|v\.?\s*)(.+)/i);
       const opponent = opponentMatch ? opponentMatch[1]!.trim() : summary;
@@ -78,7 +118,9 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
     games.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime());
     res.json(games);
   } catch (err) {
-    res.status(422).json({ error: "Failed to fetch or parse calendar. Check the URL and try again." });
+    req.log.error({ err, url }, "iCal preview failed");
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(422).json({ error: `Failed to fetch calendar: ${msg}` });
   }
 });
 
