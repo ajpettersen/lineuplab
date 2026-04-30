@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db, gamesTable } from "@workspace/db";
 import {
   CreateGameBody,
@@ -8,6 +9,21 @@ import {
   UpdateGameBody,
   DeleteGameParams,
 } from "@workspace/api-zod";
+
+const ConfirmICalBodySchema = z.object({
+  innings: z.number().int().min(1).max(15).default(6),
+  games: z
+    .array(
+      z.object({
+        opponent: z.string(),
+        gameDate: z.string().datetime({ offset: true }).or(z.string().datetime()),
+        location: z.string().nullable().optional(),
+        type: z.enum(["game", "practice", "other"]).default("game"),
+        summary: z.string().optional(),
+      }),
+    )
+    .min(1, "games array required"),
+});
 import ical from "node-ical";
 
 const router: IRouter = Router();
@@ -84,7 +100,34 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
       opponent: string;
       gameDate: string;
       location: string | null;
+      type: "game" | "practice" | "other";
     }[] = [];
+
+    const classify = (text: string): "game" | "practice" | "other" => {
+      const t = text.toLowerCase();
+      // Practice indicators (word-bounded)
+      if (/\b(practice|prac|workout|training|skills?|drill|drills|batting cage|cages|bullpen|infield work)\b/.test(t)) {
+        return "practice";
+      }
+      // Other: meetings, clinics, parent-stuff, fundraisers, banquets, etc.
+      if (/\b(meeting|mtg|clinic|tryout|tryouts|parent|coach(?:es)? meeting|banquet|fundraiser|registration|orientation|picture day|photo day|photos|pictures|team dinner|team social|volunteer)\b/.test(t)) {
+        return "other";
+      }
+      // Game indicators (case-insensitive word-bounded list)
+      const hasGameKeyword = /\b(game|games|match|matchup|tournament|tourney|scrimmage|playoffs?|championship|league|doubleheader|dh|vs)\b/.test(t);
+      // "@" anywhere followed by something
+      const hasAtSymbol = /(^|\s)@\s*\S/.test(t);
+      // Standard ICS away-game format: "TeamA at TeamB" — require capitalized team-like tokens
+      // on both sides (use the original text, not the lowercased one) to avoid generic phrases
+      // like "Team event at park".
+      // Allow team names that start with a digit (e.g. "10AA Blue") or capital letter.
+      const hasAwayPattern = /\b[A-Z0-9][\w-]*(?:\s+\S+)*\s+at\s+[A-Z0-9][\w-]*/.test(text);
+      if (hasGameKeyword || hasAtSymbol || hasAwayPattern) {
+        return "game";
+      }
+      // Unknown — default to "other" so the user must consciously include it
+      return "other";
+    };
 
     for (const [uid, event] of Object.entries(events)) {
       if (!event || event.type !== "VEVENT") continue;
@@ -101,8 +144,10 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
         return String(v);
       };
       const summary = toStr(e.summary) || "vs. TBD";
+      const description = toStr(e.description);
       const locationStr = toStr(e.location);
       const location = locationStr.length > 0 ? locationStr : null;
+      const type = classify(summary + " " + description);
       // Try to extract opponent from summary: "vs X" / "@ X" / "v X" / just use full summary
       const opponentMatch = summary.match(/(?:vs\.?\s*|@\s*|v\.?\s*)(.+)/i);
       const opponent = opponentMatch ? opponentMatch[1]!.trim() : summary;
@@ -112,6 +157,7 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
         opponent,
         gameDate: new Date(start).toISOString(),
         location,
+        type,
       });
     }
 
@@ -126,22 +172,34 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
 
 // Bulk create games from iCal import (confirmed selection)
 router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
-  const { games, innings = 6 } = req.body;
-  if (!Array.isArray(games) || games.length === 0) {
-    res.status(400).json({ error: "games array required" });
+  const parsed = ConfirmICalBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
+  const { games, innings } = parsed.data;
   const inserted = await db
     .insert(gamesTable)
     .values(
-      games.map((g: { opponent: string; gameDate: string; location?: string | null }) => ({
-        opponent: g.opponent,
-        gameDate: new Date(g.gameDate),
-        location: g.location ?? null,
-        innings,
-        status: "upcoming" as const,
-        notes: null,
-      }))
+      games.map((g) => {
+        const type = g.type;
+        // For practice/other, the "opponent" field doesn't apply — use a friendly label
+        const opponent =
+          type === "practice"
+            ? (g.summary?.trim() || "Practice")
+            : type === "other"
+              ? (g.summary?.trim() || "Team Event")
+              : g.opponent;
+        return {
+          opponent,
+          gameDate: new Date(g.gameDate),
+          location: g.location ?? null,
+          innings,
+          status: "upcoming" as const,
+          type,
+          notes: null,
+        };
+      })
     )
     .returning();
   res.status(201).json(inserted);

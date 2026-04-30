@@ -58,6 +58,17 @@ export const GameStatus = {
   cancelled: "cancelled",
 } as const;
 
+/**
+ * Event kind — distinguishes games from practices and other team events
+ */
+export type GameType = (typeof GameType)[keyof typeof GameType];
+
+export const GameType = {
+  game: "game",
+  practice: "practice",
+  other: "other",
+} as const;
+
 export interface Game {
   id: number;
   opponent: string;
@@ -67,6 +78,8 @@ export interface Game {
   /** Number of innings in the game */
   innings: number;
   status: GameStatus;
+  /** Event kind — distinguishes games from practices and other team events */
+  type: GameType;
   /** @nullable */
   ourScore?: number | null;
   /** @nullable */

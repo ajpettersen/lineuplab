@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import {
   useListGames,
@@ -64,18 +64,37 @@ type Game = {
   location: string | null;
   innings: number;
   status: string;
+  type?: string;
   ourScore: number | null;
   opponentScore: number | null;
   notes: string | null;
 };
 
 // ── iCal import dialog ──────────────────────────────────────────
+type EventKind = "game" | "practice" | "other";
 type ICalEvent = {
   uid: string;
   summary: string;
   opponent: string;
   gameDate: string;
   location: string | null;
+  type: EventKind;
+};
+
+function TypeBadge({ type }: { type: EventKind | string }) {
+  if (type === "practice") {
+    return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200">Practice</Badge>;
+  }
+  if (type === "other") {
+    return <Badge variant="outline" className="text-muted-foreground">Event</Badge>;
+  }
+  return null;
+}
+
+const KIND_LABEL: Record<EventKind, string> = {
+  game: "Games",
+  practice: "Practices",
+  other: "Team Events",
 };
 
 function ICalImportDialog({
@@ -96,6 +115,18 @@ function ICalImportDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset state whenever the dialog closes so a re-open starts fresh.
+  useEffect(() => {
+    if (!open) {
+      setUrl("");
+      setEvents([]);
+      setSelected(new Set());
+      setError(null);
+      setLoading(false);
+      setSaving(false);
+    }
+  }, [open]);
+
   const handlePreview = async () => {
     setError(null);
     setEvents([]);
@@ -111,7 +142,8 @@ function ICalImportDialog({
       if (!r.ok) { setError(data.error ?? "Failed to load calendar"); return; }
       if (data.length === 0) { setError("No events found in this calendar."); return; }
       setEvents(data);
-      setSelected(new Set(data.map((e: ICalEvent) => e.uid)));
+      // Auto-select only games — practices and other events stay unchecked
+      setSelected(new Set((data as ICalEvent[]).filter((e) => e.type === "game").map((e) => e.uid)));
     } catch {
       setError("Could not reach the calendar URL. Make sure it is publicly accessible.");
     } finally {
@@ -210,40 +242,76 @@ function ICalImportDialog({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1.5 overflow-y-auto pr-1">
-                {events.map((ev) => (
-                  <label
-                    key={ev.uid}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      selected.has(ev.uid) ? "border-primary/40 bg-primary/5" : "border-border bg-background opacity-60"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={selected.has(ev.uid)}
-                      onCheckedChange={(v) => {
-                        const next = new Set(selected);
-                        v ? next.add(ev.uid) : next.delete(ev.uid);
-                        setSelected(next);
-                      }}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">vs. {ev.opponent}</p>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <CalendarDays className="h-3 w-3" />
-                          {format(new Date(ev.gameDate), "EEE, MMM d, yyyy · h:mm a")}
-                        </span>
-                        {ev.location && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            {ev.location}
+              <div className="flex flex-col gap-3 overflow-y-auto pr-1">
+                {(["game", "practice", "other"] as EventKind[]).map((kind) => {
+                  const inGroup = events.filter((e) => e.type === kind);
+                  if (inGroup.length === 0) return null;
+                  const selectedInGroup = inGroup.filter((e) => selected.has(e.uid)).length;
+                  const allInGroupSelected = selectedInGroup === inGroup.length;
+                  return (
+                    <div key={kind} className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between sticky top-0 bg-background py-1 z-10">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={allInGroupSelected}
+                            onCheckedChange={(v) => {
+                              const next = new Set(selected);
+                              if (v) inGroup.forEach((e) => next.add(e.uid));
+                              else inGroup.forEach((e) => next.delete(e.uid));
+                              setSelected(next);
+                            }}
+                          />
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {KIND_LABEL[kind]} ({inGroup.length})
                           </span>
-                        )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">{selectedInGroup} selected</span>
                       </div>
+                      {inGroup.map((ev) => {
+                        const titleText =
+                          ev.type === "game"
+                            ? `vs. ${ev.opponent}`
+                            : ev.summary;
+                        return (
+                          <label
+                            key={ev.uid}
+                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                              selected.has(ev.uid) ? "border-primary/40 bg-primary/5" : "border-border bg-background opacity-60"
+                            }`}
+                          >
+                            <Checkbox
+                              checked={selected.has(ev.uid)}
+                              onCheckedChange={(v) => {
+                                const next = new Set(selected);
+                                v ? next.add(ev.uid) : next.delete(ev.uid);
+                                setSelected(next);
+                              }}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium truncate">{titleText}</p>
+                                <TypeBadge type={ev.type} />
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <CalendarDays className="h-3 w-3" />
+                                  {format(new Date(ev.gameDate), "EEE, MMM d, yyyy · h:mm a")}
+                                </span>
+                                {ev.location && (
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="h-3 w-3" />
+                                    {ev.location}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
-                  </label>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -254,7 +322,7 @@ function ICalImportDialog({
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button onClick={handleImport} disabled={saving || selected.size === 0}>
               <Check className="h-4 w-4 mr-1" />
-              {saving ? "Importing..." : `Import ${selected.size} Game${selected.size !== 1 ? "s" : ""}`}
+              {saving ? "Importing..." : `Import ${selected.size} Item${selected.size !== 1 ? "s" : ""}`}
             </Button>
           </DialogFooter>
         )}
@@ -410,8 +478,9 @@ export default function Games() {
             <div className="flex-1 cursor-pointer group">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold group-hover:text-primary transition-colors">
-                  vs. {g.opponent}
+                  {g.type && g.type !== "game" ? g.opponent : `vs. ${g.opponent}`}
                 </span>
+                <TypeBadge type={(g.type ?? "game") as EventKind} />
                 <StatusBadge status={g.status} />
                 {g.status === "completed" && g.ourScore != null && g.opponentScore != null && (
                   <span className={`text-sm font-bold px-2 py-0.5 rounded ${g.ourScore > g.opponentScore ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
@@ -468,7 +537,23 @@ export default function Games() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold">Schedule</h1>
-          <p className="text-muted-foreground mt-1">{games.length} games this season</p>
+          <p className="text-muted-foreground mt-1">
+            {(() => {
+              const counts = games.reduce(
+                (acc, g) => {
+                  const k = (g.type ?? "game") as "game" | "practice" | "other";
+                  acc[k] += 1;
+                  return acc;
+                },
+                { game: 0, practice: 0, other: 0 },
+              );
+              const parts: string[] = [];
+              if (counts.game) parts.push(`${counts.game} game${counts.game !== 1 ? "s" : ""}`);
+              if (counts.practice) parts.push(`${counts.practice} practice${counts.practice !== 1 ? "s" : ""}`);
+              if (counts.other) parts.push(`${counts.other} event${counts.other !== 1 ? "s" : ""}`);
+              return parts.length === 0 ? "No items scheduled" : `${parts.join(" · ")} this season`;
+            })()}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setShowIcal(true)}>

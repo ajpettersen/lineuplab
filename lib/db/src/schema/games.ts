@@ -9,6 +9,8 @@ export const gamesTable = pgTable("games", {
   location: text("location"),
   innings: integer("innings").notNull().default(6),
   status: text("status").notNull().default("upcoming"),
+  // Event kind: "game" | "practice" | "other"
+  type: text("type").notNull().default("game"),
   ourScore: integer("our_score"),
   opponentScore: integer("opponent_score"),
   notes: text("notes"),

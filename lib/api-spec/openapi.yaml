@@ -444,6 +444,10 @@ components:
         status:
           type: string
           enum: [upcoming, completed, cancelled]
+        type:
+          type: string
+          enum: [game, practice, other]
+          description: Event kind — distinguishes games from practices and other team events
         ourScore:
           type: ["integer", "null"]
         opponentScore:
@@ -459,6 +463,7 @@ components:
         - gameDate
         - innings
         - status
+        - type
         - createdAt
 
     CreateGameBody:

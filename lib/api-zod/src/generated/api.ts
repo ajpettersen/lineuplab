@@ -121,6 +121,11 @@ export const ListGamesResponseItem = zod.object({
   location: zod.string().nullish(),
   innings: zod.number().describe("Number of innings in the game"),
   status: zod.enum(["upcoming", "completed", "cancelled"]),
+  type: zod
+    .enum(["game", "practice", "other"])
+    .describe(
+      "Event kind — distinguishes games from practices and other team events",
+    ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
@@ -153,6 +158,11 @@ export const GetGameResponse = zod.object({
   location: zod.string().nullish(),
   innings: zod.number().describe("Number of innings in the game"),
   status: zod.enum(["upcoming", "completed", "cancelled"]),
+  type: zod
+    .enum(["game", "practice", "other"])
+    .describe(
+      "Event kind — distinguishes games from practices and other team events",
+    ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
@@ -184,6 +194,11 @@ export const UpdateGameResponse = zod.object({
   location: zod.string().nullish(),
   innings: zod.number().describe("Number of innings in the game"),
   status: zod.enum(["upcoming", "completed", "cancelled"]),
+  type: zod
+    .enum(["game", "practice", "other"])
+    .describe(
+      "Event kind — distinguishes games from practices and other team events",
+    ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),

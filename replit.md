@@ -43,7 +43,13 @@ A travel baseball team defensive lineup manager for coaches. Features:
   - Numeric global rules (max bench innings, max same position) use a popup dialog with slider when toggled on
   - Boolean global rules (no bench 2 of 3, all positions covered, rotate pitcher) toggle directly
   - Lineup generator enforces "no player benched 2 of 3 innings" via score boost
-- **iCal schedule import**: paste a webcal/ICS URL → preview events → confirm to import as games
+- **iCal schedule import**: paste a webcal/ICS URL → preview events → confirm to import.
+  Server-side regex classifier categorizes each event as `game`, `practice`, or `other`
+  (meetings, picture day, banquets, etc.). The import dialog groups events by kind and
+  auto-checks only games — practices/other events stay unchecked so they're a conscious
+  opt-in. The schedule list shows a "Practice" or "Event" badge next to non-game items.
+  Note: after a fresh deploy that adds the `games.type` column, existing rows default to
+  `game`; run a one-shot reclassification (same regex on opponent strings) to backfill.
 - **Editable game cards** with pencil icon for inline edit
 
 ### Database tables
