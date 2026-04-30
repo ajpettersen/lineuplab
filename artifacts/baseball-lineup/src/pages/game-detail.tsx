@@ -149,7 +149,9 @@ export default function GameDetail() {
     );
   };
 
-  // Tap a player → tap another cell in the same inning → swap their positions.
+  // Tap a player → tap another cell in the same inning. The selected player takes the target
+  // position; if it was occupied (by a field player), the previous occupant drops to the bottom
+  // of the bench so they can be reassigned later. Field ↔ bench taps act as a normal swap.
   // Tap an empty cell after selecting a player → move that player there.
   const handleCellClick = (target: { entryId?: number; inning: number; position: string }) => {
     const current = previewLineup ?? editedLineup ?? lineup;
@@ -171,8 +173,8 @@ export default function GameDetail() {
     }
     if (sourceEntry.inning !== target.inning) {
       toast({
-        title: "Pick a cell in the same inning to swap",
-        description: "Players can only swap within the same inning.",
+        title: "Pick a cell in the same inning",
+        description: "Players can only be moved within the same inning.",
         variant: "destructive",
       });
       // Re-anchor selection on the new player if they tapped one
@@ -182,13 +184,29 @@ export default function GameDetail() {
 
     let next: typeof current;
     if (target.entryId != null) {
-      // Swap two players in the same inning
       const targetEntry = current.find((e) => e.id === target.entryId)!;
-      next = current.map((e) => {
-        if (e.id === sourceEntry.id) return { ...e, position: targetEntry.position };
-        if (e.id === targetEntry.id) return { ...e, position: sourceEntry.position };
-        return e;
-      });
+      // Bench-to-bench is meaningless — just clear selection.
+      if (sourceEntry.position === "Bench" && targetEntry.position === "Bench") {
+        setSelectedEntryId(null);
+        return;
+      }
+      if (targetEntry.position === "Bench") {
+        // Source (field) -> bench player. Treat as a swap so the bench player comes onto the field.
+        next = current.map((e) => {
+          if (e.id === sourceEntry.id) return { ...e, position: "Bench" };
+          if (e.id === targetEntry.id) return { ...e, position: sourceEntry.position };
+          return e;
+        });
+      } else {
+        // Source takes target's field position; the displaced target drops to the BOTTOM of the bench
+        // for the same inning (re-inserted at the end of the array so it renders last).
+        next = current
+          .filter((e) => e.id !== targetEntry.id)
+          .map((e) =>
+            e.id === sourceEntry.id ? { ...e, position: targetEntry.position } : e,
+          )
+          .concat([{ ...targetEntry, position: "Bench" }]);
+      }
     } else {
       // Move source player into an empty position
       next = current.map((e) =>
@@ -427,7 +445,7 @@ export default function GameDetail() {
             <div className="flex items-center gap-2">
               {selectedEntry && (
                 <span className="text-xs text-muted-foreground hidden sm:inline" data-testid="text-swap-hint">
-                  Swapping <span className="font-medium text-foreground">{selectedEntry.playerName.split(" ")[0]}</span> — tap another cell in inning {selectedEntry.inning}
+                  Moving <span className="font-medium text-foreground">{selectedEntry.playerName.split(" ")[0]}</span> — tap a cell in inning {selectedEntry.inning}
                   <button
                     type="button"
                     className="ml-2 inline-flex items-center text-muted-foreground hover:text-foreground"
@@ -496,7 +514,7 @@ export default function GameDetail() {
                                   data-testid={`cell-${inning}-${pos}`}
                                   data-entry-id={entry.id}
                                   data-selected={isSelected ? "true" : "false"}
-                                  title={`${entry.playerName} — tap to swap`}
+                                  title={`${entry.playerName} — tap to move`}
                                 >
                                   {entry.playerName.split(" ")[0]}
                                 </button>
@@ -536,7 +554,7 @@ export default function GameDetail() {
                                     data-testid={`cell-${inning}-Bench-${e.id}`}
                                     data-entry-id={e.id}
                                     data-selected={isSelected ? "true" : "false"}
-                                    title={`${e.playerName} — tap to swap`}
+                                    title={`${e.playerName} — tap to move`}
                                   >
                                     {e.playerName.split(" ")[0]}
                                   </button>

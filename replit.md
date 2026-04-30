@@ -67,11 +67,15 @@ A travel baseball team defensive lineup manager for coaches. Features:
   `game`; run a one-shot reclassification (same regex on opponent strings) to backfill.
 - **Editable game cards** with pencil icon for inline edit
 - **Inline lineup editing + copy to Sheets** (Game Detail page): players in any
-  saved/preview lineup are click-to-swap. Tap a cell to select it (ring around the
-  player), then tap another cell in the SAME inning to swap their positions, or tap
-  an empty position cell (rendered as a dashed `+` while a swap is pending) to move
-  the selected player there. Cross-inning taps show a toast and re-anchor the
-  selection without applying the edit. Local edits live in `editedLineup` state and
+  saved/preview lineup can be moved by tap-to-tap. Tap a cell to select it (ring
+  around the player), then tap another cell in the SAME inning. The selected player
+  takes the target position; if it was occupied by another field player, that player
+  drops to the BOTTOM of the same inning's bench so the coach can reassign them
+  later. (The source's old position becomes empty.) Tap an empty position cell
+  (rendered as a dashed `+` while a move is pending) to drop the selected player
+  there. A field-vs-bench tap acts as a normal swap (bench player onto field, field
+  player to bench). Bench-vs-bench is a no-op. Cross-inning taps show a toast and
+  re-anchor the selection without applying the edit. Local edits live in `editedLineup` state and
   surface an amber "Unsaved changes" banner with Save Changes / Discard. Display
   precedence is `previewLineup ?? editedLineup ?? lineup`. Generating a new lineup
   while edits are pending prompts a confirm() dialog before discarding them.
