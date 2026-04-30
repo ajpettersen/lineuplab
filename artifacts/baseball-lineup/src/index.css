@@ -77,57 +77,57 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* Deep green fields, chalk white, navy, red */
-  /* Background: Chalk white */
-  --background: 45 29% 97%;
-  --foreground: 220 30% 20%;
-  
-  --border: 214 20% 85%;
-  --input: 214 20% 85%;
-  --ring: 145 63% 30%;
+  /* Minnetonka Skippers — deep Skipper navy + crisp white + warm gold accent */
+  /* Background: cool off-white with a hint of blue */
+  --background: 215 30% 98%;
+  --foreground: 220 35% 16%;
+
+  --border: 220 20% 88%;
+  --input: 220 20% 88%;
+  --ring: 220 85% 32%;
 
   --card: 0 0% 100%;
-  --card-foreground: 220 30% 20%;
-  --card-border: 214 20% 85%;
+  --card-foreground: 220 35% 16%;
+  --card-border: 220 20% 90%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 220 30% 20%;
-  --popover-border: 214 20% 85%;
+  --popover-foreground: 220 35% 16%;
+  --popover-border: 220 20% 90%;
 
-  /* Primary: Deep Green */
-  --primary: 145 63% 25%;
+  /* Primary: Skipper navy */
+  --primary: 220 85% 22%;
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary: Navy */
-  --secondary: 220 40% 25%;
-  --secondary-foreground: 0 0% 100%;
+  /* Secondary: lighter navy/steel */
+  --secondary: 220 35% 92%;
+  --secondary-foreground: 220 85% 22%;
 
   /* Muted */
-  --muted: 210 20% 90%;
-  --muted-foreground: 215 20% 40%;
+  --muted: 220 20% 94%;
+  --muted-foreground: 220 15% 45%;
 
-  /* Accent: Earthy Dirt / Clay */
-  --accent: 25 35% 85%;
-  --accent-foreground: 220 30% 20%;
+  /* Accent: warm Skipper gold */
+  --accent: 42 95% 55%;
+  --accent-foreground: 220 85% 18%;
 
-  /* Destructive: Baseball Red */
+  /* Destructive: classic red */
   --destructive: 350 70% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --chart-1: 145 63% 30%; /* Green */
-  --chart-2: 220 40% 30%; /* Navy */
-  --chart-3: 350 70% 50%; /* Red */
-  --chart-4: 35 70% 50%; /* Orange/Dirt */
-  --chart-5: 200 60% 40%; /* Blue */
+  --chart-1: 220 85% 30%; /* Skipper navy */
+  --chart-2: 200 70% 45%; /* sky/lake blue */
+  --chart-3: 42 95% 55%;  /* gold */
+  --chart-4: 350 70% 50%; /* red */
+  --chart-5: 145 50% 35%; /* deep green */
 
-  --sidebar: 220 40% 20%;
+  --sidebar: 220 85% 18%;
   --sidebar-foreground: 0 0% 100%;
-  --sidebar-border: 220 40% 15%;
-  --sidebar-primary: 145 63% 35%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 40% 25%;
+  --sidebar-border: 220 85% 14%;
+  --sidebar-primary: 42 95% 55%;
+  --sidebar-primary-foreground: 220 85% 18%;
+  --sidebar-accent: 220 85% 28%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 145 63% 30%;
+  --sidebar-ring: 42 95% 55%;
 
   --app-font-sans: 'Bricolage Grotesque', sans-serif;
   --app-font-serif: Georgia, serif;

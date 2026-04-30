@@ -57,19 +57,22 @@ function categoryFor(pos: string): Category {
 }
 
 function positionColor(pos: string) {
+  // Refined palette: each position keeps a distinct hue (so coaches can scan
+  // a column at a glance) but all sit at a similar saturation/lightness so
+  // the grid feels harmonious instead of rainbow-y.
   const colors: Record<string, string> = {
-    P: "bg-red-100 text-red-800",
-    C: "bg-orange-100 text-orange-800",
-    "1B": "bg-yellow-100 text-yellow-800",
-    "2B": "bg-lime-100 text-lime-800",
-    "3B": "bg-emerald-100 text-emerald-800",
-    SS: "bg-cyan-100 text-cyan-800",
-    LF: "bg-blue-100 text-blue-800",
-    CF: "bg-indigo-100 text-indigo-800",
-    RF: "bg-purple-100 text-purple-800",
-    Bench: "bg-gray-100 text-gray-600",
+    P: "bg-red-50 text-red-800 border border-red-200/70",
+    C: "bg-orange-50 text-orange-800 border border-orange-200/70",
+    "1B": "bg-amber-50 text-amber-800 border border-amber-200/70",
+    "2B": "bg-lime-50 text-lime-800 border border-lime-200/70",
+    "3B": "bg-emerald-50 text-emerald-800 border border-emerald-200/70",
+    SS: "bg-cyan-50 text-cyan-800 border border-cyan-200/70",
+    LF: "bg-sky-50 text-sky-800 border border-sky-200/70",
+    CF: "bg-indigo-50 text-indigo-800 border border-indigo-200/70",
+    RF: "bg-violet-50 text-violet-800 border border-violet-200/70",
+    Bench: "bg-slate-100 text-slate-600 border border-slate-200/70",
   };
-  return colors[pos] ?? "bg-muted text-muted-foreground";
+  return colors[pos] ?? "bg-muted text-muted-foreground border border-border";
 }
 
 export default function GameDetail() {
@@ -702,14 +705,22 @@ export default function GameDetail() {
               onDragCancel={handleDragCancel}
             >
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm border-separate border-spacing-y-1.5">
                   <thead>
                     <tr>
-                      <th className="text-left py-2 pr-3 text-muted-foreground font-medium text-xs w-16">Inning</th>
+                      <th className="text-left py-2 pr-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-16">Inning</th>
                       {FIELD_POSITIONS.map((pos) => (
-                        <th key={pos} className="text-center py-2 px-1 text-muted-foreground font-medium text-xs w-20">{pos}</th>
+                        <th key={pos} className="text-center py-2 px-1 w-20">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[11px] font-bold tracking-wide">
+                            {pos}
+                          </span>
+                        </th>
                       ))}
-                      <th className="text-center py-2 px-1 text-muted-foreground font-medium text-xs w-24">Bench</th>
+                      <th className="text-center py-2 px-1 w-28">
+                        <span className="inline-block px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[11px] font-bold tracking-wide uppercase">
+                          Bench
+                        </span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -719,13 +730,25 @@ export default function GameDetail() {
                       const benchEntries = displayLineup.filter(
                         (e) => e.inning === inning && e.position === "Bench",
                       );
+                      // Each inning is a soft "row card" — alternating subtle
+                      // background plus rounded ends so it feels like a stack
+                      // of cards instead of a grid of cells.
+                      const rowBg = isHotInning
+                        ? "bg-primary/5"
+                        : inning % 2 === 0
+                          ? "bg-muted/40"
+                          : "bg-card";
                       return (
-                        <tr key={inning} className="border-t border-border/50">
-                          <td className="py-2 pr-3 font-semibold text-muted-foreground">{inning}</td>
+                        <tr key={inning} className={`${rowBg} transition-colors`}>
+                          <td className="py-2 pl-3 pr-2 rounded-l-xl">
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
+                              {inning}
+                            </span>
+                          </td>
                           {FIELD_POSITIONS.map((pos) => {
                             const entry = cellByInningPos[inning]?.[pos];
                             return (
-                              <td key={pos} className="py-1.5 px-1 text-center">
+                              <td key={pos} className="py-2 px-1 text-center">
                                 <FieldCell
                                   inning={inning}
                                   position={pos}
@@ -743,7 +766,7 @@ export default function GameDetail() {
                               </td>
                             );
                           })}
-                          <td className="py-1.5 px-1 text-center align-top">
+                          <td className="py-2 px-1 pr-2 text-center align-top rounded-r-xl border-l border-border/40">
                             <BenchArea
                               inning={inning}
                               entries={benchEntries}
@@ -764,7 +787,7 @@ export default function GameDetail() {
               <DragOverlay dropAnimation={null}>
                 {draggedEntry ? (
                   <div
-                    className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${positionColor(draggedEntry.position)} shadow-lg ring-2 ring-primary cursor-grabbing`}
+                    className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${positionColor(draggedEntry.position)} shadow-lg ring-2 ring-primary cursor-grabbing`}
                   >
                     {draggedEntry.playerName.split(" ")[0]}
                   </div>
@@ -1022,7 +1045,7 @@ function PlayerTile({
       ref={setNodeRef}
       type="button"
       onClick={() => onClick(entry.id)}
-      className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-all ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} touch-none cursor-grab active:cursor-grabbing hover:opacity-90`}
+      className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-all ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} touch-none cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-px`}
       data-testid={testId}
       data-entry-id={entry.id}
       data-selected={isSelected ? "true" : "false"}
@@ -1083,7 +1106,7 @@ function FieldCell({
         <button
           type="button"
           onClick={onEmptyClick}
-          className="inline-flex items-center justify-center px-2 py-1 rounded text-xs font-medium whitespace-nowrap min-w-[3rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
+          className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap min-w-[3rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
           data-testid={`cell-${inning}-${position}-empty`}
           title="Drop or tap to move here"
         >

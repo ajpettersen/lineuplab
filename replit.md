@@ -19,7 +19,14 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Charts**: Recharts
 - **Routing**: Wouter
 
-## App: Baseball Lineup Manager (DugoutManager)
+## App: Minnetonka Skippers Lineup Manager
+
+Branded for the Minnetonka Skippers. Color palette: Skipper navy (`220 85% 22%`)
+as primary, warm gold (`42 95% 55%`) as accent, cool off-white background
+(`215 30% 98%`). Header uses a navy gradient with a gold accent stripe and a
+gold shield badge. The lineup grid uses pill-shaped player chips, circular
+inning badges, and alternating row backgrounds — replacing the older
+spreadsheet-style table.
 
 A travel baseball team defensive lineup manager for coaches. Features:
 - **Roster management**: Add/edit players with eligible and preferred positions, pitching eligibility
