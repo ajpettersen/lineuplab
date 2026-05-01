@@ -111,14 +111,19 @@ router.post("/constraints/parse", async (req, res): Promise<void> => {
   const playerList = players.map((p) => `${p.id}: ${p.name}`).join("\n");
   const positions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 
-  const systemPrompt = `You are a baseball lineup rules assistant. Parse the user's natural language constraint into a structured JSON object.
+  const systemPrompt = `You are a baseball lineup rules assistant. Parse the user's natural language input into one OR MORE structured rules.
+
+The user may describe several distinct rules in a single message — separated by periods, newlines, commas, "and", "also", semicolons, or bullets. Treat each distinct rule as its own object. Combine clauses that describe the same single rule (e.g. "Jake can pitch but only in late innings" is one rule).
 
 Roster:
 ${playerList}
 
 Available positions: ${positions.join(", ")}
 
-Return a JSON object (no markdown) with these fields:
+Return ONLY a JSON object (no markdown) of the form:
+{ "constraints": [ <rule>, <rule>, ... ] }
+
+Each <rule> has these fields:
 {
   "type": one of ["player_must_play", "player_cannot_play", "player_min_field", "player_bench_first", "player_bench_last", "global_max_bench", "global_max_position", "global_min_field", "global_rotate_pitcher", "global_ensure_positions", "global_no_bench_two_of_three"],
   "playerId": number or null (match player by name from roster, null for global rules),
@@ -129,18 +134,20 @@ Return a JSON object (no markdown) with these fields:
 }
 
 Examples:
-- "Jake can't pitch" → type: player_cannot_play, playerId: <jake's id>, position: "P", rule: "must_not"
-- "Make sure everyone plays infield at least once" → type: global_min_field, rule: "min", value: 1
-- "Max 2 innings on bench" → type: global_max_bench, rule: "max", value: 2
-- "Tyler must play shortstop" → type: player_must_play, playerId: <tyler's id>, position: "SS", rule: "must"
-- "Rotate the pitcher every inning" → type: global_rotate_pitcher, rule: "on"
-- "No one sits more than once every 3 innings" → type: global_no_bench_two_of_three, rule: "on"
+- Input: "Jake can't pitch"
+  → { "constraints": [ { "type": "player_cannot_play", "playerId": <jake's id>, "position": "P", "rule": "must_not", "value": null, "description": "Jake cannot pitch" } ] }
+- Input: "Jake can't pitch. Tyler must play shortstop. Max 2 bench innings."
+  → { "constraints": [
+       { "type": "player_cannot_play", "playerId": <jake's id>, "position": "P", "rule": "must_not", "value": null, "description": "Jake cannot pitch" },
+       { "type": "player_must_play", "playerId": <tyler's id>, "position": "SS", "rule": "must", "value": null, "description": "Tyler must play shortstop" },
+       { "type": "global_max_bench", "playerId": null, "position": null, "rule": "max", "value": 2, "description": "Max 2 innings on bench" }
+     ] }
 
-Return only the JSON object.`;
+Return only the JSON object. Always include the "constraints" array, even for a single rule.`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-5.2",
-    max_completion_tokens: 512,
+    max_completion_tokens: 1500,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: input },
@@ -151,7 +158,23 @@ Return only the JSON object.`;
   const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   try {
     const parsed = JSON.parse(cleaned);
-    res.json({ ...parsed, aiInput: input });
+    let list: unknown[] = [];
+    if (Array.isArray(parsed)) {
+      list = parsed;
+    } else if (parsed && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      if (Array.isArray(obj.constraints)) {
+        list = obj.constraints;
+      } else if (typeof obj.type === "string") {
+        list = [obj];
+      }
+    }
+    if (list.length === 0) {
+      res.status(422).json({ error: "Could not parse any rules from input", raw });
+      return;
+    }
+    const constraints = list.map((c) => ({ ...(c as Record<string, unknown>), aiInput: input }));
+    res.json({ constraints });
   } catch {
     res.status(422).json({ error: "Could not parse AI response", raw });
   }

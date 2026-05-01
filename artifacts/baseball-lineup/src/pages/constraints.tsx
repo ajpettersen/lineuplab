@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -581,16 +582,27 @@ function AiRuleInput({ players, onAdd }: { players: { id: number; name: string }
   const { toast } = useToast();
   const [input, setInput] = useState("");
   const [parsing, setParsing] = useState(false);
-  const [preview, setPreview] = useState<Omit<Constraint, "id" | "createdAt" | "active"> | null>(null);
+  const [previews, setPreviews] = useState<Omit<Constraint, "id" | "createdAt" | "active">[]>([]);
   const [saving, setSaving] = useState(false);
 
   const handleParse = async () => {
     if (!input.trim()) return;
     setParsing(true);
-    setPreview(null);
+    setPreviews([]);
     try {
       const result = await apiPost("/api/constraints/parse", { input: input.trim() });
-      setPreview(result);
+      const list: Omit<Constraint, "id" | "createdAt" | "active">[] = Array.isArray(result?.constraints)
+        ? result.constraints
+        : Array.isArray(result)
+          ? result
+          : result && typeof result === "object" && "type" in result
+            ? [result]
+            : [];
+      if (list.length === 0) {
+        toast({ title: "Could not interpret rule", variant: "destructive" });
+      } else {
+        setPreviews(list);
+      }
     } catch {
       toast({ title: "Could not interpret rule", variant: "destructive" });
     } finally {
@@ -598,20 +610,50 @@ function AiRuleInput({ players, onAdd }: { players: { id: number; name: string }
     }
   };
 
-  const handleSave = async () => {
-    if (!preview) return;
+  const handleSaveAll = async () => {
+    if (previews.length === 0) return;
     setSaving(true);
+    const failedIndices: number[] = [];
     try {
-      await apiPost("/api/constraints", { ...preview, active: true });
-      onAdd();
-      toast({ title: "Rule saved" });
-      setInput("");
-      setPreview(null);
-    } catch {
-      toast({ title: "Failed to save rule", variant: "destructive" });
+      for (let i = 0; i < previews.length; i++) {
+        const p = previews[i];
+        try {
+          const r = await fetch(`${BASE}/api/constraints`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...p, active: true }),
+          });
+          if (!r.ok) {
+            failedIndices.push(i);
+          }
+        } catch {
+          failedIndices.push(i);
+        }
+      }
+      const saved = previews.length - failedIndices.length;
+      const failed = failedIndices.length;
+      if (saved > 0) onAdd();
+      if (failed === 0) {
+        toast({ title: saved === 1 ? "Rule saved" : `${saved} rules saved` });
+        setInput("");
+        setPreviews([]);
+      } else if (saved > 0) {
+        toast({
+          title: `Saved ${saved}, ${failed} failed`,
+          description: "The failed rules are still listed below — try again or remove them.",
+          variant: "destructive",
+        });
+        setPreviews((prev) => failedIndices.map((idx) => prev[idx]));
+      } else {
+        toast({ title: "Failed to save rules", variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDiscardOne = (idx: number) => {
+    setPreviews((prev) => prev.filter((_, i) => i !== idx));
   };
 
   return (
@@ -619,20 +661,27 @@ function AiRuleInput({ players, onAdd }: { players: { id: number; name: string }
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
-          Describe a Rule
+          Describe Rules
         </CardTitle>
-        <p className="text-xs text-muted-foreground">Type any rule in plain English — the AI will interpret it</p>
+        <p className="text-xs text-muted-foreground">
+          Type one or more rules in plain English — the AI will interpret each one. Separate rules with periods, new lines, or "and".
+        </p>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="flex gap-2">
-          <Input
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleParse()}
-            placeholder="e.g. Jake can't pitch, Make sure everyone plays infield at least once, Max 2 bench innings..."
-            className="flex-1"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleParse();
+              }
+            }}
+            placeholder={"e.g. Jake can't pitch.\nMake sure everyone plays infield at least once.\nMax 2 bench innings."}
+            className="flex-1 min-h-[88px]"
           />
-          <Button onClick={handleParse} disabled={parsing || !input.trim()} className="shrink-0">
+          <Button onClick={handleParse} disabled={parsing || !input.trim()} className="shrink-0 sm:self-start">
             {parsing ? "Thinking..." : "Interpret"}
           </Button>
         </div>
@@ -641,33 +690,49 @@ function AiRuleInput({ players, onAdd }: { players: { id: number; name: string }
           {["Max 2 innings on bench", "Rotate pitcher every inning", "Everyone plays at least 1 field inning", "No one plays the same position twice"].map((ex) => (
             <button
               key={ex}
-              onClick={() => setInput(ex)}
+              onClick={() => setInput((prev) => (prev.trim() ? `${prev.trim()}\n${ex}` : ex))}
               className="text-xs px-2.5 py-1 rounded-full border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
             >
-              {ex}
+              + {ex}
             </button>
           ))}
         </div>
 
-        {preview && (
+        {previews.length > 0 && (
           <div className="flex flex-col gap-3 p-4 bg-primary/5 border border-primary/20 rounded-lg">
-            <div className="flex items-start gap-2">
-              <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-medium">"{preview.description}"</p>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  <Badge variant="secondary" className="text-xs">{TYPE_LABELS[preview.type] ?? preview.type}</Badge>
-                  {preview.playerName && <Badge variant="outline" className="text-xs">{preview.playerName}</Badge>}
-                  {preview.position && <Badge variant="outline" className="text-xs">{preview.position}</Badge>}
-                  {preview.value != null && <Badge variant="outline" className="text-xs">value: {preview.value}</Badge>}
+            <p className="text-xs font-medium text-muted-foreground">
+              {previews.length === 1 ? "Interpreted 1 rule" : `Interpreted ${previews.length} rules`}
+            </p>
+            <div className="flex flex-col gap-2">
+              {previews.map((preview, idx) => (
+                <div key={idx} className="flex items-start gap-2 p-3 rounded-md border border-border/50 bg-background/60">
+                  <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">"{preview.description}"</p>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      <Badge variant="secondary" className="text-xs">{TYPE_LABELS[preview.type] ?? preview.type}</Badge>
+                      {preview.playerName && <Badge variant="outline" className="text-xs">{preview.playerName}</Badge>}
+                      {preview.position && <Badge variant="outline" className="text-xs">{preview.position}</Badge>}
+                      {preview.value != null && <Badge variant="outline" className="text-xs">value: {preview.value}</Badge>}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => handleDiscardOne(idx)} className="shrink-0 h-7 px-2 text-xs">
+                    Remove
+                  </Button>
                 </div>
-              </div>
+              ))}
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleSave} disabled={saving}>
-                {saving ? "Saving..." : "Save This Rule"}
+              <Button size="sm" onClick={handleSaveAll} disabled={saving}>
+                {saving
+                  ? "Saving..."
+                  : previews.length === 1
+                    ? "Save Rule"
+                    : `Save All ${previews.length} Rules`}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setPreview(null)}>Discard</Button>
+              <Button size="sm" variant="outline" onClick={() => setPreviews([])} disabled={saving}>
+                Discard All
+              </Button>
             </div>
           </div>
         )}
