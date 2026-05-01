@@ -75,13 +75,25 @@ const TYPE_LABELS: Record<string, string> = {
   ai_parsed: "AI rule",
 };
 
+async function fetchConstraintList(): Promise<Constraint[]> {
+  // Constraints are user-scoped behind Clerk auth, so on the brief window
+  // before the session cookie is attached (or if the session expired) the
+  // API returns 401 with a JSON error envelope instead of an array. Treat
+  // anything non-OK or non-array as "no constraints yet" so callers can
+  // safely .filter/.map without crashing the page.
+  const r = await fetch(`${BASE}/api/constraints`, { credentials: "same-origin" });
+  if (!r.ok) {
+    throw new Error(`GET /api/constraints failed (${r.status})`);
+  }
+  const data: unknown = await r.json().catch(() => null);
+  return Array.isArray(data) ? (data as Constraint[]) : [];
+}
+
 function useConstraints() {
   return useQuery<Constraint[]>({
     queryKey: ["constraints"],
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/constraints`);
-      return r.json();
-    },
+    queryFn: fetchConstraintList,
+    retry: 1,
   });
 }
 
@@ -195,7 +207,7 @@ function FairnessSection({ constraints, onRefresh }: { constraints: Constraint[]
       .then(async () => {
         // Always re-fetch the live list and remove ALL rows of this type before
         // inserting a fresh one. Single-row invariant.
-        const resp = await fetch(`${BASE}/api/constraints`);
+        const resp = await fetch(`${BASE}/api/constraints`, { credentials: "same-origin" });
         const all: Constraint[] = await resp.json();
         const stale = all.filter((c) => c.type === "global_equity_weight");
         await Promise.all(stale.map((c) => apiDelete(`/api/constraints/${c.id}`)));
