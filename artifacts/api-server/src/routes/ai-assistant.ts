@@ -7,6 +7,7 @@ import {
   playersTable,
   lineupEntriesTable,
   lineupConstraintsTable,
+  lineupLocksTable,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import {
@@ -237,6 +238,62 @@ ${body.data.message}`;
     return;
   }
 
+  // Merge persistent per-game locks. **Locks win on conflict** — they're
+  // explicit, persistent coach decisions made via the Position Locks UI,
+  // and silently overriding them would break the coach's mental model of
+  // "what I pinned stays pinned". If the AI's just-issued pin conflicts
+  // with a lock we drop the AI pin and tell the coach about it in the
+  // explanation so they can remove the lock if that's what they meant.
+  const lockRows = (await db
+    .select()
+    .from(lineupLocksTable)
+    .where(eq(lineupLocksTable.gameId, params.data.id))).filter(
+    (l) => l.inning >= 1 && l.inning <= game.innings && validPlayerIds.has(l.playerId),
+  );
+  const playerNameByIdForExplain = new Map(allPlayers.map((p) => [p.id, p.name]));
+  const lockPlayerInning = new Set(lockRows.map((l) => `${l.playerId}|${l.inning}`));
+  const lockFieldPosByInning = new Map<number, Map<string, number>>(); // inning -> position -> playerId
+  for (const l of lockRows) {
+    if (l.position === "Bench") continue;
+    if (!lockFieldPosByInning.has(l.inning)) lockFieldPosByInning.set(l.inning, new Map());
+    lockFieldPosByInning.get(l.inning)!.set(l.position, l.playerId);
+  }
+  const droppedAiPins: string[] = [];
+  const honoredPinned: PinnedAssignment[] = [];
+  for (const p of pinned) {
+    // Same player+inning as a lock: lock wins; only drop if the lock's
+    // position differs from what the AI tried to pin.
+    if (lockPlayerInning.has(`${p.playerId}|${p.inning}`)) {
+      const lockedHere = lockRows.find((l) => l.playerId === p.playerId && l.inning === p.inning);
+      if (lockedHere && lockedHere.position !== p.position) {
+        droppedAiPins.push(
+          `${playerNameByIdForExplain.get(p.playerId) ?? `Player ${p.playerId}`} is locked at ${lockedHere.position} in inning ${p.inning}`,
+        );
+        continue;
+      }
+    }
+    // Same field position taken by a different locked player.
+    if (p.position !== "Bench") {
+      const owner = lockFieldPosByInning.get(p.inning)?.get(p.position);
+      if (owner != null && owner !== p.playerId) {
+        droppedAiPins.push(
+          `${playerNameByIdForExplain.get(owner) ?? `Player ${owner}`} is locked at ${p.position} in inning ${p.inning}`,
+        );
+        continue;
+      }
+    }
+    honoredPinned.push(p);
+  }
+  pinned.length = 0;
+  pinned.push(...honoredPinned);
+  // Add the locks themselves (skip ones already represented by AI pins).
+  const pinnedKeys = new Set(pinned.map((p) => `${p.playerId}|${p.inning}|${p.position}`));
+  for (const l of lockRows) {
+    const k = `${l.playerId}|${l.inning}|${l.position}`;
+    if (pinnedKeys.has(k)) continue;
+    pinned.push({ playerId: l.playerId, inning: l.inning, position: l.position });
+  }
+
   const generated = generateFairLineup(activePlayers, game.innings, {}, constraints, pinned);
 
   // Feasibility check: every inning must have all 9 field positions filled.
@@ -272,9 +329,15 @@ ${body.data.message}`;
     battingOrder: e.battingOrder,
   }));
 
+  // If we dropped any AI pins to honor existing locks, tell the coach so
+  // they can remove the lock if that's what they actually meant.
+  const finalExplanation = droppedAiPins.length > 0
+    ? `${explanation} (Kept your existing lock${droppedAiPins.length === 1 ? "" : "s"}: ${Array.from(new Set(droppedAiPins)).join("; ")}. Remove the lock if you want me to override.)`
+    : explanation;
+
   res.json({
     kind: "regenerate",
-    explanation,
+    explanation: finalExplanation,
     pinned,
     lineup,
   });

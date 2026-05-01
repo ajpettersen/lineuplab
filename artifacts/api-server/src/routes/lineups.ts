@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
-import { db, gamesTable, playersTable, lineupEntriesTable, lineupConstraintsTable } from "@workspace/db";
+import { db, gamesTable, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable } from "@workspace/db";
 import {
   GetGameLineupParams,
   GenerateLineupParams,
@@ -8,7 +8,7 @@ import {
   SaveLineupParams,
   SaveLineupBody,
 } from "@workspace/api-zod";
-import { generateFairLineup } from "../lib/lineup-generator";
+import { generateFairLineup, FIELD_POSITIONS } from "../lib/lineup-generator";
 
 const router: IRouter = Router();
 
@@ -87,7 +87,59 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
 
   // Load stored constraints from DB
   const storedConstraints = await db.select().from(lineupConstraintsTable).where(eq(lineupConstraintsTable.active, true));
-  const generated = generateFairLineup(players, innings, constraints ?? {}, storedConstraints);
+
+  // Load per-game locks. Each row is already a (playerId, inning, position)
+  // tuple — exactly the shape `generateFairLineup` expects for `pinned`.
+  // We drop rows for innings beyond the (possibly overridden) generation
+  // length, for players excluded from `availablePlayerIds` (e.g. checked
+  // off in the Generate dialog), and for locks pointing to a position the
+  // player is no longer eligible for (eligibility can drift between when
+  // the lock was created and when generate runs). Bench is always allowed.
+  const lockRows = await db
+    .select()
+    .from(lineupLocksTable)
+    .where(eq(lineupLocksTable.gameId, params.data.id));
+  const availableSet = new Set(availablePlayerIds);
+  const playerById = new Map(players.map((p) => [p.id, p]));
+  const pinned: Array<{ playerId: number; inning: number; position: string }> = [];
+  for (const l of lockRows) {
+    if (l.inning > innings) continue;
+    if (!availableSet.has(l.playerId)) continue;
+    const p = playerById.get(l.playerId);
+    if (!p) continue;
+    if (l.position !== "Bench") {
+      const eligible = (p.eligiblePositions ?? []) as string[];
+      if (!eligible.includes(l.position)) continue;
+    }
+    pinned.push({ playerId: l.playerId, inning: l.inning, position: l.position });
+  }
+
+  const generated = generateFairLineup(players, innings, constraints ?? {}, storedConstraints, pinned);
+
+  // Feasibility check (mirrors the AI assistant route): every inning needs
+  // all 9 field positions filled. If the locks made staffing impossible the
+  // greedy generator would silently leave gaps — return 409 with a clear
+  // message instead so the coach knows to remove a lock.
+  if (pinned.length > 0) {
+    const filledByInning = new Map<number, Set<string>>();
+    for (const e of generated) {
+      if (e.position === "Bench") continue;
+      if (!filledByInning.has(e.inning)) filledByInning.set(e.inning, new Set());
+      filledByInning.get(e.inning)!.add(e.position);
+    }
+    const understaffed: number[] = [];
+    for (let i = 1; i <= innings; i++) {
+      const filled = filledByInning.get(i) ?? new Set();
+      if (filled.size < FIELD_POSITIONS.length) understaffed.push(i);
+    }
+    if (understaffed.length > 0) {
+      res.status(409).json({
+        error: `Couldn't fill every defensive position in inning ${understaffed.join(", ")} while honoring your locks. Remove a lock or include more players, then try again.`,
+        understaffedInnings: understaffed,
+      });
+      return;
+    }
+  }
 
   // Return as lineup entries with player names (not saved yet)
   const playerMap = new Map(players.map((p) => [p.id, p.name]));

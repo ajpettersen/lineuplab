@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute, Link } from "wouter";
 import {
   DndContext,
@@ -35,11 +35,19 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -125,6 +133,27 @@ export default function GameDetail() {
   // so droppable cells in the same inning can highlight as valid drop targets.
   const [activeDrag, setActiveDrag] = useState<{ entryId: number; inning: number } | null>(null);
 
+  // Position locks (per-game persistent pins). Each row is a single
+  // (playerId, inning, position); an "all innings" lock is N rows behind
+  // the scenes but the UI groups them visually.
+  type Lock = {
+    id: number;
+    gameId: number;
+    playerId: number;
+    playerName: string;
+    inning: number;
+    position: string;
+  };
+  const [locks, setLocks] = useState<Lock[]>([]);
+  const [locksLoading, setLocksLoading] = useState(false);
+  const [addLockOpen, setAddLockOpen] = useState(false);
+  const [lockPlayerId, setLockPlayerId] = useState<string>("");
+  const [lockPosition, setLockPosition] = useState<string>("");
+  // "all" means apply to every inning of the game; otherwise a 1-based inning number.
+  const [lockInning, setLockInning] = useState<string>("all");
+  const [lockSubmitting, setLockSubmitting] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
+
   // AI Assistant search bar state.
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -139,6 +168,124 @@ export default function GameDetail() {
     // Touch needs a hold delay so the page can still scroll vertically.
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
   );
+
+  // Load locks for this game whenever the id changes.
+  const refetchLocks = async (): Promise<Lock[]> => {
+    if (!id) return [];
+    setLocksLoading(true);
+    try {
+      const resp = await fetch(`${BASE}/api/games/${id}/locks`);
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      const data: Lock[] = await resp.json();
+      setLocks(data);
+      return data;
+    } catch {
+      // Don't toast on background load failures — surface only on user action.
+      return [];
+    } finally {
+      setLocksLoading(false);
+    }
+  };
+  useEffect(() => {
+    void refetchLocks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Group locks for compact display: one chip per (player, position) where
+  // every inning of the game is covered, otherwise per-inning chips.
+  const groupedLocks = useMemo(() => {
+    if (!game) return [] as Array<{ key: string; label: string; ids: number[]; player: string; position: string; allInnings: boolean }>;
+    const byPlayerPos = new Map<string, Lock[]>();
+    for (const l of locks) {
+      const k = `${l.playerId}:${l.position}`;
+      const list = byPlayerPos.get(k) ?? [];
+      list.push(l);
+      byPlayerPos.set(k, list);
+    }
+    const out: Array<{ key: string; label: string; ids: number[]; player: string; position: string; allInnings: boolean }> = [];
+    for (const [k, list] of byPlayerPos) {
+      const player = list[0].playerName;
+      const position = list[0].position;
+      const innings = list.map((l) => l.inning).sort((a, b) => a - b);
+      const allCovered = innings.length === game.innings && innings[0] === 1 && innings[innings.length - 1] === game.innings;
+      if (allCovered) {
+        out.push({ key: k, label: `${player} @ ${position} · all innings`, ids: list.map((l) => l.id), player, position, allInnings: true });
+      } else {
+        for (const l of list) {
+          out.push({ key: `${k}:${l.inning}`, label: `${player} @ ${position} · inn ${l.inning}`, ids: [l.id], player, position, allInnings: false });
+        }
+      }
+    }
+    // Stable sort: by player name, then position, then inning.
+    out.sort((a, b) => a.player.localeCompare(b.player) || a.position.localeCompare(b.position) || a.label.localeCompare(b.label));
+    return out;
+  }, [locks, game]);
+
+  const openAddLock = () => {
+    setLockPlayerId("");
+    setLockPosition("");
+    setLockInning("all");
+    setLockError(null);
+    setAddLockOpen(true);
+  };
+
+  const handleSaveLock = async () => {
+    setLockError(null);
+    if (!lockPlayerId) { setLockError("Pick a player."); return; }
+    if (!lockPosition) { setLockError("Pick a position."); return; }
+    setLockSubmitting(true);
+    try {
+      const resp = await fetch(`${BASE}/api/games/${id}/locks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId: parseInt(lockPlayerId, 10),
+          position: lockPosition,
+          inning: lockInning === "all" ? null : parseInt(lockInning, 10),
+        }),
+      });
+      if (!resp.ok) {
+        let msg = `Request failed (${resp.status})`;
+        try { const body = await resp.json(); if (body?.error) msg = body.error; } catch { /* keep default */ }
+        setLockError(msg);
+        return;
+      }
+      await refetchLocks();
+      setAddLockOpen(false);
+      toast({ title: "Lock added" });
+      // Locks change what the generator can produce — clear any preview that
+      // was built without them so the coach regenerates.
+      setPreviewLineup(null);
+    } catch {
+      setLockError("Network error — try again.");
+    } finally {
+      setLockSubmitting(false);
+    }
+  };
+
+  const handleRemoveLock = async (ids: number[]) => {
+    let hadRealError = false;
+    try {
+      // Delete each row that backs this chip (an "all innings" chip is N rows).
+      // A 404 means the row was already gone — that's the state we wanted, so
+      // treat it as success rather than a failure that surfaces a scary toast.
+      const results = await Promise.all(
+        ids.map((lid) => fetch(`${BASE}/api/games/${id}/locks/${lid}`, { method: "DELETE" })),
+      );
+      hadRealError = results.some((r) => !r.ok && r.status !== 404);
+    } catch {
+      hadRealError = true;
+    } finally {
+      // Always resync — even on partial failure we don't want stale ids in
+      // local state (which causes "ghost" 404s on the next click).
+      await refetchLocks();
+    }
+    if (hadRealError) {
+      toast({ title: "Failed to remove lock", variant: "destructive" });
+    } else {
+      toast({ title: "Lock removed" });
+    }
+  };
 
   const openGenerate = () => {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
@@ -371,7 +518,19 @@ export default function GameDetail() {
           setPreviewLineup(result);
           toast({ title: "Lineup generated — review and save" });
         },
-        onError: () => toast({ title: "Failed to generate lineup", variant: "destructive" }),
+        onError: (err: unknown) => {
+          // Orval throws an AxiosError-like with .response.data on non-2xx;
+          // surface the server's friendly message (e.g. understaffed-inning
+          // 409s from the locks feasibility check) so the coach knows what
+          // to fix instead of a generic "failed".
+          const data = (err as { response?: { data?: { error?: string } } } | null)?.response?.data;
+          const msg = data?.error;
+          toast({
+            title: "Failed to generate lineup",
+            description: msg,
+            variant: "destructive",
+          });
+        },
       }
     );
   };
@@ -848,6 +1007,58 @@ export default function GameDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* Position Locks — pin specific players to specific positions/innings.
+          The lineup generator and AI assistant honor these. */}
+      {game.status !== "cancelled" && (
+        <Card data-testid="card-locks">
+          <CardHeader className="flex-row items-start justify-between space-y-0 gap-3 pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <LockIcon className="h-4 w-4" />
+                Position Locks
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Pin a player to a position for one inning or all innings — the generator and AI assistant will honor them.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={openAddLock} data-testid="button-add-lock">
+              <Plus className="h-4 w-4 mr-1" />
+              Add Lock
+            </Button>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {locksLoading && locks.length === 0 ? (
+              <p className="text-sm text-muted-foreground" data-testid="text-locks-loading">Loading locks…</p>
+            ) : groupedLocks.length === 0 ? (
+              <p className="text-sm text-muted-foreground" data-testid="text-locks-empty">
+                No locks yet. Add one to pin a player to a specific position.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2" data-testid="list-locks">
+                {groupedLocks.map((g) => (
+                  <span
+                    key={g.key}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${positionColor(g.position)}`}
+                    data-testid={`chip-lock-${g.ids.join("-")}`}
+                  >
+                    {g.label}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLock(g.ids)}
+                      className="ml-0.5 -mr-0.5 rounded-full hover:bg-black/10 p-0.5"
+                      aria-label={`Remove lock ${g.label}`}
+                      data-testid={`button-remove-lock-${g.ids[0]}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Lineup Grid */}
       {previewLineup && (
@@ -1387,6 +1598,79 @@ export default function GameDetail() {
             <Button variant="outline" onClick={() => setCompleteOpen(false)}>Cancel</Button>
             <Button onClick={handleMarkComplete} disabled={updateGame.isPending}>
               {updateGame.isPending ? "Saving..." : "Mark Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Lock Dialog */}
+      <Dialog open={addLockOpen} onOpenChange={(o) => !o && setAddLockOpen(false)}>
+        <DialogContent className="max-w-sm" data-testid="dialog-add-lock">
+          <DialogHeader>
+            <DialogTitle>Add Position Lock</DialogTitle>
+            <DialogDescription>
+              Pin a player to a specific position for one inning or every inning of this game.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="lock-player">Player</Label>
+              <Select value={lockPlayerId} onValueChange={setLockPlayerId}>
+                <SelectTrigger id="lock-player" data-testid="select-lock-player">
+                  <SelectValue placeholder="Pick a player" />
+                </SelectTrigger>
+                <SelectContent>
+                  {players
+                    .filter((p) => p.active)
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)} data-testid={`option-lock-player-${p.id}`}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="lock-position">Position</Label>
+              <Select value={lockPosition} onValueChange={setLockPosition}>
+                <SelectTrigger id="lock-position" data-testid="select-lock-position">
+                  <SelectValue placeholder="Pick a position" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[...FIELD_POSITIONS, "Bench"].map((pos) => (
+                    <SelectItem key={pos} value={pos} data-testid={`option-lock-position-${pos}`}>
+                      {pos}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="lock-inning">Inning</Label>
+              <Select value={lockInning} onValueChange={setLockInning}>
+                <SelectTrigger id="lock-inning" data-testid="select-lock-inning">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" data-testid="option-lock-inning-all">All innings</SelectItem>
+                  {Array.from({ length: game.innings }, (_, i) => i + 1).map((n) => (
+                    <SelectItem key={n} value={String(n)} data-testid={`option-lock-inning-${n}`}>
+                      Inning {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {lockError && (
+              <p className="text-sm text-destructive" data-testid="text-lock-error">{lockError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddLockOpen(false)} disabled={lockSubmitting}>Cancel</Button>
+            <Button onClick={handleSaveLock} disabled={lockSubmitting} data-testid="button-save-lock">
+              {lockSubmitting ? "Saving..." : "Add Lock"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -9,6 +9,7 @@ import battingRouter from "./batting";
 import constraintsRouter from "./constraints";
 import aiAssistantRouter from "./ai-assistant";
 import lineupFromImageRouter from "./lineup-from-image";
+import locksRouter from "./locks";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(battingRouter);
 router.use(constraintsRouter);
 router.use(aiAssistantRouter);
 router.use(lineupFromImageRouter);
+router.use(locksRouter);
 
 export default router;

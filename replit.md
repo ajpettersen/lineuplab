@@ -60,6 +60,42 @@ A travel baseball team defensive lineup manager for coaches. Features:
 - **Post-game editing**: Recorded lineups remain editable after Mark Complete via
   the same drag/tap-swap UI. Season stats aggregate from `lineup_entries` so any
   saved edit immediately reflects what actually happened.
+- **Position Locks** (Game Detail page): "Position Locks" card under the AI
+  assistant lets the coach pin specific players to specific positions for a
+  given inning or "All innings".
+  - **Storage**: `lineup_locks` table (`gameId`, `playerId`, `inning notNull`,
+    `position`) with two unique indexes: `(gameId, playerId, inning)`
+    (one lock per player per inning) and a partial index on
+    `(gameId, inning, position) WHERE position <> 'Bench'` (one player per
+    field position per inning; Bench can repeat). The partial index is the
+    DB-level guard against the read-then-insert race.
+  - **API**: `GET/POST/DELETE /api/games/:id/locks` +
+    `DELETE /api/games/:id/locks/:lockId`. POST validates active player +
+    position eligibility (Bench always allowed), expands `inning:null` into
+    N rows, and runs the conflict-check + insert inside a Drizzle
+    transaction. App-level conflicts return 409 with friendly messages;
+    Postgres unique-violation (SQLSTATE 23505) from a concurrent racer is
+    mapped to the same 409.
+  - **Generator integration** (`POST /api/games/:id/lineup/generate`): loads
+    locks, drops rows for now-ineligible players (eligibility drift between
+    save and generate), passes the rest as the `pinned` arg to
+    `generateFairLineup`. Then runs a feasibility check — if any inning
+    lacks all 9 field positions the route returns 409 with
+    `"Couldn't fill every defensive position in inning N…"` instead of
+    silently shipping a half-empty lineup. The frontend surfaces the
+    server's `error` field in the toast description.
+  - **AI assistant integration** (`POST /api/games/:id/ai-assistant`):
+    locks are authoritative — when an AI-proposed pin conflicts with a
+    lock (same player+inning at a different position, or same field
+    position+inning held by a different player), the AI pin is dropped and
+    the lock is kept. Dropped pins are appended to the response
+    `explanation` so the coach knows ("Kept your existing lock: …. Remove
+    the lock if you want me to override.").
+  - **UI**: groups multi-row "all innings" locks into a single chip with
+    one X button. Remove handler treats DELETE 404 as success and always
+    refetches in a finally block, so partial-success delete batches can't
+    leave stale ids in component state. Add Lock dialog uses shadcn Select
+    for player/position/inning with an "All innings" default.
 - **Season stats**: Track playing time, bench time, position distribution, and a fairness score
 - **Inning-by-inning grid**: Visual lineup display per game
 
