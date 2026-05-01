@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireAuth } from "../middlewares/requireAuth";
 import healthRouter from "./health";
 import playersRouter from "./players";
 import gamesRouter from "./games";
@@ -10,10 +11,17 @@ import constraintsRouter from "./constraints";
 import aiAssistantRouter from "./ai-assistant";
 import lineupFromImageRouter from "./lineup-from-image";
 import locksRouter from "./locks";
+import teamSettingsRouter from "./team-settings";
+import preferencesRouter from "./preferences";
 
 const router: IRouter = Router();
 
+// Public routes — no auth required.
 router.use(healthRouter);
+
+// All routes mounted below this line require an authenticated coach.
+router.use(requireAuth);
+
 router.use(playersRouter);
 router.use(gamesRouter);
 router.use(lineupsRouter);
@@ -24,5 +32,7 @@ router.use(constraintsRouter);
 router.use(aiAssistantRouter);
 router.use(lineupFromImageRouter);
 router.use(locksRouter);
+router.use(teamSettingsRouter);
+router.use(preferencesRouter);
 
 export default router;

@@ -27,8 +27,12 @@ import type {
   PlayerStats,
   SaveLineupBody,
   SeasonStats,
+  TeamSettings,
   UpdateGameBody,
   UpdatePlayerBody,
+  UpdatePreferencesBody,
+  UpdateTeamSettingsBody,
+  UserPreferences,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -1340,3 +1344,325 @@ export function useGetPlayerStats<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get the current coach's team branding (auto-creates defaults on first read)
+ */
+export const getGetTeamSettingsUrl = () => {
+  return `/api/team-settings`;
+};
+
+export const getTeamSettings = async (
+  options?: RequestInit,
+): Promise<TeamSettings> => {
+  return customFetch<TeamSettings>(getGetTeamSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTeamSettingsQueryKey = () => {
+  return [`/api/team-settings`] as const;
+};
+
+export const getGetTeamSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTeamSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTeamSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTeamSettingsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamSettings>>> = ({
+    signal,
+  }) => getTeamSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTeamSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTeamSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTeamSettings>>
+>;
+export type GetTeamSettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current coach's team branding (auto-creates defaults on first read)
+ */
+
+export function useGetTeamSettings<
+  TData = Awaited<ReturnType<typeof getTeamSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTeamSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTeamSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update the current coach's team branding
+ */
+export const getUpdateTeamSettingsUrl = () => {
+  return `/api/team-settings`;
+};
+
+export const updateTeamSettings = async (
+  updateTeamSettingsBody: UpdateTeamSettingsBody,
+  options?: RequestInit,
+): Promise<TeamSettings> => {
+  return customFetch<TeamSettings>(getUpdateTeamSettingsUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTeamSettingsBody),
+  });
+};
+
+export const getUpdateTeamSettingsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTeamSettings>>,
+    TError,
+    { data: BodyType<UpdateTeamSettingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTeamSettings>>,
+  TError,
+  { data: BodyType<UpdateTeamSettingsBody> },
+  TContext
+> => {
+  const mutationKey = ["updateTeamSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTeamSettings>>,
+    { data: BodyType<UpdateTeamSettingsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateTeamSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTeamSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTeamSettings>>
+>;
+export type UpdateTeamSettingsMutationBody = BodyType<UpdateTeamSettingsBody>;
+export type UpdateTeamSettingsMutationError = ErrorType<void>;
+
+/**
+ * @summary Update the current coach's team branding
+ */
+export const useUpdateTeamSettings = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTeamSettings>>,
+    TError,
+    { data: BodyType<UpdateTeamSettingsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTeamSettings>>,
+  TError,
+  { data: BodyType<UpdateTeamSettingsBody> },
+  TContext
+> => {
+  return useMutation(getUpdateTeamSettingsMutationOptions(options));
+};
+
+/**
+ * @summary Get the current coach's preferences (auto-creates defaults on first read)
+ */
+export const getGetPreferencesUrl = () => {
+  return `/api/preferences`;
+};
+
+export const getPreferences = async (
+  options?: RequestInit,
+): Promise<UserPreferences> => {
+  return customFetch<UserPreferences>(getGetPreferencesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPreferencesQueryKey = () => {
+  return [`/api/preferences`] as const;
+};
+
+export const getGetPreferencesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPreferences>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPreferences>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPreferencesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPreferences>>> = ({
+    signal,
+  }) => getPreferences({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPreferences>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPreferencesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPreferences>>
+>;
+export type GetPreferencesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current coach's preferences (auto-creates defaults on first read)
+ */
+
+export function useGetPreferences<
+  TData = Awaited<ReturnType<typeof getPreferences>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPreferences>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPreferencesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update the current coach's preferences
+ */
+export const getUpdatePreferencesUrl = () => {
+  return `/api/preferences`;
+};
+
+export const updatePreferences = async (
+  updatePreferencesBody: UpdatePreferencesBody,
+  options?: RequestInit,
+): Promise<UserPreferences> => {
+  return customFetch<UserPreferences>(getUpdatePreferencesUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updatePreferencesBody),
+  });
+};
+
+export const getUpdatePreferencesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePreferences>>,
+    TError,
+    { data: BodyType<UpdatePreferencesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePreferences>>,
+  TError,
+  { data: BodyType<UpdatePreferencesBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePreferences"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePreferences>>,
+    { data: BodyType<UpdatePreferencesBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updatePreferences(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePreferencesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePreferences>>
+>;
+export type UpdatePreferencesMutationBody = BodyType<UpdatePreferencesBody>;
+export type UpdatePreferencesMutationError = ErrorType<void>;
+
+/**
+ * @summary Update the current coach's preferences
+ */
+export const useUpdatePreferences = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePreferences>>,
+    TError,
+    { data: BodyType<UpdatePreferencesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePreferences>>,
+  TError,
+  { data: BodyType<UpdatePreferencesBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePreferencesMutationOptions(options));
+};

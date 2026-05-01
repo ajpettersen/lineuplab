@@ -1,9 +1,10 @@
 import { Router, type IRouter, json as expressJson } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, gamesTable, playersTable } from "@workspace/db";
+import { db, playersTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { FIELD_POSITIONS } from "../lib/lineup-generator";
+import { getOwnedGame } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -153,6 +154,7 @@ function parseAiJson(raw: string): AiResult | null {
 const imageJsonParser = expressJson({ limit: "8mb" });
 
 router.post("/games/:id/lineup/from-image", imageJsonParser, async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -194,13 +196,18 @@ router.post("/games/:id/lineup/from-image", imageJsonParser, async (req, res): P
     return;
   }
 
-  const [game] = await db.select().from(gamesTable).where(eq(gamesTable.id, params.data.id));
+  const game = await getOwnedGame(userId, params.data.id);
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
   }
 
-  const allPlayers = await db.select().from(playersTable);
+  // Only consider this coach's players — a roster id from another tenant must
+  // never appear in the matched lineup.
+  const allPlayers = await db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.userId, userId));
   const activePlayers = allPlayers.filter((p) => p.active);
   if (activePlayers.length === 0) {
     res.status(400).json({ error: "No active players on the roster" });

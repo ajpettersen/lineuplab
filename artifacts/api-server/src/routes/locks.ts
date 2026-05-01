@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, gamesTable, playersTable, lineupLocksTable } from "@workspace/db";
+import { db, playersTable, lineupLocksTable } from "@workspace/db";
 import { FIELD_POSITIONS } from "../lib/lineup-generator";
+import { getOwnedGame, getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -23,9 +24,16 @@ const CreateBody = z.object({
 });
 
 router.get("/games/:id/locks", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
+    return;
+  }
+  // 404 (not 403) when the game belongs to another coach so we don't leak
+  // which game ids exist outside the current tenant.
+  if (!(await getOwnedGame(userId, params.data.id))) {
+    res.status(404).json({ error: "Game not found" });
     return;
   }
   const rows = await db
@@ -46,6 +54,7 @@ router.get("/games/:id/locks", async (req, res): Promise<void> => {
 });
 
 router.post("/games/:id/locks", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -57,13 +66,13 @@ router.post("/games/:id/locks", async (req, res): Promise<void> => {
     return;
   }
 
-  const [game] = await db.select().from(gamesTable).where(eq(gamesTable.id, params.data.id));
+  const game = await getOwnedGame(userId, params.data.id);
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
   }
 
-  const [player] = await db.select().from(playersTable).where(eq(playersTable.id, body.data.playerId));
+  const player = await getOwnedPlayer(userId, body.data.playerId);
   if (!player) {
     res.status(404).json({ error: "Player not found" });
     return;
@@ -201,9 +210,15 @@ class LockConflictError extends Error {
 }
 
 router.delete("/games/:id/locks/:lockId", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = DeleteParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid params" });
+    return;
+  }
+  // Ownership: must own the parent game before any deletes can land.
+  if (!(await getOwnedGame(userId, params.data.id))) {
+    res.status(404).json({ error: "Lock not found" });
     return;
   }
   const result = await db
@@ -224,9 +239,14 @@ router.delete("/games/:id/locks/:lockId", async (req, res): Promise<void> => {
 
 // Convenience: bulk delete all locks for a game.
 router.delete("/games/:id/locks", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
+    return;
+  }
+  if (!(await getOwnedGame(userId, params.data.id))) {
+    res.status(404).json({ error: "Game not found" });
     return;
   }
   const result = await db

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc } from "drizzle-orm";
+import { and, eq, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, gamesTable, lineupEntriesTable } from "@workspace/db";
 import {
@@ -28,8 +28,13 @@ import ical from "node-ical";
 
 const router: IRouter = Router();
 
-router.get("/games", async (_req, res): Promise<void> => {
-  const games = await db.select().from(gamesTable).orderBy(gamesTable.gameDate);
+router.get("/games", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const games = await db
+    .select()
+    .from(gamesTable)
+    .where(eq(gamesTable.userId, userId))
+    .orderBy(gamesTable.gameDate);
   res.json(games);
 });
 
@@ -37,7 +42,8 @@ router.get("/games", async (_req, res): Promise<void> => {
 // "Copy from previous" picker on the game-detail page so a coach can start
 // a new lineup from a past game's positions. Must be defined BEFORE
 // "/games/:id" so it is not shadowed by the parametric route.
-router.get("/games/with-lineups", async (_req, res): Promise<void> => {
+router.get("/games/with-lineups", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const rows = await db
     .select({
       id: gamesTable.id,
@@ -49,12 +55,14 @@ router.get("/games/with-lineups", async (_req, res): Promise<void> => {
     })
     .from(gamesTable)
     .innerJoin(lineupEntriesTable, eq(lineupEntriesTable.gameId, gamesTable.id))
+    .where(eq(gamesTable.userId, userId))
     .groupBy(gamesTable.id)
     .orderBy(desc(gamesTable.gameDate));
   res.json(rows);
 });
 
 router.post("/games", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = CreateGameBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -64,6 +72,7 @@ router.post("/games", async (req, res): Promise<void> => {
   const [game] = await db
     .insert(gamesTable)
     .values({
+      userId,
       opponent: d.opponent,
       gameDate: d.gameDate,
       location: d.location ?? null,
@@ -94,7 +103,7 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
     // Manual fetch with browser-like UA — many calendar hosts block default node user agents
     const fetchRes = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; DugoutManager-iCal/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; LineupManager-iCal/1.0)",
         Accept: "text/calendar, text/plain, */*",
       },
       redirect: "follow",
@@ -193,6 +202,7 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
 
 // Bulk create games from iCal import (confirmed selection)
 router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = ConfirmICalBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -212,6 +222,7 @@ router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
               ? (g.summary?.trim() || "Team Event")
               : g.opponent;
         return {
+          userId,
           opponent,
           gameDate: new Date(g.gameDate),
           location: g.location ?? null,
@@ -227,6 +238,7 @@ router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
 });
 
 router.get("/games/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = GetGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -235,7 +247,7 @@ router.get("/games/:id", async (req, res): Promise<void> => {
   const [game] = await db
     .select()
     .from(gamesTable)
-    .where(eq(gamesTable.id, params.data.id));
+    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)));
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
@@ -244,6 +256,7 @@ router.get("/games/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/games/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = UpdateGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -268,7 +281,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   const [game] = await db
     .update(gamesTable)
     .set(updates)
-    .where(eq(gamesTable.id, params.data.id))
+    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
     .returning();
   if (!game) {
     res.status(404).json({ error: "Game not found" });
@@ -278,6 +291,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/games/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = DeleteGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -285,7 +299,7 @@ router.delete("/games/:id", async (req, res): Promise<void> => {
   }
   const [game] = await db
     .delete(gamesTable)
-    .where(eq(gamesTable.id, params.data.id))
+    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
     .returning();
   if (!game) {
     res.status(404).json({ error: "Game not found" });

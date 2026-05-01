@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import { db, battingStatsTable, playersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -35,7 +36,10 @@ function computeRates(row: { ab: number; hits: number; doubles: number; triples:
   return { avg: Math.round(avg * 1000) / 1000, obp: Math.round(obp * 1000) / 1000, slg: Math.round(slg * 1000) / 1000, ops: Math.round(ops * 1000) / 1000 };
 }
 
-router.get("/batting", async (_req, res): Promise<void> => {
+router.get("/batting", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  // No userId column on battingStats — tenant isolation comes from the
+  // innerJoin to players + WHERE players.userId = req.userId.
   const rows = await db
     .select({
       id: battingStatsTable.id,
@@ -63,13 +67,22 @@ router.get("/batting", async (_req, res): Promise<void> => {
     })
     .from(battingStatsTable)
     .innerJoin(playersTable, eq(battingStatsTable.playerId, playersTable.id))
+    .where(eq(playersTable.userId, userId))
     .orderBy(battingStatsTable.playerId);
   res.json(rows);
 });
 
 router.put("/batting/:playerId", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const playerId = parseInt(req.params.playerId);
   if (isNaN(playerId)) { res.status(400).json({ error: "Invalid player ID" }); return; }
+
+  // Confirm the target player belongs to this coach before any write lands.
+  if (!(await getOwnedPlayer(userId, playerId))) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+
   const parsed = BattingRowSchema.safeParse({ ...req.body, playerId });
   if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() }); return; }
 
@@ -93,15 +106,24 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
 });
 
 router.delete("/batting/:playerId", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const playerId = parseInt(req.params.playerId);
+  if (!(await getOwnedPlayer(userId, playerId))) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
   await db.delete(battingStatsTable).where(eq(battingStatsTable.playerId, playerId));
   res.status(204).send();
 });
 
 router.post("/batting/extract", upload.single("file"), async (req, res): Promise<void> => {
+  const userId = req.userId!;
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
 
-  const players = await db.select().from(playersTable).where(eq(playersTable.active, true));
+  const players = await db
+    .select()
+    .from(playersTable)
+    .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
   const playerList = players.map((p) => `${p.id}: ${p.name}${p.number != null ? ` (#${p.number})` : ""}`).join("\n");
 
   const base64 = req.file.buffer.toString("base64");
@@ -158,6 +180,14 @@ If a stat column is not visible, use 0. Only include players whose stats you can
   } catch {
     res.status(422).json({ error: "Could not parse AI response", raw });
     return;
+  }
+
+  // Drop any rows the LLM tried to attribute to players outside this roster.
+  const rosterIds = new Set(players.map((p) => p.id));
+  if (Array.isArray(extracted)) {
+    extracted = extracted.filter(
+      (r: { playerId?: unknown }) => typeof r.playerId === "number" && rosterIds.has(r.playerId),
+    );
   }
 
   res.json({ extracted });

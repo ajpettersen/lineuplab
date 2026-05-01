@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray } from "drizzle-orm";
-import { db, gamesTable, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable } from "@workspace/db";
+import { and, eq, inArray } from "drizzle-orm";
+import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable } from "@workspace/db";
 import {
   GetGameLineupParams,
   GenerateLineupParams,
@@ -9,20 +9,18 @@ import {
   SaveLineupBody,
 } from "@workspace/api-zod";
 import { generateFairLineup, FIELD_POSITIONS } from "../lib/lineup-generator";
+import { getOwnedGame, filterOwnedPlayerIds } from "../lib/ownership";
 
 const router: IRouter = Router();
 
 router.get("/games/:id/lineup", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = GetGameLineupParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [game] = await db
-    .select()
-    .from(gamesTable)
-    .where(eq(gamesTable.id, params.data.id));
-  if (!game) {
+  if (!(await getOwnedGame(userId, params.data.id))) {
     res.status(404).json({ error: "Game not found" });
     return;
   }
@@ -47,6 +45,7 @@ router.get("/games/:id/lineup", async (req, res): Promise<void> => {
 });
 
 router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = GenerateLineupParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -58,10 +57,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     return;
   }
 
-  const [game] = await db
-    .select()
-    .from(gamesTable)
-    .where(eq(gamesTable.id, params.data.id));
+  const game = await getOwnedGame(userId, params.data.id);
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
@@ -75,18 +71,29 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     return;
   }
 
+  // Tenant-isolation: silently drop any player ids the caller doesn't own
+  // (e.g. crafted request) before hitting the generator.
+  const ownedIds = await filterOwnedPlayerIds(userId, availablePlayerIds);
+  if (ownedIds.length === 0) {
+    res.status(400).json({ error: "No valid players found" });
+    return;
+  }
+
   const players = await db
     .select()
     .from(playersTable)
-    .where(inArray(playersTable.id, availablePlayerIds));
+    .where(and(eq(playersTable.userId, userId), inArray(playersTable.id, ownedIds)));
 
   if (players.length === 0) {
     res.status(400).json({ error: "No valid players found" });
     return;
   }
 
-  // Load stored constraints from DB
-  const storedConstraints = await db.select().from(lineupConstraintsTable).where(eq(lineupConstraintsTable.active, true));
+  // Load this coach's stored constraints from DB.
+  const storedConstraints = await db
+    .select()
+    .from(lineupConstraintsTable)
+    .where(and(eq(lineupConstraintsTable.active, true), eq(lineupConstraintsTable.userId, userId)));
 
   // Load per-game locks. Each row is already a (playerId, inning, position)
   // tuple — exactly the shape `generateFairLineup` expects for `pinned`.
@@ -157,6 +164,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
 });
 
 router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = SaveLineupParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -168,13 +176,19 @@ router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
     return;
   }
 
-  const [game] = await db
-    .select()
-    .from(gamesTable)
-    .where(eq(gamesTable.id, params.data.id));
-  if (!game) {
+  if (!(await getOwnedGame(userId, params.data.id))) {
     res.status(404).json({ error: "Game not found" });
     return;
+  }
+
+  // Tenant-isolation: every entry's playerId must belong to this coach.
+  const incomingIds = parsed.data.entries.map((e) => e.playerId);
+  if (incomingIds.length > 0) {
+    const ownedIds = await filterOwnedPlayerIds(userId, incomingIds);
+    if (ownedIds.length !== new Set(incomingIds).size) {
+      res.status(400).json({ error: "One or more players are not on your roster." });
+      return;
+    }
   }
 
   // Delete existing lineup for this game

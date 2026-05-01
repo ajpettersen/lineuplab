@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, gamesTable, playersTable, lineupEntriesTable, historicalFieldingTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -35,14 +35,20 @@ function posGroupInnings(hist: {
   };
 }
 
-router.get("/stats/season", async (_req, res): Promise<void> => {
-  const allRows = await db.select().from(gamesTable);
+router.get("/stats/season", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const allRows = await db.select().from(gamesTable).where(eq(gamesTable.userId, userId));
   // Only actual games count toward "Total Games" — practices and other events are excluded.
   const games = allRows.filter((g) => g.type === "game");
   const totalGames = games.length;
   const completedGames = games.filter((g) => g.status === "completed").length;
 
-  const entries = await db.select().from(lineupEntriesTable);
+  // Lineup entries are tenant-isolated via the parent game id set we just
+  // loaded. If the coach has no games yet, skip the entries query entirely.
+  const gameIds = allRows.map((g) => g.id);
+  const entries = gameIds.length > 0
+    ? await db.select().from(lineupEntriesTable).where(inArray(lineupEntriesTable.gameId, gameIds))
+    : [];
   const fieldEntries = entries.filter((e) => e.position !== "Bench");
   const totalInnings = fieldEntries.length;
 
@@ -51,7 +57,10 @@ router.get("/stats/season", async (_req, res): Promise<void> => {
     positionDistribution[e.position] = (positionDistribution[e.position] ?? 0) + 1;
   }
 
-  const players = await db.select().from(playersTable).where(eq(playersTable.active, true));
+  const players = await db
+    .select()
+    .from(playersTable)
+    .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
   let fairnessScore = 100;
   if (players.length > 1 && completedGames > 0) {
     const benchByPlayer: number[] = players.map((p) => {
@@ -68,10 +77,23 @@ router.get("/stats/season", async (_req, res): Promise<void> => {
   res.json({ totalGames, completedGames, totalInnings, positionDistribution, fairnessScore });
 });
 
-router.get("/stats/players", async (_req, res): Promise<void> => {
-  const players = await db.select().from(playersTable);
-  const allEntries = await db.select().from(lineupEntriesTable);
-  const allHistorical = await db.select().from(historicalFieldingTable);
+router.get("/stats/players", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const players = await db.select().from(playersTable).where(eq(playersTable.userId, userId));
+  if (players.length === 0) {
+    res.json([]);
+    return;
+  }
+  const playerIds = players.map((p) => p.id);
+  // Bound entries + historical to this coach's player ids.
+  const allEntries = await db
+    .select()
+    .from(lineupEntriesTable)
+    .where(inArray(lineupEntriesTable.playerId, playerIds));
+  const allHistorical = await db
+    .select()
+    .from(historicalFieldingTable)
+    .where(inArray(historicalFieldingTable.playerId, playerIds));
 
   const stats = players.map((p) => {
     const playerEntries = allEntries.filter((e) => e.playerId === p.id);

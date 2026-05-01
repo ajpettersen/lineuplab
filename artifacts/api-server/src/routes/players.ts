@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import multer from "multer";
 import { z } from "zod";
 import { db, playersTable } from "@workspace/db";
@@ -98,14 +98,19 @@ router.post("/players/extract", upload.single("file"), async (req, res): Promise
 });
 
 router.post("/players/bulk", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = BulkBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
 
-  // Skip duplicates by case-insensitive name + (number if given) match against existing roster.
-  const existing = await db.select({ name: playersTable.name, number: playersTable.number }).from(playersTable);
+  // Skip duplicates by case-insensitive name + (number if given) match against
+  // THIS coach's existing roster (other coaches' rosters are invisible).
+  const existing = await db
+    .select({ name: playersTable.name, number: playersTable.number })
+    .from(playersTable)
+    .where(eq(playersTable.userId, userId));
   const existingKeys = new Set(
     existing.map((e) => `${e.name.trim().toLowerCase()}|${e.number ?? ""}`)
   );
@@ -124,6 +129,7 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
     if (p.canPitch) eligible.add("P");
     const preferred = (p.preferredPositions ?? []).filter((pp) => KNOWN_POSITIONS.has(pp) && eligible.has(pp));
     rows.push({
+      userId,
       name: p.name,
       number: p.number ?? null,
       eligiblePositions: Array.from(eligible),
@@ -138,12 +144,18 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
   res.status(201).json({ created, skipped });
 });
 
-router.get("/players", async (_req, res): Promise<void> => {
-  const players = await db.select().from(playersTable).orderBy(playersTable.name);
+router.get("/players", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const players = await db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.userId, userId))
+    .orderBy(playersTable.name);
   res.json(players);
 });
 
 router.post("/players", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = CreatePlayerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -153,6 +165,7 @@ router.post("/players", async (req, res): Promise<void> => {
   const [player] = await db
     .insert(playersTable)
     .values({
+      userId,
       name: data.name,
       number: data.number ?? null,
       eligiblePositions: data.eligiblePositions,
@@ -166,6 +179,7 @@ router.post("/players", async (req, res): Promise<void> => {
 });
 
 router.get("/players/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = GetPlayerParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -174,7 +188,7 @@ router.get("/players/:id", async (req, res): Promise<void> => {
   const [player] = await db
     .select()
     .from(playersTable)
-    .where(eq(playersTable.id, params.data.id));
+    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)));
   if (!player) {
     res.status(404).json({ error: "Player not found" });
     return;
@@ -183,6 +197,7 @@ router.get("/players/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/players/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = UpdatePlayerParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -206,7 +221,7 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   const [player] = await db
     .update(playersTable)
     .set(updates)
-    .where(eq(playersTable.id, params.data.id))
+    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)))
     .returning();
   if (!player) {
     res.status(404).json({ error: "Player not found" });
@@ -216,6 +231,7 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/players/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = DeletePlayerParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -223,7 +239,7 @@ router.delete("/players/:id", async (req, res): Promise<void> => {
   }
   const [player] = await db
     .delete(playersTable)
-    .where(eq(playersTable.id, params.data.id))
+    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)))
     .returning();
   if (!player) {
     res.status(404).json({ error: "Player not found" });

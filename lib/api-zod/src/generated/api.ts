@@ -348,3 +348,129 @@ export const GetPlayerStatsResponseItem = zod.object({
   inningsPitched: zod.number(),
 });
 export const GetPlayerStatsResponse = zod.array(GetPlayerStatsResponseItem);
+
+/**
+ * @summary Get the current coach's team branding (auto-creates defaults on first read)
+ */
+export const GetTeamSettingsResponse = zod.object({
+  userId: zod.string(),
+  teamName: zod.string(),
+  teamShortName: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update the current coach's team branding
+ */
+export const updateTeamSettingsBodyTeamNameMax = 80;
+
+export const updateTeamSettingsBodyTeamShortNameMax = 20;
+
+export const UpdateTeamSettingsBody = zod.object({
+  teamName: zod
+    .string()
+    .min(1)
+    .max(updateTeamSettingsBodyTeamNameMax)
+    .optional(),
+  teamShortName: zod
+    .string()
+    .min(1)
+    .max(updateTeamSettingsBodyTeamShortNameMax)
+    .optional(),
+});
+
+export const UpdateTeamSettingsResponse = zod.object({
+  userId: zod.string(),
+  teamName: zod.string(),
+  teamShortName: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Get the current coach's preferences (auto-creates defaults on first read)
+ */
+export const getPreferencesResponseDefaultInningsMax = 15;
+
+export const getPreferencesResponseDefaultMaxInningsPerPositionMax = 15;
+
+export const getPreferencesResponseDefaultMaxInningsBenchMin = 0;
+export const getPreferencesResponseDefaultMaxInningsBenchMax = 15;
+
+export const GetPreferencesResponse = zod.object({
+  userId: zod.string(),
+  defaultInnings: zod
+    .number()
+    .min(1)
+    .max(getPreferencesResponseDefaultInningsMax),
+  defaultMaxInningsPerPosition: zod
+    .number()
+    .min(1)
+    .max(getPreferencesResponseDefaultMaxInningsPerPositionMax),
+  defaultMaxInningsBench: zod
+    .number()
+    .min(getPreferencesResponseDefaultMaxInningsBenchMin)
+    .max(getPreferencesResponseDefaultMaxInningsBenchMax),
+  defaultEnsureAllPositions: zod.boolean(),
+  defaultPitcherRotation: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update the current coach's preferences
+ */
+export const updatePreferencesBodyDefaultInningsMax = 15;
+
+export const updatePreferencesBodyDefaultMaxInningsPerPositionMax = 15;
+
+export const updatePreferencesBodyDefaultMaxInningsBenchMin = 0;
+export const updatePreferencesBodyDefaultMaxInningsBenchMax = 15;
+
+export const UpdatePreferencesBody = zod.object({
+  defaultInnings: zod
+    .number()
+    .min(1)
+    .max(updatePreferencesBodyDefaultInningsMax)
+    .optional(),
+  defaultMaxInningsPerPosition: zod
+    .number()
+    .min(1)
+    .max(updatePreferencesBodyDefaultMaxInningsPerPositionMax)
+    .optional(),
+  defaultMaxInningsBench: zod
+    .number()
+    .min(updatePreferencesBodyDefaultMaxInningsBenchMin)
+    .max(updatePreferencesBodyDefaultMaxInningsBenchMax)
+    .optional(),
+  defaultEnsureAllPositions: zod.boolean().optional(),
+  defaultPitcherRotation: zod.boolean().optional(),
+});
+
+export const updatePreferencesResponseDefaultInningsMax = 15;
+
+export const updatePreferencesResponseDefaultMaxInningsPerPositionMax = 15;
+
+export const updatePreferencesResponseDefaultMaxInningsBenchMin = 0;
+export const updatePreferencesResponseDefaultMaxInningsBenchMax = 15;
+
+export const UpdatePreferencesResponse = zod.object({
+  userId: zod.string(),
+  defaultInnings: zod
+    .number()
+    .min(1)
+    .max(updatePreferencesResponseDefaultInningsMax),
+  defaultMaxInningsPerPosition: zod
+    .number()
+    .min(1)
+    .max(updatePreferencesResponseDefaultMaxInningsPerPositionMax),
+  defaultMaxInningsBench: zod
+    .number()
+    .min(updatePreferencesResponseDefaultMaxInningsBenchMin)
+    .max(updatePreferencesResponseDefaultMaxInningsBenchMax),
+  defaultEnsureAllPositions: zod.boolean(),
+  defaultPitcherRotation: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});

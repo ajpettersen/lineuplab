@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
+@import "@clerk/themes/shadcn.css";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
@@ -77,7 +79,7 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* Minnetonka Skippers — deep Skipper navy + crisp white + warm gold accent */
+  /* Lineup Manager — deep navy + crisp white + warm gold accent */
   /* Background: cool off-white with a hint of blue */
   --background: 215 30% 98%;
   --foreground: 220 35% 16%;

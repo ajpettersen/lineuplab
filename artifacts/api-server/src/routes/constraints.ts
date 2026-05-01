@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db, lineupConstraintsTable, playersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -17,7 +18,8 @@ const CreateConstraintSchema = z.object({
   active: z.boolean().optional().default(true),
 });
 
-router.get("/constraints", async (_req, res): Promise<void> => {
+router.get("/constraints", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const constraints = await db
     .select({
       id: lineupConstraintsTable.id,
@@ -34,46 +36,78 @@ router.get("/constraints", async (_req, res): Promise<void> => {
     })
     .from(lineupConstraintsTable)
     .leftJoin(playersTable, eq(lineupConstraintsTable.playerId, playersTable.id))
+    .where(eq(lineupConstraintsTable.userId, userId))
     .orderBy(lineupConstraintsTable.createdAt);
   res.json(constraints);
 });
 
 router.post("/constraints", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = CreateConstraintSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid constraint", details: parsed.error.flatten() });
     return;
   }
-  const [constraint] = await db.insert(lineupConstraintsTable).values(parsed.data).returning();
+  // If a playerId was provided, it must belong to this coach.
+  if (parsed.data.playerId != null) {
+    const owned = await getOwnedPlayer(userId, parsed.data.playerId);
+    if (!owned) {
+      res.status(400).json({ error: "Unknown player." });
+      return;
+    }
+  }
+  const [constraint] = await db
+    .insert(lineupConstraintsTable)
+    .values({ ...parsed.data, userId })
+    .returning();
   res.status(201).json(constraint);
 });
 
 router.patch("/constraints/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const id = parseInt(req.params.id);
   const { active } = req.body;
   const [updated] = await db
     .update(lineupConstraintsTable)
     .set({ active })
-    .where(eq(lineupConstraintsTable.id, id))
+    .where(and(eq(lineupConstraintsTable.id, id), eq(lineupConstraintsTable.userId, userId)))
     .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Constraint not found" });
+    return;
+  }
   res.json(updated);
 });
 
 router.delete("/constraints/:id", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const id = parseInt(req.params.id);
-  await db.delete(lineupConstraintsTable).where(eq(lineupConstraintsTable.id, id));
+  const result = await db
+    .delete(lineupConstraintsTable)
+    .where(and(eq(lineupConstraintsTable.id, id), eq(lineupConstraintsTable.userId, userId)))
+    .returning();
+  if (result.length === 0) {
+    res.status(404).json({ error: "Constraint not found" });
+    return;
+  }
   res.status(204).send();
 });
 
 // AI parse natural language constraint
 router.post("/constraints/parse", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const { input } = req.body;
   if (!input || typeof input !== "string") {
     res.status(400).json({ error: "input required" });
     return;
   }
 
-  const players = await db.select().from(playersTable).where(eq(playersTable.active, true));
+  // Only show the LLM this coach's roster so it can never resolve names to
+  // another coach's player ids.
+  const players = await db
+    .select()
+    .from(playersTable)
+    .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
   const playerList = players.map((p) => `${p.id}: ${p.name}`).join("\n");
   const positions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 

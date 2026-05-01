@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useCreateGame, getListGamesQueryKey } from "@workspace/api-client-react";
+import {
+  useCreateGame,
+  getListGamesQueryKey,
+  useGetPreferences,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,11 +18,21 @@ export default function NewGame() {
   const createGame = useCreateGame();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const prefsQuery = useGetPreferences();
   const [opponent, setOpponent] = useState("");
   const [gameDate, setGameDate] = useState("");
   const [location, setLocation] = useState("");
   const [innings, setInnings] = useState("6");
+  const [inningsTouched, setInningsTouched] = useState(false);
   const [notes, setNotes] = useState("");
+
+  // Apply the coach's preferred default once preferences load,
+  // unless the coach has already manually changed the field.
+  useEffect(() => {
+    if (prefsQuery.data && !inningsTouched) {
+      setInnings(String(prefsQuery.data.defaultInnings));
+    }
+  }, [prefsQuery.data, inningsTouched]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +109,10 @@ export default function NewGame() {
                   min="1"
                   max="9"
                   value={innings}
-                  onChange={(e) => setInnings(e.target.value)}
+                  onChange={(e) => {
+                    setInningsTouched(true);
+                    setInnings(e.target.value);
+                  }}
                 />
               </div>
             </div>

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, historicalFieldingTable, playersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -26,7 +26,9 @@ const ImportBodySchema = z.object({
   rows: z.array(FieldingRowSchema).min(1),
 });
 
-router.get("/history/fielding", async (_req, res): Promise<void> => {
+router.get("/history/fielding", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  // Tenant isolation via the players join.
   const rows = await db
     .select({
       id: historicalFieldingTable.id,
@@ -48,11 +50,13 @@ router.get("/history/fielding", async (_req, res): Promise<void> => {
     })
     .from(historicalFieldingTable)
     .innerJoin(playersTable, eq(historicalFieldingTable.playerId, playersTable.id))
+    .where(eq(playersTable.userId, userId))
     .orderBy(historicalFieldingTable.createdAt);
   res.json(rows);
 });
 
 router.post("/history/fielding", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = ImportBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid import data", details: parsed.error.flatten() });
@@ -60,14 +64,25 @@ router.post("/history/fielding", async (req, res): Promise<void> => {
   }
   const { label, rows } = parsed.data;
 
-  const allPlayers = await db.select().from(playersTable);
+  // Only resolve names against this coach's roster — never another tenant's.
+  const allPlayers = await db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.userId, userId));
+  const ownedIds = new Set(allPlayers.map((p) => p.id));
 
   const inserted = [];
   const notFound = [];
 
   for (const row of rows) {
     let playerId = row.playerId;
-    if (!playerId) {
+    if (playerId != null) {
+      // Caller-provided id must belong to this coach.
+      if (!ownedIds.has(playerId)) {
+        notFound.push(row.playerName);
+        continue;
+      }
+    } else {
       const match = allPlayers.find(
         (p) => p.name.toLowerCase().trim() === row.playerName.toLowerCase().trim()
       );
@@ -102,10 +117,28 @@ router.post("/history/fielding", async (req, res): Promise<void> => {
 });
 
 router.delete("/history/fielding/:label", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const label = decodeURIComponent(req.params.label);
+  // Two-step delete so a coach can never wipe another coach's import that
+  // happens to share the same label string. We collect this user's player
+  // ids first, then constrain the delete to that set.
+  const owned = await db
+    .select({ id: playersTable.id })
+    .from(playersTable)
+    .where(eq(playersTable.userId, userId));
+  const ownedIds = owned.map((r) => r.id);
+  if (ownedIds.length === 0) {
+    res.status(204).send();
+    return;
+  }
   await db
     .delete(historicalFieldingTable)
-    .where(eq(historicalFieldingTable.importLabel, label));
+    .where(
+      and(
+        eq(historicalFieldingTable.importLabel, label),
+        inArray(historicalFieldingTable.playerId, ownedIds),
+      ),
+    );
   res.status(204).send();
 });
 

@@ -1,9 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
-  gamesTable,
   playersTable,
   lineupEntriesTable,
   lineupConstraintsTable,
@@ -15,6 +14,7 @@ import {
   FIELD_POSITIONS,
   type PinnedAssignment,
 } from "../lib/lineup-generator";
+import { getOwnedGame } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -92,6 +92,7 @@ function parseAiJson(raw: string): AiResponse | null {
 }
 
 router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -103,14 +104,17 @@ router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
     return;
   }
 
-  const [game] = await db.select().from(gamesTable).where(eq(gamesTable.id, params.data.id));
+  const game = await getOwnedGame(userId, params.data.id);
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
   }
 
-  // Active roster (the pool the auto-generator uses).
-  const allPlayers = await db.select().from(playersTable);
+  // Active roster scoped to this coach (the pool the auto-generator uses).
+  const allPlayers = await db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.userId, userId));
   const activePlayers = allPlayers.filter((p) => p.active);
   if (activePlayers.length === 0) {
     res.status(400).json({ error: "No active players on the roster" });
@@ -152,11 +156,12 @@ router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
     )
     .join("\n");
 
-  // Active stored constraints — the model can mention these when explaining "why".
+  // Active stored constraints (this coach only) — model uses them when
+  // explaining "why".
   const constraints = await db
     .select()
     .from(lineupConstraintsTable)
-    .where(eq(lineupConstraintsTable.active, true));
+    .where(and(eq(lineupConstraintsTable.active, true), eq(lineupConstraintsTable.userId, userId)));
   const constraintLines = constraints
     .map((c) => {
       const who = c.playerId

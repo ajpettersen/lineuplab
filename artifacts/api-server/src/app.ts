@@ -1,8 +1,15 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import { clerkMiddleware } from "@clerk/express";
+import { publishableKeyFromHost } from "@clerk/shared/keys";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import {
+  CLERK_PROXY_PATH,
+  clerkProxyMiddleware,
+  getClerkProxyHost,
+} from "./middlewares/clerkProxyMiddleware";
 
 const app: Express = express();
 
@@ -25,7 +32,12 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+// Clerk proxy must be mounted BEFORE body parsers — it streams raw bytes
+// through to the Clerk frontend API.
+app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+
+app.use(cors({ credentials: true, origin: true }));
 
 // Default JSON body parser for all routes except those that handle image
 // uploads, which mount their own larger-limit parser at the route level.
@@ -37,6 +49,18 @@ app.use((req, res, next) => {
   return defaultJson(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));
+
+// Resolve the publishable key from the incoming request host so the same
+// server can serve multiple Clerk custom domains. Falls back to
+// CLERK_PUBLISHABLE_KEY when the host doesn't map to a custom domain.
+app.use(
+  clerkMiddleware((req) => ({
+    publishableKey: publishableKeyFromHost(
+      getClerkProxyHost(req) ?? "",
+      process.env.CLERK_PUBLISHABLE_KEY,
+    ),
+  })),
+);
 
 app.use("/api", router);
 

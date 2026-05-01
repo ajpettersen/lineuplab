@@ -18,6 +18,10 @@ tags:
     description: Lineup management
   - name: stats
     description: Season statistics and fairness metrics
+  - name: teamSettings
+    description: Per-coach team branding (team name and short name)
+  - name: preferences
+    description: Per-coach defaults for new games and lineup generation
 
 paths:
   /healthz:
@@ -328,6 +332,70 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PlayerStats"
+
+  /team-settings:
+    get:
+      operationId: getTeamSettings
+      tags: [teamSettings]
+      summary: Get the current coach's team branding (auto-creates defaults on first read)
+      responses:
+        "200":
+          description: Team settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamSettings"
+    patch:
+      operationId: updateTeamSettings
+      tags: [teamSettings]
+      summary: Update the current coach's team branding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamSettingsBody"
+      responses:
+        "200":
+          description: Updated team settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamSettings"
+        "400":
+          description: Invalid input
+
+  /preferences:
+    get:
+      operationId: getPreferences
+      tags: [preferences]
+      summary: Get the current coach's preferences (auto-creates defaults on first read)
+      responses:
+        "200":
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPreferences"
+    patch:
+      operationId: updatePreferences
+      tags: [preferences]
+      summary: Update the current coach's preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePreferencesBody"
+      responses:
+        "200":
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPreferences"
+        "400":
+          description: Invalid input
 
 components:
   schemas:
@@ -649,3 +717,94 @@ components:
         - benchInnings
         - positionInnings
         - inningsPitched
+
+    TeamSettings:
+      type: object
+      properties:
+        userId:
+          type: string
+        teamName:
+          type: string
+        teamShortName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - userId
+        - teamName
+        - teamShortName
+        - createdAt
+        - updatedAt
+
+    UpdateTeamSettingsBody:
+      type: object
+      properties:
+        teamName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        teamShortName:
+          type: string
+          minLength: 1
+          maxLength: 20
+
+    UserPreferences:
+      type: object
+      properties:
+        userId:
+          type: string
+        defaultInnings:
+          type: integer
+          minimum: 1
+          maximum: 15
+        defaultMaxInningsPerPosition:
+          type: integer
+          minimum: 1
+          maximum: 15
+        defaultMaxInningsBench:
+          type: integer
+          minimum: 0
+          maximum: 15
+        defaultEnsureAllPositions:
+          type: boolean
+        defaultPitcherRotation:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - userId
+        - defaultInnings
+        - defaultMaxInningsPerPosition
+        - defaultMaxInningsBench
+        - defaultEnsureAllPositions
+        - defaultPitcherRotation
+        - createdAt
+        - updatedAt
+
+    UpdatePreferencesBody:
+      type: object
+      properties:
+        defaultInnings:
+          type: integer
+          minimum: 1
+          maximum: 15
+        defaultMaxInningsPerPosition:
+          type: integer
+          minimum: 1
+          maximum: 15
+        defaultMaxInningsBench:
+          type: integer
+          minimum: 0
+          maximum: 15
+        defaultEnsureAllPositions:
+          type: boolean
+        defaultPitcherRotation:
+          type: boolean

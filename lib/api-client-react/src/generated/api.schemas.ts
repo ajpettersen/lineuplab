@@ -197,3 +197,67 @@ export interface PlayerStats {
   positionInnings: PlayerStatsPositionInnings;
   inningsPitched: number;
 }
+
+export interface TeamSettings {
+  userId: string;
+  teamName: string;
+  teamShortName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateTeamSettingsBody {
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  teamName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 20
+   */
+  teamShortName?: string;
+}
+
+export interface UserPreferences {
+  userId: string;
+  /**
+   * @minimum 1
+   * @maximum 15
+   */
+  defaultInnings: number;
+  /**
+   * @minimum 1
+   * @maximum 15
+   */
+  defaultMaxInningsPerPosition: number;
+  /**
+   * @minimum 0
+   * @maximum 15
+   */
+  defaultMaxInningsBench: number;
+  defaultEnsureAllPositions: boolean;
+  defaultPitcherRotation: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdatePreferencesBody {
+  /**
+   * @minimum 1
+   * @maximum 15
+   */
+  defaultInnings?: number;
+  /**
+   * @minimum 1
+   * @maximum 15
+   */
+  defaultMaxInningsPerPosition?: number;
+  /**
+   * @minimum 0
+   * @maximum 15
+   */
+  defaultMaxInningsBench?: number;
+  defaultEnsureAllPositions?: boolean;
+  defaultPitcherRotation?: boolean;
+}

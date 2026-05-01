@@ -1,219 +1,98 @@
-# Workspace
+# Overview
 
-## Overview
+This project is a multi-tenant baseball/softball lineup manager designed for coaches. It allows coaches to manage rosters, schedule games, and generate fair rotational lineups for their teams. The system supports team branding, customizable lineup defaults, and comprehensive season statistics. The project aims to provide a robust tool for optimizing player rotation and ensuring equitable playing time, with advanced features like AI-powered lineup generation from images and natural language constraints.
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+# User Preferences
 
-## Stack
+- I prefer a deep navy primary (`220 85% 22%`), warm gold accent (`42 95% 55%`), cool off-white background.
+- I want the header text to come from `team_settings.teamName` (no hardcoded brand).
+- I want the lineup grid to use pill-shaped player chips, circular inning badges, and alternating row backgrounds.
+- I want to be able to copy a new lineup from any past game's positions.
+- I want to be able to import a lineup from a screenshot (PNG/JPEG/WebP, up to 6 MB raw).
+- I want to be able to edit recorded lineups even after marking a game complete.
+- I want to be able to "lock" players into specific positions for an inning or "all innings".
+- I want a "Lineup Fairness" dial (0-100 slider) to control how strongly the generator equalizes playing time.
+- I want to be able to import rosters in bulk using AI, either by pasting freeform text or uploading a screenshot.
+- I want to be able to paste an iCal/webcal URL to import game schedules.
+- I want an AI Assistant that can answer "why" questions about lineups and regenerate lineups based on natural language instructions.
+- I want editable game cards with a pencil icon for inline editing.
+- I want inline lineup editing with drag-and-drop functionality and the ability to copy the lineup to Sheets.
+- I want a "Innings by Position" tally visible below the lineup card, showing pitching, infield, outfield, and bench counts per player.
+- I want the dashboard "Total Games" stat to only count actual games, excluding practices and other events.
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
+# System Architecture
+
+## Core Technologies
+
+- **Monorepo**: pnpm workspaces
+- **Backend**: Node.js 24, Express 5
+- **Database**: PostgreSQL with Drizzle ORM
+- **Frontend**: React, Vite, Tailwind CSS, shadcn/ui, Recharts, Wouter
+- **TypeScript**: Version 5.9
+- **Validation**: Zod (v4), drizzle-zod
+- **API Codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
-- **Charts**: Recharts
-- **Routing**: Wouter
 
-## App: Minnetonka Skippers Lineup Manager
+## UI/UX Decisions
 
-Branded for the Minnetonka Skippers. Color palette: Skipper navy (`220 85% 22%`)
-as primary, warm gold (`42 95% 55%`) as accent, cool off-white background
-(`215 30% 98%`). Header uses a navy gradient with a gold accent stripe and a
-gold shield badge. The lineup grid uses pill-shaped player chips, circular
-inning badges, and alternating row backgrounds — replacing the older
-spreadsheet-style table.
+- **Theming**: Default visual theme uses deep navy primary, warm gold accent, and cool off-white background.
+- **Branding**: Header text is dynamically sourced from `team_settings.teamName`.
+- **Lineup Grid**: Features pill-shaped player chips, circular inning badges, and alternating row backgrounds for clarity.
+- **Interactive Editing**: Supports drag-and-drop and tap-to-move for inline lineup adjustments.
+- **Data Visualization**: Recharts for displaying season statistics.
 
-A travel baseball team defensive lineup manager for coaches. Features:
-- **Roster management**: Add/edit players with eligible and preferred positions, pitching eligibility
-- **Game scheduling**: Create games with date, location, innings
-- **Lineup generation**: Auto-generate fair rotational lineups using a fairness algorithm
-- **Copy from previous game**: Start a new lineup from any past game's positions
-  (server endpoint `GET /api/games/with-lineups`, dialog picker on game-detail).
-  Players not in current active roster are dropped; innings truncated/padded to current game length.
-- **Import lineup from screenshot** (Game Detail page): "From Screenshot" button
-  in the header opens a dialog with click/drop/paste image upload (PNG/JPEG/WebP,
-  up to 6 MB raw). `POST /api/games/:id/lineup/from-image` accepts
-  `{imageBase64, mimeType}`. The route hardens the input *before* paying for
-  vision: base64 charset regex, decoded-byte bounds (1 KB–6 MB), and a
-  magic-byte sniff that rejects non-image payloads or content that doesn't
-  match the declared MIME. It then calls `gpt-5.2` with a vision content part
-  (`image_url` data URL) and `response_format: json_object`. The model returns
-  `{innings, entries:[{inning, position, playerId, playerNameInImage}]}`.
-  The route validates positions against `FIELD_POSITIONS + Bench`, requires
-  the model's `playerId` to be on the active roster, and **reconciles** the
-  echoed `playerNameInImage` against the roster name (`namesPlausiblyMatch` —
-  full/substring/token overlap); mismatches fall into `unmatched` rather than
-  silently mis-assigning. Drops duplicate field-slots and same-player-twice-
-  in-inning. Returns `{lineup, unmatched, warnings, detectedInnings, notes}`
-  with negative-id preview entries that hydrate the same yellow Save/Discard
-  banner used by the AI assistant. End-to-end accuracy verified at 100%
-  (54/54 field positions, 18/18 bench) on the test image; vision call takes
-  ~30–90 s. The 8 MB JSON body limit is route-scoped (a single
-  `express.json({limit:"8mb"})` middleware mounted on the route, with the
-  global `app.use(express.json())` skipped only for paths matching
-  `/lineup/from-image$`) so other endpoints keep the small default limit.
-- **Post-game editing**: Recorded lineups remain editable after Mark Complete via
-  the same drag/tap-swap UI. Season stats aggregate from `lineup_entries` so any
-  saved edit immediately reflects what actually happened.
-- **Position Locks** (Game Detail page): "Position Locks" card under the AI
-  assistant lets the coach pin specific players to specific positions for a
-  given inning or "All innings".
-  - **Storage**: `lineup_locks` table (`gameId`, `playerId`, `inning notNull`,
-    `position`) with two unique indexes: `(gameId, playerId, inning)`
-    (one lock per player per inning) and a partial index on
-    `(gameId, inning, position) WHERE position <> 'Bench'` (one player per
-    field position per inning; Bench can repeat). The partial index is the
-    DB-level guard against the read-then-insert race.
-  - **API**: `GET/POST/DELETE /api/games/:id/locks` +
-    `DELETE /api/games/:id/locks/:lockId`. POST validates active player +
-    position eligibility (Bench always allowed), expands `inning:null` into
-    N rows, and runs the conflict-check + insert inside a Drizzle
-    transaction. App-level conflicts return 409 with friendly messages;
-    Postgres unique-violation (SQLSTATE 23505) from a concurrent racer is
-    mapped to the same 409.
-  - **Generator integration** (`POST /api/games/:id/lineup/generate`): loads
-    locks, drops rows for now-ineligible players (eligibility drift between
-    save and generate), passes the rest as the `pinned` arg to
-    `generateFairLineup`. Then runs a feasibility check — if any inning
-    lacks all 9 field positions the route returns 409 with
-    `"Couldn't fill every defensive position in inning N…"` instead of
-    silently shipping a half-empty lineup. The frontend surfaces the
-    server's `error` field in the toast description.
-  - **AI assistant integration** (`POST /api/games/:id/ai-assistant`):
-    locks are authoritative — when an AI-proposed pin conflicts with a
-    lock (same player+inning at a different position, or same field
-    position+inning held by a different player), the AI pin is dropped and
-    the lock is kept. Dropped pins are appended to the response
-    `explanation` so the coach knows ("Kept your existing lock: …. Remove
-    the lock if you want me to override.").
-  - **UI**: groups multi-row "all innings" locks into a single chip with
-    one X button. Remove handler treats DELETE 404 as success and always
-    refetches in a finally block, so partial-success delete batches can't
-    leave stale ids in component state. Add Lock dialog uses shadcn Select
-    for player/position/inning with an "All innings" default.
-- **Season stats**: Track playing time, bench time, position distribution, and a fairness score
-- **Inning-by-inning grid**: Visual lineup display per game
+## Technical Implementations
 
-### Artifacts
-- `artifacts/baseball-lineup` — React+Vite frontend (preview at `/`)
-- `artifacts/api-server` — Express API server (at `/api`)
+- **Authentication**: Clerk (email/password) via `@clerk/react` for client and `@clerk/express` for API, filtering routes by `req.userId`.
+- **Multi-tenancy**: Each coach (Clerk userId) has isolated data for roster, schedule, constraints, team branding, and lineup defaults.
+- **Fairness Algorithm**: Lineup generation uses a fairness algorithm, with a configurable `global_equity_weight` to balance "best lineup" vs. "most equitable".
+- **API Design**: Routes include `/api/healthz` (public), and all others require session authentication.
+- **Image Processing**: `POST /api/games/:id/lineup/from-image` hardens image input (base64 charset regex, byte bounds, magic-byte sniff) before calling vision. `express.json({limit:"8mb"})` is route-scoped for large image payloads.
+- **Lineup Locks**: Stored in `lineup_locks` table with unique indexes to prevent conflicts. API enforces active player and position eligibility, using Drizzle transactions for inserts and mapping Postgres unique-violation errors to 409 HTTP status. The generator integrates locks, dropping now-ineligible players and performing a feasibility check. AI assistant respects existing locks.
+- **AI Assistant Integration**: `POST /api/games/:id/ai-assistant` uses `gpt-5.2` with vision for image-based roster imports and natural language queries. It can return answers or regenerated lineups with an `explanation` and `pinned` player positions.
+- **Lineup Editing Logic**: `applyMove` function handles drag/tap-to-move, implementing rules for swaps, moves to bench, and displacements. Invariant: `GET /api/games/:id/lineup` and `POST /api/games/:id/lineup/save` order by `(inning, position, id ASC)` to preserve bench insertion order.
+- **iCal Import**: Server-side regex classifies events as `game`, `practice`, or `other` during import.
+- **Constraint System**: Supports numeric global rules (sliders), boolean global rules (toggles), and player-specific rules.
 
-### Features
-- Roster management with eligible/preferred positions
-- Game scheduling
-- Fair lineup generation (fairness algorithm)
-- Season stats with position group breakdowns (C, MIF, CIF, OF, P, Bench)
-- Historical fielding import (CSV paste → aggregate innings)
-- Batting stats with AI image extraction (OpenAI vision)
-- **Roster bulk import (AI)**: on the Roster page, "Import Roster" opens a dialog where
-  the coach can paste freeform text OR upload a screenshot. `POST /api/players/extract`
-  routes either to a JSON text call or a multipart vision call (gpt-5.2) and returns
-  `{name, number, eligiblePositions, canPitch, notes}` per player. Editable preview
-  table lets the coach toggle positions, fix names/numbers, exclude rows, then
-  `POST /api/players/bulk` inserts them in one shot. Position chips in the preview
-  are tri-state: tap once to mark eligible, again to mark preferred (★), again to
-  remove — preferred positions are persisted alongside eligible ones.
-- **Lineup Fairness dial**: on the Constraints page, a 0–100 slider ("Best lineup" ↔
-  "Most equitable", default 50) controls how strongly the generator equalizes playing
-  time. Persisted as a single `global_equity_weight` constraint. The generator scales
-  its fairness term by `equity*2` (so 50 = legacy behavior) and adds a preferred-position
-  bonus only when equity < 50, smoothly trading fairness for "best lineup". Slider
-  commits are serialized client-side and re-fetch the live list to delete duplicates,
-  enforcing a single-row invariant.
-- **Lineup constraints system**: global rules + player-specific rules + AI natural language parsing
-  - Numeric global rules (max bench innings, max same position) use a popup dialog with slider when toggled on
-  - Boolean global rules (no bench 2 of 3, all positions covered, rotate pitcher) toggle directly
-  - Lineup generator enforces "no player benched 2 of 3 innings" via score boost
-- **iCal schedule import**: paste a webcal/ICS URL → preview events → confirm to import.
-  Server-side regex classifier categorizes each event as `game`, `practice`, or `other`
-  (meetings, picture day, banquets, etc.). The import dialog groups events by kind and
-  auto-checks only games — practices/other events stay unchecked so they're a conscious
-  opt-in. The schedule list shows a "Practice" or "Event" badge next to non-game items.
-  Note: after a fresh deploy that adds the `games.type` column, existing rows default to
-  `game`; run a one-shot reclassification (same regex on opponent strings) to backfill.
-- **AI Assistant search bar** (Game Detail page): a sparkle-icon input directly
-  below the game header. `POST /api/games/:id/ai-assistant` accepts `{message}`,
-  loads the game, active roster, current saved lineup, and active stored
-  constraints, and asks gpt-5.2 (with `response_format: json_object`) to either:
-  - return `{kind:"answer", text}` for "why" questions ("why is Henry on the
-    bench in inning 2?"), shown in a dismissible purple panel; OR
-  - return `{kind:"regenerate", explanation, pinned, lineup}` for instructions
-    ("put Henry at catcher for the first 3 innings", "bench Charlie inning 1").
-    The endpoint validates pinned `(playerId, inning, position)` tuples against
-    the active roster + valid positions, calls `generateFairLineup(..., pinned)`
-    with a new optional 5th param, and runs a feasibility check (every inning
-    must have all 9 field positions filled). If the pins are infeasible, the
-    endpoint falls back to `kind:"answer"` with a friendly explanation rather
-    than persisting a broken lineup. Regenerate responses set `previewLineup`
-    on the game-detail page, reusing the existing yellow Save/Discard banner.
-    The frontend uses a request-id ref to discard stale responses if the user
-    asks a second question before the first finishes, and prompts a confirm()
-    when there are unsaved edits or an active preview.
-  - The pinned-pass in `generateFairLineup` is order-independent: Bench pins are
-    applied first (always win conflicts), then field pins, with duplicate-player
-    and duplicate-position guards per inning.
-- **Editable game cards** with pencil icon for inline edit
-- **Inline lineup editing + drag-and-drop + copy to Sheets** (Game Detail page):
-  every player in any saved/preview lineup is rendered as its own draggable tile
-  per inning. Coaches can either DRAG a tile (powered by `@dnd-kit/core`,
-  PointerSensor distance:5, TouchSensor delay:150 for touch) onto another tile in
-  the same inning, OR fall back to TAP-TO-MOVE (tap to select → tap target). Both
-  paths funnel into a single `applyMove(sourceEntryId, target)` so the rules are
-  identical:
-    - field → empty field cell: source moves there.
-    - field → occupied field cell: SWAP positions; both players stay on the
-      field, they just exchange roles.
-    - field → bench area (`bench-{inning}` drop zone): source goes to bench
-      bottom; old field cell becomes empty.
-    - field → specific bench tile: SWAP (preserves field occupancy).
-    - bench → empty field: source moves there.
-    - bench → occupied field: source takes position; target goes to bench
-      bottom (this is the only "displace to bench" case left, because there's
-      no field slot to give the target in exchange).
-    - bench → bench area or bench tile: no-op.
-  Cross-inning attempts show a destructive "same inning" toast and don't apply.
-  Empty field cells render as dashed `+` drop hints only during an active drag
-  or pending tap-select. Local edits live in `editedLineup` state and surface an
-  amber "Unsaved changes" banner with Save Changes / Discard. Display precedence:
-  `previewLineup ?? editedLineup ?? lineup`. Generating a new lineup while edits
-  are pending prompts a confirm() dialog. A "Copy" button builds a TSV (header
-  `Inning\tP\tC\t1B\t2B\t3B\tSS\tLF\tCF\tRF\tBench`, full names, multi-bench
-  comma-joined) and writes it via `navigator.clipboard.writeText` with a
-  hidden-textarea + `execCommand('copy')` fallback for non-secure contexts.
-  Important backend invariant: `GET /api/games/:id/lineup` and the SELECT after
-  `POST /api/games/:id/lineup/save` order by `(inning, position, id ASC)` so the
-  insertion order of multiple bench rows in the same inning survives reload —
-  this is what preserves "displace to bottom of bench" across saves.
-- **Per-game Innings by Position tally** (Game Detail page, below the lineup
-  card): a second card titled "Innings by Position" lists every active player
-  in the displayed lineup with four colored count chips — Pitching, Infield
-  ({C,1B,2B,3B,SS}), Outfield ({LF,CF,RF}), Bench — and a Total column equal
-  to the game's innings. Updates live as the coach edits/previews/saves. Counts
-  are deduped per (player, inning) so totals can never exceed the game's innings
-  even with malformed data. Testids: `card-tally`, `tally-row-{playerId}`,
-  `tally-{playerId}-pitching|infield|outfield|bench`.
-- **Stat exclusions**: the dashboard "Total Games" stat counts only rows with
-  `games.type === "game"`, excluding practices and other calendar events.
+## Feature Specifications
 
-### Database tables
-- `players` — team roster
-- `games` — game schedule
-- `lineup_entries` — per-game, per-inning position assignments
-- `historical_fielding` — imported historical fielding data
-- `batting_stats` — batting stats per player per game
-- `lineup_constraints` — persisted lineup generation rules (global + player-specific)
+- **Roster Management**: Players with eligible/preferred positions, pitching eligibility.
+- **Game Scheduling**: Date, location, innings.
+- **Lineup Generation**: Auto-generates rotational lineups.
+- **Season Stats**: Tracks playing time, bench time, position distribution, and fairness score. Includes position group breakdowns (C, MIF, CIF, OF, P, Bench).
+- **Import Capabilities**:
+    - Copy lineup from previous game.
+    - Import lineup from screenshot using AI vision (`gpt-5.2`).
+    - Roster bulk import via AI (text or screenshot).
+    - iCal schedule import with event classification.
+- **Lineup Editing**: Inline editing, drag-and-drop, copy to Sheets (TSV format).
+- **Position Locks**: Pinning players to specific positions/innings, with validation and generator integration.
+- **AI Assistant**: Natural language querying and lineup regeneration, with conflict resolution against existing locks.
+- **Innings by Position Tally**: Live updates on player position counts per game.
+- **Stat Exclusions**: Dashboard "Total Games" counts only actual games, excluding practices/other events.
 
-## Key Commands
+## Database Schema
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `players`: Team roster details.
+- `games`: Game schedule information.
+- `lineup_entries`: Per-game, per-inning player assignments.
+- `historical_fielding`: Imported historical fielding data.
+- `batting_stats`: Batting statistics per player per game.
+- `lineup_constraints`: Persisted lineup generation rules.
+- `lineup_locks`: Stores player position locks for games.
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+# External Dependencies
+
+- **Clerk**: For user authentication (`@clerk/react`, `@clerk/express`).
+- **PostgreSQL**: Primary database.
+- **OpenAI (GPT-5.2)**: For AI vision (image-to-lineup/roster extraction) and AI Assistant natural language processing.
+- **Zod**: Schema validation.
+- **Drizzle ORM**: Type-safe ORM for PostgreSQL.
+- **Orval**: API client and Zod schema generation from OpenAPI.
+- **React**: Frontend library.
+- **Vite**: Frontend build tool.
+- **Tailwind CSS**: Utility-first CSS framework.
+- **shadcn/ui**: UI component library.
+- **Recharts**: Charting library.
+- **Wouter**: React router.
+- **@dnd-kit/core**: Drag-and-drop library for lineup editing.
