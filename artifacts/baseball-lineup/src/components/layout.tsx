@@ -26,7 +26,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (teamName) {
-      document.title = `${teamName} • Lineup Manager`;
+      document.title = `${teamName} • Lineup Lab`;
     }
   }, [teamName]);
 
@@ -81,7 +81,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   {displayTeamName}
                 </span>
                 <span className="text-[11px] uppercase tracking-wider text-accent">
-                  Lineup Manager
+                  Lineup Lab
                 </span>
               </div>
             </div>
@@ -141,7 +141,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {displayTeamName}
             </h1>
             <span className="hidden md:block text-[11px] uppercase tracking-[0.18em] text-accent font-semibold">
-              Lineup Manager
+              Lineup Lab
             </span>
           </div>
         </div>

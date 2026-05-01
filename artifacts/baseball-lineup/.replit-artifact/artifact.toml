@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Baseball Lineup Manager"
+title = "Lineup Lab"
 version = "1.0.0"
 id = "artifacts/baseball-lineup"
 router = "path"
