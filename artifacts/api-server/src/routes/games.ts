@@ -193,7 +193,9 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
     }
 
     games.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime());
-    res.json(games);
+    const onlyGames = games.filter((g) => g.type === "game");
+    const skipped = games.length - onlyGames.length;
+    res.json({ games: onlyGames, skipped });
   } catch (err) {
     req.log.error({ err, url }, "iCal preview failed");
     const msg = err instanceof Error ? err.message : "Unknown error";

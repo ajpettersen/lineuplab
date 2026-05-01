@@ -111,6 +111,7 @@ function ICalImportDialog({
   const [innings, setInnings] = useState("6");
   const [loading, setLoading] = useState(false);
   const [events, setEvents] = useState<ICalEvent[]>([]);
+  const [skippedCount, setSkippedCount] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +121,7 @@ function ICalImportDialog({
     if (!open) {
       setUrl("");
       setEvents([]);
+      setSkippedCount(0);
       setSelected(new Set());
       setError(null);
       setLoading(false);
@@ -130,6 +132,7 @@ function ICalImportDialog({
   const handlePreview = async () => {
     setError(null);
     setEvents([]);
+    setSkippedCount(0);
     setSelected(new Set());
     setLoading(true);
     try {
@@ -140,10 +143,22 @@ function ICalImportDialog({
       });
       const data = await r.json();
       if (!r.ok) { setError(data.error ?? "Failed to load calendar"); return; }
-      if (data.length === 0) { setError("No events found in this calendar."); return; }
-      setEvents(data);
-      // Auto-select only games — practices and other events stay unchecked
-      setSelected(new Set((data as ICalEvent[]).filter((e) => e.type === "game").map((e) => e.uid)));
+      // Server now returns { games, skipped }. Stay backward-compatible with the
+      // older shape (a bare array) just in case an old client/server combo is hit.
+      const games: ICalEvent[] = Array.isArray(data) ? data : Array.isArray(data?.games) ? data.games : [];
+      const skipped: number = Array.isArray(data) ? 0 : typeof data?.skipped === "number" ? data.skipped : 0;
+      if (games.length === 0) {
+        setError(
+          skipped > 0
+            ? `No games found — ${skipped} non-game event${skipped === 1 ? "" : "s"} (practices, meetings, etc.) were skipped.`
+            : "No events found in this calendar.",
+        );
+        return;
+      }
+      setEvents(games);
+      setSkippedCount(skipped);
+      // All returned events are games — pre-select them all.
+      setSelected(new Set(games.map((e) => e.uid)));
     } catch {
       setError("Could not reach the calendar URL. Make sure it is publicly accessible.");
     } finally {
@@ -191,7 +206,7 @@ function ICalImportDialog({
 
         <div className="flex flex-col gap-4 flex-1 overflow-hidden">
           <p className="text-sm text-muted-foreground">
-            Paste a public iCal (.ics) URL from your league scheduling system, Google Calendar, or any calendar app.
+            Paste a public iCal (.ics) URL from your league scheduling system, Google Calendar, or any calendar app. Only games will be imported — practices, meetings, and other team events are skipped.
           </p>
 
           <div className="flex gap-2">
@@ -225,7 +240,14 @@ function ICalImportDialog({
                     checked={selected.size === events.length}
                     onCheckedChange={(v) => toggleAll(!!v)}
                   />
-                  <span className="text-sm font-medium">{events.length} events found — {selected.size} selected</span>
+                  <span className="text-sm font-medium">
+                    {events.length} game{events.length === 1 ? "" : "s"} found — {selected.size} selected
+                    {skippedCount > 0 && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        ({skippedCount} non-game event{skippedCount === 1 ? "" : "s"} skipped)
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">Default innings:</Label>
