@@ -47,9 +47,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
@@ -98,6 +99,7 @@ export default function GameDetail() {
   const updateGame = useUpdateGame();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { teamName } = useTeamSettings();
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<number[]>([]);
@@ -1086,6 +1088,14 @@ export default function GameDetail() {
         </div>
       )}
 
+      <section id="printable-lineup">
+        {/* Print-only header: gives the printout team/opponent/date context. */}
+        <div className="print-only mb-3" data-testid="print-header">
+          <div className="text-lg font-bold">{teamName || "Lineup"}</div>
+          <div className="text-sm">
+            vs. {game.opponent} · {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")} · {innings} innings
+          </div>
+        </div>
       <Card>
         <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
           <div>
@@ -1113,9 +1123,13 @@ export default function GameDetail() {
                   </button>
                 </span>
               )}
-              <Button variant="outline" size="sm" onClick={handleCopyLineup} data-testid="button-copy-lineup">
+              <Button variant="outline" size="sm" onClick={handleCopyLineup} data-testid="button-copy-lineup" className="no-print">
                 <ClipboardCopy className="h-4 w-4 mr-1.5" />
                 Copy
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="button-print-lineup" className="no-print">
+                <Printer className="h-4 w-4 mr-1.5" />
+                Print
               </Button>
             </div>
           )}
@@ -1242,6 +1256,7 @@ export default function GameDetail() {
           )}
         </CardContent>
       </Card>
+      </section>
 
       {/* Innings by Position tally */}
       {displayLineup.length > 0 && (

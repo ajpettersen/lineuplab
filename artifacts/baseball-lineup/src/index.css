@@ -288,3 +288,75 @@
     inset: -1px;
   }
 }
+/* ---------- Print ---------- */
+/* The "print-only" header above the lineup table is hidden on screen and
+   revealed by the print stylesheet so the printout has team/opponent context. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+
+  /* Hide everything, then re-show only the printable region. The
+     visibility trick (vs display:none) keeps layout/measurements stable
+     so the table renders identically to what's on screen. */
+  body * {
+    visibility: hidden !important;
+  }
+  #printable-lineup,
+  #printable-lineup * {
+    visibility: visible !important;
+  }
+  #printable-lineup {
+    position: absolute;
+    inset: 0 0 auto 0;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Show the print-only header */
+  #printable-lineup .print-only {
+    display: block !important;
+  }
+
+  /* Force light, ink-friendly card chrome (Tailwind/shadcn ships oklch
+     vars that print as solid black on some browsers). */
+  #printable-lineup [data-slot="card"],
+  #printable-lineup .bg-card,
+  #printable-lineup .bg-muted,
+  #printable-lineup .bg-muted\/40,
+  #printable-lineup .bg-secondary,
+  #printable-lineup .bg-primary\/5 {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-color: #cccccc !important;
+    box-shadow: none !important;
+  }
+
+  /* Keep each inning row together; allow the table itself to span pages. */
+  #printable-lineup table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+  #printable-lineup tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  #printable-lineup th,
+  #printable-lineup td {
+    color: #000000 !important;
+  }
+
+  /* Don't print the action buttons (Print, Copy, swap-hint) inside the card */
+  .no-print {
+    display: none !important;
+  }
+}
