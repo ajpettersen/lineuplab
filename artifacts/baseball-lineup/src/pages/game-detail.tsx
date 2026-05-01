@@ -172,9 +172,18 @@ export default function GameDetail() {
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  // How many AI-driven pins are remembered for this game (so the AI honors
+  // earlier instructions on subsequent turns). Refreshed after each AI call
+  // and via "Reset AI memory".
+  const [aiMemoryCount, setAiMemoryCount] = useState(0);
+  const [aiMemoryClearing, setAiMemoryClearing] = useState(false);
   // Monotonically-increasing request id so a stale response from an earlier
   // submission can't clobber the state set by a newer one.
   const aiRequestIdRef = useRef(0);
+  // Per-session dismissal for the equity insights popup. Reset whenever a
+  // new lineup arrives (new save / preview / regenerate) so the coach sees
+  // it again with fresh advice.
+  const [equityDismissed, setEquityDismissed] = useState(false);
   const sensors = useSensors(
     // Distance constraint lets a click pass through to the underlying button
     // (so tap-to-select still works) while a small movement triggers a drag.
@@ -204,6 +213,41 @@ export default function GameDetail() {
     void refetchLocks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Load remembered AI pin count whenever the game changes so the indicator
+  // (and "Reset" affordance) appears immediately for returning visits.
+  const refetchAiMemory = async (): Promise<number> => {
+    if (!id) return 0;
+    try {
+      const resp = await fetch(`${BASE}/api/games/${id}/ai-pins`);
+      if (!resp.ok) return 0;
+      const data = await resp.json();
+      const count = typeof data?.count === "number" ? data.count : 0;
+      setAiMemoryCount(count);
+      return count;
+    } catch {
+      return 0;
+    }
+  };
+  useEffect(() => {
+    void refetchAiMemory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const handleClearAiMemory = async () => {
+    if (aiMemoryCount === 0) return;
+    setAiMemoryClearing(true);
+    try {
+      const resp = await fetch(`${BASE}/api/games/${id}/ai-pins`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      setAiMemoryCount(0);
+      toast({ title: "AI memory cleared" });
+    } catch {
+      toast({ title: "Couldn't clear AI memory", variant: "destructive" });
+    } finally {
+      setAiMemoryClearing(false);
+    }
+  };
 
   // Group locks for compact display: one chip per (player, position) where
   // every inning of the game is covered, otherwise per-inning chips.
@@ -598,6 +642,13 @@ export default function GameDetail() {
         setPreviewLineup(data.lineup);
         setAiAnswer(data.explanation);
         setAiInput("");
+        if (typeof data.memoryCount === "number") {
+          setAiMemoryCount(data.memoryCount);
+        } else {
+          void refetchAiMemory();
+        }
+        // New preview → re-show the equity hint with fresh numbers.
+        setEquityDismissed(false);
       } else {
         throw new Error("Unexpected response from assistant");
       }
@@ -919,6 +970,124 @@ export default function GameDetail() {
     ? displayLineup.find((e) => e.id === activeDrag.entryId)
     : undefined;
 
+  // Equity insights: scan the current lineup for the most useful "this isn't
+  // fair yet" call-outs the coach can act on. Pure client-side derivation
+  // from the rendered lineup so it always reflects what's on screen
+  // (preview > unsaved edits > saved).
+  //
+  // Surfaced (in priority order, capped to a handful of items):
+  //   1. Players with notably more bench innings than their teammates.
+  //   2. Players who haven't seen the infield (P/C/1B/2B/3B/SS) at all.
+  //   3. Players who haven't seen the outfield (LF/CF/RF) at all.
+  // We only show players who appear in the lineup at least once so newly
+  // added roster members aren't flagged on a lineup they weren't part of.
+  const equityInsights = useMemo(() => {
+    if (displayLineup.length === 0 || !game) {
+      return { items: [] as Array<{ key: string; text: string }>, totalPlayers: 0 };
+    }
+    type Stats = {
+      playerId: number;
+      playerName: string;
+      bench: number;
+      infield: number;
+      outfield: number;
+      pitching: number;
+      field: number;
+    };
+    const byPlayer = new Map<number, Stats>();
+    const seenPlayerInning = new Set<string>();
+    for (const e of displayLineup) {
+      const dedupeKey = `${e.playerId}:${e.inning}`;
+      if (seenPlayerInning.has(dedupeKey)) continue;
+      seenPlayerInning.add(dedupeKey);
+      let s = byPlayer.get(e.playerId);
+      if (!s) {
+        s = {
+          playerId: e.playerId,
+          playerName: e.playerName,
+          bench: 0,
+          infield: 0,
+          outfield: 0,
+          pitching: 0,
+          field: 0,
+        };
+        byPlayer.set(e.playerId, s);
+      }
+      const cat = categoryFor(e.position);
+      if (cat === "Bench") s.bench += 1;
+      else {
+        s.field += 1;
+        if (cat === "Infield") s.infield += 1;
+        else if (cat === "Outfield") s.outfield += 1;
+        else if (cat === "Pitching") s.pitching += 1;
+      }
+    }
+    const stats = Array.from(byPlayer.values());
+    if (stats.length === 0) {
+      return { items: [] as Array<{ key: string; text: string }>, totalPlayers: 0 };
+    }
+    const items: Array<{ key: string; text: string; weight: number }> = [];
+
+    // (1) Bench equity — flag anyone sitting > 1 inning more than the team min.
+    const minBench = Math.min(...stats.map((s) => s.bench));
+    const benchOver = stats
+      .filter((s) => s.bench - minBench >= 2)
+      .sort((a, b) => b.bench - a.bench || a.playerName.localeCompare(b.playerName));
+    for (const s of benchOver) {
+      const diff = s.bench - minBench;
+      items.push({
+        key: `bench-${s.playerId}`,
+        text: `${s.playerName} sits ${s.bench} innings — ${diff} more than the player who sits the least. Consider getting them on the field more.`,
+        weight: 100 + diff,
+      });
+    }
+
+    // (2) Hasn't played the infield at all (only flag if they have any field
+    // time so we're not nagging about kids whose positions skew bench-heavy).
+    const noInfield = stats
+      .filter((s) => s.field > 0 && s.infield === 0)
+      .sort((a, b) => a.playerName.localeCompare(b.playerName));
+    for (const s of noInfield) {
+      items.push({
+        key: `infield-${s.playerId}`,
+        text: `${s.playerName} hasn't played any infield this game.`,
+        weight: 50,
+      });
+    }
+
+    // (3) Hasn't played the outfield at all.
+    const noOutfield = stats
+      .filter((s) => s.field > 0 && s.outfield === 0)
+      .sort((a, b) => a.playerName.localeCompare(b.playerName));
+    for (const s of noOutfield) {
+      items.push({
+        key: `outfield-${s.playerId}`,
+        text: `${s.playerName} hasn't played any outfield this game.`,
+        weight: 30,
+      });
+    }
+
+    items.sort((a, b) => b.weight - a.weight);
+    return {
+      items: items.slice(0, 5).map((i) => ({ key: i.key, text: i.text })),
+      totalPlayers: stats.length,
+    };
+  }, [displayLineup, game]);
+
+  // Reset the dismissal whenever the underlying saved lineup changes (a save
+  // landed, a new game was opened, etc.) so a fresh round of insights gets a
+  // fresh chance to be seen.
+  useEffect(() => {
+    setEquityDismissed(false);
+  }, [lineup]);
+  // Also reset on every new preview, regardless of how it arrived (manual
+  // generate, copy-from-previous, screenshot import, AI). Hooking the
+  // transition here keeps the dismissal logic in one place rather than
+  // touching every setPreviewLineup call site.
+  useEffect(() => {
+    if (previewLineup) setEquityDismissed(false);
+  }, [previewLineup]);
+
   // Per-player innings count by category, for the "Innings by Position" tally below.
   // Counted at most once per (player, inning) so totals never exceed the game's
   // innings even if upstream data accidentally lists a player twice in one inning.
@@ -1107,6 +1276,27 @@ export default function GameDetail() {
               </button>
             </div>
           )}
+          {aiMemoryCount > 0 && (
+            <div
+              className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground"
+              data-testid="ai-memory-indicator"
+            >
+              <span>
+                Remembering {aiMemoryCount} earlier assistant {aiMemoryCount === 1 ? "pin" : "pins"} for this game so they aren't undone.
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={handleClearAiMemory}
+                disabled={aiMemoryClearing}
+                data-testid="button-ai-memory-clear"
+              >
+                {aiMemoryClearing ? "Clearing…" : "Reset"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1184,6 +1374,49 @@ export default function GameDetail() {
               <Save className="h-4 w-4 mr-1" />
               {saveLineup.isPending ? "Saving..." : "Save Changes"}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Equity insights popup — surfaces the most useful "this isn't fair
+          yet" call-outs based on the lineup currently on screen. Dismissible
+          per session; reappears with fresh advice on the next regenerate or
+          save. */}
+      {!equityDismissed && equityInsights.items.length > 0 && (
+        <div
+          className="rounded-lg border border-blue-200 bg-blue-50 p-3 print:hidden"
+          data-testid="equity-insights"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 flex-1 min-w-0">
+              <Sparkles className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+              <div className="text-sm text-blue-900 min-w-0">
+                <p className="font-medium leading-snug">
+                  Make this lineup more equitable
+                </p>
+                <ul className="mt-1.5 space-y-1 leading-snug">
+                  {equityInsights.items.map((item) => (
+                    <li
+                      key={item.key}
+                      className="flex items-start gap-1.5"
+                      data-testid={`equity-item-${item.key}`}
+                    >
+                      <span className="text-blue-500">•</span>
+                      <span>{item.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEquityDismissed(true)}
+              className="text-blue-400 hover:text-blue-700 shrink-0"
+              aria-label="Dismiss equity insights"
+              data-testid="button-equity-dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}

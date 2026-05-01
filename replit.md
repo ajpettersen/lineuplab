@@ -74,7 +74,8 @@ This project is a multi-tenant baseball/softball lineup manager designed for coa
   Plan" and discarded with `DELETE /api/games/:id/snapshot-plan`.
 - **Lineup Editing**: Inline editing, drag-and-drop, copy to Sheets (TSV format).
 - **Position Locks**: Pinning players to specific positions/innings, with validation and generator integration.
-- **AI Assistant**: Natural language querying and lineup regeneration, with conflict resolution against existing locks.
+- **AI Assistant**: Natural language querying and lineup regeneration, with conflict resolution against existing locks. Per-game **AI memory** persists assistant-issued pins across calls (table `ai_pinned_assignments`, unique on `gameId+playerId+inning` and on `gameId+inning+position` where position!='Bench'). Each AI regenerate merges new pins on top of memory pins (new wins on conflict by player+inning OR inning+position) and writes the union back. Locks always win over both. UI shows a "Remembering N pins" indicator with a "Reset" button (`DELETE /api/games/:id/ai-pins`). `GET /api/games/:id/ai-pins` returns `{pins, count}`.
+- **Equity Insights Popup**: Dismissible call-out above the lineup grid that flags inequities in the currently displayed lineup (preview > unsaved edits > saved): players sitting ≥2 innings more than the team minimum, players with no infield time, and players with no outfield time. Resets when a new save lands or a new AI preview arrives.
 - **Innings by Position Tally**: Live updates on player position counts per game.
 - **Stat Exclusions**: Dashboard "Total Games" counts only actual games, excluding practices/other events.
 

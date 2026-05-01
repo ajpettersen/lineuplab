@@ -7,6 +7,7 @@ import {
   lineupEntriesTable,
   lineupConstraintsTable,
   lineupLocksTable,
+  aiPinnedAssignmentsTable,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import {
@@ -263,35 +264,107 @@ ${body.data.message}`;
     if (!lockFieldPosByInning.has(l.inning)) lockFieldPosByInning.set(l.inning, new Map());
     lockFieldPosByInning.get(l.inning)!.set(l.position, l.playerId);
   }
+
+  // Helper: drop a pin if it conflicts with a lock. Returns null if dropped.
+  // When `recordDrop` is true, also pushes a friendly message to droppedAiPins
+  // so we can surface it to the coach in the explanation.
   const droppedAiPins: string[] = [];
-  const honoredPinned: PinnedAssignment[] = [];
-  for (const p of pinned) {
-    // Same player+inning as a lock: lock wins; only drop if the lock's
-    // position differs from what the AI tried to pin.
+  const filterAgainstLocks = (
+    p: PinnedAssignment,
+    recordDrop: boolean,
+  ): PinnedAssignment | null => {
     if (lockPlayerInning.has(`${p.playerId}|${p.inning}`)) {
-      const lockedHere = lockRows.find((l) => l.playerId === p.playerId && l.inning === p.inning);
+      const lockedHere = lockRows.find(
+        (l) => l.playerId === p.playerId && l.inning === p.inning,
+      );
       if (lockedHere && lockedHere.position !== p.position) {
-        droppedAiPins.push(
-          `${playerNameByIdForExplain.get(p.playerId) ?? `Player ${p.playerId}`} is locked at ${lockedHere.position} in inning ${p.inning}`,
-        );
-        continue;
+        if (recordDrop) {
+          droppedAiPins.push(
+            `${playerNameByIdForExplain.get(p.playerId) ?? `Player ${p.playerId}`} is locked at ${lockedHere.position} in inning ${p.inning}`,
+          );
+        }
+        return null;
       }
     }
-    // Same field position taken by a different locked player.
     if (p.position !== "Bench") {
       const owner = lockFieldPosByInning.get(p.inning)?.get(p.position);
       if (owner != null && owner !== p.playerId) {
-        droppedAiPins.push(
-          `${playerNameByIdForExplain.get(owner) ?? `Player ${owner}`} is locked at ${p.position} in inning ${p.inning}`,
-        );
-        continue;
+        if (recordDrop) {
+          droppedAiPins.push(
+            `${playerNameByIdForExplain.get(owner) ?? `Player ${owner}`} is locked at ${p.position} in inning ${p.inning}`,
+          );
+        }
+        return null;
       }
     }
-    honoredPinned.push(p);
+    return p;
+  };
+
+  // Step 1: filter the *new* AI pins against locks (record drops so the coach
+  // is told why their just-issued instruction wasn't honored).
+  const honoredNewAiPins: PinnedAssignment[] = [];
+  for (const p of pinned) {
+    const kept = filterAgainstLocks(p, true);
+    if (kept) honoredNewAiPins.push(kept);
   }
+
+  // Step 2: load remembered AI pins from prior turns. The coach expects "tell
+  // the AI to change X → it stays changed when I ask about Y later." We layer
+  // memory pins on top of new pins (new pins win on conflict by player+inning
+  // OR by inning+position). Memory pins that conflict with existing locks are
+  // silently dropped (the coach already saw the lock-conflict warning when
+  // they were first issued).
+  const memoryRows = (await db
+    .select()
+    .from(aiPinnedAssignmentsTable)
+    .where(eq(aiPinnedAssignmentsTable.gameId, params.data.id))).filter(
+    (m) => m.inning >= 1 && m.inning <= game.innings && validPlayerIds.has(m.playerId),
+  );
+  const newPinPlayerInning = new Set(
+    honoredNewAiPins.map((p) => `${p.playerId}|${p.inning}`),
+  );
+  const newPinFieldPosByInning = new Map<number, Set<string>>();
+  for (const p of honoredNewAiPins) {
+    if (p.position === "Bench") continue;
+    if (!newPinFieldPosByInning.has(p.inning)) newPinFieldPosByInning.set(p.inning, new Set());
+    newPinFieldPosByInning.get(p.inning)!.add(p.position);
+  }
+  const honoredMemoryPins: PinnedAssignment[] = [];
+  for (const m of memoryRows) {
+    if (newPinPlayerInning.has(`${m.playerId}|${m.inning}`)) continue;
+    if (m.position !== "Bench" && newPinFieldPosByInning.get(m.inning)?.has(m.position)) continue;
+    const kept = filterAgainstLocks(
+      { playerId: m.playerId, inning: m.inning, position: m.position },
+      false,
+    );
+    if (kept) honoredMemoryPins.push(kept);
+  }
+
+  // Final AI-derived pin set we'll persist as the new memory state. Dedupe
+  // defensively so the unique-index inserts can never fail mid-transaction:
+  // the AI can produce two pins for the same (player, inning) or two players
+  // at the same (inning, position), and even though the generator tolerates
+  // it (later wins), the ai_pinned_assignments unique indexes do not. NEW
+  // pins always beat MEMORY pins (memory is appended after new), and we
+  // resolve same-slot collisions in append order — first wins.
+  const aiPinsToRemember: PinnedAssignment[] = [];
+  const seenPlayerInning = new Set<string>();
+  const seenFieldSlot = new Set<string>();
+  for (const p of [...honoredNewAiPins, ...honoredMemoryPins]) {
+    const piKey = `${p.playerId}|${p.inning}`;
+    if (seenPlayerInning.has(piKey)) continue;
+    if (p.position !== "Bench") {
+      const slotKey = `${p.inning}|${p.position}`;
+      if (seenFieldSlot.has(slotKey)) continue;
+      seenFieldSlot.add(slotKey);
+    }
+    seenPlayerInning.add(piKey);
+    aiPinsToRemember.push(p);
+  }
+
+  // Combine AI pins + locks for the generator.
   pinned.length = 0;
-  pinned.push(...honoredPinned);
-  // Add the locks themselves (skip ones already represented by AI pins).
+  pinned.push(...aiPinsToRemember);
   const pinnedKeys = new Set(pinned.map((p) => `${p.playerId}|${p.inning}|${p.position}`));
   for (const l of lockRows) {
     const k = `${l.playerId}|${l.inning}|${l.position}`;
@@ -334,6 +407,31 @@ ${body.data.message}`;
     battingOrder: e.battingOrder,
   }));
 
+  // Persist the AI pin memory so the next AI call honors prior decisions.
+  // Replace the entire memory set in one transaction (delete-then-insert) —
+  // simpler than per-row upsert and keeps memory aligned with what we just
+  // generated. If persistence fails we still return the generated preview;
+  // memory just won't survive (logged for diagnostics).
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(aiPinnedAssignmentsTable)
+        .where(eq(aiPinnedAssignmentsTable.gameId, params.data.id));
+      if (aiPinsToRemember.length > 0) {
+        await tx.insert(aiPinnedAssignmentsTable).values(
+          aiPinsToRemember.map((p) => ({
+            gameId: params.data.id,
+            playerId: p.playerId,
+            inning: p.inning,
+            position: p.position,
+          })),
+        );
+      }
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to persist AI pin memory");
+  }
+
   // If we dropped any AI pins to honor existing locks, tell the coach so
   // they can remove the lock if that's what they actually meant.
   const finalExplanation = droppedAiPins.length > 0
@@ -345,7 +443,55 @@ ${body.data.message}`;
     explanation: finalExplanation,
     pinned,
     lineup,
+    memoryCount: aiPinsToRemember.length,
   });
+});
+
+// List the AI memory pins for a game (count + details for the "AI memory"
+// indicator in the UI).
+router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const params = ParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid game id" });
+    return;
+  }
+  if (!(await getOwnedGame(userId, params.data.id))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const rows = await db
+    .select({
+      id: aiPinnedAssignmentsTable.id,
+      playerId: aiPinnedAssignmentsTable.playerId,
+      playerName: playersTable.name,
+      inning: aiPinnedAssignmentsTable.inning,
+      position: aiPinnedAssignmentsTable.position,
+    })
+    .from(aiPinnedAssignmentsTable)
+    .innerJoin(playersTable, eq(aiPinnedAssignmentsTable.playerId, playersTable.id))
+    .where(eq(aiPinnedAssignmentsTable.gameId, params.data.id))
+    .orderBy(aiPinnedAssignmentsTable.inning, aiPinnedAssignmentsTable.id);
+  res.json({ pins: rows, count: rows.length });
+});
+
+// Clear all remembered AI pins for a game ("Reset AI memory" button).
+router.delete("/games/:id/ai-pins", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const params = ParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid game id" });
+    return;
+  }
+  if (!(await getOwnedGame(userId, params.data.id))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const result = await db
+    .delete(aiPinnedAssignmentsTable)
+    .where(eq(aiPinnedAssignmentsTable.gameId, params.data.id))
+    .returning();
+  res.json({ deleted: result.length });
 });
 
 export default router;

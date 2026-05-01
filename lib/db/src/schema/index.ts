@@ -5,5 +5,6 @@ export * from "./historical_fielding";
 export * from "./batting_stats";
 export * from "./lineup_constraints";
 export * from "./lineup_locks";
+export * from "./ai_pinned_assignments";
 export * from "./team_settings";
 export * from "./user_preferences";
