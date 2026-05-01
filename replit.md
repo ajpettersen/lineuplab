@@ -35,6 +35,28 @@ A travel baseball team defensive lineup manager for coaches. Features:
 - **Copy from previous game**: Start a new lineup from any past game's positions
   (server endpoint `GET /api/games/with-lineups`, dialog picker on game-detail).
   Players not in current active roster are dropped; innings truncated/padded to current game length.
+- **Import lineup from screenshot** (Game Detail page): "From Screenshot" button
+  in the header opens a dialog with click/drop/paste image upload (PNG/JPEG/WebP,
+  up to 6 MB raw). `POST /api/games/:id/lineup/from-image` accepts
+  `{imageBase64, mimeType}`. The route hardens the input *before* paying for
+  vision: base64 charset regex, decoded-byte bounds (1 KB–6 MB), and a
+  magic-byte sniff that rejects non-image payloads or content that doesn't
+  match the declared MIME. It then calls `gpt-5.2` with a vision content part
+  (`image_url` data URL) and `response_format: json_object`. The model returns
+  `{innings, entries:[{inning, position, playerId, playerNameInImage}]}`.
+  The route validates positions against `FIELD_POSITIONS + Bench`, requires
+  the model's `playerId` to be on the active roster, and **reconciles** the
+  echoed `playerNameInImage` against the roster name (`namesPlausiblyMatch` —
+  full/substring/token overlap); mismatches fall into `unmatched` rather than
+  silently mis-assigning. Drops duplicate field-slots and same-player-twice-
+  in-inning. Returns `{lineup, unmatched, warnings, detectedInnings, notes}`
+  with negative-id preview entries that hydrate the same yellow Save/Discard
+  banner used by the AI assistant. End-to-end accuracy verified at 100%
+  (54/54 field positions, 18/18 bench) on the test image; vision call takes
+  ~30–90 s. The 8 MB JSON body limit is route-scoped (a single
+  `express.json({limit:"8mb"})` middleware mounted on the route, with the
+  global `app.use(express.json())` skipped only for paths matching
+  `/lineup/from-image$`) so other endpoints keep the small default limit.
 - **Post-game editing**: Recorded lineups remain editable after Mark Complete via
   the same drag/tap-swap UI. Season stats aggregate from `lineup_entries` so any
   saved edit immediately reflects what actually happened.

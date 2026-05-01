@@ -39,7 +39,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -106,6 +106,14 @@ export default function GameDetail() {
   }> | null>(null);
   const [copyLoading, setCopyLoading] = useState(false);
   const [copyApplyingId, setCopyApplyingId] = useState<number | null>(null);
+  // "From Screenshot" upload-and-extract state.
+  const [imageOpen, setImageOpen] = useState(false);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [imageMime, setImageMime] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imageExtracting, setImageExtracting] = useState(false);
   // Edits to a saved lineup (ad-hoc position swaps) live here until saved.
   const [editedLineup, setEditedLineup] = useState<typeof lineup | null>(null);
   // Click-to-swap selection: the entry id of the player picked first.
@@ -215,6 +223,119 @@ export default function GameDetail() {
       toast({ title: "Failed to load that lineup", variant: "destructive" });
     } finally {
       setCopyApplyingId(null);
+    }
+  };
+
+  const resetImageState = () => {
+    setImageDataUrl(null);
+    setImageMime(null);
+    setImageBase64(null);
+    setImageFileName(null);
+    setImageError(null);
+  };
+
+  const openImage = () => {
+    if (editedLineup || previewLineup) {
+      const what = editedLineup ? "unsaved lineup edits" : "an unsaved lineup preview";
+      const ok = window.confirm(
+        `You have ${what}. Importing from a screenshot will replace them. Continue?`,
+      );
+      if (!ok) return;
+      setEditedLineup(null);
+      setPreviewLineup(null);
+      setSelectedEntryId(null);
+    }
+    resetImageState();
+    setImageOpen(true);
+  };
+
+  // Read a File into a base64 data URL we can preview AND ship to the server.
+  const ingestImageFile = (file: File) => {
+    setImageError(null);
+    if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type)) {
+      setImageError(`Unsupported file type "${file.type || "unknown"}". Use PNG, JPEG, or WebP.`);
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      setImageError(`Image is too large (${Math.round(file.size / 1024 / 1024)} MB). Max is 6 MB.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setImageError("Could not read that file.");
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? "");
+      const commaAt = dataUrl.indexOf(",");
+      if (commaAt < 0) {
+        setImageError("Could not read that file.");
+        return;
+      }
+      setImageDataUrl(dataUrl);
+      setImageMime(file.type === "image/jpg" ? "image/jpeg" : file.type);
+      setImageBase64(dataUrl.slice(commaAt + 1));
+      setImageFileName(file.name || "screenshot");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImagePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item && item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          ingestImageFile(file);
+          return;
+        }
+      }
+    }
+  };
+
+  const handleImageDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
+    if (file) ingestImageFile(file);
+  };
+
+  const extractFromImage = async () => {
+    if (!imageBase64 || !imageMime) {
+      setImageError("Pick an image first.");
+      return;
+    }
+    setImageExtracting(true);
+    setImageError(null);
+    try {
+      const resp = await fetch(`${BASE}/api/games/${id}/lineup/from-image`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageBase64, mimeType: imageMime }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setImageError(data.error || `Request failed (${resp.status})`);
+        return;
+      }
+      const lineup: typeof previewLineup = data.lineup ?? [];
+      const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
+      if (!lineup || lineup.length === 0) {
+        setImageError(
+          warnings[0] || "I couldn't read a lineup from that image. Try a clearer screenshot.",
+        );
+        return;
+      }
+      setPreviewLineup(lineup);
+      setImageOpen(false);
+      resetImageState();
+      toast({
+        title: `Imported ${lineup.length} entries — review and save`,
+        description: warnings.length ? warnings.join(" · ") : undefined,
+      });
+    } catch {
+      setImageError("The import service is unavailable. Try again in a moment.");
+    } finally {
+      setImageExtracting(false);
     }
   };
 
@@ -658,6 +779,10 @@ export default function GameDetail() {
               )}
               {game.status !== "cancelled" && (
                 <>
+                  <Button variant="outline" onClick={openImage} data-testid="button-from-screenshot">
+                    <ImageIcon className="h-4 w-4 mr-2" />
+                    From Screenshot
+                  </Button>
                   <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
                     <CopyIcon className="h-4 w-4 mr-2" />
                     Copy from Previous
@@ -792,6 +917,10 @@ export default function GameDetail() {
               <Wand2 className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p>No lineup generated yet.</p>
               <div className="flex gap-2 justify-center mt-3 flex-wrap">
+                <Button variant="outline" onClick={openImage}>
+                  <ImageIcon className="h-4 w-4 mr-2" />
+                  From Screenshot
+                </Button>
                 <Button variant="outline" onClick={openCopy}>
                   <CopyIcon className="h-4 w-4 mr-2" />
                   Copy from Previous
@@ -1058,6 +1187,106 @@ export default function GameDetail() {
                 {generateLineup.isPending ? "Generating..." : "Generate"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* From Screenshot Dialog */}
+      <Dialog
+        open={imageOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setImageOpen(false);
+            resetImageState();
+          }
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Import Lineup from Screenshot
+            </DialogTitle>
+          </DialogHeader>
+          <div
+            className="flex flex-col gap-3"
+            onPaste={handleImagePaste}
+            tabIndex={-1}
+          >
+            <p className="text-sm text-muted-foreground">
+              Upload a photo or screenshot of a lineup (from another app, a printed lineup card, or a hand-drawn grid). I'll read it and match each player to your active roster, then show you a preview to review and save.
+            </p>
+
+            {!imageDataUrl ? (
+              <label
+                className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                onDrop={handleImageDrop}
+                onDragOver={(e) => e.preventDefault()}
+                data-testid="dropzone-image"
+              >
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <span className="text-sm font-medium">Click, drop, or paste an image</span>
+                <span className="text-xs text-muted-foreground">PNG, JPEG, or WebP — up to 6 MB</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  data-testid="input-image-file"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) ingestImageFile(f);
+                    // Reset so picking the same file again still triggers onChange.
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="rounded-lg border border-border overflow-hidden bg-muted">
+                  <img
+                    src={imageDataUrl}
+                    alt={imageFileName ?? "Lineup screenshot"}
+                    className="block w-full max-h-[280px] object-contain bg-white"
+                    data-testid="img-preview"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground truncate">{imageFileName}</span>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                    onClick={resetImageState}
+                    data-testid="button-clear-image"
+                  >
+                    <X className="h-3 w-3" /> Clear
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {imageError && (
+              <div
+                className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-2.5"
+                data-testid="text-image-error"
+              >
+                {imageError}
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Tip: the clearer the image, the better. Names matched against your active roster — anything we can't match will leave the slot blank for you to fill in.
+            </p>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setImageOpen(false)}>Cancel</Button>
+            <Button
+              onClick={extractFromImage}
+              disabled={!imageBase64 || imageExtracting}
+              data-testid="button-extract-image"
+            >
+              <Sparkles className="h-4 w-4 mr-1" />
+              {imageExtracting ? "Reading lineup…" : "Read Lineup"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
