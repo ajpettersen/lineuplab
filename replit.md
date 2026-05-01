@@ -65,6 +65,13 @@ This project is a multi-tenant baseball/softball lineup manager designed for coa
     - Import lineup from screenshot using AI vision (`gpt-5.2`).
     - Roster bulk import via AI (text or screenshot).
     - iCal schedule import with event classification.
+- **Post-Game Photo Override**: Coach can take a phone-camera photo (file
+  input has `capture="environment"`) of the printed lineup with handwritten
+  changes, parse it via the same AI vision route, and replace the saved
+  lineup. When a saved lineup already exists, a confirm dialog asks whether
+  to keep the original plan as a snapshot (`POST /api/games/:id/snapshot-plan`)
+  or replace outright. The original plan can be reviewed via "View Original
+  Plan" and discarded with `DELETE /api/games/:id/snapshot-plan`.
 - **Lineup Editing**: Inline editing, drag-and-drop, copy to Sheets (TSV format).
 - **Position Locks**: Pinning players to specific positions/innings, with validation and generator integration.
 - **AI Assistant**: Natural language querying and lineup regeneration, with conflict resolution against existing locks.
@@ -74,7 +81,7 @@ This project is a multi-tenant baseball/softball lineup manager designed for coa
 ## Database Schema
 
 - `players`: Team roster details.
-- `games`: Game schedule information.
+- `games`: Game schedule information. Includes a nullable `plan_snapshot` jsonb column that stores the lineup as it stood before a post-game photo override, so coaches can review or restore their original plan.
 - `lineup_entries`: Per-game, per-inning player assignments.
 - `historical_fielding`: Imported historical fielding data.
 - `batting_stats`: Batting statistics per player per game.

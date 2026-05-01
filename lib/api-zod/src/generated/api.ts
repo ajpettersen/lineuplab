@@ -129,6 +129,23 @@ export const ListGamesResponseItem = zod.object({
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
+  planSnapshot: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod.object({
+          playerId: zod.number(),
+          playerName: zod.string(),
+          inning: zod.number(),
+          position: zod.string(),
+          battingOrder: zod.number().nullable(),
+        }),
+      ),
+    ])
+    .optional()
+    .describe(
+      "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListGamesResponse = zod.array(ListGamesResponseItem);
@@ -166,6 +183,23 @@ export const GetGameResponse = zod.object({
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
+  planSnapshot: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod.object({
+          playerId: zod.number(),
+          playerName: zod.string(),
+          inning: zod.number(),
+          position: zod.string(),
+          battingOrder: zod.number().nullable(),
+        }),
+      ),
+    ])
+    .optional()
+    .describe(
+      "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -202,6 +236,23 @@ export const UpdateGameResponse = zod.object({
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
+  planSnapshot: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod.object({
+          playerId: zod.number(),
+          playerName: zod.string(),
+          inning: zod.number(),
+          position: zod.string(),
+          battingOrder: zod.number().nullable(),
+        }),
+      ),
+    ])
+    .optional()
+    .describe(
+      "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -210,6 +261,91 @@ export const UpdateGameResponse = zod.object({
  */
 export const DeleteGameParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * Used by the post-game photo override flow when the coach picks "Keep original as plan" before replacing the saved lineup with what actually happened.
+ * @summary Snapshot the currently-saved lineup as the planned lineup
+ */
+export const SnapshotPlanParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SnapshotPlanResponse = zod.object({
+  id: zod.number(),
+  opponent: zod.string(),
+  gameDate: zod.coerce.date(),
+  location: zod.string().nullish(),
+  innings: zod.number().describe("Number of innings in the game"),
+  status: zod.enum(["upcoming", "completed", "cancelled"]),
+  type: zod
+    .enum(["game", "practice", "other"])
+    .describe(
+      "Event kind — distinguishes games from practices and other team events",
+    ),
+  ourScore: zod.number().nullish(),
+  opponentScore: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  planSnapshot: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod.object({
+          playerId: zod.number(),
+          playerName: zod.string(),
+          inning: zod.number(),
+          position: zod.string(),
+          battingOrder: zod.number().nullable(),
+        }),
+      ),
+    ])
+    .optional()
+    .describe(
+      "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Clear the plan snapshot
+ */
+export const ClearPlanSnapshotParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ClearPlanSnapshotResponse = zod.object({
+  id: zod.number(),
+  opponent: zod.string(),
+  gameDate: zod.coerce.date(),
+  location: zod.string().nullish(),
+  innings: zod.number().describe("Number of innings in the game"),
+  status: zod.enum(["upcoming", "completed", "cancelled"]),
+  type: zod
+    .enum(["game", "practice", "other"])
+    .describe(
+      "Event kind — distinguishes games from practices and other team events",
+    ),
+  ourScore: zod.number().nullish(),
+  opponentScore: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  planSnapshot: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod.object({
+          playerId: zod.number(),
+          playerName: zod.string(),
+          inning: zod.number(),
+          position: zod.string(),
+          battingOrder: zod.number().nullable(),
+        }),
+      ),
+    ])
+    .optional()
+    .describe(
+      "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
+  createdAt: zod.coerce.date(),
 });
 
 /**

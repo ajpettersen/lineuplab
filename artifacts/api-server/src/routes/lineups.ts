@@ -191,12 +191,14 @@ router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
     }
   }
 
-  // Delete existing lineup for this game
-  await db
-    .delete(lineupEntriesTable)
-    .where(eq(lineupEntriesTable.gameId, params.data.id));
-
+  // Delete + insert is wrapped in a single transaction so a failure between
+  // the two statements can't leave the game with an empty lineup. This matters
+  // especially for the post-game photo override flow, where the coach has just
+  // chosen to overwrite a saved plan and would lose all of it on a crash.
   if (parsed.data.entries.length === 0) {
+    await db
+      .delete(lineupEntriesTable)
+      .where(eq(lineupEntriesTable.gameId, params.data.id));
     res.json([]);
     return;
   }
@@ -209,7 +211,12 @@ router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
     battingOrder: e.battingOrder ?? null,
   }));
 
-  await db.insert(lineupEntriesTable).values(insertValues);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(lineupEntriesTable)
+      .where(eq(lineupEntriesTable.gameId, params.data.id));
+    await tx.insert(lineupEntriesTable).values(insertValues);
+  });
 
   // Return the saved entries with player names
   const entries = await db

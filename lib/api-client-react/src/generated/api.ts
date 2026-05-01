@@ -935,6 +935,175 @@ export const useDeleteGame = <
 };
 
 /**
+ * Used by the post-game photo override flow when the coach picks "Keep original as plan" before replacing the saved lineup with what actually happened.
+ * @summary Snapshot the currently-saved lineup as the planned lineup
+ */
+export const getSnapshotPlanUrl = (id: number) => {
+  return `/api/games/${id}/snapshot-plan`;
+};
+
+export const snapshotPlan = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Game> => {
+  return customFetch<Game>(getSnapshotPlanUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSnapshotPlanMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof snapshotPlan>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof snapshotPlan>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["snapshotPlan"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof snapshotPlan>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return snapshotPlan(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SnapshotPlanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof snapshotPlan>>
+>;
+
+export type SnapshotPlanMutationError = ErrorType<void>;
+
+/**
+ * @summary Snapshot the currently-saved lineup as the planned lineup
+ */
+export const useSnapshotPlan = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof snapshotPlan>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof snapshotPlan>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getSnapshotPlanMutationOptions(options));
+};
+
+/**
+ * @summary Clear the plan snapshot
+ */
+export const getClearPlanSnapshotUrl = (id: number) => {
+  return `/api/games/${id}/snapshot-plan`;
+};
+
+export const clearPlanSnapshot = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Game> => {
+  return customFetch<Game>(getClearPlanSnapshotUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getClearPlanSnapshotMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearPlanSnapshot>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clearPlanSnapshot>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["clearPlanSnapshot"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clearPlanSnapshot>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return clearPlanSnapshot(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClearPlanSnapshotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clearPlanSnapshot>>
+>;
+
+export type ClearPlanSnapshotMutationError = ErrorType<void>;
+
+/**
+ * @summary Clear the plan snapshot
+ */
+export const useClearPlanSnapshot = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearPlanSnapshot>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clearPlanSnapshot>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getClearPlanSnapshotMutationOptions(options));
+};
+
+/**
  * @summary Get the lineup for a game
  */
 export const getGetGameLineupUrl = (id: number) => {

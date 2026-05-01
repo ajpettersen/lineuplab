@@ -1,6 +1,17 @@
-import { pgTable, text, serial, timestamp, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+// Snapshot of a single lineup_entries row, captured before the coach overrides
+// the saved lineup with a post-game photo. We freeze the player NAME (not just
+// id) so the snapshot still reads sensibly if a player is later removed.
+export type PlanSnapshotEntry = {
+  playerId: number;
+  playerName: string;
+  inning: number;
+  position: string;
+  battingOrder: number | null;
+};
 
 export const gamesTable = pgTable(
   "games",
@@ -17,6 +28,9 @@ export const gamesTable = pgTable(
     ourScore: integer("our_score"),
     opponentScore: integer("opponent_score"),
     notes: text("notes"),
+    // Snapshot of the planned lineup (taken when the coach chose "Keep both"
+    // before overriding with a post-game photo). Null = no snapshot.
+    planSnapshot: jsonb("plan_snapshot").$type<PlanSnapshotEntry[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("games_user_id_idx").on(table.userId)],

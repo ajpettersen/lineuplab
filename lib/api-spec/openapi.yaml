@@ -226,6 +226,49 @@ paths:
         "404":
           description: Not found
 
+  /games/{id}/snapshot-plan:
+    post:
+      operationId: snapshotPlan
+      tags: [games]
+      summary: Snapshot the currently-saved lineup as the planned lineup
+      description: Used by the post-game photo override flow when the coach picks "Keep original as plan" before replacing the saved lineup with what actually happened.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated game with planSnapshot populated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          description: Not found
+        "409":
+          description: No lineup to snapshot
+    delete:
+      operationId: clearPlanSnapshot
+      tags: [games]
+      summary: Clear the plan snapshot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated game with planSnapshot cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          description: Not found
+
   /games/{id}/lineup:
     get:
       operationId: getGameLineup
@@ -522,6 +565,13 @@ components:
           type: ["integer", "null"]
         notes:
           type: ["string", "null"]
+        planSnapshot:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/PlanSnapshotEntry"
+          description: Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)
         createdAt:
           type: string
           format: date-time
@@ -533,6 +583,26 @@ components:
         - status
         - type
         - createdAt
+
+    PlanSnapshotEntry:
+      type: object
+      properties:
+        playerId:
+          type: integer
+        playerName:
+          type: string
+        inning:
+          type: integer
+        position:
+          type: string
+        battingOrder:
+          type: ["integer", "null"]
+      required:
+        - playerId
+        - playerName
+        - inning
+        - position
+        - battingOrder
 
     CreateGameBody:
       type: object

@@ -69,6 +69,15 @@ export const GameType = {
   other: "other",
 } as const;
 
+export interface PlanSnapshotEntry {
+  playerId: number;
+  playerName: string;
+  inning: number;
+  position: string;
+  /** @nullable */
+  battingOrder: number | null;
+}
+
 export interface Game {
   id: number;
   opponent: string;
@@ -86,6 +95,8 @@ export interface Game {
   opponentScore?: number | null;
   /** @nullable */
   notes?: string | null;
+  /** Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken) */
+  planSnapshot?: null | PlanSnapshotEntry[];
   createdAt: string;
 }
 

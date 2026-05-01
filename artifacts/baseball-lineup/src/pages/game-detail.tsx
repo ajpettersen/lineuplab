@@ -19,6 +19,8 @@ import {
   useSaveLineup,
   useUpdateGame,
   useListPlayers,
+  useSnapshotPlan,
+  useClearPlanSnapshot,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
   getListGamesQueryKey,
@@ -47,7 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
@@ -97,9 +99,19 @@ export default function GameDetail() {
   const generateLineup = useGenerateLineup();
   const saveLineup = useSaveLineup();
   const updateGame = useUpdateGame();
+  const snapshotPlan = useSnapshotPlan();
+  const clearPlanSnapshot = useClearPlanSnapshot();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { teamName } = useTeamSettings();
+  // Two new dialogs introduced for the post-game photo override flow:
+  // - replaceConfirmOpen: shown after a photo is parsed AND a saved lineup
+  //   already exists, asking whether to keep the original as a plan snapshot.
+  // - viewPlanOpen: shown when the coach clicks "View Original Plan" to see
+  //   the snapshot that was taken before the override.
+  const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
+  const [pendingPhotoLineup, setPendingPhotoLineup] = useState<typeof lineup | null>(null);
+  const [viewPlanOpen, setViewPlanOpen] = useState(false);
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<number[]>([]);
@@ -466,21 +478,36 @@ export default function GameDetail() {
         setImageError(data.error || `Request failed (${resp.status})`);
         return;
       }
-      const lineup: typeof previewLineup = data.lineup ?? [];
+      const parsedLineup: typeof previewLineup = data.lineup ?? [];
       const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
-      if (!lineup || lineup.length === 0) {
+      if (!parsedLineup || parsedLineup.length === 0) {
         setImageError(
           warnings[0] || "I couldn't read a lineup from that image. Try a clearer screenshot.",
         );
         return;
       }
-      setPreviewLineup(lineup);
       setImageOpen(false);
       resetImageState();
-      toast({
-        title: `Imported ${lineup.length} entries — review and save`,
-        description: warnings.length ? warnings.join(" · ") : undefined,
-      });
+      // If there is a saved lineup already, the coach is overriding the plan
+      // with what actually happened. Ask whether to keep the original plan as
+      // a snapshot before replacing. If there is NO saved lineup, fall back to
+      // the existing preview-and-review flow.
+      if (lineup.length > 0) {
+        setPendingPhotoLineup(parsedLineup);
+        setReplaceConfirmOpen(true);
+        if (warnings.length) {
+          toast({
+            title: `Imported ${parsedLineup.length} entries`,
+            description: warnings.join(" · "),
+          });
+        }
+      } else {
+        setPreviewLineup(parsedLineup);
+        toast({
+          title: `Imported ${parsedLineup.length} entries — review and save`,
+          description: warnings.length ? warnings.join(" · ") : undefined,
+        });
+      }
     } catch {
       setImageError("The import service is unavailable. Try again in a moment.");
     } finally {
@@ -584,6 +611,54 @@ export default function GameDetail() {
     } finally {
       if (myRequestId === aiRequestIdRef.current) setAiLoading(false);
     }
+  };
+
+  // Apply the parsed photo lineup over the saved lineup.
+  // keepPlan=true → snapshot the current saved lineup first so the coach can
+  // still see what they originally planned. keepPlan=false → just overwrite.
+  const applyPhotoOverride = async (keepPlan: boolean) => {
+    if (!pendingPhotoLineup) return;
+    const photo = pendingPhotoLineup;
+    setReplaceConfirmOpen(false);
+    setPendingPhotoLineup(null);
+    if (keepPlan) {
+      try {
+        await snapshotPlan.mutateAsync({ id });
+        // Refresh the cached game so planSnapshot shows up in the UI
+        // immediately and the "View Original Plan" button appears.
+        await qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
+      } catch {
+        // The coach explicitly asked to preserve their original plan.
+        // If we silently replaced anyway, we'd lose the very thing they
+        // were trying to keep. Abort the override and put the parsed
+        // photo lineup back in the dialog so they can retry or fall
+        // back to "Replace".
+        setPendingPhotoLineup(photo);
+        setReplaceConfirmOpen(true);
+        toast({
+          title: "Couldn't save the original plan",
+          description: "Lineup not replaced. Try again or pick Replace.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    handleSaveLineup(photo);
+  };
+
+  const handleClearSnapshot = () => {
+    clearPlanSnapshot.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
+          setViewPlanOpen(false);
+          toast({ title: "Original plan discarded" });
+        },
+        onError: () =>
+          toast({ title: "Failed to clear snapshot", variant: "destructive" }),
+      },
+    );
   };
 
   const handleSaveLineup = (lineupToSave: typeof lineup) => {
@@ -940,10 +1015,35 @@ export default function GameDetail() {
               )}
               {game.status !== "cancelled" && (
                 <>
-                  <Button variant="outline" onClick={openImage} data-testid="button-from-screenshot">
-                    <ImageIcon className="h-4 w-4 mr-2" />
-                    From Screenshot
-                  </Button>
+                  {lineup.length > 0 ? (
+                    <Button
+                      variant="default"
+                      onClick={openImage}
+                      data-testid="button-update-from-photo"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Update from Photo
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={openImage}
+                      data-testid="button-from-screenshot"
+                    >
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      From Screenshot
+                    </Button>
+                  )}
+                  {game.planSnapshot && game.planSnapshot.length > 0 && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setViewPlanOpen(true)}
+                      data-testid="button-view-original-plan"
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      View Original Plan
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
                     <CopyIcon className="h-4 w-4 mr-2" />
                     Copy from Previous
@@ -1456,6 +1556,10 @@ export default function GameDetail() {
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
+                  // capture="environment" tells phones to open the rear camera
+                  // when this input is tapped. Desktop browsers ignore the
+                  // attribute and show the regular file picker.
+                  capture="environment"
                   className="sr-only"
                   data-testid="input-image-file"
                   onChange={(e) => {
@@ -1686,6 +1790,123 @@ export default function GameDetail() {
             <Button variant="outline" onClick={() => setAddLockOpen(false)} disabled={lockSubmitting}>Cancel</Button>
             <Button onClick={handleSaveLock} disabled={lockSubmitting} data-testid="button-save-lock">
               {lockSubmitting ? "Saving..." : "Add Lock"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Photo override: Replace vs Keep-original choice. Shown after a photo
+          was successfully parsed and a saved lineup already exists. */}
+      <Dialog
+        open={replaceConfirmOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setReplaceConfirmOpen(false);
+            setPendingPhotoLineup(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md" data-testid="dialog-replace-confirm">
+          <DialogHeader>
+            <DialogTitle>Replace the saved lineup?</DialogTitle>
+            <DialogDescription>
+              You already have a lineup for this game. Do you want to keep your
+              original plan as a snapshot, or just replace it with what was on
+              the photo?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReplaceConfirmOpen(false);
+                setPendingPhotoLineup(null);
+              }}
+              disabled={snapshotPlan.isPending || saveLineup.isPending}
+              data-testid="button-photo-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => applyPhotoOverride(false)}
+              disabled={snapshotPlan.isPending || saveLineup.isPending}
+              data-testid="button-photo-replace"
+            >
+              Replace
+            </Button>
+            <Button
+              onClick={() => applyPhotoOverride(true)}
+              disabled={snapshotPlan.isPending || saveLineup.isPending}
+              data-testid="button-photo-keep"
+            >
+              {snapshotPlan.isPending ? "Saving original..." : "Keep original"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Read-only view of the snapshotted plan from before a photo override. */}
+      <Dialog open={viewPlanOpen} onOpenChange={(o) => !o && setViewPlanOpen(false)}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-view-plan">
+          <DialogHeader>
+            <DialogTitle>Original plan</DialogTitle>
+            <DialogDescription>
+              This is the lineup you saved before importing a photo override.
+            </DialogDescription>
+          </DialogHeader>
+          {game.planSnapshot && game.planSnapshot.length > 0 ? (
+            <div className="max-h-[60vh] overflow-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted text-left">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Inning</th>
+                    <th className="px-3 py-2 font-medium">Order</th>
+                    <th className="px-3 py-2 font-medium">Player</th>
+                    <th className="px-3 py-2 font-medium">Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {game.planSnapshot
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        a.inning - b.inning ||
+                        (a.battingOrder ?? 99) - (b.battingOrder ?? 99),
+                    )
+                    .map((e, i) => (
+                      <tr
+                        key={`${e.inning}-${e.playerId}-${i}`}
+                        className="border-t"
+                        data-testid={`row-plan-snapshot-${i}`}
+                      >
+                        <td className="px-3 py-2">{e.inning}</td>
+                        <td className="px-3 py-2">{e.battingOrder ?? "—"}</td>
+                        <td className="px-3 py-2">{e.playerName}</td>
+                        <td className="px-3 py-2">{e.position}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No snapshot saved.</p>
+          )}
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setViewPlanOpen(false)}
+              data-testid="button-close-view-plan"
+            >
+              Close
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleClearSnapshot}
+              disabled={clearPlanSnapshot.isPending}
+              data-testid="button-discard-snapshot"
+            >
+              {clearPlanSnapshot.isPending ? "Discarding..." : "Discard snapshot"}
             </Button>
           </DialogFooter>
         </DialogContent>

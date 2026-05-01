@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { and, eq, sql, desc } from "drizzle-orm";
 import { z } from "zod";
-import { db, gamesTable, lineupEntriesTable } from "@workspace/db";
+import { db, gamesTable, lineupEntriesTable, playersTable } from "@workspace/db";
+import type { PlanSnapshotEntry } from "@workspace/db";
 import {
   CreateGameBody,
   GetGameParams,
@@ -288,6 +289,79 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json(game);
+});
+
+// Snapshot the currently-saved lineup into games.plan_snapshot. Used by the
+// mobile photo-override flow when the coach picks "Keep original as plan"
+// before replacing the lineup with what actually happened in the game.
+router.post("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const params = GetGameParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  // Verify ownership before reading lineup_entries.
+  const [game] = await db
+    .select()
+    .from(gamesTable)
+    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)));
+  if (!game) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  // Pull the saved lineup with player names, in a stable order so the snapshot
+  // round-trips deterministically.
+  const rows = await db
+    .select({
+      playerId: lineupEntriesTable.playerId,
+      playerName: playersTable.name,
+      inning: lineupEntriesTable.inning,
+      position: lineupEntriesTable.position,
+      battingOrder: lineupEntriesTable.battingOrder,
+    })
+    .from(lineupEntriesTable)
+    .innerJoin(playersTable, eq(playersTable.id, lineupEntriesTable.playerId))
+    .where(eq(lineupEntriesTable.gameId, params.data.id))
+    .orderBy(lineupEntriesTable.inning, lineupEntriesTable.position);
+  const snapshot: PlanSnapshotEntry[] = rows.map((r) => ({
+    playerId: r.playerId,
+    playerName: r.playerName,
+    inning: r.inning,
+    position: r.position,
+    battingOrder: r.battingOrder,
+  }));
+  if (snapshot.length === 0) {
+    res.status(409).json({ error: "No lineup to snapshot" });
+    return;
+  }
+  const [updated] = await db
+    .update(gamesTable)
+    .set({ planSnapshot: snapshot })
+    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
+    .returning();
+  res.json(updated);
+});
+
+// Clear the snapshot — used if the coach decides they don't want to keep the
+// plan after all (e.g. they accidentally chose "Keep both").
+router.delete("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const params = GetGameParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [updated] = await db
+    .update(gamesTable)
+    .set({ planSnapshot: null })
+    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  res.json(updated);
 });
 
 router.delete("/games/:id", async (req, res): Promise<void> => {
