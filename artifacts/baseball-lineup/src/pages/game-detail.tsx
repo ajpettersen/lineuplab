@@ -1164,7 +1164,7 @@ export default function GameDetail() {
               onDragCancel={handleDragCancel}
             >
               <div className="overflow-x-auto">
-                <table className="w-full text-sm border-separate border-spacing-y-1.5">
+                <table className="w-full text-sm border-separate border-spacing-y-0.5">
                   <thead>
                     <tr>
                       <th className="text-left py-2 pr-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-16">Inning</th>
@@ -1199,7 +1199,7 @@ export default function GameDetail() {
                           : "bg-card";
                       return (
                         <tr key={inning} className={`${rowBg} transition-colors`}>
-                          <td className="py-2 pl-3 pr-2 rounded-l-xl">
+                          <td className="py-1 pl-3 pr-2 rounded-l-xl">
                             <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
                               {inning}
                             </span>
@@ -1207,7 +1207,7 @@ export default function GameDetail() {
                           {FIELD_POSITIONS.map((pos) => {
                             const entry = cellByInningPos[inning]?.[pos];
                             return (
-                              <td key={pos} className="py-2 px-1 text-center">
+                              <td key={pos} className="py-1 px-1 text-center">
                                 <FieldCell
                                   inning={inning}
                                   position={pos}
@@ -1225,7 +1225,7 @@ export default function GameDetail() {
                               </td>
                             );
                           })}
-                          <td className="py-2 px-1 pr-2 text-center align-top rounded-r-xl border-l border-border/40">
+                          <td className="py-1 px-1 pr-2 text-center align-top rounded-r-xl border-l border-border/40">
                             <BenchArea
                               inning={inning}
                               entries={benchEntries}
