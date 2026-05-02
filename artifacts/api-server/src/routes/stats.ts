@@ -94,15 +94,41 @@ router.get("/stats/players", async (req, res): Promise<void> => {
     .select()
     .from(historicalFieldingTable)
     .where(inArray(historicalFieldingTable.playerId, playerIds));
+  // Pull this coach's games so we can compute "unavailable innings" — innings
+  // of a game the player attended (had at least one entry in) but is missing
+  // from. Without this, a player who's in the dugout for a couple of innings
+  // shows up with an undercount in their season tally (e.g. 22 instead of 24
+  // across four 6-inning games).
+  const userGames = await db
+    .select({ id: gamesTable.id, innings: gamesTable.innings })
+    .from(gamesTable)
+    .where(eq(gamesTable.userId, userId));
+  const inningsByGameId = new Map<number, number>(userGames.map((g) => [g.id, g.innings]));
 
   const stats = players.map((p) => {
     const playerEntries = allEntries.filter((e) => e.playerId === p.id);
-    const gamesPlayed = new Set(playerEntries.map((e) => e.gameId)).size;
+    const gameIdsForPlayer = new Set(playerEntries.map((e) => e.gameId));
+    const gamesPlayed = gameIdsForPlayer.size;
     const totalInnings = playerEntries.length;
     const benchInnings = playerEntries.filter((e) => e.position === "Bench").length;
     const positionInnings: Record<string, number> = {};
     for (const e of playerEntries.filter((e) => e.position !== "Bench")) {
       positionInnings[e.position] = (positionInnings[e.position] ?? 0) + 1;
+    }
+
+    // Unavailable innings: for each game the player appears in, count how many
+    // of that game's innings have no entry for them. We dedupe entries by
+    // (gameId, inning) so a freak duplicate row doesn't make the count go
+    // negative.
+    let unavailableInnings = 0;
+    for (const gameId of gameIdsForPlayer) {
+      const gameInnings = inningsByGameId.get(gameId);
+      if (gameInnings == null) continue;
+      const distinctInnings = new Set(
+        playerEntries.filter((e) => e.gameId === gameId).map((e) => e.inning),
+      );
+      const missing = gameInnings - distinctInnings.size;
+      if (missing > 0) unavailableInnings += missing;
     }
 
     // Historical fielding (aggregate from all imports)
@@ -125,14 +151,26 @@ router.get("/stats/players", async (req, res): Promise<void> => {
       combinedPositionInnings[pos] = (combinedPositionInnings[pos] ?? 0) + count;
     }
     const combinedBench = benchInnings + histBench;
-    const combinedTotal = totalInnings + histTotal;
+    // Total includes unavailable innings so the season total reflects the full
+    // length of every attended game (24 across four 6-inning games), not just
+    // the innings the player happened to be on the field or bench. Bench /
+    // position breakdown remains driven by actual entries.
+    const combinedTotal = totalInnings + histTotal + unavailableInnings;
 
     // Position groups for combined data
-    const groups = { pitcher: 0, catcher: 0, cornerInfield: 0, middleInfield: 0, outfield: 0, bench: combinedBench };
+    const groups: Record<string, number> = {
+      pitcher: 0,
+      catcher: 0,
+      cornerInfield: 0,
+      middleInfield: 0,
+      outfield: 0,
+      bench: combinedBench,
+      unavailable: unavailableInnings,
+    };
     for (const [pos, count] of Object.entries(combinedPositionInnings)) {
       const group = POS_TO_GROUP[pos];
       if (group && group in groups) {
-        (groups as Record<string, number>)[group] += count;
+        groups[group] = (groups[group] ?? 0) + count;
       }
     }
 
@@ -151,6 +189,7 @@ router.get("/stats/players", async (req, res): Promise<void> => {
       gamesPlayed,
       totalInnings,
       benchInnings,
+      unavailableInnings,
       positionInnings,
       inningsPitched: positionInnings["P"] ?? 0,
       // Combined (live + historical)

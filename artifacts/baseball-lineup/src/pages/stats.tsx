@@ -8,6 +8,7 @@ interface ExtendedPlayerStats {
   gamesPlayed: number;
   totalInnings: number;
   benchInnings: number;
+  unavailableInnings: number;
   positionInnings: Record<string, number>;
   inningsPitched: number;
   combinedTotal: number;
@@ -54,8 +55,9 @@ const GROUP_LABELS: Record<string, string> = {
   middleInfield: "Middle IF",
   outfield: "Outfield",
   bench: "Bench",
+  unavailable: "Out",
 };
-const GROUP_ORDER = ["pitcher", "catcher", "cornerInfield", "middleInfield", "outfield", "bench"];
+const GROUP_ORDER = ["pitcher", "catcher", "cornerInfield", "middleInfield", "outfield", "bench", "unavailable"];
 const GROUP_COLORS: Record<string, string> = {
   pitcher: "#c0392b",
   catcher: "#e67e22",
@@ -63,6 +65,7 @@ const GROUP_COLORS: Record<string, string> = {
   middleInfield: "#27ae60",
   outfield: "#2980b9",
   bench: "#95a5a6",
+  unavailable: "#d97706",
 };
 
 // ---- API helpers ----

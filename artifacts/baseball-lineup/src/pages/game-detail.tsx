@@ -141,6 +141,11 @@ export default function GameDetail() {
   // Click-to-swap selection: the entry id of the player picked first.
   const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
+  // "Game ended early" flow — coach picks the last inning that was actually
+  // played (e.g. 10-run rule) and the server trims the game length plus any
+  // saved lineup data past that inning.
+  const [endEarlyOpen, setEndEarlyOpen] = useState(false);
+  const [endEarlyLastInning, setEndEarlyLastInning] = useState<string>("");
   const [ourScore, setOurScore] = useState("");
   const [opponentScore, setOpponentScore] = useState("");
   // Drag-and-drop state: which entry is currently being dragged + its inning,
@@ -951,6 +956,27 @@ export default function GameDetail() {
     );
   };
 
+  const handleEndEarly = () => {
+    const last = parseInt(endEarlyLastInning);
+    if (!Number.isFinite(last) || last < 1 || last >= (game?.innings ?? 0)) return;
+    updateGame.mutate(
+      { id, data: { innings: last } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
+          qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(id) });
+          qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
+          toast({ title: `Game shortened to ${last} inning${last === 1 ? "" : "s"}` });
+          setEndEarlyOpen(false);
+          setEndEarlyLastInning("");
+        },
+        onError: () => toast({ title: "Failed to shorten game", variant: "destructive" }),
+      },
+    );
+  };
+
   const innings = game?.innings ?? 6;
   const displayLineup = previewLineup ?? editedLineup ?? lineup;
   // Map (inning, position) -> entry, so cells know their entry id for swap.
@@ -1091,11 +1117,20 @@ export default function GameDetail() {
   // Per-player innings count by category, for the "Innings by Position" tally below.
   // Counted at most once per (player, inning) so totals never exceed the game's
   // innings even if upstream data accidentally lists a player twice in one inning.
+  // "Out" tracks innings where the player has no entry at all (e.g. a kid who
+  // showed up late or left early, or a photo import that didn't pick up their
+  // name) so each row's total still adds up to the full game length.
   const tallyRows = useMemo(() => {
-    const map = new Map<
-      number,
-      { playerId: number; playerName: string; Pitching: number; Infield: number; Outfield: number; Bench: number }
-    >();
+    type Row = {
+      playerId: number;
+      playerName: string;
+      Pitching: number;
+      Infield: number;
+      Outfield: number;
+      Bench: number;
+      Out: number;
+    };
+    const map = new Map<number, Row>();
     const seen = new Set<string>();
     for (const e of displayLineup) {
       const key = `${e.playerId}:${e.inning}`;
@@ -1103,13 +1138,25 @@ export default function GameDetail() {
       seen.add(key);
       let row = map.get(e.playerId);
       if (!row) {
-        row = { playerId: e.playerId, playerName: e.playerName, Pitching: 0, Infield: 0, Outfield: 0, Bench: 0 };
+        row = {
+          playerId: e.playerId,
+          playerName: e.playerName,
+          Pitching: 0,
+          Infield: 0,
+          Outfield: 0,
+          Bench: 0,
+          Out: 0,
+        };
         map.set(e.playerId, row);
       }
       row[categoryFor(e.position)] += 1;
     }
+    for (const row of map.values()) {
+      const counted = row.Pitching + row.Infield + row.Outfield + row.Bench;
+      row.Out = Math.max(0, innings - counted);
+    }
     return Array.from(map.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
-  }, [displayLineup]);
+  }, [displayLineup, innings]);
 
   if (gameLoading) {
     return (
@@ -1180,6 +1227,19 @@ export default function GameDetail() {
                 <Button variant="outline" onClick={() => setCompleteOpen(true)}>
                   <Trophy className="h-4 w-4 mr-2" />
                   Mark Complete
+                </Button>
+              )}
+              {game.status !== "cancelled" && game.innings > 1 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEndEarlyLastInning(String(game.innings - 1));
+                    setEndEarlyOpen(true);
+                  }}
+                  data-testid="button-game-ended-early"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Game Ended Early
                 </Button>
               )}
               {game.status !== "cancelled" && (
@@ -1607,12 +1667,13 @@ export default function GameDetail() {
                     <th className="text-center py-2 px-2 font-medium">Infield</th>
                     <th className="text-center py-2 px-2 font-medium">Outfield</th>
                     <th className="text-center py-2 px-2 font-medium">Bench</th>
+                    <th className="text-center py-2 px-2 font-medium">Out</th>
                     <th className="text-center py-2 pl-2 font-medium">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {tallyRows.map((row) => {
-                    const total = row.Pitching + row.Infield + row.Outfield + row.Bench;
+                    const total = row.Pitching + row.Infield + row.Outfield + row.Bench + row.Out;
                     return (
                       <tr
                         key={row.playerId}
@@ -1656,6 +1717,15 @@ export default function GameDetail() {
                             <span className="text-muted-foreground/40">—</span>
                           )}
                         </td>
+                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-out`}>
+                          {row.Out > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-semibold">
+                              {row.Out}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </td>
                         <td className="text-center py-1.5 pl-2 font-semibold text-muted-foreground">
                           {total}
                         </td>
@@ -1666,7 +1736,7 @@ export default function GameDetail() {
               </table>
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              Pitching: P · Infield: C, 1B, 2B, 3B, SS · Outfield: LF, CF, RF
+              Pitching: P · Infield: C, 1B, 2B, 3B, SS · Outfield: LF, CF, RF · Out: innings the player has no entry for
             </p>
           </CardContent>
         </Card>
@@ -1917,6 +1987,74 @@ export default function GameDetail() {
       </Dialog>
 
       {/* Complete Game Dialog */}
+      <Dialog
+        open={endEarlyOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setEndEarlyOpen(false);
+            setEndEarlyLastInning("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm" data-testid="dialog-game-ended-early">
+          <DialogHeader>
+            <DialogTitle>Game Ended Early</DialogTitle>
+            <DialogDescription>
+              Pick the last inning that was actually played. Innings after that will be removed
+              from this game's lineup, locks, and assistant pins.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2">
+            <div className="flex flex-col gap-1.5">
+              <Label>Last inning played</Label>
+              <Select
+                value={endEarlyLastInning}
+                onValueChange={(v) => setEndEarlyLastInning(v)}
+              >
+                <SelectTrigger data-testid="select-last-inning">
+                  <SelectValue placeholder="Select inning" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: Math.max(0, (game?.innings ?? 0) - 1) }, (_, i) => i + 1).map(
+                    (n) => (
+                      <SelectItem key={n} value={String(n)} data-testid={`select-inning-${n}`}>
+                        Inning {n}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Currently scheduled for {game?.innings ?? 0} innings.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEndEarlyOpen(false);
+                setEndEarlyLastInning("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEndEarly}
+              disabled={
+                updateGame.isPending ||
+                !endEarlyLastInning ||
+                parseInt(endEarlyLastInning) < 1 ||
+                parseInt(endEarlyLastInning) >= (game?.innings ?? 0)
+              }
+              data-testid="button-confirm-end-early"
+            >
+              {updateGame.isPending ? "Saving..." : "Shorten Game"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={completeOpen} onOpenChange={(o) => !o && setCompleteOpen(false)}>
         <DialogContent className="max-w-xs">
           <DialogHeader>

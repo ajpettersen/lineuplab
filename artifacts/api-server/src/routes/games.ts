@@ -1,7 +1,14 @@
 import { Router, type IRouter } from "express";
-import { and, eq, sql, desc } from "drizzle-orm";
+import { and, eq, gt, sql, desc } from "drizzle-orm";
 import { z } from "zod";
-import { db, gamesTable, lineupEntriesTable, playersTable } from "@workspace/db";
+import {
+  db,
+  gamesTable,
+  lineupEntriesTable,
+  lineupLocksTable,
+  aiPinnedAssignmentsTable,
+  playersTable,
+} from "@workspace/db";
 import type { PlanSnapshotEntry } from "@workspace/db";
 import {
   CreateGameBody,
@@ -281,11 +288,55 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   if (d.opponentScore !== undefined) updates.opponentScore = d.opponentScore;
   if (d.notes !== undefined) updates.notes = d.notes;
 
-  const [game] = await db
-    .update(gamesTable)
-    .set(updates)
-    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
-    .returning();
+  // If the coach is shrinking the game's innings (e.g. they hit the 10-run
+  // rule and ended early), drop any lineup data that would now point past the
+  // new last inning so it doesn't ghost in tallies / reappear if they grow
+  // the game later. We do the read-then-update-then-cleanup in a transaction
+  // so a partial failure can't leave entries pointing to a non-existent
+  // inning. Ownership is enforced inside the same transaction.
+  const game = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(gamesTable)
+      .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)));
+    if (!existing) return null;
+
+    const [updated] = await tx
+      .update(gamesTable)
+      .set(updates)
+      .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
+      .returning();
+    if (!updated) return null;
+
+    if (d.innings !== undefined && d.innings < existing.innings) {
+      await tx
+        .delete(lineupEntriesTable)
+        .where(
+          and(
+            eq(lineupEntriesTable.gameId, params.data.id),
+            gt(lineupEntriesTable.inning, d.innings),
+          ),
+        );
+      await tx
+        .delete(lineupLocksTable)
+        .where(
+          and(
+            eq(lineupLocksTable.gameId, params.data.id),
+            gt(lineupLocksTable.inning, d.innings),
+          ),
+        );
+      await tx
+        .delete(aiPinnedAssignmentsTable)
+        .where(
+          and(
+            eq(aiPinnedAssignmentsTable.gameId, params.data.id),
+            gt(aiPinnedAssignmentsTable.inning, d.innings),
+          ),
+        );
+    }
+    return updated;
+  });
+
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;

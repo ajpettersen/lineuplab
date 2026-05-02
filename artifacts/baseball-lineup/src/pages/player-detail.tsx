@@ -41,7 +41,9 @@ export default function PlayerDetail() {
   const { data: allStats = [] } = useGetPlayerStats({
     query: { queryKey: getGetPlayerStatsQueryKey() },
   });
-  const stats = allStats.find((s) => s.playerId === id);
+  const stats = allStats.find((s) => s.playerId === id) as
+    | (typeof allStats[number] & { unavailableInnings?: number })
+    | undefined;
   const updatePlayer = useUpdatePlayer();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -274,7 +276,7 @@ export default function PlayerDetail() {
             <CardTitle className="text-base">Season Statistics</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold">{stats.gamesPlayed}</div>
                 <div className="text-xs text-muted-foreground">Games Played</div>
@@ -288,6 +290,12 @@ export default function PlayerDetail() {
                   {stats.benchInnings}
                 </div>
                 <div className="text-xs text-muted-foreground">Bench Innings</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${(stats.unavailableInnings ?? 0) > 0 ? "text-amber-600" : "text-foreground"}`}>
+                  {stats.unavailableInnings ?? 0}
+                </div>
+                <div className="text-xs text-muted-foreground">Out (Unavailable)</div>
               </div>
             </div>
             {Object.keys(stats.positionInnings).length > 0 && (
