@@ -15,6 +15,7 @@ import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { TeamSwitcher } from "@/components/team-switcher";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -145,6 +146,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
         </div>
+        {/* Mobile-only team switcher (desktop is in the right cluster). */}
+        <div className="md:hidden ml-auto">
+          <TeamSwitcher />
+        </div>
         <div className="ml-auto hidden md:flex items-center gap-4">
           <nav className="flex items-center gap-1 text-sm font-medium">
             {navItems.map((item) => {
@@ -170,6 +175,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
+          <TeamSwitcher />
           <Button
             variant="outline"
             size="sm"

@@ -27,7 +27,7 @@ const ImportBodySchema = z.object({
 });
 
 router.get("/history/fielding", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   // Tenant isolation via the players join.
   const rows = await db
     .select({
@@ -56,7 +56,7 @@ router.get("/history/fielding", async (req, res): Promise<void> => {
 });
 
 router.post("/history/fielding", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = ImportBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid import data", details: parsed.error.flatten() });
@@ -117,7 +117,7 @@ router.post("/history/fielding", async (req, res): Promise<void> => {
 });
 
 router.delete("/history/fielding/:label", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const label = decodeURIComponent(req.params.label);
   // Two-step delete so a coach can never wipe another coach's import that
   // happens to share the same label string. We collect this user's player

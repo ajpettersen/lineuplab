@@ -31,13 +31,13 @@ async function getOrCreateForUser(userId: string): Promise<UserPreferences> {
 }
 
 router.get("/preferences", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const prefs = await getOrCreateForUser(userId);
   res.json(prefs);
 });
 
 router.patch("/preferences", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = UpdateBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });

@@ -33,7 +33,7 @@ const CreateBody = z.object({
 });
 
 router.get("/games/:id/locks", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -63,7 +63,7 @@ router.get("/games/:id/locks", async (req, res): Promise<void> => {
 });
 
 router.post("/games/:id/locks", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -236,7 +236,7 @@ class LockConflictError extends Error {
 }
 
 router.delete("/games/:id/locks/:lockId", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = DeleteParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid params" });
@@ -265,7 +265,7 @@ router.delete("/games/:id/locks/:lockId", async (req, res): Promise<void> => {
 
 // Convenience: bulk delete all locks for a game.
 router.delete("/games/:id/locks", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });

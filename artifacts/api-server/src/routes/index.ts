@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { requireAuth } from "../middlewares/requireAuth";
+import { resolveTeamContext } from "../middlewares/resolveTeamContext";
 import healthRouter from "./health";
 import playersRouter from "./players";
 import gamesRouter from "./games";
@@ -13,6 +14,7 @@ import lineupFromImageRouter from "./lineup-from-image";
 import locksRouter from "./locks";
 import teamSettingsRouter from "./team-settings";
 import preferencesRouter from "./preferences";
+import teamRouter from "./team";
 
 const router: IRouter = Router();
 
@@ -20,7 +22,11 @@ const router: IRouter = Router();
 router.use(healthRouter);
 
 // All routes mounted below this line require an authenticated coach.
+// resolveTeamContext sets req.ownerUserId (the data scope) based on the
+// user's saved active team — see middleware for fallback behavior when
+// the saved selection is stale.
 router.use(requireAuth);
+router.use(resolveTeamContext);
 
 router.use(playersRouter);
 router.use(gamesRouter);
@@ -34,5 +40,6 @@ router.use(lineupFromImageRouter);
 router.use(locksRouter);
 router.use(teamSettingsRouter);
 router.use(preferencesRouter);
+router.use(teamRouter);
 
 export default router;

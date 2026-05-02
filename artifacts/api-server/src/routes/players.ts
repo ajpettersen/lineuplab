@@ -98,7 +98,7 @@ router.post("/players/extract", upload.single("file"), async (req, res): Promise
 });
 
 router.post("/players/bulk", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = BulkBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -145,7 +145,7 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
 });
 
 router.get("/players", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const players = await db
     .select()
     .from(playersTable)
@@ -155,7 +155,7 @@ router.get("/players", async (req, res): Promise<void> => {
 });
 
 router.post("/players", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = CreatePlayerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -179,7 +179,7 @@ router.post("/players", async (req, res): Promise<void> => {
 });
 
 router.get("/players/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = GetPlayerParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -197,7 +197,7 @@ router.get("/players/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/players/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = UpdatePlayerParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -231,7 +231,7 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/players/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = DeletePlayerParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

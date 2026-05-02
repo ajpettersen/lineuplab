@@ -22,6 +22,7 @@ import GameDetail from "@/pages/game-detail";
 import Stats from "@/pages/stats";
 import Constraints from "@/pages/constraints";
 import Settings from "@/pages/settings";
+import Join from "@/pages/join";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -145,10 +146,41 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+/**
+ * After a user finishes the sign-in flow that started from a /join/:token
+ * link, they land on "/" because that's Clerk's default post-sign-in
+ * destination. We stashed the token in sessionStorage before redirecting
+ * to /sign-in — read it here and bounce them back to the join page so
+ * they can finish accepting the invite.
+ */
+const PENDING_INVITE_KEY = "lineupLab.pendingInviteToken";
+
+function PendingInviteRedirect() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(PENDING_INVITE_KEY);
+    } catch {
+      // sessionStorage unavailable — nothing to do.
+    }
+    if (token) {
+      try {
+        sessionStorage.removeItem(PENDING_INVITE_KEY);
+      } catch {
+        // ignore
+      }
+      setLocation(`/join/${token}`);
+    }
+  }, [setLocation]);
+  return null;
+}
+
 function ProtectedApp() {
   return (
     <>
       <Show when="signed-in">
+        <PendingInviteRedirect />
         <Layout>
           <Switch>
             <Route path="/" component={Dashboard} />
@@ -204,6 +236,7 @@ function ClerkProviderWithRoutes() {
           <Switch>
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
+            <Route path="/join/:token" component={Join} />
             <Route component={ProtectedApp} />
           </Switch>
           <Toaster />

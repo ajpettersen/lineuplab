@@ -37,7 +37,7 @@ function computeRates(row: { ab: number; hits: number; doubles: number; triples:
 }
 
 router.get("/batting", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   // No userId column on battingStats — tenant isolation comes from the
   // innerJoin to players + WHERE players.userId = req.userId.
   const rows = await db
@@ -73,7 +73,7 @@ router.get("/batting", async (req, res): Promise<void> => {
 });
 
 router.put("/batting/:playerId", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const playerId = parseInt(req.params.playerId);
   if (isNaN(playerId)) { res.status(400).json({ error: "Invalid player ID" }); return; }
 
@@ -106,7 +106,7 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
 });
 
 router.delete("/batting/:playerId", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const playerId = parseInt(req.params.playerId);
   if (!(await getOwnedPlayer(userId, playerId))) {
     res.status(404).json({ error: "Player not found" });
@@ -117,7 +117,7 @@ router.delete("/batting/:playerId", async (req, res): Promise<void> => {
 });
 
 router.post("/batting/extract", upload.single("file"), async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
 
   const players = await db

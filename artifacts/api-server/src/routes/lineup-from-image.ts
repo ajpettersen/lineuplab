@@ -154,7 +154,7 @@ function parseAiJson(raw: string): AiResult | null {
 const imageJsonParser = expressJson({ limit: "8mb" });
 
 router.post("/games/:id/lineup/from-image", imageJsonParser, async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });

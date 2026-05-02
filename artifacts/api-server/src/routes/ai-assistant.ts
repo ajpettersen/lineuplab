@@ -113,7 +113,7 @@ function parseAiJson(raw: string): AiResponse | null {
 }
 
 router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -561,7 +561,7 @@ ${body.data.message}`;
 // List the AI memory pins for a game (count + details for the "AI memory"
 // indicator in the UI).
 router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -588,7 +588,7 @@ router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
 
 // Clear all remembered AI pins for a game ("Reset AI memory" button).
 router.delete("/games/:id/ai-pins", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });

@@ -44,13 +44,13 @@ async function getOrCreateForUser(userId: string): Promise<TeamSettings> {
 }
 
 router.get("/team-settings", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const settings = await getOrCreateForUser(userId);
   res.json(settings);
 });
 
 router.patch("/team-settings", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = UpdateBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });

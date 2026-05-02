@@ -37,7 +37,7 @@ import ical from "node-ical";
 const router: IRouter = Router();
 
 router.get("/games", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const games = await db
     .select()
     .from(gamesTable)
@@ -51,7 +51,7 @@ router.get("/games", async (req, res): Promise<void> => {
 // a new lineup from a past game's positions. Must be defined BEFORE
 // "/games/:id" so it is not shadowed by the parametric route.
 router.get("/games/with-lineups", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const rows = await db
     .select({
       id: gamesTable.id,
@@ -70,7 +70,7 @@ router.get("/games/with-lineups", async (req, res): Promise<void> => {
 });
 
 router.post("/games", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = CreateGameBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -212,7 +212,7 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
 
 // Bulk create games from iCal import (confirmed selection)
 router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = ConfirmICalBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -248,7 +248,7 @@ router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
 });
 
 router.get("/games/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = GetGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -266,7 +266,7 @@ router.get("/games/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/games/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = UpdateGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -348,7 +348,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
 // mobile photo-override flow when the coach picks "Keep original as plan"
 // before replacing the lineup with what actually happened in the game.
 router.post("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = GetGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -399,7 +399,7 @@ router.post("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
 // Clear the snapshot — used if the coach decides they don't want to keep the
 // plan after all (e.g. they accidentally chose "Keep both").
 router.delete("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = GetGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -418,7 +418,7 @@ router.delete("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
 });
 
 router.delete("/games/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = DeleteGameParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

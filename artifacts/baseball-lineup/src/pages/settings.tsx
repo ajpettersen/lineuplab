@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save } from "lucide-react";
+import { CoachesCard } from "@/components/coaches-card";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -125,6 +126,8 @@ export default function Settings() {
           your account.
         </p>
       </div>
+
+      <CoachesCard />
 
       <Card data-testid="card-team-branding">
         <CardHeader>

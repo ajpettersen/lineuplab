@@ -19,7 +19,7 @@ const CreateConstraintSchema = z.object({
 });
 
 router.get("/constraints", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const constraints = await db
     .select({
       id: lineupConstraintsTable.id,
@@ -42,7 +42,7 @@ router.get("/constraints", async (req, res): Promise<void> => {
 });
 
 router.post("/constraints", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const parsed = CreateConstraintSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid constraint", details: parsed.error.flatten() });
@@ -64,7 +64,7 @@ router.post("/constraints", async (req, res): Promise<void> => {
 });
 
 router.patch("/constraints/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const id = parseInt(req.params.id);
   const { active } = req.body;
   const [updated] = await db
@@ -80,7 +80,7 @@ router.patch("/constraints/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/constraints/:id", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const id = parseInt(req.params.id);
   const result = await db
     .delete(lineupConstraintsTable)
@@ -95,7 +95,7 @@ router.delete("/constraints/:id", async (req, res): Promise<void> => {
 
 // AI parse natural language constraint
 router.post("/constraints/parse", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const { input } = req.body;
   if (!input || typeof input !== "string") {
     res.status(400).json({ error: "input required" });

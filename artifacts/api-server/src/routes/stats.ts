@@ -36,7 +36,7 @@ function posGroupInnings(hist: {
 }
 
 router.get("/stats/season", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const allRows = await db.select().from(gamesTable).where(eq(gamesTable.userId, userId));
   // Only actual games count toward "Total Games" — practices and other events are excluded.
   const games = allRows.filter((g) => g.type === "game");
@@ -78,7 +78,7 @@ router.get("/stats/season", async (req, res): Promise<void> => {
 });
 
 router.get("/stats/players", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const players = await db.select().from(playersTable).where(eq(playersTable.userId, userId));
   if (players.length === 0) {
     res.json([]);

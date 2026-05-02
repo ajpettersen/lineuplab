@@ -14,7 +14,7 @@ import { getOwnedGame, filterOwnedPlayerIds } from "../lib/ownership";
 const router: IRouter = Router();
 
 router.get("/games/:id/lineup", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = GetGameLineupParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -45,7 +45,7 @@ router.get("/games/:id/lineup", async (req, res): Promise<void> => {
 });
 
 router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = GenerateLineupParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -164,7 +164,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
 });
 
 router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
-  const userId = req.userId!;
+  const userId = req.ownerUserId!;
   const params = SaveLineupParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
