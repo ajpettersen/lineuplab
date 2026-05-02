@@ -934,6 +934,58 @@ export default function GameDetail() {
     setActiveDrag(null);
   };
 
+  // Shared TSV → clipboard helper used by both lineup and tally copy buttons.
+  // Tries the modern Clipboard API first, then falls back to a hidden textarea
+  // + execCommand for older browsers / non-secure contexts.
+  const writeTsvToClipboard = async (tsv: string, successMsg: string): Promise<void> => {
+    const showSuccess = () =>
+      toast({ title: successMsg, description: "Paste it into Google Sheets." });
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tsv);
+        showSuccess();
+        return;
+      }
+      throw new Error("Clipboard API unavailable");
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = tsv;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        ta.style.left = "-1000px";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (ok) {
+          showSuccess();
+          return;
+        }
+      } catch {
+        // fall through
+      }
+      toast({ title: "Copy failed — clipboard not available", variant: "destructive" });
+    }
+  };
+
+  const handleCopyTally = async () => {
+    if (tallyRows.length === 0) {
+      toast({ title: "No tally to copy yet", variant: "destructive" });
+      return;
+    }
+    const header = ["Player", "Pitching", "Infield", "Outfield", "Bench", "Out", "Total"].join("\t");
+    const rows = tallyRows.map((r) => {
+      const total = r.Pitching + r.Infield + r.Outfield + r.Bench + r.Out;
+      return [r.playerName, r.Pitching, r.Infield, r.Outfield, r.Bench, r.Out, total]
+        .map(String)
+        .join("\t");
+    });
+    const tsv = [header, ...rows].join("\n");
+    await writeTsvToClipboard(tsv, "Tally copied");
+  };
+
   const handleCopyLineup = async () => {
     const data = previewLineup ?? editedLineup ?? lineup;
     if (data.length === 0) {
@@ -954,37 +1006,7 @@ export default function GameDetail() {
       return [String(inning), ...cells, bench].join("\t");
     });
     const tsv = [header, ...rows].join("\n");
-    const showSuccess = () =>
-      toast({ title: "Lineup copied", description: "Paste it into Google Sheets." });
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(tsv);
-        showSuccess();
-        return;
-      }
-      throw new Error("Clipboard API unavailable");
-    } catch {
-      // Fallback: hidden textarea + execCommand (works in non-secure contexts / older browsers)
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = tsv;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.top = "-1000px";
-        ta.style.left = "-1000px";
-        document.body.appendChild(ta);
-        ta.select();
-        const ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-        if (ok) {
-          showSuccess();
-          return;
-        }
-      } catch {
-        // fall through to toast
-      }
-      toast({ title: "Copy failed — clipboard not available", variant: "destructive" });
-    }
+    await writeTsvToClipboard(tsv, "Lineup copied");
   };
 
   const discardEdits = () => {
@@ -1712,8 +1734,19 @@ export default function GameDetail() {
       {/* Innings by Position tally */}
       {displayLineup.length > 0 && (
         <Card data-testid="card-tally">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-3">
             <CardTitle className="text-base">Innings by Position</CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopyTally}
+              data-testid="button-copy-tally"
+              className="no-print shrink-0"
+            >
+              <ClipboardCopy className="h-4 w-4 mr-1.5" />
+              Copy
+            </Button>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
