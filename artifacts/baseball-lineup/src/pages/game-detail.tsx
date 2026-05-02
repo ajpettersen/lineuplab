@@ -2175,17 +2175,15 @@ export default function GameDetail() {
       </Dialog>
 
       {/* Edit Available Players Dialog */}
-      <Dialog
-        open={availableOpen}
-        onOpenChange={(o) => !o && setAvailableOpen(false)}
-      >
+      <Dialog open={availableOpen} onOpenChange={(o) => !o && setAvailableOpen(false)}>
         <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Available Players</DialogTitle>
             <DialogDescription>
-              Uncheck a player to drop them from every inning at once
-              (injuries, early departures). Check a missing player to add
-              them to the bench so you can drag them onto the field.
+              Uncheck a player to remove them from every inning of this lineup
+              (e.g. injury). Check a player to add them to the bench so you can
+              drag them onto the field. Positions other players hold won't be
+              changed — just review and save.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
@@ -2222,18 +2220,15 @@ export default function GameDetail() {
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/40"
                   }`}
-                  data-testid={`row-edit-available-${p.id}`}
+                  data-testid={`available-row-${p.id}`}
                 >
                   <Checkbox
                     checked={availableSelectedIds.includes(p.id)}
                     onCheckedChange={(v) =>
                       setAvailableSelectedIds((prev) =>
-                        v
-                          ? [...prev, p.id]
-                          : prev.filter((id) => id !== p.id),
+                        v ? [...prev, p.id] : prev.filter((id) => id !== p.id),
                       )
                     }
-                    data-testid={`checkbox-edit-available-${p.id}`}
                   />
                   <div className="flex-1">
                     <span className="text-sm font-medium">{p.name}</span>
@@ -2245,10 +2240,7 @@ export default function GameDetail() {
                   </div>
                   <div className="flex gap-1 flex-wrap justify-end">
                     {p.eligiblePositions.slice(0, 3).map((pos) => (
-                      <span
-                        key={pos}
-                        className="text-xs text-muted-foreground"
-                      >
+                      <span key={pos} className="text-xs text-muted-foreground">
                         {pos}
                       </span>
                     ))}
@@ -2258,18 +2250,11 @@ export default function GameDetail() {
             </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-row">
-            <Button
-              variant="outline"
-              onClick={() => setAvailableOpen(false)}
-              data-testid="button-edit-available-cancel"
-            >
+            <Button variant="outline" onClick={() => setAvailableOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleApplyAvailable}
-              data-testid="button-edit-available-apply"
-            >
-              Apply Changes
+            <Button onClick={handleApplyAvailable} data-testid="button-apply-available">
+              Apply
             </Button>
           </DialogFooter>
         </DialogContent>
