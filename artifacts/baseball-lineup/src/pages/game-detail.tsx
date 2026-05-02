@@ -49,7 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2 } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
@@ -116,6 +116,13 @@ export default function GameDetail() {
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<number[]>([]);
+  // "Edit Available Players" dialog: lets the coach toggle players in/out of
+  // an EXISTING lineup (e.g. someone got hurt mid-warmup). Separate from the
+  // Generate dialog's selection so opening one doesn't stomp the other.
+  const [availableOpen, setAvailableOpen] = useState(false);
+  const [availableSelectedIds, setAvailableSelectedIds] = useState<number[]>(
+    [],
+  );
   const [previewLineup, setPreviewLineup] = useState<typeof lineup | null>(null);
   // "Copy from previous game" picker state.
   const [copyOpen, setCopyOpen] = useState(false);
@@ -387,6 +394,110 @@ export default function GameDetail() {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
     setPreviewLineup(null);
     setGenerateOpen(true);
+  };
+
+  /**
+   * Open the "Edit Available Players" dialog. Pre-selects every player who
+   * currently appears in the lineup (preview, edited, or saved). Coaches
+   * uncheck a player to drop them from every inning at once (the fast fix
+   * for "Henry just rolled his ankle"), or check a missing player to add
+   * them to the bench in every inning so they can be dragged onto the
+   * field.
+   */
+  const openEditAvailable = () => {
+    const current = previewLineup ?? editedLineup ?? lineup;
+    const inLineup = new Set(current.map((e) => e.playerId));
+    setAvailableSelectedIds(
+      players.filter((p) => p.active && inLineup.has(p.id)).map((p) => p.id),
+    );
+    setAvailableOpen(true);
+  };
+
+  /**
+   * Apply the checklist from the "Edit Available Players" dialog to the
+   * current lineup. Computes the diff vs. who's already in the lineup:
+   *   - removed players → strip every entry across all innings
+   *   - added players → insert a Bench entry in every inning (with a
+   *     fresh negative id so the save endpoint treats them as new rows)
+   * The result is staged into editedLineup (or replaces previewLineup if
+   * we were previewing a generated lineup), so the coach can review and
+   * save just like any other manual edit.
+   */
+  const handleApplyAvailable = () => {
+    if (!game) return;
+    const current = previewLineup ?? editedLineup ?? lineup;
+    const currentIds = new Set(current.map((e) => e.playerId));
+    const desired = new Set(availableSelectedIds);
+
+    const toRemove: number[] = [];
+    currentIds.forEach((pid) => {
+      if (!desired.has(pid)) toRemove.push(pid);
+    });
+    const toAdd: number[] = [];
+    desired.forEach((pid) => {
+      if (!currentIds.has(pid)) toAdd.push(pid);
+    });
+
+    if (toRemove.length === 0 && toAdd.length === 0) {
+      setAvailableOpen(false);
+      return;
+    }
+
+    let next = current.filter((e) => !toRemove.includes(e.playerId));
+
+    // Mint negative ids that don't collide with existing rows (saved entries
+    // have positive ids; unsaved/preview entries already use negatives).
+    let nextId =
+      Math.min(0, ...next.map((e) => e.id)) - 1;
+    const totalInnings = game.innings;
+    for (const pid of toAdd) {
+      const player = players.find((p) => p.id === pid);
+      if (!player) continue;
+      for (let inning = 1; inning <= totalInnings; inning++) {
+        next = next.concat({
+          id: nextId--,
+          gameId: id,
+          playerId: pid,
+          playerName: player.name,
+          inning,
+          position: "Bench",
+          battingOrder: null,
+        });
+      }
+    }
+
+    if (previewLineup) setPreviewLineup(next);
+    else setEditedLineup(next);
+
+    if (selectedEntryId != null && !next.some((e) => e.id === selectedEntryId)) {
+      setSelectedEntryId(null);
+    }
+
+    setAvailableOpen(false);
+
+    const parts: string[] = [];
+    if (toRemove.length > 0) {
+      const names = toRemove
+        .map((pid) => players.find((p) => p.id === pid)?.name ?? "Player")
+        .slice(0, 3)
+        .join(", ");
+      parts.push(
+        `Removed ${toRemove.length === 1 ? names : `${toRemove.length} players`}${toRemove.length > 3 ? "" : ""}`,
+      );
+    }
+    if (toAdd.length > 0) {
+      const names = toAdd
+        .map((pid) => players.find((p) => p.id === pid)?.name ?? "Player")
+        .slice(0, 3)
+        .join(", ");
+      parts.push(
+        `Added ${toAdd.length === 1 ? names : `${toAdd.length} players`} to bench`,
+      );
+    }
+    toast({
+      title: "Available players updated",
+      description: `${parts.join(" · ")}. Review the lineup and save when you're ready.`,
+    });
   };
 
   const openCopy = async () => {
@@ -1471,6 +1582,16 @@ export default function GameDetail() {
                     <CopyIcon className="h-4 w-4 mr-2" />
                     Copy from Previous
                   </Button>
+                  {(lineup.length > 0 || previewLineup || editedLineup) && (
+                    <Button
+                      variant="outline"
+                      onClick={openEditAvailable}
+                      data-testid="button-edit-available"
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Edit Available
+                    </Button>
+                  )}
                   <Button onClick={openGenerate} data-testid="button-generate-lineup">
                     <Wand2 className="h-4 w-4 mr-2" />
                     {lineup.length > 0 ? "Replace Lineup" : "Generate Lineup"}
@@ -2049,6 +2170,107 @@ export default function GameDetail() {
                 {generateLineup.isPending ? "Generating..." : "Generate"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Available Players Dialog */}
+      <Dialog
+        open={availableOpen}
+        onOpenChange={(o) => !o && setAvailableOpen(false)}
+      >
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Available Players</DialogTitle>
+            <DialogDescription>
+              Uncheck a player to drop them from every inning at once
+              (injuries, early departures). Check a missing player to add
+              them to the bench so you can drag them onto the field.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-sm">Available Players</Label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs text-primary"
+                    onClick={() =>
+                      setAvailableSelectedIds(
+                        players.filter((p) => p.active).map((p) => p.id),
+                      )
+                    }
+                  >
+                    Select all
+                  </button>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground"
+                    onClick={() => setAvailableSelectedIds([])}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              {players.filter((p) => p.active).map((p) => (
+                <label
+                  key={p.id}
+                  className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                    availableSelectedIds.includes(p.id)
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/40"
+                  }`}
+                  data-testid={`row-edit-available-${p.id}`}
+                >
+                  <Checkbox
+                    checked={availableSelectedIds.includes(p.id)}
+                    onCheckedChange={(v) =>
+                      setAvailableSelectedIds((prev) =>
+                        v
+                          ? [...prev, p.id]
+                          : prev.filter((id) => id !== p.id),
+                      )
+                    }
+                    data-testid={`checkbox-edit-available-${p.id}`}
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium">{p.name}</span>
+                    {p.number != null && (
+                      <span className="text-xs text-muted-foreground ml-1.5">
+                        #{p.number}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 flex-wrap justify-end">
+                    {p.eligiblePositions.slice(0, 3).map((pos) => (
+                      <span
+                        key={pos}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {pos}
+                      </span>
+                    ))}
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={() => setAvailableOpen(false)}
+              data-testid="button-edit-available-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplyAvailable}
+              data-testid="button-edit-available-apply"
+            >
+              Apply Changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
