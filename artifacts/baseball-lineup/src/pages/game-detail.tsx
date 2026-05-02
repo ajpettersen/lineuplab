@@ -188,6 +188,14 @@ export default function GameDetail() {
   // Monotonically-increasing request id so a stale response from an earlier
   // submission can't clobber the state set by a newer one.
   const aiRequestIdRef = useRef(0);
+  // Refs that mirror the latest lineup state. The AI request takes a few
+  // seconds; if the coach edits the lineup while waiting, the response
+  // handler must apply removals against the LATEST state (not a stale
+  // closure capture from when the request was kicked off), otherwise a
+  // remove response can silently overwrite newer local edits.
+  const previewLineupRef = useRef<typeof previewLineup>(null);
+  const editedLineupRef = useRef<typeof editedLineup>(null);
+  const lineupRef = useRef<typeof lineup>([] as typeof lineup);
   // Per-session dismissal for the equity insights popup. Reset whenever a
   // new lineup arrives (new save / preview / regenerate) so the coach sees
   // it again with fresh advice.
@@ -241,6 +249,13 @@ export default function GameDetail() {
     void refetchAiMemory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Keep the lineup refs in sync so async handlers (currently the AI
+  // assistant remove flow) can read the LATEST lineup state when the
+  // response lands, not the snapshot captured at request-start.
+  useEffect(() => { previewLineupRef.current = previewLineup; }, [previewLineup]);
+  useEffect(() => { editedLineupRef.current = editedLineup; }, [editedLineup]);
+  useEffect(() => { lineupRef.current = lineup; });
 
   const handleClearAiMemory = async () => {
     if (aiMemoryCount === 0) return;
@@ -730,6 +745,55 @@ export default function GameDetail() {
         }
         // New preview → re-show the equity hint with fresh numbers.
         setEquityDismissed(false);
+      } else if (data.kind === "remove") {
+        // Strip the named players from whichever lineup is on screen
+        // (preview / edited / saved). Field cells they held become empty
+        // cells the coach can refill or save as-is — same behavior as the
+        // tally trash icon and the chip-selection Remove button, just
+        // driven by natural language ("Henry got hurt, take him out").
+        // Read the LATEST lineup via refs (not closure) so a response that
+        // lands after the coach made local edits doesn't clobber them.
+        const removeIds: number[] = Array.isArray(data.removePlayerIds)
+          ? data.removePlayerIds.filter((n: unknown) => typeof n === "number")
+          : [];
+        const livePreview = previewLineupRef.current;
+        const liveEdited = editedLineupRef.current;
+        const current = livePreview ?? liveEdited ?? lineupRef.current;
+        const next = current.filter((e) => !removeIds.includes(e.playerId));
+        if (next.length !== current.length) {
+          if (livePreview) setPreviewLineup(next);
+          else setEditedLineup(next);
+          if (selectedEntryId != null && !next.some((e) => e.id === selectedEntryId)) {
+            setSelectedEntryId(null);
+          }
+        }
+        setAiAnswer(data.explanation);
+        setAiInput("");
+        if (typeof data.memoryCount === "number") {
+          setAiMemoryCount(data.memoryCount);
+        } else {
+          void refetchAiMemory();
+        }
+        // Removed players → equity numbers shift; let the hint re-evaluate.
+        setEquityDismissed(false);
+        const names: string[] = Array.isArray(data.removedPlayerNames)
+          ? data.removedPlayerNames.filter((s: unknown) => typeof s === "string")
+          : [];
+        if (names.length > 0) {
+          // If the server couldn't clear AI memory, warn the coach loudly —
+          // otherwise the next regenerate will quietly resurrect the player.
+          const memoryWarning = data.memoryCleared === false;
+          toast({
+            title:
+              names.length === 1
+                ? `${names[0]} removed from lineup`
+                : `${names.length} players removed from lineup`,
+            description: memoryWarning
+              ? "Heads up — couldn't clear AI memory. They may come back on the next regenerate; tap Reset on the AI memory chip to be safe."
+              : "Review the empty slots and save when you're ready.",
+            variant: memoryWarning ? "destructive" : undefined,
+          });
+        }
       } else {
         throw new Error("Unexpected response from assistant");
       }

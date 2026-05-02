@@ -28,13 +28,19 @@ const SYSTEM_PROMPT = `You are an assistant for a youth baseball coach using a d
 
 You have access to the current saved lineup, the active roster, and the fairness rules of the auto-generator.
 
-Your job is to look at the coach's message and decide between two intents:
+Your job is to look at the coach's message and decide between three intents:
 
 INTENT "answer" — the coach is asking a question (e.g. "why did you put Henry at catcher in inning 1?", "who has the most bench time?", "is anyone playing the same position twice?"). Answer in 1-3 short sentences. Be concrete and reference players by their first name.
 
-INTENT "regenerate" — the coach is giving an instruction that requires changing the lineup (e.g. "I want Henry to catch the first 3 innings", "put Walter at pitcher in inning 4", "bench Charlie for innings 1-2"). Translate the instruction into a list of pinned assignments and provide a one-sentence explanation of what you're doing. The auto-generator will fill in every other slot.
+INTENT "regenerate" — the coach is giving an instruction that requires changing where players are placed (e.g. "I want Henry to catch the first 3 innings", "put Walter at pitcher in inning 4", "bench Charlie for innings 1-2"). Translate the instruction into a list of pinned assignments and provide a one-sentence explanation of what you're doing. The auto-generator will fill in every other slot.
 
-Rules for pinned assignments:
+INTENT "remove" — the coach is saying one or more players need to be PULLED OUT of the lineup entirely (e.g. "Henry got hurt, take him out", "remove Walter — he had to leave", "drop Charlie, he's injured", "Brayden went home early"). Return the players' ids in removePlayerIds and a one-sentence explanation. The app will clear every entry for those players from every inning of the current lineup; the slots they were holding become empty cells the coach can refill. This is DIFFERENT from "bench Charlie" (which is a regenerate intent that pins them to the Bench slot but they still occupy a roster spot in that inning's bench). Only use "remove" when the player is actually leaving the game (injury, sent home, ejected). Disambiguating examples:
+- "take Charlie out for inning 3" → INTENT regenerate, pin Charlie to Bench in inning 3 (he's only sitting that one inning, still in the game).
+- "sit Charlie the next two innings" → INTENT regenerate, pin Charlie to Bench in those innings.
+- "take Charlie out, he's hurt" → INTENT remove (he's leaving the game).
+- "Charlie's done for the day" → INTENT remove.
+
+Rules for pinned assignments (intent=regenerate):
 - Each pin is {"playerId": <number>, "inning": <number>, "position": <string>}.
 - "position" must be one of: "P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", or "Bench".
 - Use ONLY playerIds from the provided roster.
@@ -44,19 +50,25 @@ Rules for pinned assignments:
 - Do not pin the same player twice in one inning.
 - Only pin the slots the coach explicitly asked for; let the generator fill the rest.
 
+Rules for removePlayerIds (intent=remove):
+- Each id MUST be a playerId from the provided roster.
+- If the coach names a player not on the roster, fall back to intent="answer" and tell them you couldn't find that player.
+
 Return ONLY a JSON object — no markdown fences, no extra prose. Schema:
 {
-  "intent": "answer" | "regenerate",
-  "answer": string | null,           // required when intent=answer
-  "explanation": string | null,      // required when intent=regenerate
-  "pinned": Array<{playerId:number, inning:number, position:string}> | null  // required when intent=regenerate
+  "intent": "answer" | "regenerate" | "remove",
+  "answer": string | null,                // required when intent=answer
+  "explanation": string | null,           // required when intent=regenerate or intent=remove
+  "pinned": Array<{playerId:number, inning:number, position:string}> | null,  // required when intent=regenerate
+  "removePlayerIds": Array<number> | null // required when intent=remove
 }`;
 
 interface AiResponse {
-  intent: "answer" | "regenerate";
+  intent: "answer" | "regenerate" | "remove";
   answer: string | null;
   explanation: string | null;
   pinned: PinnedAssignment[] | null;
+  removePlayerIds: number[] | null;
 }
 
 function parseAiJson(raw: string): AiResponse | null {
@@ -69,7 +81,10 @@ function parseAiJson(raw: string): AiResponse | null {
   }
   if (!obj || typeof obj !== "object") return null;
   const r = obj as Record<string, unknown>;
-  const intent = r.intent === "answer" || r.intent === "regenerate" ? r.intent : null;
+  const intent =
+    r.intent === "answer" || r.intent === "regenerate" || r.intent === "remove"
+      ? r.intent
+      : null;
   if (!intent) return null;
   const pinnedRaw = Array.isArray(r.pinned) ? r.pinned : null;
   const pinned: PinnedAssignment[] | null = pinnedRaw
@@ -84,11 +99,16 @@ function parseAiJson(raw: string): AiResponse | null {
         )
         .map((p) => ({ playerId: p.playerId, inning: p.inning, position: p.position }))
     : null;
+  const removeRaw = Array.isArray(r.removePlayerIds) ? r.removePlayerIds : null;
+  const removePlayerIds: number[] | null = removeRaw
+    ? removeRaw.filter((n): n is number => typeof n === "number" && Number.isFinite(n))
+    : null;
   return {
     intent,
     answer: typeof r.answer === "string" ? r.answer : null,
     explanation: typeof r.explanation === "string" ? r.explanation : null,
     pinned,
+    removePlayerIds,
   };
 }
 
@@ -218,6 +238,97 @@ ${body.data.message}`;
   if (aiResponse.intent === "answer") {
     const text = aiResponse.answer?.trim() || "I'm not sure how to answer that.";
     res.json({ kind: "answer", text });
+    return;
+  }
+
+  if (aiResponse.intent === "remove") {
+    // Pull listed players out of the displayed lineup entirely (injury / early
+    // departure). Validate ids against the active roster, dedupe, and also
+    // clear those players from AI pin memory so a subsequent regenerate
+    // doesn't resurrect them. Position locks are intentionally LEFT INTACT —
+    // they're explicit, persistent coach intent and have their own UI for
+    // removal; the explanation surfaces a hint when locks would resurrect a
+    // removed player.
+    const validPlayerIds = new Set(activePlayers.map((p) => p.id));
+    const removeIds = Array.from(
+      new Set((aiResponse.removePlayerIds ?? []).filter((pid) => validPlayerIds.has(pid))),
+    );
+    const explanationText =
+      aiResponse.explanation?.trim() || "Removing the requested player(s) from this lineup.";
+    if (removeIds.length === 0) {
+      res.json({
+        kind: "answer",
+        text:
+          explanationText +
+          " (I couldn't match a roster player to that name — try the player's full or first name.)",
+      });
+      return;
+    }
+    const removedNames = removeIds
+      .map((pid) => allPlayers.find((p) => p.id === pid)?.name)
+      .filter((n): n is string => !!n);
+
+    // Drop their AI memory pins so the next regenerate doesn't bring them
+    // back. If this fails we MUST tell the client — silently succeeding
+    // would mean the next regenerate quietly resurrects the removed player,
+    // directly violating the coach's stated intent.
+    let memoryCleared = true;
+    let memoryWarning = "";
+    try {
+      await db.transaction(async (tx) => {
+        for (const pid of removeIds) {
+          await tx
+            .delete(aiPinnedAssignmentsTable)
+            .where(
+              and(
+                eq(aiPinnedAssignmentsTable.gameId, params.data.id),
+                eq(aiPinnedAssignmentsTable.playerId, pid),
+              ),
+            );
+        }
+      });
+    } catch (err) {
+      req.log.error({ err }, "Failed to clear AI pin memory for removed players");
+      memoryCleared = false;
+      memoryWarning =
+        " (Couldn't clear my memory of prior pins for them — they may come back on the next regenerate; tap Reset on the AI memory chip to be safe.)";
+    }
+
+    // Surface a hint if any of the removed players still have position locks
+    // — those will resurrect the player on the next Generate.
+    const lockedRemoved = (await db
+      .select()
+      .from(lineupLocksTable)
+      .where(eq(lineupLocksTable.gameId, params.data.id)))
+      .filter((l) => removeIds.includes(l.playerId))
+      .map((l) => allPlayers.find((p) => p.id === l.playerId)?.name)
+      .filter((n): n is string => !!n);
+    const lockHint =
+      lockedRemoved.length > 0
+        ? ` (Heads up — ${Array.from(new Set(lockedRemoved)).join(", ")} still has position locks; clear them if you don't want them resurrected on the next regenerate.)`
+        : "";
+
+    // Refresh memory count for the client indicator. If the clear failed,
+    // we still want a fresh count so the indicator shows the truth.
+    let memoryCount = 0;
+    try {
+      const remainingMemory = await db
+        .select({ id: aiPinnedAssignmentsTable.id })
+        .from(aiPinnedAssignmentsTable)
+        .where(eq(aiPinnedAssignmentsTable.gameId, params.data.id));
+      memoryCount = remainingMemory.length;
+    } catch (err) {
+      req.log.error({ err }, "Failed to read AI pin memory count after remove");
+    }
+
+    res.json({
+      kind: "remove",
+      explanation: explanationText + lockHint + memoryWarning,
+      removePlayerIds: removeIds,
+      removedPlayerNames: removedNames,
+      memoryCount,
+      memoryCleared,
+    });
     return;
   }
 
