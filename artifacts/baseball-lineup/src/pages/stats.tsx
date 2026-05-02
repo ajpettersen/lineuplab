@@ -21,6 +21,7 @@ interface ExtendedPlayerStats {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,16 +54,20 @@ const GROUP_LABELS: Record<string, string> = {
   catcher: "Catcher",
   cornerInfield: "Corner IF",
   middleInfield: "Middle IF",
+  infield: "Infield",
   outfield: "Outfield",
   bench: "Bench",
   unavailable: "Out",
 };
 const GROUP_ORDER = ["pitcher", "catcher", "cornerInfield", "middleInfield", "outfield", "bench", "unavailable"];
+const GROUP_ORDER_MERGED = ["pitcher", "infield", "outfield", "bench", "unavailable"];
+const MERGED_INFIELD_PARTS = ["catcher", "cornerInfield", "middleInfield"] as const;
 const GROUP_COLORS: Record<string, string> = {
   pitcher: "#c0392b",
   catcher: "#e67e22",
   cornerInfield: "#f1c40f",
   middleInfield: "#27ae60",
+  infield: "#27ae60",
   outfield: "#2980b9",
   bench: "#95a5a6",
   unavailable: "#d97706",
@@ -586,6 +591,8 @@ export default function Stats() {
   const { data: rawPlayerStats = [] } = useGetPlayerStats();
   const playerStats = rawPlayerStats as unknown as ExtendedPlayerStats[];
   const { data: players = [] } = useListPlayers();
+  const [groupInfield, setGroupInfield] = useState(true);
+  const displayGroupOrder = groupInfield ? GROUP_ORDER_MERGED : GROUP_ORDER;
 
   const benchData = playerStats
     .filter((p) => p.combinedTotal > 0)
@@ -639,8 +646,25 @@ export default function Stats() {
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Position Group Breakdown (Season Total)</CardTitle>
-                  <p className="text-xs text-muted-foreground">Includes live games + imported history. C = Catcher, CIF = Corner IF (1B/3B), MIF = Middle IF (2B/SS), OF = Outfield, P = Pitcher</p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle className="text-base">Position Group Breakdown (Season Total)</CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Includes live games + imported history.{" "}
+                        {groupInfield
+                          ? "Infield = C + 1B/3B + 2B/SS."
+                          : "C = Catcher, CIF = Corner IF (1B/3B), MIF = Middle IF (2B/SS), OF = Outfield, P = Pitcher"}
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 cursor-pointer">
+                      <Checkbox
+                        checked={groupInfield}
+                        onCheckedChange={(v) => setGroupInfield(v === true)}
+                        data-testid="checkbox-group-infield"
+                      />
+                      Group catcher + infield as "Infield"
+                    </label>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -649,7 +673,7 @@ export default function Stats() {
                         <tr className="border-b border-border">
                           <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Player</th>
                           <th className="text-center px-2 font-medium text-muted-foreground">Total Inn.</th>
-                          {GROUP_ORDER.map((g) => (
+                          {displayGroupOrder.map((g) => (
                             <th key={g} className="text-center px-2 font-medium text-muted-foreground">{GROUP_LABELS[g]}</th>
                           ))}
                         </tr>
@@ -658,32 +682,44 @@ export default function Stats() {
                         {playerStats
                           .filter((p) => p.combinedTotal > 0)
                           .sort((a, b) => b.combinedTotal - a.combinedTotal)
-                          .map((p) => (
-                            <tr key={p.playerId} className="border-b border-border/50 hover:bg-muted/30">
-                              <td className="py-2.5 pr-4">
-                                <div className="font-medium">{p.playerName}</div>
-                                {p.playerNumber != null && <div className="text-xs text-muted-foreground">#{p.playerNumber}</div>}
-                                {p.historicalTotal > 0 && <div className="text-xs text-blue-600">{p.historicalTotal} hist.</div>}
-                              </td>
-                              <td className="text-center px-2 font-mono">{p.combinedTotal}</td>
-                              {GROUP_ORDER.map((g) => {
-                                const count = (p.groups as Record<string, number>)?.[g] ?? 0;
-                                const pct = (p.groupPct as Record<string, number>)?.[g] ?? 0;
-                                return (
-                                  <td key={g} className="text-center px-2">
-                                    {count > 0 ? (
-                                      <div>
-                                        <div className="font-mono text-sm">{count}</div>
-                                        <PctBar pct={pct} color={GROUP_COLORS[g]} />
-                                      </div>
-                                    ) : (
-                                      <span className="text-muted-foreground/40">—</span>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))}
+                          .map((p) => {
+                            const groups = (p.groups as Record<string, number>) ?? {};
+                            const groupPct = (p.groupPct as Record<string, number>) ?? {};
+                            const getCount = (g: string) =>
+                              g === "infield"
+                                ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groups[k] ?? 0), 0)
+                                : (groups[g] ?? 0);
+                            const getPct = (g: string) =>
+                              g === "infield"
+                                ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groupPct[k] ?? 0), 0)
+                                : (groupPct[g] ?? 0);
+                            return (
+                              <tr key={p.playerId} className="border-b border-border/50 hover:bg-muted/30">
+                                <td className="py-2.5 pr-4">
+                                  <div className="font-medium">{p.playerName}</div>
+                                  {p.playerNumber != null && <div className="text-xs text-muted-foreground">#{p.playerNumber}</div>}
+                                  {p.historicalTotal > 0 && <div className="text-xs text-blue-600">{p.historicalTotal} hist.</div>}
+                                </td>
+                                <td className="text-center px-2 font-mono">{p.combinedTotal}</td>
+                                {displayGroupOrder.map((g) => {
+                                  const count = getCount(g);
+                                  const pct = getPct(g);
+                                  return (
+                                    <td key={g} className="text-center px-2" data-testid={`cell-${p.playerId}-${g}`}>
+                                      {count > 0 ? (
+                                        <div>
+                                          <div className="font-mono text-sm">{count}</div>
+                                          <PctBar pct={pct} color={GROUP_COLORS[g]} />
+                                        </div>
+                                      ) : (
+                                        <span className="text-muted-foreground/40">—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
