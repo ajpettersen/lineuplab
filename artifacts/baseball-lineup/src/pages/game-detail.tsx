@@ -169,8 +169,10 @@ export default function GameDetail() {
   const [addLockOpen, setAddLockOpen] = useState(false);
   const [lockPlayerId, setLockPlayerId] = useState<string>("");
   const [lockPosition, setLockPosition] = useState<string>("");
-  // "all" means apply to every inning of the game; otherwise a 1-based inning number.
-  const [lockInning, setLockInning] = useState<string>("all");
+  // Set of 1-based inning numbers the user has selected. Empty = nothing
+  // selected yet (validated on submit). The "All innings" checkbox in the
+  // dialog is derived from the size of this set rather than a separate flag.
+  const [lockInnings, setLockInnings] = useState<Set<number>>(new Set());
   const [lockSubmitting, setLockSubmitting] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
 
@@ -288,7 +290,11 @@ export default function GameDetail() {
   const openAddLock = () => {
     setLockPlayerId("");
     setLockPosition("");
-    setLockInning("all");
+    // Default selection: every inning of the game (matches the prior "All
+    // innings" default so the existing common case is still a one-click flow).
+    const all = new Set<number>();
+    if (game) for (let i = 1; i <= game.innings; i++) all.add(i);
+    setLockInnings(all);
     setLockError(null);
     setAddLockOpen(true);
   };
@@ -297,6 +303,17 @@ export default function GameDetail() {
     setLockError(null);
     if (!lockPlayerId) { setLockError("Pick a player."); return; }
     if (!lockPosition) { setLockError("Pick a position."); return; }
+    if (lockInnings.size === 0) { setLockError("Pick at least one inning."); return; }
+    // If every inning is selected, send `null` so the server takes the
+    // "all innings" fast path (and the response phrasing stays nice).
+    const totalInnings = game?.innings ?? 0;
+    const sortedInnings = Array.from(lockInnings).sort((a, b) => a - b);
+    const inningPayload: number | number[] | null =
+      totalInnings > 0 && sortedInnings.length === totalInnings
+        ? null
+        : sortedInnings.length === 1
+          ? sortedInnings[0]
+          : sortedInnings;
     setLockSubmitting(true);
     try {
       const resp = await fetch(`${BASE}/api/games/${id}/locks`, {
@@ -305,7 +322,7 @@ export default function GameDetail() {
         body: JSON.stringify({
           playerId: parseInt(lockPlayerId, 10),
           position: lockPosition,
-          inning: lockInning === "all" ? null : parseInt(lockInning, 10),
+          inning: inningPayload,
         }),
       });
       if (!resp.ok) {
@@ -2199,7 +2216,8 @@ export default function GameDetail() {
           <DialogHeader>
             <DialogTitle>Add Position Lock</DialogTitle>
             <DialogDescription>
-              Pin a player to a specific position for one inning or every inning of this game.
+              Pin a player to a position for any combination of innings — pick one,
+              pick a few, or every inning of this game.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
@@ -2237,21 +2255,75 @@ export default function GameDetail() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="lock-inning">Inning</Label>
-              <Select value={lockInning} onValueChange={setLockInning}>
-                <SelectTrigger id="lock-inning" data-testid="select-lock-inning">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" data-testid="option-lock-inning-all">All innings</SelectItem>
-                  {Array.from({ length: game.innings }, (_, i) => i + 1).map((n) => (
-                    <SelectItem key={n} value={String(n)} data-testid={`option-lock-inning-${n}`}>
-                      Inning {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <Label>Innings</Label>
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => {
+                      const all = new Set<number>();
+                      for (let i = 1; i <= game.innings; i++) all.add(i);
+                      setLockInnings(all);
+                    }}
+                    data-testid="button-lock-innings-all"
+                  >
+                    All
+                  </button>
+                  <span className="text-muted-foreground">·</span>
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => setLockInnings(new Set())}
+                    data-testid="button-lock-innings-none"
+                  >
+                    None
+                  </button>
+                </div>
+              </div>
+              <div
+                className="grid grid-cols-3 gap-2 rounded-md border border-border p-2"
+                data-testid="grid-lock-innings"
+              >
+                {Array.from({ length: game.innings }, (_, i) => i + 1).map((n) => {
+                  const checked = lockInnings.has(n);
+                  return (
+                    <label
+                      key={n}
+                      htmlFor={`lock-inning-${n}`}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded border text-sm cursor-pointer transition-colors ${
+                        checked
+                          ? "border-primary bg-primary/5 text-foreground"
+                          : "border-border/60 hover:border-border text-muted-foreground"
+                      }`}
+                      data-testid={`label-lock-inning-${n}`}
+                    >
+                      <Checkbox
+                        id={`lock-inning-${n}`}
+                        checked={checked}
+                        onCheckedChange={(v) => {
+                          setLockInnings((prev) => {
+                            const next = new Set(prev);
+                            if (v) next.add(n);
+                            else next.delete(n);
+                            return next;
+                          });
+                        }}
+                        data-testid={`checkbox-lock-inning-${n}`}
+                      />
+                      <span>Inn {n}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {lockInnings.size === 0
+                  ? "Pick at least one inning."
+                  : lockInnings.size === game.innings
+                    ? "All innings selected."
+                    : `${lockInnings.size} of ${game.innings} innings selected.`}
+              </p>
             </div>
             {lockError && (
               <p className="text-sm text-destructive" data-testid="text-lock-error">{lockError}</p>

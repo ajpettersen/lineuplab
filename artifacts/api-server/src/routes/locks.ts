@@ -16,11 +16,20 @@ const DeleteParams = z.object({
   lockId: z.coerce.number().int().positive(),
 });
 
-// `inning` may be a single number or null (= apply to every inning of the game).
+// `inning` may be:
+//   • null         → apply to every inning of the game (legacy "all" shortcut)
+//   • number       → a single inning (legacy single-pick)
+//   • number[]     → explicit list of innings to lock at once (new multi-pick)
+// All three are accepted so the client can pick whichever shape is most natural.
+const InningField = z.union([
+  z.number().int().min(1).max(20),
+  z.array(z.number().int().min(1).max(20)).min(1).max(20),
+  z.null(),
+]);
 const CreateBody = z.object({
   playerId: z.number().int().positive(),
   position: PositionEnum,
-  inning: z.number().int().min(1).max(20).nullable(),
+  inning: InningField,
 });
 
 router.get("/games/:id/locks", async (req, res): Promise<void> => {
@@ -93,17 +102,34 @@ router.post("/games/:id/locks", async (req, res): Promise<void> => {
     }
   }
 
-  // Determine which innings to lock. `inning: null` expands to every inning
-  // of the game; a specific inning must be in range.
-  const innings: number[] = body.data.inning == null
-    ? Array.from({ length: game.innings }, (_, i) => i + 1)
-    : (() => {
-        if (body.data.inning! < 1 || body.data.inning! > game.innings) return [];
-        return [body.data.inning!];
-      })();
+  // Determine which innings to lock.
+  //   • null   → every inning of this game.
+  //   • number → that single inning, must be in range.
+  //   • array  → that explicit list, deduped and validated against game length.
+  // We bail with a 400 if anything is out of range so the client gets a clear
+  // error instead of a silent partial insert.
+  const inn = body.data.inning;
+  let innings: number[];
+  if (inn == null) {
+    innings = Array.from({ length: game.innings }, (_, i) => i + 1);
+  } else if (Array.isArray(inn)) {
+    const deduped = Array.from(new Set(inn)).sort((a, b) => a - b);
+    const outOfRange = deduped.find((n) => n < 1 || n > game.innings);
+    if (outOfRange !== undefined) {
+      res.status(400).json({ error: `Inning ${outOfRange} is out of range (1–${game.innings}).` });
+      return;
+    }
+    innings = deduped;
+  } else {
+    if (inn < 1 || inn > game.innings) {
+      res.status(400).json({ error: `Inning must be between 1 and ${game.innings}.` });
+      return;
+    }
+    innings = [inn];
+  }
 
   if (innings.length === 0) {
-    res.status(400).json({ error: `Inning must be between 1 and ${game.innings}.` });
+    res.status(400).json({ error: "Pick at least one inning to lock." });
     return;
   }
 
