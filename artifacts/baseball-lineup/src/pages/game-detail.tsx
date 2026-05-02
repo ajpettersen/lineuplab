@@ -49,7 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye } from "lucide-react";
+import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
@@ -820,6 +820,35 @@ export default function GameDetail() {
         onError: () => toast({ title: "Failed to save lineup", variant: "destructive" }),
       }
     );
+  };
+
+  /**
+   * Pull a player out of the displayed lineup entirely (e.g. injury, early
+   * departure). Drops every entry for that player across every inning. Field
+   * positions they were holding become empty cells the coach can refill by
+   * dragging another player in or regenerating. Acts on whichever lineup is
+   * currently on screen — preview, edited, or saved (in the saved case it
+   * seeds `editedLineup` so the change is reviewable + savable).
+   */
+  const handleRemovePlayerFromLineup = (playerId: number, playerName: string) => {
+    const current = previewLineup ?? editedLineup ?? lineup;
+    const innings = new Set(current.filter((e) => e.playerId === playerId).map((e) => e.inning));
+    if (innings.size === 0) return;
+    const ok = window.confirm(
+      `Remove ${playerName} from this lineup? They'll be cleared from all ${innings.size} inning${innings.size === 1 ? "" : "s"} they appear in. Use this for injuries or mid-game departures.`,
+    );
+    if (!ok) return;
+    const next = current.filter((e) => e.playerId !== playerId);
+    if (previewLineup) setPreviewLineup(next);
+    else setEditedLineup(next);
+    if (selectedEntryId != null) {
+      const stillThere = next.some((e) => e.id === selectedEntryId);
+      if (!stillThere) setSelectedEntryId(null);
+    }
+    toast({
+      title: `${playerName} removed from lineup`,
+      description: "Review the empty slots and save when you're ready.",
+    });
   };
 
   /**
@@ -1781,6 +1810,7 @@ export default function GameDetail() {
                     <th className="text-center py-2 px-2 font-medium">Bench</th>
                     <th className="text-center py-2 px-2 font-medium">Out</th>
                     <th className="text-center py-2 pl-2 font-medium">Total</th>
+                    <th className="w-8 py-2 pl-2 no-print" aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1840,6 +1870,18 @@ export default function GameDetail() {
                         </td>
                         <td className="text-center py-1.5 pl-2 font-semibold text-muted-foreground">
                           {total}
+                        </td>
+                        <td className="py-1.5 pl-2 no-print">
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePlayerFromLineup(row.playerId, row.playerName)}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            aria-label={`Remove ${row.playerName} from lineup`}
+                            title={`Remove ${row.playerName} from this lineup (e.g. injury)`}
+                            data-testid={`button-remove-player-${row.playerId}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );
