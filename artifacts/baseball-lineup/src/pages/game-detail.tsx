@@ -1632,7 +1632,7 @@ export default function GameDetail() {
             )}
           </div>
           {displayLineup.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               {selectedEntry && (
                 <span className="text-xs text-muted-foreground hidden sm:inline" data-testid="text-swap-hint">
                   Moving <span className="font-medium text-foreground">{selectedEntry.playerName.split(" ")[0]}</span> — tap a cell in inning {selectedEntry.inning}
@@ -1645,6 +1645,21 @@ export default function GameDetail() {
                     <X className="h-3 w-3" />
                   </button>
                 </span>
+              )}
+              {selectedEntry && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    handleRemovePlayerFromLineup(selectedEntry.playerId, selectedEntry.playerName);
+                  }}
+                  data-testid="button-remove-selected-player"
+                  className="no-print"
+                  title={`Remove ${selectedEntry.playerName} from this lineup (e.g. injury)`}
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  Remove {selectedEntry.playerName.split(" ")[0]}
+                </Button>
               )}
               <Button variant="outline" size="sm" onClick={handleCopyLineup} data-testid="button-copy-lineup" className="no-print">
                 <ClipboardCopy className="h-4 w-4 mr-1.5" />
