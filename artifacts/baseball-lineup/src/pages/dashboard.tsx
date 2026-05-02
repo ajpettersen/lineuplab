@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield } from "lucide-react";
 import { format } from "date-fns";
+import { isTrulyUpcoming } from "@/lib/game-status";
 
 function ScoreBadge({ our, opp }: { our: number | null | undefined; opp: number | null | undefined }) {
   if (our == null || opp == null) return null;
@@ -23,7 +24,10 @@ export default function Dashboard() {
 
   const actualGames = games.filter((g) => g.type === "game");
   const completedGames = actualGames.filter((g) => g.status === "completed");
-  const upcomingGames = games.filter((g) => g.status === "upcoming");
+  // Only games whose scheduled time is still in the future. Past-dated games
+  // that were never marked complete fall out of this list (they show on the
+  // Games page under "Past" instead).
+  const upcomingGames = games.filter((g) => isTrulyUpcoming(g));
   const wins = completedGames.filter((g) => (g.ourScore ?? 0) > (g.opponentScore ?? 0)).length;
 
   const mostBenchPlayer = playerStats

@@ -53,6 +53,7 @@ import { ArrowLeft, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X,
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { effectiveStatus } from "@/lib/game-status";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
@@ -1273,13 +1274,16 @@ export default function GameDetail() {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-bold">vs. {game.opponent}</h1>
-                {game.status === "completed" ? (
-                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completed</Badge>
-                ) : game.status === "cancelled" ? (
-                  <Badge variant="outline">Cancelled</Badge>
-                ) : (
-                  <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>
-                )}
+                {(() => {
+                  const eff = effectiveStatus(game);
+                  if (eff === "completed")
+                    return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completed</Badge>;
+                  if (eff === "cancelled")
+                    return <Badge variant="outline">Cancelled</Badge>;
+                  if (eff === "past")
+                    return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
+                  return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
+                })()}
               </div>
               <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1">
@@ -2054,11 +2058,16 @@ export default function GameDetail() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium">vs. {g.opponent}</span>
-                        {g.status === "completed" ? (
-                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-[10px] px-1.5 py-0">Played</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">Upcoming</Badge>
-                        )}
+                        {(() => {
+                          const eff = effectiveStatus(g);
+                          if (eff === "completed")
+                            return <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-[10px] px-1.5 py-0">Played</Badge>;
+                          if (eff === "past")
+                            return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px] px-1.5 py-0">Past</Badge>;
+                          if (eff === "cancelled")
+                            return <Badge variant="outline" className="text-[10px] px-1.5 py-0">Cancelled</Badge>;
+                          return <Badge variant="outline" className="text-[10px] px-1.5 py-0">Upcoming</Badge>;
+                        })()}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                         <span>{format(new Date(g.gameDate), "EEE, MMM d, yyyy")}</span>

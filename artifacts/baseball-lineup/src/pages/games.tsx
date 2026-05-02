@@ -48,12 +48,14 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status: EffectiveStatus }) {
   if (status === "completed") return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completed</Badge>;
   if (status === "cancelled") return <Badge variant="outline" className="text-muted-foreground">Cancelled</Badge>;
+  if (status === "past") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
 }
 
@@ -484,8 +486,10 @@ export default function Games() {
   );
 
   const filtered = filter === "all" ? games : games.filter((g) => (g.type ?? "game") === filter);
-  const upcoming = filtered.filter((g) => g.status === "upcoming");
-  const past = filtered.filter((g) => g.status !== "upcoming").reverse();
+  // Bucket by effective status: a stored "upcoming" game whose date has already
+  // passed is shown under "Past" so it doesn't pretend to still be on the schedule.
+  const upcoming = filtered.filter((g) => effectiveStatus(g) === "upcoming");
+  const past = filtered.filter((g) => effectiveStatus(g) !== "upcoming").reverse();
 
   const handleDelete = () => {
     if (!deleteId) return;
@@ -515,7 +519,7 @@ export default function Games() {
                   {g.type && g.type !== "game" ? g.opponent : `vs. ${g.opponent}`}
                 </span>
                 <TypeBadge type={(g.type ?? "game") as EventKind} />
-                <StatusBadge status={g.status} />
+                <StatusBadge status={effectiveStatus(g)} />
                 {g.status === "completed" && g.ourScore != null && g.opponentScore != null && (
                   <span className={`text-sm font-bold px-2 py-0.5 rounded ${g.ourScore > g.opponentScore ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                     {g.ourScore > g.opponentScore ? "W" : "L"} {g.ourScore}-{g.opponentScore}
