@@ -459,8 +459,67 @@ export default function GameDetail() {
     setImageOpen(true);
   };
 
+  // Downscale an image File so we don't ship a 5MB phone photo over a stadium
+  // LTE connection. Max 1280px on the long edge, JPEG q=0.85 — easily readable
+  // by the vision model and typically 10-20× smaller than the raw upload.
+  // Falls back to the original file if anything goes wrong.
+  const downscaleImageFile = (file: File): Promise<{ dataUrl: string; mime: string }> =>
+    new Promise((resolve) => {
+      const fallback = (reason: string) => {
+        const fr = new FileReader();
+        fr.onerror = () => resolve({ dataUrl: "", mime: file.type });
+        fr.onload = () => {
+          const dataUrl = String(fr.result ?? "");
+          if (!dataUrl) {
+            console.warn(`[image-import] fallback failed: ${reason}`);
+            resolve({ dataUrl: "", mime: file.type });
+          } else {
+            resolve({ dataUrl, mime: file.type === "image/jpg" ? "image/jpeg" : file.type });
+          }
+        };
+        fr.readAsDataURL(file);
+      };
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        fallback("image decode failed");
+      };
+      img.onload = () => {
+        try {
+          const MAX = 1280;
+          const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+          const w = Math.max(1, Math.round(img.naturalWidth * scale));
+          const h = Math.max(1, Math.round(img.naturalHeight * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            URL.revokeObjectURL(url);
+            fallback("no 2d context");
+            return;
+          }
+          ctx.drawImage(img, 0, 0, w, h);
+          // Always re-encode as JPEG: smaller than PNG for photos and screenshots
+          // of UIs with anti-aliased text alike, and the vision model doesn't care.
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          URL.revokeObjectURL(url);
+          if (!dataUrl || !dataUrl.startsWith("data:image/jpeg")) {
+            fallback("canvas export failed");
+            return;
+          }
+          resolve({ dataUrl, mime: "image/jpeg" });
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          fallback(`exception: ${String(err)}`);
+        }
+      };
+      img.src = url;
+    });
+
   // Read a File into a base64 data URL we can preview AND ship to the server.
-  const ingestImageFile = (file: File) => {
+  const ingestImageFile = async (file: File) => {
     setImageError(null);
     if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.type)) {
       setImageError(`Unsupported file type "${file.type || "unknown"}". Use PNG, JPEG, or WebP.`);
@@ -470,21 +529,20 @@ export default function GameDetail() {
       setImageError(`Image is too large (${Math.round(file.size / 1024 / 1024)} MB). Max is 6 MB.`);
       return;
     }
-    const reader = new FileReader();
-    reader.onerror = () => setImageError("Could not read that file.");
-    reader.onload = () => {
-      const dataUrl = String(reader.result ?? "");
-      const commaAt = dataUrl.indexOf(",");
-      if (commaAt < 0) {
-        setImageError("Could not read that file.");
-        return;
-      }
-      setImageDataUrl(dataUrl);
-      setImageMime(file.type === "image/jpg" ? "image/jpeg" : file.type);
-      setImageBase64(dataUrl.slice(commaAt + 1));
-      setImageFileName(file.name || "screenshot");
-    };
-    reader.readAsDataURL(file);
+    const { dataUrl, mime } = await downscaleImageFile(file);
+    if (!dataUrl) {
+      setImageError("Could not read that file.");
+      return;
+    }
+    const commaAt = dataUrl.indexOf(",");
+    if (commaAt < 0) {
+      setImageError("Could not read that file.");
+      return;
+    }
+    setImageDataUrl(dataUrl);
+    setImageMime(mime === "image/jpg" ? "image/jpeg" : mime);
+    setImageBase64(dataUrl.slice(commaAt + 1));
+    setImageFileName(file.name || "screenshot");
   };
 
   const handleImagePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {

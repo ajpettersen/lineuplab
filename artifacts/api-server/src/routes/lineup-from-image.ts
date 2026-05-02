@@ -230,7 +230,10 @@ Game length: ${game.innings} innings.`;
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-5.2",
-      max_completion_tokens: 4000,
+      // Lineups are short structured JSON; 1500 tokens fits ~80 entries with
+      // notes and a margin. Keeping this tight cuts model latency noticeably
+      // vs. the previous 4000-token budget.
+      max_completion_tokens: 1500,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
@@ -238,7 +241,11 @@ Game length: ${game.innings} innings.`;
           role: "user",
           content: [
             { type: "text", text: userText },
-            { type: "image_url", image_url: { url: dataUrl } },
+            // detail:"low" tells the vision model to use the ~85-token
+            // low-res tile instead of high-detail tiling. Lineup grids and
+            // app screenshots are easily readable at low and this is the
+            // single biggest latency win on the import path.
+            { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
           ],
         },
       ],
