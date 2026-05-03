@@ -17,6 +17,20 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 
+/**
+ * Eligibility is no longer a coach-managed concept — every player can play
+ * every position. The only hard exclusion left is pitching: kids who don't
+ * pitch never get auto-assigned to "P" (a safety/parental concern). We still
+ * persist `eligiblePositions` because legacy data + lineup-generator code
+ * read from it; we just always recompute it from `canPitch` on every write,
+ * so existing rows self-heal as soon as the coach edits them.
+ */
+function deriveEligible(canPitch: boolean): string[] {
+  return canPitch
+    ? [...ALL_POSITIONS]
+    : ALL_POSITIONS.filter((p) => p !== "P");
+}
+
 const ExtractTextBodySchema = z.object({
   text: z.string().min(1).max(10000),
 });
@@ -39,7 +53,7 @@ Return a JSON array ONLY (no markdown, no explanation). For each player return:
 {
   "name": string,                 // full name as written, trimmed
   "number": number | null,        // jersey number if visible, else null
-  "eligiblePositions": string[],  // pick from ${ALL_POSITIONS.join(", ")}
+  "preferredPositions": string[], // positions the roster lists for them, from ${ALL_POSITIONS.join(", ")}
   "canPitch": boolean,            // true if "P" appears in their positions or roster says pitcher
   "notes": string | null          // anything notable (left-handed, captain, etc.) or null
 }
@@ -50,9 +64,9 @@ Position normalization rules:
 - "Left field"/"LF" -> "LF", "Center"/"CF" -> "CF", "Right"/"RF" -> "RF"
 - "Outfield"/"OF" -> ["LF","CF","RF"]
 - "Infield"/"IF" -> ["1B","2B","3B","SS"]
-- If no positions listed, return empty array []
-If canPitch is true, make sure "P" is in eligiblePositions.
-Output only the raw JSON array.`;
+- If no positions listed, return empty array [] for preferredPositions.
+Players are not gated by "eligible" positions anymore — only canPitch matters
+for whether they'll be auto-assigned to pitch. Output only the raw JSON array.`;
 
 async function callExtractor(content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>) {
   const response = await openai.chat.completions.create({
@@ -124,15 +138,22 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
       continue;
     }
     existingKeys.add(key); // also dedupe within the batch itself
-    // Filter out any unknown position codes the AI may have produced.
-    const eligible = new Set(p.eligiblePositions.filter((pp) => KNOWN_POSITIONS.has(pp)));
-    if (p.canPitch) eligible.add("P");
-    const preferred = (p.preferredPositions ?? []).filter((pp) => KNOWN_POSITIONS.has(pp) && eligible.has(pp));
+    // Eligibility is auto-derived from canPitch (see deriveEligible). The AI
+    // extractor sometimes still sends `eligiblePositions` in legacy payloads,
+    // and the bulk schema also accepts it for back-compat — both are merged
+    // into preferredPositions so the coach's intent isn't lost.
+    const preferredRaw = [
+      ...(p.preferredPositions ?? []),
+      ...(p.eligiblePositions ?? []),
+    ];
+    const preferred = Array.from(
+      new Set(preferredRaw.filter((pp) => KNOWN_POSITIONS.has(pp))),
+    );
     rows.push({
       userId,
       name: p.name,
       number: p.number ?? null,
-      eligiblePositions: Array.from(eligible),
+      eligiblePositions: deriveEligible(p.canPitch),
       preferredPositions: preferred,
       canPitch: p.canPitch,
       active: true,
@@ -168,7 +189,9 @@ router.post("/players", async (req, res): Promise<void> => {
       userId,
       name: data.name,
       number: data.number ?? null,
-      eligiblePositions: data.eligiblePositions,
+      // eligiblePositions is now server-derived from canPitch; client values
+      // are accepted by the schema for back-compat but always overridden.
+      eligiblePositions: deriveEligible(data.canPitch),
       preferredPositions: data.preferredPositions,
       canPitch: data.canPitch,
       active: data.active ?? true,
@@ -212,11 +235,23 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   const d = parsed.data;
   if (d.name !== undefined) updates.name = d.name;
   if (d.number !== undefined) updates.number = d.number;
-  if (d.eligiblePositions !== undefined) updates.eligiblePositions = d.eligiblePositions;
   if (d.preferredPositions !== undefined) updates.preferredPositions = d.preferredPositions;
   if (d.canPitch !== undefined) updates.canPitch = d.canPitch;
   if (d.active !== undefined) updates.active = d.active;
   if (d.notes !== undefined) updates.notes = d.notes;
+  // Always recompute eligiblePositions from the resulting canPitch so legacy
+  // rows self-heal on any edit, not just canPitch toggles. We need the
+  // existing row to know canPitch when it isn't part of this PATCH.
+  const [existing] = await db
+    .select()
+    .from(playersTable)
+    .where(and(eq(playersTable.id, id), eq(playersTable.userId, userId)));
+  if (!existing) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+  const effectiveCanPitch = d.canPitch ?? existing.canPitch;
+  updates.eligiblePositions = deriveEligible(effectiveCanPitch);
 
   const [player] = await db
     .update(playersTable)

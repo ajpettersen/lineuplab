@@ -50,7 +50,6 @@ export default function PlayerDetail() {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [number, setNumber] = useState("");
-  const [eligible, setEligible] = useState<string[]>([]);
   const [preferred, setPreferred] = useState<string[]>([]);
   const [canPitch, setCanPitch] = useState(false);
   const [active, setActive] = useState(true);
@@ -59,24 +58,13 @@ export default function PlayerDetail() {
     if (!player) return;
     setName(player.name);
     setNumber(player.number != null ? String(player.number) : "");
-    setEligible(player.eligiblePositions);
     setPreferred(player.preferredPositions);
     setCanPitch(player.canPitch);
     setActive(player.active);
     setEditing(true);
   };
 
-  const toggleEligible = (pos: string) => {
-    if (eligible.includes(pos)) {
-      setEligible((prev) => prev.filter((p) => p !== pos));
-      setPreferred((prev) => prev.filter((p) => p !== pos));
-    } else {
-      setEligible((prev) => [...prev, pos]);
-    }
-  };
-
   const togglePreferred = (pos: string) => {
-    if (!eligible.includes(pos)) return;
     setPreferred((prev) =>
       prev.includes(pos) ? prev.filter((p) => p !== pos) : [...prev, pos]
     );
@@ -89,7 +77,10 @@ export default function PlayerDetail() {
         data: {
           name: name.trim(),
           number: number ? parseInt(number) : null,
-          eligiblePositions: eligible,
+          // eligiblePositions is server-derived from canPitch; we send the
+          // current full list (server overwrites it) just to satisfy the
+          // generated zod schema, which still requires the field.
+          eligiblePositions: ALL_POSITIONS,
           preferredPositions: preferred,
           canPitch,
           active,
@@ -186,50 +177,32 @@ export default function PlayerDetail() {
           {editing ? (
             <>
               <div className="flex flex-col gap-2">
-                <Label>Eligible Positions</Label>
+                <Label>Preferred Positions</Label>
+                <p className="text-xs text-muted-foreground">
+                  Tap positions this player likes or plays best. The lineup
+                  generator will favor them when fairness allows. Leave it
+                  empty if they have no strong preference — every player can
+                  play any position.
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   {ALL_POSITIONS.map((pos) => (
                     <label
                       key={pos}
                       className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer text-sm transition-colors ${
-                        eligible.includes(pos)
+                        preferred.includes(pos)
                           ? "border-primary bg-primary/5 text-primary font-medium"
                           : "border-border text-muted-foreground"
                       }`}
                     >
                       <Checkbox
-                        checked={eligible.includes(pos)}
-                        onCheckedChange={() => toggleEligible(pos)}
+                        checked={preferred.includes(pos)}
+                        onCheckedChange={() => togglePreferred(pos)}
                       />
                       {pos}
                     </label>
                   ))}
                 </div>
               </div>
-              {eligible.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <Label>Preferred Positions</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {eligible.map((pos) => (
-                      <label
-                        key={pos}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer text-sm ${
-                          preferred.includes(pos)
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border text-muted-foreground"
-                        }`}
-                      >
-                        <Checkbox
-                          checked={preferred.includes(pos)}
-                          onCheckedChange={() => togglePreferred(pos)}
-                          className="hidden"
-                        />
-                        {pos}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox checked={canPitch} onCheckedChange={(v) => setCanPitch(!!v)} />
@@ -244,20 +217,20 @@ export default function PlayerDetail() {
           ) : (
             <>
               <div className="flex flex-col gap-1.5">
-                <Label className="text-xs text-muted-foreground">Eligible Positions</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {player.eligiblePositions.map((pos) => (
-                    <Badge
-                      key={pos}
-                      variant={player.preferredPositions.includes(pos) ? "default" : "secondary"}
-                    >
-                      {pos}
-                      {player.preferredPositions.includes(pos) && (
-                        <span className="ml-1 opacity-70 text-xs">pref</span>
-                      )}
-                    </Badge>
-                  ))}
-                </div>
+                <Label className="text-xs text-muted-foreground">Preferred Positions</Label>
+                {player.preferredPositions.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {player.preferredPositions.map((pos) => (
+                      <Badge key={pos} variant="default">
+                        {pos}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">
+                    No preferences — can play anywhere.
+                  </p>
+                )}
               </div>
               {player.canPitch && (
                 <Badge variant="outline" className="w-fit text-primary border-primary/40">

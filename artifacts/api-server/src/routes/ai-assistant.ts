@@ -173,7 +173,7 @@ router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
   const rosterLines = activePlayers
     .map(
       (p) =>
-        `id=${p.id} name="${p.name}" eligible=[${p.eligiblePositions.join(",") || "—"}] preferred=[${(p.preferredPositions ?? []).join(",") || "—"}]${p.canPitch ? " canPitch" : ""}`,
+        `id=${p.id} name="${p.name}" preferred=[${(p.preferredPositions ?? []).join(",") || "—"}]${p.canPitch ? " canPitch" : " noPitch"}`,
     )
     .join("\n");
 

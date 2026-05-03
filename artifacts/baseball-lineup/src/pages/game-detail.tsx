@@ -2274,7 +2274,7 @@ export default function GameDetail() {
                     {p.number != null && <span className="text-xs text-muted-foreground ml-1.5">#{p.number}</span>}
                   </div>
                   <div className="flex gap-1 flex-wrap justify-end">
-                    {p.eligiblePositions.slice(0, 3).map((pos) => (
+                    {p.preferredPositions.slice(0, 3).map((pos) => (
                       <span key={pos} className="text-xs text-muted-foreground">{pos}</span>
                     ))}
                   </div>
@@ -2323,23 +2323,28 @@ export default function GameDetail() {
             const positionByPlayerId = new Map(
               inningEntries.map((e) => [e.playerId, e.position] as const),
             );
-            const eligibleFirst = (a: typeof players[number], b: typeof players[number]) => {
-              const aElig = a.eligiblePositions.includes(addSlotTarget.position);
-              const bElig = b.eligiblePositions.includes(addSlotTarget.position);
-              if (aElig !== bElig) return aElig ? -1 : 1;
+            // Surface preferred-position fits first; everyone else is still
+            // pickable underneath, alphabetised. Eligibility is no longer a
+            // gate — every player can be added to any slot.
+            const preferredFirst = (a: typeof players[number], b: typeof players[number]) => {
+              const aPref = a.preferredPositions.includes(addSlotTarget.position);
+              const bPref = b.preferredPositions.includes(addSlotTarget.position);
+              if (aPref !== bPref) return aPref ? -1 : 1;
               return a.name.localeCompare(b.name);
             };
             const candidates = players
               .filter((p) => p.active)
               .slice()
-              .sort(eligibleFirst);
+              .sort(preferredFirst);
             return (
               <div className="flex flex-col gap-1.5">
                 {candidates.map((p) => {
                   const here = positionByPlayerId.get(p.id);
-                  const eligible = p.eligiblePositions.includes(
+                  const isPreferred = p.preferredPositions.includes(
                     addSlotTarget.position,
                   );
+                  const cannotPitch =
+                    addSlotTarget.position === "P" && !p.canPitch;
                   const subtitle = here
                     ? here === "Bench"
                       ? "Currently on bench this inning"
@@ -2357,9 +2362,9 @@ export default function GameDetail() {
                         )
                       }
                       className={`flex items-center justify-between gap-3 p-2.5 rounded-md border text-left transition-colors ${
-                        eligible
-                          ? "border-border hover:border-primary/60 hover:bg-primary/5"
-                          : "border-border/50 hover:border-primary/40 hover:bg-muted/40"
+                        isPreferred
+                          ? "border-primary/60 bg-primary/5 hover:bg-primary/10"
+                          : "border-border hover:border-primary/40 hover:bg-muted/40"
                       }`}
                       data-testid={`add-slot-row-${p.id}`}
                     >
@@ -2371,9 +2376,14 @@ export default function GameDetail() {
                               #{p.number}
                             </span>
                           )}
-                          {!eligible && (
+                          {isPreferred && (
+                            <span className="text-[10px] uppercase tracking-wide text-primary bg-primary/10 border border-primary/30 rounded px-1 py-px">
+                              ★ preferred
+                            </span>
+                          )}
+                          {cannotPitch && (
                             <span className="text-[10px] uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 py-px">
-                              not eligible
+                              not a pitcher
                             </span>
                           )}
                         </div>
@@ -2468,7 +2478,7 @@ export default function GameDetail() {
                     )}
                   </div>
                   <div className="flex gap-1 flex-wrap justify-end">
-                    {p.eligiblePositions.slice(0, 3).map((pos) => (
+                    {p.preferredPositions.slice(0, 3).map((pos) => (
                       <span key={pos} className="text-xs text-muted-foreground">
                         {pos}
                       </span>

@@ -41,6 +41,9 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 type ExtractedPlayer = {
   name: string;
   number: number | null;
+  // Kept on the type so legacy AI extractor responses still parse, but the UI
+  // no longer surfaces it — every position is implicitly playable. The server
+  // merges any leftover values into preferredPositions on bulk-import.
   eligiblePositions: string[];
   preferredPositions: string[];
   canPitch: boolean;
@@ -138,11 +141,19 @@ function ImportRosterDialog({
           const name = r.name ?? "";
           const number = r.number ?? null;
           const dup = isDuplicate(name, number);
+          // The extractor used to return `eligiblePositions`; the new prompt
+          // returns `preferredPositions` instead. Accept either for forward
+          // and backward compatibility, treat both as "preferred".
+          const positions = Array.isArray(r.preferredPositions)
+            ? r.preferredPositions
+            : Array.isArray(r.eligiblePositions)
+              ? r.eligiblePositions
+              : [];
           return {
             name,
             number,
-            eligiblePositions: Array.isArray(r.eligiblePositions) ? r.eligiblePositions : [],
-            preferredPositions: [],
+            eligiblePositions: [],
+            preferredPositions: positions,
             canPitch: !!r.canPitch,
             notes: dup ? "Already on roster" : r.notes ?? null,
             include: !dup,
@@ -156,28 +167,18 @@ function ImportRosterDialog({
     }
   };
 
-  // Tri-state cycle on a position chip: off → eligible → preferred → off
-  const cyclePos = (idx: number, pos: string) => {
+  // Binary toggle on a position chip — on means "preferred". Eligibility
+  // isn't a coach-managed concept anymore; every player can play anywhere.
+  const togglePos = (idx: number, pos: string) => {
     setExtracted((prev) => {
       if (!prev) return prev;
       const next = [...prev];
       const cur = next[idx]!;
-      const isEligible = cur.eligiblePositions.includes(pos);
       const isPreferred = cur.preferredPositions.includes(pos);
-      let eligible = cur.eligiblePositions;
-      let preferred = cur.preferredPositions;
-      if (!isEligible) {
-        // off → eligible
-        eligible = [...eligible, pos];
-      } else if (!isPreferred) {
-        // eligible → preferred (still eligible)
-        preferred = [...preferred, pos];
-      } else {
-        // preferred → off
-        eligible = eligible.filter((p) => p !== pos);
-        preferred = preferred.filter((p) => p !== pos);
-      }
-      next[idx] = { ...cur, eligiblePositions: eligible, preferredPositions: preferred };
+      const preferred = isPreferred
+        ? cur.preferredPositions.filter((p) => p !== pos)
+        : [...cur.preferredPositions, pos];
+      next[idx] = { ...cur, preferredPositions: preferred };
       return next;
     });
   };
@@ -207,7 +208,9 @@ function ImportRosterDialog({
           players: toImport.map((p) => ({
             name: p.name.trim(),
             number: p.number,
-            eligiblePositions: p.eligiblePositions,
+            // Server derives eligiblePositions from canPitch and merges any
+            // leftover legacy values into preferred — we just send preferred.
+            eligiblePositions: [],
             preferredPositions: p.preferredPositions,
             canPitch: p.canPitch,
             notes: p.notes,
@@ -338,11 +341,9 @@ function ImportRosterDialog({
             </div>
 
             <p className="text-xs text-muted-foreground -mb-1">
-              Tap a position to cycle: <span className="text-muted-foreground">off</span> →{" "}
-              <span className="text-foreground font-medium">eligible</span> →{" "}
-              <span className="text-primary font-medium">★ preferred</span>. Preferred positions
-              are where the player ideally plays — the lineup generator will favor them when
-              fairness allows.
+              Tap a position to mark it as a <span className="text-primary font-medium">preferred</span>{" "}
+              spot — where this player ideally plays. Every player can play any
+              position; preferred just biases the lineup generator.
             </p>
 
             <div className="border rounded-md overflow-hidden">
@@ -394,36 +395,26 @@ function ImportRosterDialog({
                       <td className="p-2 align-top">
                         <div className="flex flex-wrap gap-1">
                           {ALL_POSITIONS.map((pos) => {
-                            const eligible = row.eligiblePositions.includes(pos);
                             const preferred = row.preferredPositions.includes(pos);
-                            const state: "off" | "eligible" | "preferred" = preferred
-                              ? "preferred"
-                              : eligible
-                                ? "eligible"
-                                : "off";
                             return (
                               <button
                                 key={pos}
                                 type="button"
-                                onClick={() => cyclePos(i, pos)}
+                                onClick={() => togglePos(i, pos)}
                                 title={
-                                  state === "off"
-                                    ? `Click to mark ${pos} as eligible`
-                                    : state === "eligible"
-                                      ? `Click to mark ${pos} as preferred`
-                                      : `Click to remove ${pos}`
+                                  preferred
+                                    ? `Click to remove ${pos} from preferred`
+                                    : `Click to mark ${pos} as preferred`
                                 }
                                 className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border transition-colors ${
-                                  state === "preferred"
+                                  preferred
                                     ? "bg-primary text-primary-foreground border-primary ring-1 ring-primary/40"
-                                    : state === "eligible"
-                                      ? "bg-secondary text-secondary-foreground border-secondary"
-                                      : "border-border text-muted-foreground hover:border-primary/50"
+                                    : "border-border text-muted-foreground hover:border-primary/50"
                                 }`}
                                 data-testid={`button-pos-${i}-${pos}`}
-                                data-state={state}
+                                data-state={preferred ? "preferred" : "off"}
                               >
-                                {state === "preferred" && <span aria-hidden>★</span>}
+                                {preferred && <span aria-hidden>★</span>}
                                 {pos}
                               </button>
                             );
@@ -479,23 +470,10 @@ function AddPlayerDialog({
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [number, setNumber] = useState("");
-  const [eligible, setEligible] = useState<string[]>([]);
   const [preferred, setPreferred] = useState<string[]>([]);
   const [canPitch, setCanPitch] = useState(false);
 
-  const toggleEligible = (pos: string) => {
-    setEligible((prev) =>
-      prev.includes(pos) ? prev.filter((p) => p !== pos) : [...prev, pos]
-    );
-    if (!eligible.includes(pos)) {
-      // removing from eligible removes from preferred too
-    } else {
-      setPreferred((prev) => prev.filter((p) => p !== pos));
-    }
-  };
-
   const togglePreferred = (pos: string) => {
-    if (!eligible.includes(pos)) return;
     setPreferred((prev) =>
       prev.includes(pos) ? prev.filter((p) => p !== pos) : [...prev, pos]
     );
@@ -506,16 +484,14 @@ function AddPlayerDialog({
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
-    if (eligible.length === 0) {
-      toast({ title: "Select at least one eligible position", variant: "destructive" });
-      return;
-    }
     createPlayer.mutate(
       {
         data: {
           name: name.trim(),
           number: number ? parseInt(number) : null,
-          eligiblePositions: eligible,
+          // eligiblePositions is server-derived from canPitch — we send the
+          // full list so the generated zod schema is satisfied; server overwrites it.
+          eligiblePositions: ALL_POSITIONS,
           preferredPositions: preferred,
           canPitch,
           active: true,
@@ -528,7 +504,6 @@ function AddPlayerDialog({
           onClose();
           setName("");
           setNumber("");
-          setEligible([]);
           setPreferred([]);
           setCanPitch(false);
         },
@@ -564,50 +539,31 @@ function AddPlayerDialog({
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <Label>Eligible Positions</Label>
+            <Label>Preferred Positions</Label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Tap positions this player likes or plays best. Optional — every
+              player can play any position; this just biases the lineup
+              generator.
+            </p>
             <div className="grid grid-cols-3 gap-2">
               {ALL_POSITIONS.map((pos) => (
                 <label
                   key={pos}
                   className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer text-sm transition-colors ${
-                    eligible.includes(pos)
+                    preferred.includes(pos)
                       ? "border-primary bg-primary/5 text-primary font-medium"
                       : "border-border text-muted-foreground hover:border-primary/50"
                   }`}
                 >
                   <Checkbox
-                    checked={eligible.includes(pos)}
-                    onCheckedChange={() => toggleEligible(pos)}
+                    checked={preferred.includes(pos)}
+                    onCheckedChange={() => togglePreferred(pos)}
                   />
                   {pos}
                 </label>
               ))}
             </div>
           </div>
-          {eligible.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <Label>Preferred Positions (subset of eligible)</Label>
-              <div className="flex flex-wrap gap-2">
-                {eligible.map((pos) => (
-                  <label
-                    key={pos}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer text-sm transition-colors ${
-                      preferred.includes(pos)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border text-muted-foreground hover:border-primary/50"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={preferred.includes(pos)}
-                      onCheckedChange={() => togglePreferred(pos)}
-                      className="hidden"
-                    />
-                    {pos}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="flex items-center gap-2">
             <Checkbox
               id="canPitch"
@@ -707,15 +663,21 @@ export default function Players() {
                         )}
                       </div>
                       <div className="flex flex-wrap gap-1 mt-2 ml-8">
-                        {p.eligiblePositions.map((pos) => (
-                          <Badge
-                            key={pos}
-                            variant={p.preferredPositions.includes(pos) ? "default" : "secondary"}
-                            className="text-xs px-1.5 py-0"
-                          >
-                            {pos}
-                          </Badge>
-                        ))}
+                        {p.preferredPositions.length > 0 ? (
+                          p.preferredPositions.map((pos) => (
+                            <Badge
+                              key={pos}
+                              variant="default"
+                              className="text-xs px-1.5 py-0"
+                            >
+                              {pos}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">
+                            no preferred positions
+                          </span>
+                        )}
                         {p.canPitch && (
                           <Badge variant="outline" className="text-xs px-1.5 py-0 text-primary border-primary/40">
                             Pitcher

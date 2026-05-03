@@ -265,8 +265,9 @@ function FairnessSection({ constraints, onRefresh }: { constraints: Constraint[]
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <Info className="h-3 w-3 mt-0.5 shrink-0" />
           <span>
-            Default is 50 (balanced). Players still keep their eligible/preferred positions and
-            other rules (max bench, no bench 2-of-3, etc.) are always enforced regardless of this dial.
+            Default is 50 (balanced). Players still get pulled toward their
+            preferred positions and other rules (max bench, no bench 2-of-3,
+            etc.) are always enforced regardless of this dial.
           </span>
         </div>
       </CardContent>

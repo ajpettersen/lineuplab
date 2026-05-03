@@ -212,7 +212,11 @@ export function generateFairLineup(
           if (forcedBench.has(p.id)) return false;
           const posCount = positionCount.get(p.id)?.get(pos) ?? 0;
           if (posCount >= maxPerPosition) return false;
-          if (!p.eligiblePositions.includes(pos)) return false;
+          // Pitching is the ONLY hard exclusion — every other position is open
+          // to every player. The old "eligiblePositions" gate is gone; coaches
+          // express position fit through `preferredPositions` (soft bias) and
+          // `cannotPlayMap` (per-game constraints) instead.
+          if (pos === "P" && !p.canPitch) return false;
           // Respect cannot-play constraints
           if (cannotPlayMap.get(p.id)?.has(pos)) return false;
           // Pitcher rotation: don't use same pitcher back-to-back if rotation enabled
@@ -238,9 +242,16 @@ export function generateFairLineup(
 
       const player = eligible[0];
       if (!player) {
-        // Fallback: any unassigned non-forced player
+        // Fallback: any unassigned non-forced player. Pitching keeps its
+        // hard exclusion here too — a non-pitcher must never be auto-placed
+        // at "P", even when the greedy fill runs out of preferred candidates.
         const fallback = players
-          .filter((p) => !assignedThisInning.has(p.id) && !forcedBench.has(p.id))
+          .filter(
+            (p) =>
+              !assignedThisInning.has(p.id) &&
+              !forcedBench.has(p.id) &&
+              !(pos === "P" && !p.canPitch),
+          )
           .sort((a, b) => scorePlayer(b.id, inning, isLastInning) - scorePlayer(a.id, inning, isLastInning));
         if (!fallback[0]) continue;
         const fb = fallback[0];
@@ -272,7 +283,8 @@ export function generateFairLineup(
           if (e.position === "Bench") return false;
           if (forcedBench.has(e.playerId)) return false;
           if (wouldViolateTwoOfThree(e.playerId, inning)) return false;
-          if (!p.eligiblePositions.includes(e.position)) return false;
+          // Same rule as the greedy fill: only pitching is hard-excluded.
+          if (e.position === "P" && !p.canPitch) return false;
           if (cannotPlayMap.get(p.id)?.has(e.position)) return false;
           if (rotatePitcher && e.position === "P" && p.id === lastPitcher) return false;
           const posCount = positionCount.get(p.id)?.get(e.position) ?? 0;
