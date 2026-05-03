@@ -1302,23 +1302,7 @@ export default function GameDetail() {
     // battingOrder. Players who only ever benched (no battingOrder anywhere
     // in `data`) get sorted to the end in name order so the column still
     // covers everyone on the roster for that game.
-    const battingOrderByPlayer = new Map<number, { name: string; order: number | null }>();
-    for (const e of data) {
-      const existing = battingOrderByPlayer.get(e.playerId);
-      const incoming = e.battingOrder ?? null;
-      if (!existing) {
-        battingOrderByPlayer.set(e.playerId, { name: e.playerName, order: incoming });
-      } else if (existing.order == null && incoming != null) {
-        existing.order = incoming;
-      }
-    }
-    const lineupSorted = Array.from(battingOrderByPlayer.values()).sort((a, b) => {
-      if (a.order != null && b.order != null) return a.order - b.order;
-      if (a.order != null) return -1;
-      if (b.order != null) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    const lineupNames = lineupSorted.map((x) => x.name);
+    const lineupNames = battingOrderRows.map((r) => r.playerName);
 
     const tallyHeader = ["Player", "Pitching", "Infield", "Outfield", "Bench", "", "Lineup"];
     const dataRowCount = Math.max(tallyRows.length, lineupNames.length);
@@ -1614,6 +1598,32 @@ export default function GameDetail() {
     }
     return Array.from(map.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
   }, [displayLineup, innings]);
+
+  // Batting order rows for this game, derived from the current displayLineup
+  // (preview > edited > saved). Each non-bench entry carries a battingOrder
+  // assigned by the generator; we collapse duplicates per player using the
+  // first non-null order we see. Players who only ever benched (no order
+  // anywhere) get appended at the bottom in name order so the list still
+  // covers the full game roster.
+  const battingOrderRows = useMemo(() => {
+    type Row = { playerId: number; playerName: string; order: number | null };
+    const byPlayer = new Map<number, Row>();
+    for (const e of displayLineup) {
+      const incoming = e.battingOrder ?? null;
+      const existing = byPlayer.get(e.playerId);
+      if (!existing) {
+        byPlayer.set(e.playerId, { playerId: e.playerId, playerName: e.playerName, order: incoming });
+      } else if (existing.order == null && incoming != null) {
+        existing.order = incoming;
+      }
+    }
+    return Array.from(byPlayer.values()).sort((a, b) => {
+      if (a.order != null && b.order != null) return a.order - b.order;
+      if (a.order != null) return -1;
+      if (b.order != null) return 1;
+      return a.playerName.localeCompare(b.playerName);
+    });
+  }, [displayLineup]);
 
   if (gameLoading) {
     return (
@@ -2150,6 +2160,42 @@ export default function GameDetail() {
         </CardContent>
       </Card>
       </section>
+
+      {/* Batting order — derived from generator-assigned battingOrder on
+           each non-bench entry. Numbered list down the page so coaches can
+           see at a glance who's leading off, batting cleanup, etc. */}
+      {displayLineup.length > 0 && battingOrderRows.length > 0 && (
+        <Card data-testid="card-batting-order">
+          <CardHeader className="space-y-0">
+            <CardTitle className="text-base">Batting Order</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Order is set when the lineup is generated. Players without a
+              field assignment appear at the bottom.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
+              {battingOrderRows.map((r, i) => (
+                <li
+                  key={r.playerId}
+                  className="flex items-center gap-3"
+                  data-testid={`row-batting-order-${i}`}
+                >
+                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold">
+                    {r.order ?? i + 1}
+                  </span>
+                  <span className="font-medium">{r.playerName}</span>
+                  {r.order == null && (
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      bench only
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Innings by Position tally */}
       {displayLineup.length > 0 && (
