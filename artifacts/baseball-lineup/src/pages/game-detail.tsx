@@ -1320,6 +1320,48 @@ export default function GameDetail() {
     );
   };
 
+  /**
+   * One-click "remove the last inning" — used by the trash icon on the
+   * lineup grid's last inning row so the coach doesn't have to open the
+   * Game Ended Early dialog every time. Server cascades the delete to
+   * lineup entries, locks, and AI pins for that inning. We confirm in
+   * place because it's destructive and can't be undone.
+   */
+  const handleRemoveLastInning = () => {
+    if (!game || game.innings <= 1) return;
+    const removed = game.innings;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Remove inning ${removed}? Any players, locks, or assistant pins for that inning will be deleted.`,
+      )
+    ) {
+      return;
+    }
+    updateGame.mutate(
+      { id, data: { innings: removed - 1 } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
+          qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(id) });
+          qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
+          // Clear any unsaved edit/preview that referenced the removed inning
+          // so the grid re-derives from the server's trimmed lineup.
+          setEditedLineup(null);
+          setPreviewLineup(null);
+          toast({
+            title: `Inning ${removed} removed`,
+            description: `Game is now ${removed - 1} inning${removed - 1 === 1 ? "" : "s"} long.`,
+          });
+        },
+        onError: () =>
+          toast({ title: "Failed to remove inning", variant: "destructive" }),
+      },
+    );
+  };
+
   const handleEndEarly = () => {
     const last = parseInt(endEarlyLastInning);
     if (!Number.isFinite(last) || last < 1 || last >= (game?.innings ?? 0)) return;
@@ -1332,6 +1374,12 @@ export default function GameDetail() {
           qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
+          // Drop unsaved drag/preview state so a later "Save" can't re-insert
+          // entries for innings the server just deleted (the save endpoint
+          // delete+reinserts whatever the client sends).
+          setEditedLineup(null);
+          setPreviewLineup(null);
+          setSelectedEntryId(null);
           toast({ title: `Game shortened to ${last} inning${last === 1 ? "" : "s"}` });
           setEndEarlyOpen(false);
           setEndEarlyLastInning("");
@@ -1985,9 +2033,24 @@ export default function GameDetail() {
                       return (
                         <tr key={inning} className={`${rowBg} transition-colors`}>
                           <td className="py-1 pl-3 pr-2 rounded-l-xl">
-                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
-                              {inning}
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
+                                {inning}
+                              </span>
+                              {inning === innings && innings > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={handleRemoveLastInning}
+                                  disabled={updateGame.isPending}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                                  title={`Remove inning ${inning} (we ten-runned, lost as visitor, etc.)`}
+                                  aria-label={`Remove inning ${inning}`}
+                                  data-testid={`button-remove-inning-${inning}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                           {FIELD_POSITIONS.map((pos) => {
                             const entry = cellByInningPos[inning]?.[pos];
