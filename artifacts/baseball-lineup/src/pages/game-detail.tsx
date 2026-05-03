@@ -1599,6 +1599,31 @@ export default function GameDetail() {
     return Array.from(map.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
   }, [displayLineup, innings]);
 
+  /**
+   * Reorder the batting lineup by moving the player at `index` by `delta`
+   * slots (-1 for up, +1 for down). Rewrites battingOrder on every non-bench
+   * entry across every inning so the new order applies for the whole game,
+   * then stages into editedLineup (or previewLineup if previewing) so the
+   * existing Save button picks it up.
+   */
+  const moveBattingSlot = (index: number, delta: -1 | 1) => {
+    const ids = battingOrderRows.map((r) => r.playerId);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    const newOrderById = new Map<number, number>();
+    ids.forEach((pid, i) => newOrderById.set(pid, i + 1));
+
+    const data = previewLineup ?? editedLineup ?? lineup;
+    const next = data.map((e) => ({
+      ...e,
+      battingOrder:
+        e.position === "Bench" ? null : (newOrderById.get(e.playerId) ?? e.battingOrder ?? null),
+    }));
+    if (previewLineup) setPreviewLineup(next);
+    else setEditedLineup(next);
+  };
+
   // Batting order rows for this game, derived from the current displayLineup
   // (preview > edited > saved). Each non-bench entry carries a battingOrder
   // assigned by the generator; we collapse duplicates per player using the
@@ -2178,18 +2203,42 @@ export default function GameDetail() {
               {battingOrderRows.map((r, i) => (
                 <li
                   key={r.playerId}
-                  className="flex items-center gap-3"
+                  className="flex items-center gap-2"
                   data-testid={`row-batting-order-${i}`}
                 >
                   <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold">
-                    {r.order ?? i + 1}
+                    {i + 1}
                   </span>
-                  <span className="font-medium">{r.playerName}</span>
+                  <span className="font-medium flex-1 truncate">{r.playerName}</span>
                   {r.order == null && (
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       bench only
                     </span>
                   )}
+                  <div className="flex items-center gap-0.5 shrink-0 no-print">
+                    <button
+                      type="button"
+                      onClick={() => moveBattingSlot(i, -1)}
+                      disabled={i === 0}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+                      title="Move up"
+                      aria-label={`Move ${r.playerName} up`}
+                      data-testid={`button-batting-up-${i}`}
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveBattingSlot(i, 1)}
+                      disabled={i === battingOrderRows.length - 1}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+                      title="Move down"
+                      aria-label={`Move ${r.playerName} down`}
+                      data-testid={`button-batting-down-${i}`}
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ol>
