@@ -8,6 +8,27 @@ export interface LineupConstraints {
   maxInningsBench?: number;
   ensureAllPositions?: boolean;
   pitcherRotation?: boolean;
+  /**
+   * Per-game competitive context. Overrides the global equity slider:
+   *  - "tournament" → equity≈10 (favor preferred + best players), batting
+   *    order by OBP desc.
+   *  - "league"     → equity≈70 (lean fair on the field) AND batting order
+   *    sorted ascending by season plate appearances so under-used kids bat
+   *    earlier and pick up more PAs this game.
+   *  - undefined/null → use the existing global_equity_weight constraint.
+   */
+  gameType?: "league" | "tournament" | null;
+  /**
+   * Season plate-appearance totals per playerId. Only consulted when
+   * gameType === "league" — used to bias the batting order toward under-used
+   * players so PAs trend toward parity over the season.
+   */
+  playerSeasonPlateAppearances?: Map<number, number>;
+  /**
+   * Season on-base percentage per playerId. Only consulted when
+   * gameType === "tournament" — used to put high-OBP hitters at the top.
+   */
+  playerSeasonOBP?: Map<number, number>;
 }
 
 export interface GeneratedEntry {
@@ -72,13 +93,24 @@ export function generateFairLineup(
   // Equity dial: 0 = ignore fairness, prefer best player at each spot.
   // 50 = balanced (default, matches legacy behavior).
   // 100 = strong fairness pressure.
-  const equityRaw = equityWeightConstraint?.value ?? 50;
+  // Per-game gameType overrides the global slider — tournament games go
+  // competitive, league games lean fair on the field (and rebalance PAs in
+  // the batting order, see below).
+  const gameTypeOverride =
+    constraints.gameType === "tournament" ? 10 :
+    constraints.gameType === "league" ? 70 :
+    null;
+  const equityRaw = gameTypeOverride ?? equityWeightConstraint?.value ?? 50;
   const equity = Math.min(1, Math.max(0, equityRaw / 100));
   // At e=0.5 the fairness multiplier is 1.0 (legacy behavior); at e=0 it's 0; at e=1 it's 2.
   const fairnessMultiplier = equity * 2;
   // When equity drops below 0.5, preferred positions get a real bonus (up to +25 at e=0).
   // At e>=0.5, preferred is only a tiebreaker (legacy behavior).
-  const preferredBonus = Math.max(0, (0.5 - equity) * 50);
+  // Tournament mode doubles the preferred-position bonus to push the best
+  // fielders into their best spots even more aggressively.
+  const basePreferredBonus = Math.max(0, (0.5 - equity) * 50);
+  const preferredBonus =
+    constraints.gameType === "tournament" ? basePreferredBonus * 2 : basePreferredBonus;
 
   // Player-specific constraints
   const cannotPlayMap = new Map<number, Set<string>>();
@@ -320,13 +352,37 @@ export function generateFairLineup(
     results.push(...inningAssignments);
   }
 
-  // Batting order: higher OBP/more field time → earlier slot
+  // Batting order — depends on gameType:
+  //  - "league"     → ascending season plate appearances (under-used kids bat
+  //                   earlier so they get more PAs this game). Tiebreak by
+  //                   field time so a player who sat the whole game still
+  //                   slots behind a similarly-batted player who took the field.
+  //  - "tournament" → OBP desc, then field time desc — most-likely-to-reach
+  //                   bats first.
+  //  - default      → legacy behavior (more field time → earlier slot).
   const battingOrderMap = new Map<number, number>();
   let slot = 1;
-  const orderedByPlayTime = [...players].sort(
-    (a, b) => (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0)
-  );
-  for (const p of orderedByPlayTime) battingOrderMap.set(p.id, slot++);
+  const paMap = constraints.playerSeasonPlateAppearances ?? new Map<number, number>();
+  let ordered: Player[];
+  if (constraints.gameType === "league") {
+    ordered = [...players].sort((a, b) => {
+      const paDiff = (paMap.get(a.id) ?? 0) - (paMap.get(b.id) ?? 0);
+      if (paDiff !== 0) return paDiff;
+      return (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0);
+    });
+  } else if (constraints.gameType === "tournament") {
+    const obpMap = constraints.playerSeasonOBP ?? new Map<number, number>();
+    ordered = [...players].sort((a, b) => {
+      const obpDiff = (obpMap.get(b.id) ?? -1) - (obpMap.get(a.id) ?? -1);
+      if (obpDiff !== 0) return obpDiff;
+      return (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0);
+    });
+  } else {
+    ordered = [...players].sort(
+      (a, b) => (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0)
+    );
+  }
+  for (const p of ordered) battingOrderMap.set(p.id, slot++);
 
   return results.map((e) => ({
     ...e,

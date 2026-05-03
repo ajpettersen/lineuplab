@@ -69,6 +69,19 @@ export const GameType = {
   other: "other",
 } as const;
 
+/**
+ * Competitive context for lineup generation — "tournament" favors competitiveness, "league" rebalances season plate appearances, null falls back to the global equity slider
+ * @nullable
+ */
+export type GameGameType =
+  | (typeof GameGameType)[keyof typeof GameGameType]
+  | null;
+
+export const GameGameType = {
+  league: "league",
+  tournament: "tournament",
+} as const;
+
 export interface PlanSnapshotEntry {
   playerId: number;
   playerName: string;
@@ -89,6 +102,11 @@ export interface Game {
   status: GameStatus;
   /** Event kind — distinguishes games from practices and other team events */
   type: GameType;
+  /**
+   * Competitive context for lineup generation — "tournament" favors competitiveness, "league" rebalances season plate appearances, null falls back to the global equity slider
+   * @nullable
+   */
+  gameType?: GameGameType;
   /** @nullable */
   ourScore?: number | null;
   /** @nullable */
@@ -100,6 +118,18 @@ export interface Game {
   createdAt: string;
 }
 
+/**
+ * @nullable
+ */
+export type CreateGameBodyGameType =
+  | (typeof CreateGameBodyGameType)[keyof typeof CreateGameBodyGameType]
+  | null;
+
+export const CreateGameBodyGameType = {
+  league: "league",
+  tournament: "tournament",
+} as const;
+
 export interface CreateGameBody {
   opponent: string;
   gameDate: string;
@@ -108,6 +138,8 @@ export interface CreateGameBody {
   innings: number;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  gameType?: CreateGameBodyGameType;
 }
 
 export type UpdateGameBodyStatus =
@@ -117,6 +149,18 @@ export const UpdateGameBodyStatus = {
   upcoming: "upcoming",
   completed: "completed",
   cancelled: "cancelled",
+} as const;
+
+/**
+ * @nullable
+ */
+export type UpdateGameBodyGameType =
+  | (typeof UpdateGameBodyGameType)[keyof typeof UpdateGameBodyGameType]
+  | null;
+
+export const UpdateGameBodyGameType = {
+  league: "league",
+  tournament: "tournament",
 } as const;
 
 export interface UpdateGameBody {
@@ -132,6 +176,8 @@ export interface UpdateGameBody {
   opponentScore?: number | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  gameType?: UpdateGameBodyGameType;
 }
 
 export interface LineupEntry {

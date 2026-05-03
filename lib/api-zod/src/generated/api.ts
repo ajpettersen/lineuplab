@@ -126,6 +126,16 @@ export const ListGamesResponseItem = zod.object({
     .describe(
       "Event kind — distinguishes games from practices and other team events",
     ),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
@@ -159,6 +169,13 @@ export const CreateGameBody = zod.object({
   location: zod.string().nullish(),
   innings: zod.number(),
   notes: zod.string().nullish(),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish(),
 });
 
 /**
@@ -179,6 +196,16 @@ export const GetGameResponse = zod.object({
     .enum(["game", "practice", "other"])
     .describe(
       "Event kind — distinguishes games from practices and other team events",
+    ),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -219,6 +246,13 @@ export const UpdateGameBody = zod.object({
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish(),
 });
 
 export const UpdateGameResponse = zod.object({
@@ -232,6 +266,16 @@ export const UpdateGameResponse = zod.object({
     .enum(["game", "practice", "other"])
     .describe(
       "Event kind — distinguishes games from practices and other team events",
+    ),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -283,6 +327,16 @@ export const SnapshotPlanResponse = zod.object({
     .describe(
       "Event kind — distinguishes games from practices and other team events",
     ),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
   notes: zod.string().nullish(),
@@ -324,6 +378,16 @@ export const ClearPlanSnapshotResponse = zod.object({
     .enum(["game", "practice", "other"])
     .describe(
       "Event kind — distinguishes games from practices and other team events",
+    ),
+  gameType: zod
+    .union([
+      zod.literal("league"),
+      zod.literal("tournament"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),

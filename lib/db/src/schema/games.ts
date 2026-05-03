@@ -25,6 +25,11 @@ export const gamesTable = pgTable(
     status: text("status").notNull().default("upcoming"),
     // Event kind: "game" | "practice" | "other"
     type: text("type").notNull().default("game"),
+    // Optional competitive context — drives the lineup generator's bias.
+    //   "tournament" → most competitive (best fielders, OBP-ordered batting)
+    //   "league"     → rebalances season plate appearances (low-PA kids bat earlier)
+    //   null         → unspecified, falls back to the global equity slider
+    gameType: text("game_type"),
     ourScore: integer("our_score"),
     opponentScore: integer("opponent_score"),
     notes: text("notes"),

@@ -67,10 +67,17 @@ type Game = {
   innings: number;
   status: string;
   type?: string;
+  gameType?: "league" | "tournament" | null;
   ourScore: number | null;
   opponentScore: number | null;
   notes: string | null;
 };
+
+function GameTypeBadge({ gameType }: { gameType?: "league" | "tournament" | null }) {
+  if (gameType === "league") return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">League</Badge>;
+  if (gameType === "tournament") return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Tournament</Badge>;
+  return null;
+}
 
 // ── iCal import dialog ──────────────────────────────────────────
 type EventKind = "game" | "practice" | "other";
@@ -377,6 +384,9 @@ function EditGameDialog({
   const [innings, setInnings] = useState(String(game.innings));
   const [notes, setNotes] = useState(game.notes ?? "");
   const [status, setStatus] = useState(game.status);
+  const [gameType, setGameType] = useState<"none" | "league" | "tournament">(
+    game.gameType === "league" || game.gameType === "tournament" ? game.gameType : "none"
+  );
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -393,6 +403,7 @@ function EditGameDialog({
           innings: parseInt(innings) || 6,
           notes: notes.trim() || null,
           status,
+          gameType: gameType === "none" ? null : gameType,
         }),
       });
       if (!r.ok) throw new Error();
@@ -431,6 +442,36 @@ function EditGameDialog({
           <div className="flex flex-col gap-1.5">
             <Label>Location</Label>
             <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Field or address" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Game Type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { v: "none" as const, label: "Unspecified" },
+                { v: "league" as const, label: "League" },
+                { v: "tournament" as const, label: "Tournament" },
+              ]).map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setGameType(opt.v)}
+                  className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                    gameType === opt.v
+                      ? "border-primary bg-primary/5 text-foreground font-medium"
+                      : "border-border text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {gameType === "league"
+                ? "Lineup generator will rebalance plate appearances across the season."
+                : gameType === "tournament"
+                ? "Lineup generator will favor your strongest players and best bats first."
+                : "Lineup generator will use your default fairness setting."}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
@@ -519,6 +560,7 @@ export default function Games() {
                   {g.type && g.type !== "game" ? g.opponent : `vs. ${g.opponent}`}
                 </span>
                 <TypeBadge type={(g.type ?? "game") as EventKind} />
+                <GameTypeBadge gameType={g.gameType as ("league" | "tournament" | null | undefined)} />
                 <StatusBadge status={effectiveStatus(g)} />
                 {g.status === "completed" && g.ourScore != null && g.opponentScore != null && (
                   <span className={`text-sm font-bold px-2 py-0.5 rounded ${g.ourScore > g.opponentScore ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>

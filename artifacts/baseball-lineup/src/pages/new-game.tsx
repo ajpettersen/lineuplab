@@ -25,6 +25,7 @@ export default function NewGame() {
   const [innings, setInnings] = useState("6");
   const [inningsTouched, setInningsTouched] = useState(false);
   const [notes, setNotes] = useState("");
+  const [gameType, setGameType] = useState<"none" | "league" | "tournament">("none");
 
   // Apply the coach's preferred default once preferences load,
   // unless the coach has already manually changed the field.
@@ -52,6 +53,7 @@ export default function NewGame() {
           location: location.trim() || null,
           innings: parseInt(innings) || 6,
           notes: notes.trim() || null,
+          gameType: gameType === "none" ? null : gameType,
         },
       },
       {
@@ -124,6 +126,30 @@ export default function NewGame() {
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="Field name or address"
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Game Type</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { v: "none" as const, label: "Unspecified", hint: "Use my fairness setting" },
+                  { v: "league" as const, label: "League", hint: "Even out plate appearances" },
+                  { v: "tournament" as const, label: "Tournament", hint: "Most competitive" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setGameType(opt.v)}
+                    className={`flex flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      gameType === opt.v
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="text-xs text-muted-foreground">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="notes">Notes (optional)</Label>

@@ -2231,6 +2231,17 @@ export default function GameDetail() {
             <p className="text-sm text-muted-foreground">
               Select players available for this game. The lineup will rotate positions fairly.
             </p>
+            {(game?.gameType === "league" || game?.gameType === "tournament") && (
+              <div className={`rounded-md border px-3 py-2 text-xs ${
+                game.gameType === "tournament"
+                  ? "border-purple-200 bg-purple-50 text-purple-900"
+                  : "border-blue-200 bg-blue-50 text-blue-900"
+              }`}>
+                {game.gameType === "tournament"
+                  ? "Tournament mode — strongest players will start in their preferred positions and best bats lead off."
+                  : "League mode — players with fewer plate appearances this season will bat earlier to even things out."}
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between mb-1">
                 <Label className="text-sm">Available Players</Label>

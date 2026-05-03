@@ -87,6 +87,7 @@ router.post("/games", async (req, res): Promise<void> => {
       innings: d.innings,
       status: "upcoming",
       notes: d.notes ?? null,
+      gameType: d.gameType ?? null,
     })
     .returning();
   res.status(201).json(game);
@@ -287,6 +288,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   if (d.ourScore !== undefined) updates.ourScore = d.ourScore;
   if (d.opponentScore !== undefined) updates.opponentScore = d.opponentScore;
   if (d.notes !== undefined) updates.notes = d.notes;
+  if (d.gameType !== undefined) updates.gameType = d.gameType;
 
   // If the coach is shrinking the game's innings (e.g. they hit the 10-run
   // rule and ended early), drop any lineup data that would now point past the

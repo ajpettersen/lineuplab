@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable } from "@workspace/db";
+import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, battingStatsTable } from "@workspace/db";
 import {
   GetGameLineupParams,
   GenerateLineupParams,
@@ -116,7 +116,51 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     pinned.push({ playerId: l.playerId, inning: l.inning, position: l.position });
   }
 
-  const generated = generateFairLineup(players, innings, constraints ?? {}, storedConstraints, pinned);
+  // Per-game competitive context: load gameType from the game row and (for
+  // league games) season plate-appearance totals so the generator can rebalance
+  // the batting order toward under-used kids. Tournament games also pull OBP.
+  // PA = AB + BB + HBP + SAC (close enough — sacrifice flies aren't tracked
+  // separately in our schema).
+  const ownedPlayerIds = players.map((p) => p.id);
+  const battingRows = ownedPlayerIds.length > 0
+    ? await db
+        .select()
+        .from(battingStatsTable)
+        .where(inArray(battingStatsTable.playerId, ownedPlayerIds))
+    : [];
+  // The schema allows multiple batting_stats rows per player (one per
+  // seasonLabel). Sum PAs across all of them so the league-mode "rebalance"
+  // is based on the player's full tracked history, and pick OBP from the row
+  // with the most at-bats so we don't let a tiny-sample season dominate the
+  // tournament-mode lead-off ordering. This makes the result deterministic
+  // regardless of row insertion order.
+  const paMap = new Map<number, number>();
+  const obpMap = new Map<number, number>();
+  const obpAbAnchor = new Map<number, number>(); // playerId → AB total backing the chosen OBP
+  for (const r of battingRows) {
+    const pa = (r.ab ?? 0) + (r.bb ?? 0) + (r.hbp ?? 0) + (r.sac ?? 0);
+    paMap.set(r.playerId, (paMap.get(r.playerId) ?? 0) + pa);
+    if (r.obp != null) {
+      const ab = r.ab ?? 0;
+      if (!obpAbAnchor.has(r.playerId) || ab > (obpAbAnchor.get(r.playerId) ?? -1)) {
+        obpMap.set(r.playerId, r.obp);
+        obpAbAnchor.set(r.playerId, ab);
+      }
+    }
+  }
+
+  const generated = generateFairLineup(
+    players,
+    innings,
+    {
+      ...(constraints ?? {}),
+      gameType: (game.gameType === "league" || game.gameType === "tournament") ? game.gameType : null,
+      playerSeasonPlateAppearances: paMap,
+      playerSeasonOBP: obpMap,
+    },
+    storedConstraints,
+    pinned,
+  );
 
   // Feasibility check (mirrors the AI assistant route): every inning needs
   // all 9 field positions filled. If the locks made staffing impossible the
