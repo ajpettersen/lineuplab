@@ -2105,7 +2105,11 @@ export default function GameDetail() {
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="overflow-x-auto">
+              {/* Desktop / tablet view — innings as rows, positions as
+                  columns. This is the original layout. Hidden on phones
+                  (where the 11-column row was wider than the screen and
+                  forced a horizontal scroll). */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm border-separate border-spacing-y-0.5">
                   <thead>
                     <tr>
