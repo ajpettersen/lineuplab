@@ -319,11 +319,10 @@ export default function GameDetail() {
   const openAddLock = () => {
     setLockPlayerId("");
     setLockPosition("");
-    // Default selection: every inning of the game (matches the prior "All
-    // innings" default so the existing common case is still a one-click flow).
-    const all = new Set<number>();
-    if (game) for (let i = 1; i <= game.innings; i++) all.add(i);
-    setLockInnings(all);
+    // Start with no innings selected — coaches usually want a partial-game
+    // lock (e.g. just innings 1-2 for a starting pitcher), and the previous
+    // "all innings preselected" default meant they had to deselect first.
+    setLockInnings(new Set());
     setLockError(null);
     setAddLockOpen(true);
   };
