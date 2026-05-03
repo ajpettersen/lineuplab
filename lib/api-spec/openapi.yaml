@@ -807,6 +807,12 @@ components:
           type: string
         teamShortName:
           type: string
+        battingStyle:
+          type: string
+          enum: [continuous, nine_man]
+          description: |
+            Continuous = every player on the roster bats. Nine-man = only the
+            top 9 batters get a slot in the order.
         createdAt:
           type: string
           format: date-time
@@ -817,6 +823,7 @@ components:
         - userId
         - teamName
         - teamShortName
+        - battingStyle
         - createdAt
         - updatedAt
 
@@ -831,6 +838,9 @@ components:
           type: string
           minLength: 1
           maxLength: 20
+        battingStyle:
+          type: string
+          enum: [continuous, nine_man]
 
     UserPreferences:
       type: object

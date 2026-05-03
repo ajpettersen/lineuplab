@@ -556,6 +556,11 @@ export const GetTeamSettingsResponse = zod.object({
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
+  battingStyle: zod
+    .enum(["continuous", "nine_man"])
+    .describe(
+      "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -578,12 +583,18 @@ export const UpdateTeamSettingsBody = zod.object({
     .min(1)
     .max(updateTeamSettingsBodyTeamShortNameMax)
     .optional(),
+  battingStyle: zod.enum(["continuous", "nine_man"]).optional(),
 });
 
 export const UpdateTeamSettingsResponse = zod.object({
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
+  battingStyle: zod
+    .enum(["continuous", "nine_man"])
+    .describe(
+      "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

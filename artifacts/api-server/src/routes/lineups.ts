@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, battingStatsTable } from "@workspace/db";
+import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, battingStatsTable, teamSettingsTable } from "@workspace/db";
 import {
   GetGameLineupParams,
   GenerateLineupParams,
@@ -149,6 +149,15 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     }
   }
 
+  // Team-wide batting style (continuous = everyone bats; nine_man = only the
+  // top 9 batters). Stored per-coach in team_settings; missing row → default.
+  const [teamSettingsRow] = await db
+    .select({ battingStyle: teamSettingsTable.battingStyle })
+    .from(teamSettingsTable)
+    .where(eq(teamSettingsTable.userId, userId));
+  const battingStyle: "continuous" | "nine_man" =
+    teamSettingsRow?.battingStyle === "nine_man" ? "nine_man" : "continuous";
+
   const generated = generateFairLineup(
     players,
     innings,
@@ -157,6 +166,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       gameType: (game.gameType === "league" || game.gameType === "tournament") ? game.gameType : null,
       playerSeasonPlateAppearances: paMap,
       playerSeasonOBP: obpMap,
+      battingStyle,
     },
     storedConstraints,
     pinned,

@@ -255,13 +255,38 @@ export interface PlayerStats {
   inningsPitched: number;
 }
 
+/**
+ * Continuous = every player on the roster bats. Nine-man = only the
+top 9 batters get a slot in the order.
+
+ */
+export type TeamSettingsBattingStyle =
+  (typeof TeamSettingsBattingStyle)[keyof typeof TeamSettingsBattingStyle];
+
+export const TeamSettingsBattingStyle = {
+  continuous: "continuous",
+  nine_man: "nine_man",
+} as const;
+
 export interface TeamSettings {
   userId: string;
   teamName: string;
   teamShortName: string;
+  /** Continuous = every player on the roster bats. Nine-man = only the
+top 9 batters get a slot in the order.
+ */
+  battingStyle: TeamSettingsBattingStyle;
   createdAt: string;
   updatedAt: string;
 }
+
+export type UpdateTeamSettingsBodyBattingStyle =
+  (typeof UpdateTeamSettingsBodyBattingStyle)[keyof typeof UpdateTeamSettingsBodyBattingStyle];
+
+export const UpdateTeamSettingsBodyBattingStyle = {
+  continuous: "continuous",
+  nine_man: "nine_man",
+} as const;
 
 export interface UpdateTeamSettingsBody {
   /**
@@ -274,6 +299,7 @@ export interface UpdateTeamSettingsBody {
    * @maxLength 20
    */
   teamShortName?: string;
+  battingStyle?: UpdateTeamSettingsBodyBattingStyle;
 }
 
 export interface UserPreferences {

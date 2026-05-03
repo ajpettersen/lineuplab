@@ -16,10 +16,15 @@ const UpdateBody = z
   .object({
     teamName: z.string().trim().min(1, "Team name required").max(80).optional(),
     teamShortName: z.string().trim().min(1, "Short name required").max(20).optional(),
+    battingStyle: z.enum(["continuous", "nine_man"]).optional(),
   })
-  .refine((v) => v.teamName !== undefined || v.teamShortName !== undefined, {
-    message: "Provide teamName or teamShortName",
-  });
+  .refine(
+    (v) =>
+      v.teamName !== undefined ||
+      v.teamShortName !== undefined ||
+      v.battingStyle !== undefined,
+    { message: "Provide teamName, teamShortName, or battingStyle" }
+  );
 
 /**
  * Lazily create + return the user's team settings row. Two coaches signing
@@ -58,11 +63,17 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
   }
   // Ensure a row exists, then update only the fields the coach actually sent.
   await getOrCreateForUser(userId);
-  const patch: { teamName?: string; teamShortName?: string; updatedAt: ReturnType<typeof sql> } = {
+  const patch: {
+    teamName?: string;
+    teamShortName?: string;
+    battingStyle?: "continuous" | "nine_man";
+    updatedAt: ReturnType<typeof sql>;
+  } = {
     updatedAt: sql`now()`,
   };
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
   if (parsed.data.teamShortName !== undefined) patch.teamShortName = parsed.data.teamShortName;
+  if (parsed.data.battingStyle !== undefined) patch.battingStyle = parsed.data.battingStyle;
   const [updated] = await db
     .update(teamSettingsTable)
     .set(patch)

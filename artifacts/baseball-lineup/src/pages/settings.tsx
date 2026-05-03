@@ -64,6 +64,9 @@ export default function Settings() {
 
   const [teamName, setTeamName] = useState("");
   const [teamShortName, setTeamShortName] = useState("");
+  const [battingStyle, setBattingStyle] = useState<"continuous" | "nine_man">(
+    "continuous"
+  );
   const [innings, setInnings] = useState(6);
   const [maxPos, setMaxPos] = useState(2);
   const [maxBench, setMaxBench] = useState(2);
@@ -74,6 +77,9 @@ export default function Settings() {
     if (teamQuery.data) {
       setTeamName(teamQuery.data.teamName);
       setTeamShortName(teamQuery.data.teamShortName);
+      setBattingStyle(
+        teamQuery.data.battingStyle === "nine_man" ? "nine_man" : "continuous"
+      );
     }
   }, [teamQuery.data]);
 
@@ -101,7 +107,7 @@ export default function Settings() {
       return;
     }
     updateTeam.mutate({
-      data: { teamName: name, teamShortName: short },
+      data: { teamName: name, teamShortName: short, battingStyle },
     });
   };
 
@@ -164,6 +170,28 @@ export default function Settings() {
               Used where space is tight (e.g. mobile chips, exports).
             </p>
           </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5 pr-4">
+              <Label htmlFor="battingStyle" className="text-sm font-medium">
+                Continuous batting order
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                On: every player on the roster bats (recommended for youth
+                leagues). Off: only the top 9 batters get a slot — extras are
+                fielding subs.
+              </p>
+            </div>
+            <Switch
+              id="battingStyle"
+              checked={battingStyle === "continuous"}
+              onCheckedChange={(v) =>
+                setBattingStyle(v ? "continuous" : "nine_man")
+              }
+              disabled={teamLoading}
+              data-testid="switch-batting-style"
+            />
+          </div>
+
           <div className="flex justify-end">
             <Button
               onClick={onSaveTeam}

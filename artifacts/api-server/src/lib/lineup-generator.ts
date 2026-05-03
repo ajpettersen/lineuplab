@@ -29,6 +29,15 @@ export interface LineupConstraints {
    * gameType === "tournament" — used to put high-OBP hitters at the top.
    */
   playerSeasonOBP?: Map<number, number>;
+  /**
+   * Team-wide batting style (from team_settings.batting_style):
+   *  - "continuous" → every player on the roster gets a batting slot
+   *    (everyone bats, slots 1..N).
+   *  - "nine_man"   → only the top 9 players in the chosen ordering get
+   *    slots 1-9; the rest are subs with battingOrder=null.
+   * Defaults to "continuous" when unset to preserve existing behavior.
+   */
+  battingStyle?: "continuous" | "nine_man";
 }
 
 export interface GeneratedEntry {
@@ -382,7 +391,12 @@ export function generateFairLineup(
       (a, b) => (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0)
     );
   }
-  for (const p of ordered) battingOrderMap.set(p.id, slot++);
+  // In nine-man mode only the top 9 players (by the chosen ordering rule)
+  // get a batting slot — the rest are subs with battingOrder=null. Continuous
+  // mode (the default) hands a slot to everyone on the roster.
+  const battingCap =
+    constraints.battingStyle === "nine_man" ? Math.min(9, ordered.length) : ordered.length;
+  for (let i = 0; i < battingCap; i++) battingOrderMap.set(ordered[i]!.id, slot++);
 
   return results.map((e) => ({
     ...e,
