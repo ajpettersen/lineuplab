@@ -1323,10 +1323,57 @@ export default function GameDetail() {
       bottomRows.push(cells.join("\t"));
     }
 
-    // Blank line between the two blocks so each block lands as its own
-    // table when pasted into Sheets.
-    const tsv = [inningHeader, ...inningRows, "", ...bottomRows].join("\n");
-    await writeTsvToClipboard(tsv, "Lineup copied");
+    // ── Third block: per-position innings ─────────────────────────
+    // For each player, count innings at each individual field position
+    // (P, C, 1B, …) plus Bench. Counted at most once per (player, inning)
+    // — mirrors the tallyRows logic so totals match. Gives the coach a
+    // detailed record next to the rolled-up Pitching/Infield/Outfield
+    // tally above. Player rows are sorted by name so the block lines up
+    // with the tally block when read side-by-side.
+    type PosRow = { playerName: string; counts: Record<string, number> };
+    const posCols = [...FIELD_POSITIONS, "Bench"] as readonly string[];
+    const posMap = new Map<number, PosRow>();
+    const seenPI = new Set<string>();
+    for (const e of data) {
+      const k = `${e.playerId}:${e.inning}`;
+      if (seenPI.has(k)) continue;
+      seenPI.add(k);
+      let row = posMap.get(e.playerId);
+      if (!row) {
+        row = { playerName: e.playerName, counts: {} };
+        for (const c of posCols) row.counts[c] = 0;
+        posMap.set(e.playerId, row);
+      }
+      if (Object.prototype.hasOwnProperty.call(row.counts, e.position)) {
+        row.counts[e.position] = (row.counts[e.position] ?? 0) + 1;
+      }
+    }
+    const posRows = Array.from(posMap.values()).sort((a, b) =>
+      a.playerName.localeCompare(b.playerName)
+    );
+    const posHeader = ["Player", ...posCols, "Total"].join("\t");
+    const posBody = posRows.map((r) => {
+      const cells = posCols.map((c) => String(r.counts[c] ?? 0));
+      const total = posCols.reduce((s, c) => s + (r.counts[c] ?? 0), 0);
+      return [r.playerName, ...cells, String(total)].join("\t");
+    });
+
+    // Blank line between blocks so each lands as its own table when
+    // pasted into Sheets. Order: defensive grid → tally + lineup → per-
+    // position innings.
+    const tsv = [
+      inningHeader,
+      ...inningRows,
+      "",
+      ...bottomRows,
+      "",
+      posHeader,
+      ...posBody,
+    ].join("\n");
+    await writeTsvToClipboard(
+      tsv,
+      "Lineup copied — defensive grid, batting order, and innings by position"
+    );
   };
 
   const discardEdits = () => {
@@ -2065,9 +2112,16 @@ export default function GameDetail() {
                   Remove {selectedEntry.playerName.split(" ")[0]}
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={handleCopyLineup} data-testid="button-copy-lineup" className="no-print">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyLineup}
+                data-testid="button-copy-lineup"
+                className="no-print"
+                title="Copy defensive lineup, batting order, and innings-by-position to your clipboard in Google Sheets format"
+              >
                 <ClipboardCopy className="h-4 w-4 mr-1.5" />
-                Copy
+                Copy for Sheets
               </Button>
               <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="button-print-lineup" className="no-print">
                 <Printer className="h-4 w-4 mr-1.5" />
