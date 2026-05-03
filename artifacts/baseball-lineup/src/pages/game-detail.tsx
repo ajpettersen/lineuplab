@@ -13,6 +13,13 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   useGetGame,
   useGetGameLineup,
   useGenerateLineup,
@@ -49,7 +56,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ArrowUp, ArrowDown, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
@@ -1600,17 +1607,15 @@ export default function GameDetail() {
   }, [displayLineup, innings]);
 
   /**
-   * Reorder the batting lineup by moving the player at `index` by `delta`
-   * slots (-1 for up, +1 for down). Rewrites battingOrder on every non-bench
+   * Reorder the batting lineup by moving the player at `fromIndex` to
+   * `toIndex` (drag-and-drop). Rewrites battingOrder on every non-bench
    * entry across every inning so the new order applies for the whole game,
    * then stages into editedLineup (or previewLineup if previewing) so the
    * existing Save button picks it up.
    */
-  const moveBattingSlot = (index: number, delta: -1 | 1) => {
-    const ids = battingOrderRows.map((r) => r.playerId);
-    const target = index + delta;
-    if (target < 0 || target >= ids.length) return;
-    [ids[index], ids[target]] = [ids[target], ids[index]];
+  const reorderBattingLineup = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    const ids = arrayMove(battingOrderRows.map((r) => r.playerId), fromIndex, toIndex);
     const newOrderById = new Map<number, number>();
     ids.forEach((pid, i) => newOrderById.set(pid, i + 1));
 
@@ -1630,19 +1635,43 @@ export default function GameDetail() {
   // first non-null order we see. Players who only ever benched (no order
   // anywhere) get appended at the bottom in name order so the list still
   // covers the full game roster.
+  //
+  // Each row also includes `positions` — the distinct field positions the
+  // player plays in this game, in their natural FIELD_POSITIONS order — so
+  // the batting card can show coaches a quick "where they're playing" hint
+  // next to the name without making them cross-reference the inning grid.
   const battingOrderRows = useMemo(() => {
-    type Row = { playerId: number; playerName: string; order: number | null };
-    const byPlayer = new Map<number, Row>();
+    type Row = {
+      playerId: number;
+      playerName: string;
+      order: number | null;
+      positions: string[];
+    };
+    const byPlayer = new Map<number, Row & { _posSet: Set<string> }>();
     for (const e of displayLineup) {
       const incoming = e.battingOrder ?? null;
-      const existing = byPlayer.get(e.playerId);
-      if (!existing) {
-        byPlayer.set(e.playerId, { playerId: e.playerId, playerName: e.playerName, order: incoming });
-      } else if (existing.order == null && incoming != null) {
-        existing.order = incoming;
+      let row = byPlayer.get(e.playerId);
+      if (!row) {
+        row = {
+          playerId: e.playerId,
+          playerName: e.playerName,
+          order: incoming,
+          positions: [],
+          _posSet: new Set(),
+        };
+        byPlayer.set(e.playerId, row);
+      } else if (row.order == null && incoming != null) {
+        row.order = incoming;
       }
+      if (e.position !== "Bench") row._posSet.add(e.position);
     }
-    return Array.from(byPlayer.values()).sort((a, b) => {
+    const rows: Row[] = Array.from(byPlayer.values()).map((r) => ({
+      playerId: r.playerId,
+      playerName: r.playerName,
+      order: r.order,
+      positions: FIELD_POSITIONS.filter((p) => r._posSet.has(p)),
+    }));
+    return rows.sort((a, b) => {
       if (a.order != null && b.order != null) return a.order - b.order;
       if (a.order != null) return -1;
       if (b.order != null) return 1;
@@ -2186,62 +2215,49 @@ export default function GameDetail() {
       </Card>
       </section>
 
-      {/* Batting order — derived from generator-assigned battingOrder on
-           each non-bench entry. Numbered list down the page so coaches can
-           see at a glance who's leading off, batting cleanup, etc. */}
+      {/* Batting order — drag-and-drop sortable list. The numbered chip on
+           the left is the slot, the grip handle on the right is the drag
+           target. Stages reorders into editedLineup so the standard Save
+           Changes flow persists them. */}
       {displayLineup.length > 0 && battingOrderRows.length > 0 && (
         <Card data-testid="card-batting-order">
-          <CardHeader className="space-y-0">
+          <CardHeader className="space-y-1">
             <CardTitle className="text-base">Batting Order</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Order is set when the lineup is generated. Players without a
-              field assignment appear at the bottom.
+              Drag a row by its handle to reorder the lineup. Slots 1–9 are
+              the starting nine; anyone after the divider hits behind them.
             </p>
           </CardHeader>
-          <CardContent>
-            <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
-              {battingOrderRows.map((r, i) => (
-                <li
-                  key={r.playerId}
-                  className="flex items-center gap-2"
-                  data-testid={`row-batting-order-${i}`}
-                >
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold">
-                    {i + 1}
-                  </span>
-                  <span className="font-medium flex-1 truncate">{r.playerName}</span>
-                  {r.order == null && (
-                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      bench only
-                    </span>
-                  )}
-                  <div className="flex items-center gap-0.5 shrink-0 no-print">
-                    <button
-                      type="button"
-                      onClick={() => moveBattingSlot(i, -1)}
-                      disabled={i === 0}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
-                      title="Move up"
-                      aria-label={`Move ${r.playerName} up`}
-                      data-testid={`button-batting-up-${i}`}
-                    >
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveBattingSlot(i, 1)}
-                      disabled={i === battingOrderRows.length - 1}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
-                      title="Move down"
-                      aria-label={`Move ${r.playerName} down`}
-                      data-testid={`button-batting-down-${i}`}
-                    >
-                      <ArrowDown className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ol>
+          <CardContent className="pt-0">
+            <DndContext
+              sensors={sensors}
+              onDragEnd={(e) => {
+                const activeId = Number(e.active.id);
+                const overId = e.over ? Number(e.over.id) : null;
+                if (overId == null || activeId === overId) return;
+                const from = battingOrderRows.findIndex((r) => r.playerId === activeId);
+                const to = battingOrderRows.findIndex((r) => r.playerId === overId);
+                if (from < 0 || to < 0) return;
+                reorderBattingLineup(from, to);
+              }}
+            >
+              <SortableContext
+                items={battingOrderRows.map((r) => r.playerId)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ol className="flex flex-col">
+                  {battingOrderRows.map((r, i) => (
+                    <SortableBattingRow
+                      key={r.playerId}
+                      row={r}
+                      slot={i + 1}
+                      showStarterDivider={i === 8 && battingOrderRows.length > 9}
+                      testId={`row-batting-order-${i}`}
+                    />
+                  ))}
+                </ol>
+              </SortableContext>
+            </DndContext>
           </CardContent>
         </Card>
       )}
@@ -3349,5 +3365,94 @@ function BenchArea({
         )}
       </div>
     </div>
+  );
+}
+
+interface SortableBattingRowProps {
+  row: { playerId: number; playerName: string; order: number | null; positions: string[] };
+  slot: number;
+  showStarterDivider: boolean;
+  testId: string;
+}
+
+/**
+ * One row in the drag-and-drop batting order list. Layout:
+ *   [#slot]  Player name (positions chips)  …  [grip handle]
+ *
+ * The whole row is the drop target; only the grip handle is the drag
+ * activator, so coaches can still tap/click anywhere on the row without
+ * accidentally starting a drag.
+ */
+function SortableBattingRow({ row, slot, showStarterDivider, testId }: SortableBattingRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: row.playerId,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  const benchOnly = row.order == null;
+  return (
+    <>
+      {showStarterDivider && (
+        <li
+          aria-hidden="true"
+          className="my-2 flex items-center gap-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 select-none"
+        >
+          <span className="h-px flex-1 bg-border" />
+          <span>Bench / Extras</span>
+          <span className="h-px flex-1 bg-border" />
+        </li>
+      )}
+      <li
+        ref={setNodeRef}
+        style={style}
+        className={`group flex items-center gap-3 rounded-lg border border-transparent px-2 py-2 hover:bg-muted/50 hover:border-border/60 transition-colors ${
+          isDragging ? "bg-primary/5 border-primary/40 shadow-md opacity-90" : ""
+        }`}
+        data-testid={testId}
+      >
+        <span
+          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+            benchOnly
+              ? "bg-muted text-muted-foreground"
+              : "bg-primary text-primary-foreground"
+          }`}
+        >
+          {slot}
+        </span>
+        <div className="flex flex-1 items-center gap-2 min-w-0">
+          <span className="font-medium truncate">{row.playerName}</span>
+          {row.positions.length > 0 && (
+            <span className="hidden sm:inline-flex flex-wrap gap-1">
+              {row.positions.map((pos) => (
+                <span
+                  key={pos}
+                  className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-secondary text-secondary-foreground"
+                >
+                  {pos}
+                </span>
+              ))}
+            </span>
+          )}
+          {benchOnly && (
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              bench only
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted touch-none cursor-grab active:cursor-grabbing no-print"
+          aria-label={`Drag ${row.playerName}`}
+          title="Drag to reorder"
+          data-testid={`drag-handle-${slot - 1}`}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </li>
+    </>
   );
 }
