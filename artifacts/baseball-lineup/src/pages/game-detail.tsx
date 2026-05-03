@@ -2204,6 +2204,114 @@ export default function GameDetail() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile view — transposed: positions as rows, innings as
+                  columns. Fits a typical 6-inning game on a phone screen
+                  without horizontal scroll, and keeps the same FieldCell /
+                  BenchArea components so drag-and-drop, click-to-select,
+                  and tap-to-add behave identically. */}
+              <div className="sm:hidden">
+                <table className="w-full text-xs border-separate border-spacing-y-0.5">
+                  <thead>
+                    <tr>
+                      <th className="text-left py-1.5 pl-1 pr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-9">
+                        Pos
+                      </th>
+                      {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => (
+                        <th key={inning} className="text-center py-1.5 px-0.5">
+                          <div className="flex items-center justify-center gap-0.5">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold shadow-sm">
+                              {inning}
+                            </span>
+                            {inning === innings && innings > 1 && (
+                              <button
+                                type="button"
+                                onClick={handleRemoveLastInning}
+                                disabled={updateGame.isPending}
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                                title={`Remove inning ${inning}`}
+                                aria-label={`Remove inning ${inning}`}
+                                data-testid={`button-remove-inning-mobile-${inning}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {FIELD_POSITIONS.map((pos, posIdx) => {
+                      const rowBg = posIdx % 2 === 0 ? "bg-card" : "bg-muted/40";
+                      return (
+                        <tr key={pos} className={`${rowBg} transition-colors`}>
+                          <td className="py-1 pl-1 pr-1 rounded-l-lg align-middle">
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground text-[10px] font-bold tracking-wide">
+                              {pos}
+                            </span>
+                          </td>
+                          {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => {
+                            const entry = cellByInningPos[inning]?.[pos];
+                            const isHotInning =
+                              selectedEntry?.inning === inning || activeDrag?.inning === inning;
+                            return (
+                              <td key={inning} className="py-1 px-0.5 text-center">
+                                <FieldCell
+                                  inning={inning}
+                                  position={pos}
+                                  entry={entry}
+                                  selectedEntryId={selectedEntryId}
+                                  isHotInning={isHotInning}
+                                  draggedEntryId={activeDrag?.entryId ?? null}
+                                  onTileClick={(id) =>
+                                    handleCellClick({ entryId: id, inning, position: pos })
+                                  }
+                                  onEmptyClick={() =>
+                                    handleCellClick({ inning, position: pos })
+                                  }
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                    {/* Bench row — one cell per inning, each its own
+                        droppable so dragging onto an inning's bench area
+                        works exactly like the desktop layout. */}
+                    <tr className="bg-muted/60">
+                      <td className="py-1 pl-1 pr-1 rounded-l-lg align-top">
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] font-bold tracking-wide uppercase">
+                          Bench
+                        </span>
+                      </td>
+                      {Array.from({ length: innings }, (_, i) => i + 1).map((inning) => {
+                        const isHotInning =
+                          selectedEntry?.inning === inning || activeDrag?.inning === inning;
+                        const benchEntries = displayLineup.filter(
+                          (e) => e.inning === inning && e.position === "Bench",
+                        );
+                        return (
+                          <td key={inning} className="py-1 px-0.5 align-top">
+                            <BenchArea
+                              inning={inning}
+                              entries={benchEntries}
+                              selectedEntryId={selectedEntryId}
+                              isHotInning={isHotInning}
+                              draggedEntryId={activeDrag?.entryId ?? null}
+                              onTileClick={(id) =>
+                                handleCellClick({ entryId: id, inning, position: "Bench" })
+                              }
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
               <DragOverlay dropAnimation={null}>
                 {draggedEntry ? (
                   <div
