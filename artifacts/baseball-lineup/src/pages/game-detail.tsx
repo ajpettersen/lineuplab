@@ -1277,8 +1277,13 @@ export default function GameDetail() {
       return;
     }
     const inningCount = game?.innings ?? 6;
-    const header = ["Inning", ...FIELD_POSITIONS, "Bench"].join("\t");
-    const rows = Array.from({ length: inningCount }, (_, i) => i + 1).map((inning) => {
+
+    // ── Top block: inning grid ──────────────────────────────────
+    // Bench column lists every benched player for the inning, comma-separated,
+    // labeled "Bench (SIT)" so a coach pasting into Sheets can tell at a
+    // glance which kids are sitting that inning.
+    const inningHeader = ["Inning", ...FIELD_POSITIONS, "Bench (SIT)"].join("\t");
+    const inningRows = Array.from({ length: inningCount }, (_, i) => i + 1).map((inning) => {
       const cells = FIELD_POSITIONS.map((pos) => {
         const e = data.find((x) => x.inning === inning && x.position === pos);
         return e ? e.playerName : "";
@@ -1289,7 +1294,48 @@ export default function GameDetail() {
         .join(", ");
       return [String(inning), ...cells, bench].join("\t");
     });
-    const tsv = [header, ...rows].join("\n");
+
+    // ── Bottom block: per-player tally + batting order side-by-side ──
+    // Tally on the left (cols A-E), one empty column (F) as a visual buffer,
+    // then the batting order down column G ("Lineup").
+    //
+    // Batting order is taken from each player's earliest field entry's
+    // battingOrder. Players who only ever benched (no battingOrder anywhere
+    // in `data`) get sorted to the end in name order so the column still
+    // covers everyone on the roster for that game.
+    const battingOrderByPlayer = new Map<number, { name: string; order: number | null }>();
+    for (const e of data) {
+      const existing = battingOrderByPlayer.get(e.playerId);
+      const incoming = e.battingOrder ?? null;
+      if (!existing) {
+        battingOrderByPlayer.set(e.playerId, { name: e.playerName, order: incoming });
+      } else if (existing.order == null && incoming != null) {
+        existing.order = incoming;
+      }
+    }
+    const lineupSorted = Array.from(battingOrderByPlayer.values()).sort((a, b) => {
+      if (a.order != null && b.order != null) return a.order - b.order;
+      if (a.order != null) return -1;
+      if (b.order != null) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    const lineupNames = lineupSorted.map((x) => x.name);
+
+    const tallyHeader = ["Player", "Pitching", "Infield", "Outfield", "Bench", "", "Lineup"];
+    const dataRowCount = Math.max(tallyRows.length, lineupNames.length);
+    const bottomRows: string[] = [tallyHeader.join("\t")];
+    for (let i = 0; i < dataRowCount; i++) {
+      const t = tallyRows[i];
+      const lineupCell = lineupNames[i] ?? "";
+      const cells = t
+        ? [t.playerName, String(t.Pitching), String(t.Infield), String(t.Outfield), String(t.Bench), "", lineupCell]
+        : ["", "", "", "", "", "", lineupCell];
+      bottomRows.push(cells.join("\t"));
+    }
+
+    // Blank line between the two blocks so each block lands as its own
+    // table when pasted into Sheets.
+    const tsv = [inningHeader, ...inningRows, "", ...bottomRows].join("\n");
     await writeTsvToClipboard(tsv, "Lineup copied");
   };
 
