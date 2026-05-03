@@ -91,16 +91,10 @@ router.post("/games/:id/locks", async (req, res): Promise<void> => {
     return;
   }
 
-  // Validate position eligibility for the player (Bench is always allowed).
-  if (body.data.position !== "Bench") {
-    const eligible = (player.eligiblePositions ?? []) as string[];
-    if (!eligible.includes(body.data.position)) {
-      res.status(400).json({
-        error: `${player.name} isn't eligible at ${body.data.position}. Adjust eligible positions on the Roster page first.`,
-      });
-      return;
-    }
-  }
+  // Locks intentionally bypass eligibility: a coach may want to pin a player
+  // to a position they aren't normally listed for (e.g. emergency catcher,
+  // try-out at a new spot). Eligibility is treated as a soft preference for
+  // the auto-generator, not a hard constraint on what the coach can pin.
 
   // Determine which innings to lock.
   //   • null   → every inning of this game.

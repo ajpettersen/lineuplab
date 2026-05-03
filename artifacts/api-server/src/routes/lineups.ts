@@ -98,10 +98,10 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   // Load per-game locks. Each row is already a (playerId, inning, position)
   // tuple — exactly the shape `generateFairLineup` expects for `pinned`.
   // We drop rows for innings beyond the (possibly overridden) generation
-  // length, for players excluded from `availablePlayerIds` (e.g. checked
-  // off in the Generate dialog), and for locks pointing to a position the
-  // player is no longer eligible for (eligibility can drift between when
-  // the lock was created and when generate runs). Bench is always allowed.
+  // length and for players excluded from `availablePlayerIds` (e.g. checked
+  // off in the Generate dialog). Eligibility is intentionally NOT enforced
+  // here: a lock is a coach's explicit override and must win even when the
+  // player isn't normally listed at that position.
   const lockRows = await db
     .select()
     .from(lineupLocksTable)
@@ -112,12 +112,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   for (const l of lockRows) {
     if (l.inning > innings) continue;
     if (!availableSet.has(l.playerId)) continue;
-    const p = playerById.get(l.playerId);
-    if (!p) continue;
-    if (l.position !== "Bench") {
-      const eligible = (p.eligiblePositions ?? []) as string[];
-      if (!eligible.includes(l.position)) continue;
-    }
+    if (!playerById.has(l.playerId)) continue;
     pinned.push({ playerId: l.playerId, inning: l.inning, position: l.position });
   }
 

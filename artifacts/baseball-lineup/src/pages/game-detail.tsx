@@ -123,6 +123,13 @@ export default function GameDetail() {
   const [availableSelectedIds, setAvailableSelectedIds] = useState<number[]>(
     [],
   );
+  // "Add player to empty slot" picker: when the coach taps an empty field
+  // cell with no player currently selected, we open a dialog so they can
+  // pick from the roster instead of needing to drag.
+  const [addSlotTarget, setAddSlotTarget] = useState<{
+    inning: number;
+    position: string;
+  } | null>(null);
   const [previewLineup, setPreviewLineup] = useState<typeof lineup | null>(null);
   // "Copy from previous game" picker state.
   const [copyOpen, setCopyOpen] = useState(false);
@@ -1107,10 +1114,65 @@ export default function GameDetail() {
     return true;
   };
 
+  /**
+   * Add a roster player to an empty (inning, position) slot from the picker.
+   * If the player already has an entry in that inning (bench or another
+   * field position), we just move that entry to the target position so we
+   * don't end up with the same player in two slots in one inning. Otherwise
+   * we mint a fresh negative-id entry. Result is staged into preview /
+   * edited so the coach saves normally.
+   */
+  const addPlayerToSlot = (
+    playerId: number,
+    inning: number,
+    position: string,
+  ) => {
+    const current = previewLineup ?? editedLineup ?? lineup;
+    const existing = current.find(
+      (e) => e.inning === inning && e.playerId === playerId,
+    );
+    let next: typeof current;
+    if (existing) {
+      // Same player already in this inning → just move their entry. Avoids
+      // duplicate (player, inning) rows that the server would reject.
+      if (existing.position === position) {
+        setAddSlotTarget(null);
+        return;
+      }
+      next = current.map((e) =>
+        e.id === existing.id ? { ...e, position } : e,
+      );
+    } else {
+      const player = players.find((p) => p.id === playerId);
+      if (!player) return;
+      const nextId = Math.min(0, ...current.map((e) => e.id)) - 1;
+      next = current.concat([
+        {
+          id: nextId,
+          gameId: id,
+          playerId: player.id,
+          playerName: player.name,
+          inning,
+          position,
+          battingOrder: null,
+        },
+      ]);
+    }
+    if (previewLineup) setPreviewLineup(next);
+    else setEditedLineup(next);
+    setAddSlotTarget(null);
+  };
+
   // Tap-to-select fallback (kept alongside drag-and-drop for accessibility / quick taps).
   const handleCellClick = (target: { entryId?: number; inning: number; position: string }) => {
     if (selectedEntryId == null) {
-      if (target.entryId != null) setSelectedEntryId(target.entryId);
+      if (target.entryId != null) {
+        setSelectedEntryId(target.entryId);
+      } else {
+        // Empty cell tapped with nothing selected → open picker so coach can
+        // assign a player without needing to drag-and-drop.
+        setAddSlotTarget({ inning: target.inning, position: target.position });
+      }
       return;
     }
     if (target.entryId === selectedEntryId) {
@@ -2174,6 +2236,110 @@ export default function GameDetail() {
         </DialogContent>
       </Dialog>
 
+      {/* Add Player to Empty Slot Dialog */}
+      <Dialog
+        open={addSlotTarget != null}
+        onOpenChange={(o) => !o && setAddSlotTarget(null)}
+      >
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Add player to {addSlotTarget?.position} · Inning{" "}
+              {addSlotTarget?.inning}
+            </DialogTitle>
+            <DialogDescription>
+              Pick a player from your roster to drop into this slot. If they're
+              already in this inning somewhere else, they'll just move here.
+            </DialogDescription>
+          </DialogHeader>
+          {addSlotTarget && (() => {
+            const current = previewLineup ?? editedLineup ?? lineup;
+            const inningEntries = current.filter(
+              (e) => e.inning === addSlotTarget.inning,
+            );
+            const positionByPlayerId = new Map(
+              inningEntries.map((e) => [e.playerId, e.position] as const),
+            );
+            const eligibleFirst = (a: typeof players[number], b: typeof players[number]) => {
+              const aElig = a.eligiblePositions.includes(addSlotTarget.position);
+              const bElig = b.eligiblePositions.includes(addSlotTarget.position);
+              if (aElig !== bElig) return aElig ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            };
+            const candidates = players
+              .filter((p) => p.active)
+              .slice()
+              .sort(eligibleFirst);
+            return (
+              <div className="flex flex-col gap-1.5">
+                {candidates.map((p) => {
+                  const here = positionByPlayerId.get(p.id);
+                  const eligible = p.eligiblePositions.includes(
+                    addSlotTarget.position,
+                  );
+                  const subtitle = here
+                    ? here === "Bench"
+                      ? "Currently on bench this inning"
+                      : `Currently at ${here} this inning`
+                    : "Not in this inning";
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() =>
+                        addPlayerToSlot(
+                          p.id,
+                          addSlotTarget.inning,
+                          addSlotTarget.position,
+                        )
+                      }
+                      className={`flex items-center justify-between gap-3 p-2.5 rounded-md border text-left transition-colors ${
+                        eligible
+                          ? "border-border hover:border-primary/60 hover:bg-primary/5"
+                          : "border-border/50 hover:border-primary/40 hover:bg-muted/40"
+                      }`}
+                      data-testid={`add-slot-row-${p.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium flex items-center gap-2">
+                          <span className="truncate">{p.name}</span>
+                          {p.number != null && (
+                            <span className="text-xs text-muted-foreground">
+                              #{p.number}
+                            </span>
+                          )}
+                          {!eligible && (
+                            <span className="text-[10px] uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 py-px">
+                              not eligible
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {subtitle}
+                        </div>
+                      </div>
+                      <span className="text-xs text-primary shrink-0">
+                        {here ? "Move here" : "Add"}
+                      </span>
+                    </button>
+                  );
+                })}
+                {candidates.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No active players in your roster.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddSlotTarget(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Available Players Dialog */}
       <Dialog open={availableOpen} onOpenChange={(o) => !o && setAvailableOpen(false)}>
         <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
@@ -2872,7 +3038,7 @@ function FieldCell({
     ? { kind: "tile" as const, entryId: entry.id, inning, position }
     : { kind: "emptyField" as const, inning, position };
   const { isOver, setNodeRef } = useDroppable({ id: dropId, data: dropData });
-  const showEmptyHint = !entry && (isHotInning || isOver);
+  const isPrimary = !entry && (isHotInning || isOver);
   const overRing = isOver && isHotInning ? "ring-2 ring-primary ring-offset-1 bg-primary/5" : "";
   return (
     <div
@@ -2889,18 +3055,24 @@ function FieldCell({
           onClick={onTileClick}
           testId={`cell-${inning}-${position}`}
         />
-      ) : showEmptyHint ? (
+      ) : (
+        // Empty slots are always clickable so the coach can tap "+" to pick a
+        // player from the roster (no drag-and-drop needed). When the slot is
+        // also part of the active inning / drag-over target we promote it
+        // visually to make the drop zone obvious.
         <button
           type="button"
           onClick={onEmptyClick}
-          className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap min-w-[3rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
+          className={
+            isPrimary
+              ? "inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap min-w-[3rem] border border-dashed border-primary/60 text-primary hover:bg-primary/10"
+              : "inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap min-w-[2.25rem] border border-dashed border-muted-foreground/30 text-muted-foreground/60 hover:border-primary/50 hover:text-primary hover:bg-primary/5"
+          }
           data-testid={`cell-${inning}-${position}-empty`}
-          title="Drop or tap to move here"
+          title="Tap to add a player to this slot"
         >
           +
         </button>
-      ) : (
-        <span className="text-muted-foreground/40 text-xs">—</span>
       )}
     </div>
   );

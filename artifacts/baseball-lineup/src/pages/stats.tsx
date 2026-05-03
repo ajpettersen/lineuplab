@@ -59,8 +59,8 @@ const GROUP_LABELS: Record<string, string> = {
   bench: "Bench",
   unavailable: "Out",
 };
-const GROUP_ORDER = ["pitcher", "catcher", "cornerInfield", "middleInfield", "outfield", "bench", "unavailable"];
-const GROUP_ORDER_MERGED = ["pitcher", "infield", "outfield", "bench", "unavailable"];
+const GROUP_ORDER = ["pitcher", "catcher", "cornerInfield", "middleInfield", "outfield", "bench"];
+const GROUP_ORDER_MERGED = ["pitcher", "infield", "outfield", "bench"];
 const MERGED_INFIELD_PARTS = ["catcher", "cornerInfield", "middleInfield"] as const;
 const GROUP_COLORS: Record<string, string> = {
   pitcher: "#c0392b",
