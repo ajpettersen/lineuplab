@@ -87,6 +87,84 @@ const POSITION_ACCENT: Record<(typeof FIELD_POSITIONS)[number], string> = {
 };
 
 /**
+ * Time-of-day lighting for the field. Bands picked to match how a youth
+ * baseball/softball season actually plays out:
+ *   morning   05:00–08:59  early Saturday tournament games — soft golden light
+ *   day       09:00–15:59  bright midday — the default cheery green field
+ *   evening   16:00–18:59  weeknight games at the start of the season —
+ *                          warm orange "golden hour" wash over the field
+ *   night     19:00–04:59  weeknight games mid-summer or late tournaments —
+ *                          dark grass with stadium-light pools from the back
+ *
+ * Driven off the game's scheduled start time (`game.gameDate`), not wall
+ * clock — once a game starts at 7pm it stays "night" for the duration even
+ * if it runs late into the evening, so the visual identity is stable.
+ */
+type LightingMode = "morning" | "day" | "evening" | "night";
+
+function getLightingMode(gameDate: string | undefined): LightingMode {
+  if (!gameDate) return "day";
+  const d = new Date(gameDate);
+  if (Number.isNaN(d.getTime())) return "day";
+  const h = d.getHours();
+  if (h >= 5 && h < 9) return "morning";
+  if (h >= 9 && h < 16) return "day";
+  if (h >= 16 && h < 19) return "evening";
+  return "night";
+}
+
+interface LightingPalette {
+  /** CSS background for the field card itself (the grass gradient). */
+  grassGradient: string;
+  /** Tailwind gradient classes for the soft top vignette. */
+  topVignette: string;
+  /** Optional warm/cool wash overlaid on the field with mix-blend-soft-light
+   *  to simulate sun/dusk light without bleaching the chips. Null = none. */
+  ambientOverlay: string | null;
+  /** When true, render the 3 stadium-light pools at the top of the field. */
+  stadiumLights: boolean;
+  /** For data-testid so e2e tests can assert the right palette is active. */
+  label: LightingMode;
+}
+
+const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
+  morning: {
+    grassGradient:
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(58, 142, 76) 0%, rgb(34, 102, 50) 55%, rgb(16, 56, 26) 100%)",
+    topVignette: "from-amber-200/20 to-transparent",
+    ambientOverlay:
+      "bg-gradient-to-br from-amber-200/30 via-yellow-100/10 to-transparent",
+    stadiumLights: false,
+    label: "morning",
+  },
+  day: {
+    grassGradient:
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(38, 120, 60) 0%, rgb(22, 86, 40) 55%, rgb(8, 38, 18) 100%)",
+    topVignette: "from-black/30 to-transparent",
+    ambientOverlay: null,
+    stadiumLights: false,
+    label: "day",
+  },
+  evening: {
+    grassGradient:
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(48, 112, 58) 0%, rgb(28, 78, 38) 55%, rgb(12, 42, 22) 100%)",
+    topVignette: "from-orange-500/30 via-rose-400/10 to-transparent",
+    ambientOverlay:
+      "bg-gradient-to-br from-orange-500/35 via-rose-400/15 to-transparent",
+    stadiumLights: false,
+    label: "evening",
+  },
+  night: {
+    grassGradient:
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(22, 78, 40) 0%, rgb(12, 48, 24) 55%, rgb(4, 22, 10) 100%)",
+    topVignette: "from-slate-950/70 to-transparent",
+    ambientOverlay: "bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/30",
+    stadiumLights: true,
+    label: "night",
+  },
+};
+
+/**
  * Dugout / fence-iPad display. Read-only big-text view of the current
  * inning's defense plus the batting order. Polls the lineup every few
  * seconds so a change made on the coach's phone shows up on the iPad
@@ -165,15 +243,6 @@ export default function FieldDisplay() {
     if (currentInning > innings) setCurrentInning(innings);
   }, [innings, currentInning]);
 
-  // Coach can tap a batter to mark them as "currently up" — the row pulses
-  // and the on-deck/in-the-hole rows show below. Stored as the player's
-  // index in battingOrderRows (not the slot number). Because polling can
-  // shrink or reorder the batting list while the iPad is showing it, an
-  // effect below pins the index back to the same player (by playerId) when
-  // possible, or clamps into range if that player is gone — otherwise the
-  // hero card silently goes blank exactly when a phone edit lands.
-  const [currentBatterIdx, setCurrentBatterIdx] = useState(0);
-
   // Show "Just updated" pulse when the lineup data changes. Driven off a
   // string fingerprint of the lineup so we don't false-trigger on identical
   // re-fetches. The pulse fades after ~3s.
@@ -248,29 +317,17 @@ export default function FieldDisplay() {
     });
   }, [lineup]);
 
-  // Reconcile the at-bat index against polled changes to the batting order.
-  // Only depends on the LIST length / shape — never on currentBatterIdx —
-  // because we must not undo a coach's Next/Prev tap. When phone edits land
-  // and the list shrinks, we clamp the index into range so the hero never
-  // blanks out at the worst possible moment. (We intentionally don't try to
-  // chase the same player across reorders: simple is safer than clever for
-  // the dugout-fence case, and a same-length reorder is rare mid-game.)
-  useEffect(() => {
-    if (battingOrder.length === 0) {
-      if (currentBatterIdx !== 0) setCurrentBatterIdx(0);
-      return;
-    }
-    if (currentBatterIdx >= battingOrder.length) {
-      setCurrentBatterIdx(currentBatterIdx % battingOrder.length);
-    }
-    // We deliberately omit currentBatterIdx from the dep array — adding it
-    // would make this effect fight Next/Prev clicks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [battingOrder.length]);
-
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
   const oppScore = game?.opponentScore ?? 0;
+
+  // Pick the field lighting palette based on the game's scheduled start.
+  // Memoized so a 5s lineup poll doesn't re-derive on every tick — only when
+  // the game date itself changes (very rare during a live game).
+  const lighting = useMemo(
+    () => FIELD_LIGHTING[getLightingMode(game?.gameDate)],
+    [game?.gameDate],
+  );
 
   // Dim Mode — drops a translucent black overlay across the whole page so the
   // iPad's backlight isn't pumping out full brightness during dead time
@@ -556,29 +613,6 @@ export default function FieldDisplay() {
     );
   }
 
-  // Derive at-bat / on-deck / in-the-hole rows once so the hero block at the
-  // top of the sidebar and the row highlighting in the full list stay in sync.
-  const atBatRow = battingOrder[currentBatterIdx];
-  const onDeckRow =
-    battingOrder.length > 0
-      ? battingOrder[(currentBatterIdx + 1) % battingOrder.length]
-      : undefined;
-  const inHoleRow =
-    battingOrder.length > 0
-      ? battingOrder[(currentBatterIdx + 2) % battingOrder.length]
-      : undefined;
-
-  const advanceBatter = () =>
-    setCurrentBatterIdx((i) =>
-      battingOrder.length === 0 ? 0 : (i + 1) % battingOrder.length,
-    );
-  const rewindBatter = () =>
-    setCurrentBatterIdx((i) =>
-      battingOrder.length === 0
-        ? 0
-        : (i - 1 + battingOrder.length) % battingOrder.length,
-    );
-
   return (
     // Lock the page to the viewport on tablet+ so the field, bench, and
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
@@ -719,10 +753,9 @@ export default function FieldDisplay() {
         >
           <div
             className="relative w-full flex-1 min-h-[420px] lg:min-h-0 rounded-2xl border border-emerald-950/60 overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.45)]"
-            style={{
-              background:
-                "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(38, 120, 60) 0%, rgb(22, 86, 40) 55%, rgb(8, 38, 18) 100%)",
-            }}
+            style={{ background: lighting.grassGradient }}
+            data-lighting={lighting.label}
+            data-testid={`field-lighting-${lighting.label}`}
           >
             {/* Field geometry: foul lines, skinned infield, basepaths, bases,
                 pitcher's mound, home plate. The SVG stretches with the
@@ -840,9 +873,41 @@ export default function FieldDisplay() {
               <rect x="53.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.15" />
             </svg>
 
-            {/* Soft top vignette so the inning header reads cleanly over the
-                top of the bright grass */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/30 to-transparent" />
+            {/* Soft top vignette — color shifts with lighting so the dugout
+                reads correctly under any time-of-day palette (warm wash for
+                dawn/dusk, deep slate for night, neutral black for midday). */}
+            <div
+              className={`pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${lighting.topVignette}`}
+            />
+
+            {/* Time-of-day ambient wash. mix-blend-soft-light lets the warm
+                color settle onto the grass and chips without washing them
+                out — the player names stay legible and the position pills
+                keep their accent colors, but the whole field picks up the
+                hue of the time of day. */}
+            {lighting.ambientOverlay && (
+              <div
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-0 mix-blend-soft-light ${lighting.ambientOverlay}`}
+              />
+            )}
+
+            {/* Stadium lights for night games. Three soft pools from the
+                back of the outfield (top edge), additive-blended so they
+                read as actual light rather than overlay tint. The grass
+                gets brighter under them; the chips sit "in the light"
+                naturally because they're rendered above this layer. */}
+            {lighting.stadiumLights && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 mix-blend-screen"
+                data-testid="stadium-lights"
+                style={{
+                  background:
+                    "radial-gradient(ellipse 55% 38% at 18% 6%, rgba(255, 248, 220, 0.32), transparent 65%), radial-gradient(ellipse 65% 42% at 50% 0%, rgba(255, 248, 220, 0.22), transparent 65%), radial-gradient(ellipse 55% 38% at 82% 6%, rgba(255, 248, 220, 0.32), transparent 65%)",
+                }}
+              />
+            )}
 
             {FIELD_POSITIONS.map((pos) => (
               <FieldPositionSlot
@@ -867,148 +932,46 @@ export default function FieldDisplay() {
           />
         </section>
 
-        {/* Batting panel: sticky AT BAT hero on top, scrollable order below */}
-        <aside className="border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 flex flex-col min-h-0 lg:overflow-hidden">
-          {/* Hero: who's up + on deck/in the hole + Next Batter (always visible, no scrolling) */}
-          <div className="shrink-0 border-b border-slate-800 p-3 sm:p-4 bg-slate-900/60">
-            {atBatRow ? (
-              <>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  <span className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold">
-                    At Bat
-                  </span>
-                </div>
-                <div
-                  className="flex items-center gap-3"
-                  data-testid="hero-at-bat"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  <span className="inline-flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-full bg-amber-400 text-slate-950 text-xl sm:text-2xl font-black tabular-nums shadow-lg">
-                    {atBatRow.order ?? "—"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xl sm:text-2xl font-bold leading-tight truncate text-white">
-                      {atBatRow.playerName}
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  <div className="rounded-md bg-slate-800/60 border border-slate-700/60 px-2.5 py-1.5">
-                    <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold leading-none">
-                      On Deck
-                    </div>
-                    <div
-                      className="mt-1 text-sm font-bold text-slate-100 truncate leading-tight"
-                      data-testid="text-on-deck"
-                    >
-                      {onDeckRow?.playerName ?? "—"}
-                    </div>
-                  </div>
-                  <div className="rounded-md bg-slate-800/40 border border-slate-700/40 px-2.5 py-1.5">
-                    <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold leading-none">
-                      In the Hole
-                    </div>
-                    <div
-                      className="mt-1 text-sm font-bold text-slate-200 truncate leading-tight"
-                      data-testid="text-in-hole"
-                    >
-                      {inHoleRow?.playerName ?? "—"}
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-[auto_1fr] gap-2 mt-3">
-                  <Button
-                    variant="outline"
-                    onClick={rewindBatter}
-                    className="h-12 w-12 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700"
-                    aria-label="Previous batter"
-                    data-testid="button-prev-batter"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
-                  <Button
-                    onClick={advanceBatter}
-                    className="h-12 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-base shadow-lg"
-                    data-testid="button-next-batter"
-                  >
-                    Next Batter
-                    <ChevronRight className="h-5 w-5 ml-1" />
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <div className="text-slate-400 text-sm py-2">
-                No batting order yet. Set one from the game page.
-              </div>
-            )}
-          </div>
-
-          {/* Full batting order: scrolls inside the sidebar so the hero stays put */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
-            <div className="flex items-baseline justify-between mb-2">
-              <h2 className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">
-                Batting Order
-              </h2>
-              <span className="text-[10px] uppercase tracking-wider text-slate-600">
-                tap to set up
-              </span>
-            </div>
-            <ol className="flex flex-col gap-1.5">
-              {battingOrder.length === 0 && (
-                <li className="text-slate-500 text-sm">No batting order yet.</li>
-              )}
-              {battingOrder.map((r, i) => {
-                const isUp = i === currentBatterIdx;
-                const isOnDeck = i === (currentBatterIdx + 1) % battingOrder.length;
-                const isHole = i === (currentBatterIdx + 2) % battingOrder.length;
+        {/* Batting panel: full batting order, fits the sidebar height with
+         *  no scrolling. Each row is a flex child of an equal-distribution
+         *  column (`flex-1 basis-0`) so 9 batters get larger rows and 18
+         *  batters get smaller ones — the list always fills the sidebar
+         *  exactly without ever requiring a scroll, which is the whole
+         *  point of mounting an iPad to the dugout fence. The "currently
+         *  at bat" tracker was removed because there's no way to know
+         *  what's actually happening on the field without GameChanger
+         *  integration, and a stale at-bat indicator was worse than no
+         *  indicator. */}
+        <aside className="border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 flex flex-col min-h-0 lg:overflow-hidden p-3 sm:p-4">
+          <h2 className="shrink-0 text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold mb-2">
+            Batting Order
+          </h2>
+          {battingOrder.length === 0 ? (
+            <div className="text-slate-500 text-sm">No batting order yet.</div>
+          ) : (
+            <ol
+              className="flex-1 min-h-0 flex flex-col gap-1"
+              data-testid="batting-order-list"
+            >
+              {battingOrder.map((r) => {
                 const slotLabel = r.order != null ? r.order : "—";
                 return (
-                  <li key={r.playerId}>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentBatterIdx(i)}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors text-left ${
-                        isUp
-                          ? "bg-amber-400/95 border-amber-300 text-slate-950 shadow"
-                          : isOnDeck
-                            ? "bg-slate-800/80 border-slate-600 text-slate-100"
-                            : isHole
-                              ? "bg-slate-800/40 border-slate-700 text-slate-200"
-                              : "bg-slate-900/40 border-slate-800 text-slate-300 hover:bg-slate-800/60"
-                      }`}
-                      data-testid={`batter-row-${i}`}
-                    >
-                      <span
-                        className={`inline-flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full text-xs sm:text-sm font-bold tabular-nums ${
-                          isUp
-                            ? "bg-slate-950 text-amber-300"
-                            : "bg-slate-700 text-slate-100"
-                        }`}
-                      >
-                        {slotLabel}
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-sm sm:text-base font-bold leading-tight truncate">
-                          {r.playerName}
-                        </span>
-                        {(isUp || isOnDeck || isHole) && (
-                          <span
-                            className={`block text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold mt-0.5 leading-none ${
-                              isUp ? "text-slate-700" : "text-slate-500"
-                            }`}
-                          >
-                            {isUp ? "At Bat" : isOnDeck ? "On Deck" : "In the Hole"}
-                          </span>
-                        )}
-                      </span>
-                    </button>
+                  <li
+                    key={r.playerId}
+                    className="flex-1 basis-0 min-h-0 flex items-center gap-2.5 px-2.5 rounded-lg border bg-slate-900/40 border-slate-800 text-slate-100"
+                    data-testid={`batter-row-${r.playerId}`}
+                  >
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums bg-slate-700 text-slate-100">
+                      {slotLabel}
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm sm:text-base font-bold leading-tight truncate">
+                      {r.playerName}
+                    </span>
                   </li>
                 );
               })}
             </ol>
-          </div>
+          )}
         </aside>
       </main>
 
