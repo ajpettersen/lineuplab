@@ -287,6 +287,13 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   if (d.status !== undefined) updates.status = d.status;
   if (d.ourScore !== undefined) updates.ourScore = d.ourScore;
   if (d.opponentScore !== undefined) updates.opponentScore = d.opponentScore;
+  if (d.startedAt !== undefined) {
+    // Convert ISO string → Date for Drizzle's timestamp column (avoid
+    // any driver-level surprises around string-vs-Date coercion). Null
+    // is a valid value too — used by the field-display "Reset timer"
+    // affordance to clear a mistaken first-pitch timestamp.
+    updates.startedAt = d.startedAt === null ? null : new Date(d.startedAt);
+  }
   if (d.notes !== undefined) updates.notes = d.notes;
   if (d.gameType !== undefined) updates.gameType = d.gameType;
 

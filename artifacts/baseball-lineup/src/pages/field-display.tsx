@@ -28,7 +28,7 @@ import {
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Sun, WifiOff } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
@@ -281,9 +281,13 @@ interface ScoreStepperProps {
   onChange: (next: number) => void;
   ariaLabel: string;
   testId: string;
+  // Tiny caps label rendered above the up-chevron — currently used to
+  // mark the two steppers as "US" and "THEM" so kids glancing at the
+  // dugout iPad don't mistake which column is theirs.
+  label?: string;
 }
 
-function ScoreStepper({ value, onChange, ariaLabel, testId }: ScoreStepperProps) {
+function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreStepperProps) {
   // Y coord at gesture start; null when no gesture is in progress.
   const startYRef = useRef<number | null>(null);
   const SWIPE_THRESHOLD = 24;
@@ -333,6 +337,17 @@ function ScoreStepper({ value, onChange, ariaLabel, testId }: ScoreStepperProps)
       className="flex flex-col items-stretch select-none min-w-[2.25rem]"
       data-testid={testId}
     >
+      {label && (
+        <span
+          // Bold, wide-tracked caps so the label reads clearly even at
+          // a glance from the dugout. text-[10px] is intentionally tiny
+          // to avoid stealing visual weight from the score number itself.
+          className="text-[10px] sm:text-xs uppercase font-bold tracking-widest text-slate-500 text-center leading-tight pb-0.5"
+          aria-hidden="true"
+        >
+          {label}
+        </span>
+      )}
       <button
         type="button"
         onClick={inc}
@@ -366,6 +381,113 @@ function ScoreStepper({ value, onChange, ariaLabel, testId }: ScoreStepperProps)
         data-testid={`${testId}-down`}
       >
         <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Tournament-aware running game clock for the field display header.
+ *
+ * Two states:
+ *   • Not started (startedAt == null) — renders a "Start Game" button. The
+ *     coach taps it on first pitch; we record `Date.now()` as an ISO string
+ *     and PATCH the game via the same offline-aware single-flight save chain
+ *     as score and lineup edits, so a tap during a WiFi drop is preserved
+ *     and synced on reconnect (the optimistic cache update means the timer
+ *     starts ticking on the iPad immediately, even offline).
+ *   • Started — renders MM:SS (or H:MM:SS past the one-hour mark) using
+ *     `tabular-nums` so the digits don't dance as they tick. A small ↻
+ *     reset button next to the time clears `startedAt` (with a native
+ *     confirm dialog — destructive enough to need an "are you sure" but
+ *     simple enough to not need a full modal). Reset also rides the same
+ *     PATCH chain.
+ *
+ * Sync semantics: because `startedAt` lives on the Game record, parents on
+ * their phones see the SAME elapsed time as the dugout iPad (ticking via
+ * their local clock once they receive the timestamp). Wall-clock skew
+ * between devices is the only source of drift — acceptable for tournament
+ * time-limit awareness.
+ *
+ * Implementation note: setInterval just triggers re-renders; the actual
+ * elapsed always recomputes from `Date.now() - startMs`, so missed ticks
+ * (tab backgrounded, system sleep) self-heal on the next render.
+ */
+interface GameTimerProps {
+  startedAt: string | null | undefined;
+  onStart: () => void;
+  onReset: () => void;
+}
+
+function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!startedAt) return;
+    // Re-render once immediately so the display shows the right elapsed
+    // value even if `now` was stale from before startedAt was set.
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  if (!startedAt) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onStart}
+        className="text-emerald-300 hover:text-emerald-200 hover:bg-slate-800 px-2 sm:px-3 gap-1 sm:gap-1.5 font-semibold"
+        aria-label="Start game timer (capture first-pitch time)"
+        data-testid="button-start-game"
+      >
+        <Play className="h-4 w-4" aria-hidden="true" />
+        <span className="hidden sm:inline">Start Game</span>
+        <span className="sm:hidden">Start</span>
+      </Button>
+    );
+  }
+
+  const startMs = new Date(startedAt).getTime();
+  // Clamp to 0 in case of clock skew (rare: device clock briefly behind
+  // the server's `startedAt` write). Math.max prevents a "-:-1" flash.
+  const elapsedSec = Math.max(0, Math.floor((now - startMs) / 1000));
+  const hours = Math.floor(elapsedSec / 3600);
+  const minutes = Math.floor((elapsedSec % 3600) / 60);
+  const seconds = elapsedSec % 60;
+  const display =
+    hours > 0
+      ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+      : `${minutes}:${String(seconds).padStart(2, "0")}`;
+
+  const handleReset = () => {
+    if (typeof window !== "undefined" && window.confirm("Reset the game timer?")) {
+      onReset();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-0.5 sm:gap-1" data-testid="game-timer">
+      <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-slate-500 leading-tight hidden sm:inline pr-0.5">
+        Time
+      </span>
+      <span
+        className="text-base sm:text-lg font-bold tabular-nums text-amber-300"
+        aria-label={`Game time ${display}`}
+        aria-live="off"
+        data-testid="text-game-timer"
+      >
+        {display}
+      </span>
+      <button
+        type="button"
+        onClick={handleReset}
+        className="p-1 text-slate-500 hover:text-rose-300 hover:bg-slate-800 rounded transition-colors"
+        aria-label="Reset game timer"
+        title="Reset timer"
+        data-testid="button-reset-timer"
+      >
+        <RotateCcw className="h-3 w-3" aria-hidden="true" />
       </button>
     </div>
   );
@@ -1212,14 +1334,31 @@ export default function FieldDisplay() {
               </>
             )}
           </div>
-          {/* Manual scoreboard input — until GameChanger integration lands.
-            * Each side: tap chevron to step ±1, OR tap the number to +1,
-            * OR swipe vertically on the number to ±1. Score updates flow
-            * through the same offline-aware single-flight save chain as
-            * lineup edits, so a tap during a WiFi drop is preserved and
-            * synced on reconnect. See ScoreStepper docblock for gesture
-            * details. */}
-          <div className="flex items-center gap-1 sm:gap-1.5">
+          {/* Tournament time-limit clock. "Start Game" button until the
+            * coach taps it on first pitch, then a running MM:SS display
+            * that ticks every second. Same offline-aware PATCH chain as
+            * the score steppers below, so a tap during a WiFi drop is
+            * saved locally and synced on reconnect — and parents on
+            * their phones see the same elapsed time as the dugout iPad.
+            * See GameTimer docblock for sync semantics. */}
+          <GameTimer
+            startedAt={game?.startedAt ?? null}
+            onStart={() =>
+              saveGamePatchOptimistically({
+                startedAt: new Date().toISOString(),
+              })
+            }
+            onReset={() => saveGamePatchOptimistically({ startedAt: null })}
+          />
+          {/* Manual scoreboard input — until GameChanger integration
+            * lands. Each side: tap chevron to step ±1, OR tap the
+            * number to +1, OR swipe vertically on the number to ±1.
+            * Score updates flow through the same offline-aware
+            * single-flight save chain as lineup edits. The "Us"/"Them"
+            * labels above the steppers help kids in the dugout
+            * identify which column is theirs at a glance. See
+            * ScoreStepper docblock for gesture details. */}
+          <div className="flex items-end gap-1 sm:gap-1.5">
             <ScoreStepper
               value={ourScore}
               onChange={(next) =>
@@ -1227,8 +1366,11 @@ export default function FieldDisplay() {
               }
               ariaLabel="Our score"
               testId="score-stepper-ours"
+              label="Us"
             />
-            <span className="text-xl sm:text-2xl font-bold tabular-nums text-slate-600">
+            {/* Bottom-aligned dash so the "Us"/"Them" labels above the
+              * numbers don't shove the dash up out of line with them. */}
+            <span className="text-xl sm:text-2xl font-bold tabular-nums text-slate-600 pb-0.5">
               –
             </span>
             <ScoreStepper
@@ -1238,6 +1380,7 @@ export default function FieldDisplay() {
               }
               ariaLabel="Opponent score"
               testId="score-stepper-opp"
+              label="Them"
             />
           </div>
           <Button

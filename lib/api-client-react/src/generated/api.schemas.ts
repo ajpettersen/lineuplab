@@ -111,6 +111,11 @@ export interface Game {
   ourScore?: number | null;
   /** @nullable */
   opponentScore?: number | null;
+  /**
+   * Wall-clock time of the actual first pitch (coach taps "Start Game" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.
+   * @nullable
+   */
+  startedAt?: string | null;
   /** @nullable */
   notes?: string | null;
   /** Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken) */
@@ -174,6 +179,11 @@ export interface UpdateGameBody {
   ourScore?: number | null;
   /** @nullable */
   opponentScore?: number | null;
+  /**
+   * Set to an ISO timestamp when the coach taps "Start Game" on the field display, or to null to reset the running timer.
+   * @nullable
+   */
+  startedAt?: string | null;
   /** @nullable */
   notes?: string | null;
   /** @nullable */

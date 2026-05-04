@@ -32,6 +32,13 @@ export const gamesTable = pgTable(
     gameType: text("game_type"),
     ourScore: integer("our_score"),
     opponentScore: integer("opponent_score"),
+    // Wall-clock time of the actual first pitch (set by the dugout coach
+    // tapping "Start Game" on the field display). Distinct from gameDate
+    // (the SCHEDULED start) — tournaments routinely start late, and the
+    // running game timer needs to reflect actual elapsed play, not the
+    // scheduled slot. Null until the coach kicks it off; resettable via
+    // a PATCH with `startedAt: null` if they fat-fingered the button.
+    startedAt: timestamp("started_at", { withTimezone: true }),
     notes: text("notes"),
     // Snapshot of the planned lineup (taken when the coach chose "Keep both"
     // before overriding with a post-game photo). Null = no snapshot.

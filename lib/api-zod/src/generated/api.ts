@@ -138,6 +138,12 @@ export const ListGamesResponseItem = zod.object({
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  startedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -209,6 +215,12 @@ export const GetGameResponse = zod.object({
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  startedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -245,6 +257,12 @@ export const UpdateGameBody = zod.object({
   status: zod.enum(["upcoming", "completed", "cancelled"]).optional(),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  startedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Set to an ISO timestamp when the coach taps \"Start Game\" on the field display, or to null to reset the running timer.',
+    ),
   notes: zod.string().nullish(),
   gameType: zod
     .union([
@@ -279,6 +297,12 @@ export const UpdateGameResponse = zod.object({
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  startedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -339,6 +363,12 @@ export const SnapshotPlanResponse = zod.object({
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  startedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -391,6 +421,12 @@ export const ClearPlanSnapshotResponse = zod.object({
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  startedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([

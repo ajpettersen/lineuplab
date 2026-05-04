@@ -567,6 +567,10 @@ components:
           type: ["integer", "null"]
         opponentScore:
           type: ["integer", "null"]
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Wall-clock time of the actual first pitch (coach taps "Start Game" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.
         notes:
           type: ["string", "null"]
         planSnapshot:
@@ -649,6 +653,10 @@ components:
           type: ["integer", "null"]
         opponentScore:
           type: ["integer", "null"]
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Set to an ISO timestamp when the coach taps "Start Game" on the field display, or to null to reset the running timer.
         notes:
           type: ["string", "null"]
         gameType:
