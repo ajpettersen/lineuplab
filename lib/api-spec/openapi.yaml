@@ -26,6 +26,8 @@ tags:
     description: Per-coach team branding (team name and short name)
   - name: preferences
     description: Per-coach defaults for new games and lineup generation
+  - name: practices
+    description: Practice plans with AI-generated drill blocks and attendance
 
 paths:
   /healthz:
@@ -570,6 +572,161 @@ paths:
           description: Deleted
         "404":
           description: Not found
+
+  /practices:
+    get:
+      operationId: listPractices
+      tags: [practices]
+      summary: List practice plans (most recent first), with attendance roll-ups
+      responses:
+        "200":
+          description: Practices with attendance roll-ups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PracticeSummary"
+    post:
+      operationId: createPractice
+      tags: [practices]
+      summary: Create a practice (blocks default to empty until coach generates or adds)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePracticeBody"
+      responses:
+        "201":
+          description: Created practice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Practice"
+
+  /practices/{id}:
+    get:
+      operationId: getPractice
+      tags: [practices]
+      summary: Get a practice with its blocks and per-player attendance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Practice detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeDetail"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePractice
+      tags: [practices]
+      summary: Update a practice's metadata or replace its blocks
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePracticeBody"
+      responses:
+        "200":
+          description: Updated practice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Practice"
+        "404":
+          description: Not found
+    delete:
+      operationId: deletePractice
+      tags: [practices]
+      summary: Delete a practice (attendance cascades)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /practices/{id}/attendance:
+    put:
+      operationId: replacePracticeAttendance
+      tags: [practices]
+      summary: Bulk-upsert per-player attendance for a practice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceAttendanceBody"
+      responses:
+        "200":
+          description: Updated attendance
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PracticeAttendance"
+        "404":
+          description: Not found
+
+  /practices/{id}/generate-plan:
+    post:
+      operationId: generatePracticePlan
+      tags: [practices]
+      summary: AI-generate a time-blocked plan from focus areas + duration
+      description: |
+        Calls OpenAI with the active roster, focus areas, and duration, and
+        returns a proposed `blocks` array. Does NOT save the plan — the coach
+        reviews + saves via PATCH /practices/{id}.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeneratePracticePlanBody"
+      responses:
+        "200":
+          description: Proposed plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedPracticePlan"
+        "404":
+          description: Not found
+        "502":
+          description: AI service unavailable
 
   /preferences:
     get:
@@ -1314,3 +1471,229 @@ components:
           type: boolean
         defaultPitcherRotation:
           type: boolean
+
+    PracticeBlock:
+      type: object
+      description: One time-block within a practice plan (warmup, drill, scrimmage, etc.)
+      properties:
+        id:
+          type: string
+          description: Stable client-generated UUID for React keys + drag-reorder
+        orderIndex:
+          type: integer
+          minimum: 0
+        title:
+          type: string
+        durationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+        description:
+          type: string
+        drillType:
+          type: string
+          description: One of warmup | drill | scrimmage | conditioning | meeting
+        focusAreas:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - orderIndex
+        - title
+        - durationMinutes
+        - description
+        - drillType
+        - focusAreas
+
+    Practice:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+        title:
+          type: ["string", "null"]
+        focusAreas:
+          type: array
+          items:
+            type: string
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeBlock"
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - date
+        - durationMinutes
+        - focusAreas
+        - blocks
+        - createdAt
+        - updatedAt
+
+    PracticeSummary:
+      allOf:
+        - $ref: "#/components/schemas/Practice"
+        - type: object
+          properties:
+            attendanceMarked:
+              type: integer
+              description: Number of players with explicit attendance row (attended OR absent)
+            attendancePresent:
+              type: integer
+              description: Number of players marked present
+          required:
+            - attendanceMarked
+            - attendancePresent
+
+    PracticeAttendance:
+      type: object
+      properties:
+        id:
+          type: integer
+        practiceId:
+          type: integer
+        playerId:
+          type: integer
+        attended:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+        recordedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - practiceId
+        - playerId
+        - attended
+        - recordedAt
+
+    PracticeDetail:
+      allOf:
+        - $ref: "#/components/schemas/Practice"
+        - type: object
+          properties:
+            attendance:
+              type: array
+              items:
+                $ref: "#/components/schemas/PracticeAttendance"
+          required:
+            - attendance
+
+    CreatePracticeBody:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+          minimum: 15
+          maximum: 360
+        title:
+          type: ["string", "null"]
+          maxLength: 120
+        focusAreas:
+          type: array
+          items:
+            type: string
+        notes:
+          type: ["string", "null"]
+      required:
+        - date
+
+    UpdatePracticeBody:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+          minimum: 15
+          maximum: 360
+        title:
+          type: ["string", "null"]
+          maxLength: 120
+        focusAreas:
+          type: array
+          items:
+            type: string
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeBlock"
+        notes:
+          type: ["string", "null"]
+
+    AttendanceEntry:
+      type: object
+      properties:
+        playerId:
+          type: integer
+        attended:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+      required:
+        - playerId
+        - attended
+
+    ReplaceAttendanceBody:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendanceEntry"
+      required:
+        - entries
+
+    GeneratePracticePlanBody:
+      type: object
+      properties:
+        focusAreas:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        durationMinutes:
+          type: integer
+          minimum: 15
+          maximum: 360
+        ageGroup:
+          type: ["string", "null"]
+          description: Optional override (e.g. "10U") — falls back to team default
+        coachNotes:
+          type: ["string", "null"]
+          description: Free-text guidance for the AI (e.g. "Sarah's first practice as catcher")
+      required:
+        - focusAreas
+        - durationMinutes
+
+    GeneratedPracticePlan:
+      type: object
+      properties:
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeBlock"
+        rationale:
+          type: string
+          description: One- or two-sentence summary of why the AI chose these drills
+      required:
+        - blocks
+        - rationale

@@ -14,3 +14,5 @@ export * from "./user_active_team";
 export * from "./tournaments";
 export * from "./pitch_counts";
 export * from "./pitch-rules";
+export * from "./practices";
+export * from "./practice_attendance";

@@ -989,6 +989,358 @@ export const DeleteGamePitchCountParams = zod.object({
 });
 
 /**
+ * @summary List practice plans (most recent first), with attendance roll-ups
+ */
+export const listPracticesResponseOneBlocksItemOrderIndexMin = 0;
+
+export const listPracticesResponseOneBlocksItemDurationMinutesMax = 240;
+
+export const ListPracticesResponseItem = zod
+  .object({
+    id: zod.number(),
+    date: zod.coerce.date(),
+    durationMinutes: zod.number(),
+    title: zod.string().nullish(),
+    focusAreas: zod.array(zod.string()),
+    blocks: zod.array(
+      zod
+        .object({
+          id: zod
+            .string()
+            .describe(
+              "Stable client-generated UUID for React keys + drag-reorder",
+            ),
+          orderIndex: zod
+            .number()
+            .min(listPracticesResponseOneBlocksItemOrderIndexMin),
+          title: zod.string(),
+          durationMinutes: zod
+            .number()
+            .min(1)
+            .max(listPracticesResponseOneBlocksItemDurationMinutesMax),
+          description: zod.string(),
+          drillType: zod
+            .string()
+            .describe(
+              "One of warmup | drill | scrimmage | conditioning | meeting",
+            ),
+          focusAreas: zod.array(zod.string()),
+        })
+        .describe(
+          "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
+        ),
+    ),
+    notes: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      attendanceMarked: zod
+        .number()
+        .describe(
+          "Number of players with explicit attendance row (attended OR absent)",
+        ),
+      attendancePresent: zod
+        .number()
+        .describe("Number of players marked present"),
+    }),
+  );
+export const ListPracticesResponse = zod.array(ListPracticesResponseItem);
+
+/**
+ * @summary Create a practice (blocks default to empty until coach generates or adds)
+ */
+export const createPracticeBodyDurationMinutesMin = 15;
+export const createPracticeBodyDurationMinutesMax = 360;
+
+export const createPracticeBodyTitleMax = 120;
+
+export const CreatePracticeBody = zod.object({
+  date: zod.coerce.date(),
+  durationMinutes: zod
+    .number()
+    .min(createPracticeBodyDurationMinutesMin)
+    .max(createPracticeBodyDurationMinutesMax)
+    .optional(),
+  title: zod.string().max(createPracticeBodyTitleMax).nullish(),
+  focusAreas: zod.array(zod.string()).optional(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Get a practice with its blocks and per-player attendance
+ */
+export const GetPracticeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const getPracticeResponseOneBlocksItemOrderIndexMin = 0;
+
+export const getPracticeResponseOneBlocksItemDurationMinutesMax = 240;
+
+export const GetPracticeResponse = zod
+  .object({
+    id: zod.number(),
+    date: zod.coerce.date(),
+    durationMinutes: zod.number(),
+    title: zod.string().nullish(),
+    focusAreas: zod.array(zod.string()),
+    blocks: zod.array(
+      zod
+        .object({
+          id: zod
+            .string()
+            .describe(
+              "Stable client-generated UUID for React keys + drag-reorder",
+            ),
+          orderIndex: zod
+            .number()
+            .min(getPracticeResponseOneBlocksItemOrderIndexMin),
+          title: zod.string(),
+          durationMinutes: zod
+            .number()
+            .min(1)
+            .max(getPracticeResponseOneBlocksItemDurationMinutesMax),
+          description: zod.string(),
+          drillType: zod
+            .string()
+            .describe(
+              "One of warmup | drill | scrimmage | conditioning | meeting",
+            ),
+          focusAreas: zod.array(zod.string()),
+        })
+        .describe(
+          "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
+        ),
+    ),
+    notes: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      attendance: zod.array(
+        zod.object({
+          id: zod.number(),
+          practiceId: zod.number(),
+          playerId: zod.number(),
+          attended: zod.boolean(),
+          notes: zod.string().nullish(),
+          recordedAt: zod.coerce.date(),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * @summary Update a practice's metadata or replace its blocks
+ */
+export const UpdatePracticeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updatePracticeBodyDurationMinutesMin = 15;
+export const updatePracticeBodyDurationMinutesMax = 360;
+
+export const updatePracticeBodyTitleMax = 120;
+
+export const updatePracticeBodyBlocksItemOrderIndexMin = 0;
+
+export const updatePracticeBodyBlocksItemDurationMinutesMax = 240;
+
+export const UpdatePracticeBody = zod.object({
+  date: zod.coerce.date().optional(),
+  durationMinutes: zod
+    .number()
+    .min(updatePracticeBodyDurationMinutesMin)
+    .max(updatePracticeBodyDurationMinutesMax)
+    .optional(),
+  title: zod.string().max(updatePracticeBodyTitleMax).nullish(),
+  focusAreas: zod.array(zod.string()).optional(),
+  blocks: zod
+    .array(
+      zod
+        .object({
+          id: zod
+            .string()
+            .describe(
+              "Stable client-generated UUID for React keys + drag-reorder",
+            ),
+          orderIndex: zod
+            .number()
+            .min(updatePracticeBodyBlocksItemOrderIndexMin),
+          title: zod.string(),
+          durationMinutes: zod
+            .number()
+            .min(1)
+            .max(updatePracticeBodyBlocksItemDurationMinutesMax),
+          description: zod.string(),
+          drillType: zod
+            .string()
+            .describe(
+              "One of warmup | drill | scrimmage | conditioning | meeting",
+            ),
+          focusAreas: zod.array(zod.string()),
+        })
+        .describe(
+          "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
+        ),
+    )
+    .optional(),
+  notes: zod.string().nullish(),
+});
+
+export const updatePracticeResponseBlocksItemOrderIndexMin = 0;
+
+export const updatePracticeResponseBlocksItemDurationMinutesMax = 240;
+
+export const UpdatePracticeResponse = zod.object({
+  id: zod.number(),
+  date: zod.coerce.date(),
+  durationMinutes: zod.number(),
+  title: zod.string().nullish(),
+  focusAreas: zod.array(zod.string()),
+  blocks: zod.array(
+    zod
+      .object({
+        id: zod
+          .string()
+          .describe(
+            "Stable client-generated UUID for React keys + drag-reorder",
+          ),
+        orderIndex: zod
+          .number()
+          .min(updatePracticeResponseBlocksItemOrderIndexMin),
+        title: zod.string(),
+        durationMinutes: zod
+          .number()
+          .min(1)
+          .max(updatePracticeResponseBlocksItemDurationMinutesMax),
+        description: zod.string(),
+        drillType: zod
+          .string()
+          .describe(
+            "One of warmup | drill | scrimmage | conditioning | meeting",
+          ),
+        focusAreas: zod.array(zod.string()),
+      })
+      .describe(
+        "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
+      ),
+  ),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a practice (attendance cascades)
+ */
+export const DeletePracticeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Bulk-upsert per-player attendance for a practice
+ */
+export const ReplacePracticeAttendanceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReplacePracticeAttendanceBody = zod.object({
+  entries: zod.array(
+    zod.object({
+      playerId: zod.number(),
+      attended: zod.boolean(),
+      notes: zod.string().nullish(),
+    }),
+  ),
+});
+
+export const ReplacePracticeAttendanceResponseItem = zod.object({
+  id: zod.number(),
+  practiceId: zod.number(),
+  playerId: zod.number(),
+  attended: zod.boolean(),
+  notes: zod.string().nullish(),
+  recordedAt: zod.coerce.date(),
+});
+export const ReplacePracticeAttendanceResponse = zod.array(
+  ReplacePracticeAttendanceResponseItem,
+);
+
+/**
+ * Calls OpenAI with the active roster, focus areas, and duration, and
+returns a proposed `blocks` array. Does NOT save the plan — the coach
+reviews + saves via PATCH /practices/{id}.
+
+ * @summary AI-generate a time-blocked plan from focus areas + duration
+ */
+export const GeneratePracticePlanParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const generatePracticePlanBodyDurationMinutesMin = 15;
+export const generatePracticePlanBodyDurationMinutesMax = 360;
+
+export const GeneratePracticePlanBody = zod.object({
+  focusAreas: zod.array(zod.string()).min(1),
+  durationMinutes: zod
+    .number()
+    .min(generatePracticePlanBodyDurationMinutesMin)
+    .max(generatePracticePlanBodyDurationMinutesMax),
+  ageGroup: zod
+    .string()
+    .nullish()
+    .describe('Optional override (e.g. \"10U\") — falls back to team default'),
+  coachNotes: zod
+    .string()
+    .nullish()
+    .describe(
+      'Free-text guidance for the AI (e.g. \"Sarah\'s first practice as catcher\")',
+    ),
+});
+
+export const generatePracticePlanResponseBlocksItemOrderIndexMin = 0;
+
+export const generatePracticePlanResponseBlocksItemDurationMinutesMax = 240;
+
+export const GeneratePracticePlanResponse = zod.object({
+  blocks: zod.array(
+    zod
+      .object({
+        id: zod
+          .string()
+          .describe(
+            "Stable client-generated UUID for React keys + drag-reorder",
+          ),
+        orderIndex: zod
+          .number()
+          .min(generatePracticePlanResponseBlocksItemOrderIndexMin),
+        title: zod.string(),
+        durationMinutes: zod
+          .number()
+          .min(1)
+          .max(generatePracticePlanResponseBlocksItemDurationMinutesMax),
+        description: zod.string(),
+        drillType: zod
+          .string()
+          .describe(
+            "One of warmup | drill | scrimmage | conditioning | meeting",
+          ),
+        focusAreas: zod.array(zod.string()),
+      })
+      .describe(
+        "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
+      ),
+  ),
+  rationale: zod
+    .string()
+    .describe("One- or two-sentence summary of why the AI chose these drills"),
+});
+
+/**
  * @summary Get the current coach's preferences (auto-creates defaults on first read)
  */
 export const getPreferencesResponseDefaultInningsMax = 15;

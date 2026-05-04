@@ -17,6 +17,8 @@ import locksRouter from "./locks";
 import teamSettingsRouter from "./team-settings";
 import preferencesRouter from "./preferences";
 import teamRouter from "./team";
+import practicesRouter from "./practices";
+import practicePlanAiRouter from "./practice-plan-ai";
 
 const router: IRouter = Router();
 
@@ -45,5 +47,7 @@ router.use(locksRouter);
 router.use(teamSettingsRouter);
 router.use(preferencesRouter);
 router.use(teamRouter);
+router.use(practicesRouter);
+router.use(practicePlanAiRouter);
 
 export default router;

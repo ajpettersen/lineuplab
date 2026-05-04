@@ -21,6 +21,8 @@ import NewGame from "@/pages/new-game";
 import GameDetail from "@/pages/game-detail";
 import Tournaments from "@/pages/tournaments";
 import TournamentDetail from "@/pages/tournament-detail";
+import Practices from "@/pages/practices";
+import PracticeDetail from "@/pages/practice-detail";
 import FieldDisplay from "@/pages/field-display";
 import Stats from "@/pages/stats";
 import Constraints from "@/pages/constraints";
@@ -243,6 +245,8 @@ function ProtectedApp() {
                 <Route path="/games" component={Games} />
                 <Route path="/tournaments/:id" component={TournamentDetail} />
                 <Route path="/tournaments" component={Tournaments} />
+                <Route path="/practices/:id" component={PracticeDetail} />
+                <Route path="/practices" component={Practices} />
                 <Route path="/stats" component={Stats} />
                 <Route path="/constraints" component={Constraints} />
                 <Route path="/settings" component={Settings} />

@@ -1,0 +1,249 @@
+import { Router, type IRouter } from "express";
+import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import {
+  db,
+  practicesTable,
+  playersTable,
+  type PracticeBlockJson,
+} from "@workspace/db";
+import { openai } from "@workspace/integrations-openai-ai-server";
+import {
+  GeneratePracticePlanParams,
+  GeneratePracticePlanBody,
+} from "@workspace/api-zod";
+
+const router: IRouter = Router();
+
+/**
+ * Valid drill type and focus area keys the model is allowed to emit.
+ * Mirrored from `artifacts/baseball-lineup/src/lib/practice-focus-areas.ts`.
+ * Anything outside these sets is coerced to a safe default before being
+ * persisted so a hallucinated category doesn't break the UI's color map.
+ */
+const VALID_DRILL_TYPES = new Set([
+  "warmup",
+  "drill",
+  "scrimmage",
+  "conditioning",
+  "meeting",
+]);
+const VALID_FOCUS_AREAS = new Set([
+  "hitting",
+  "bunting",
+  "baserunning",
+  "infield",
+  "outfield",
+  "pitching",
+  "catching",
+  "situational",
+  "conditioning",
+  "team",
+]);
+
+const SYSTEM_PROMPT = `You are an assistant for a youth baseball coach designing a practice plan.
+
+Your job: given the practice DURATION (minutes), the FOCUS AREAS the coach wants to work on, the team ROSTER (with each player's preferred positions and pitcher status), and any free-text COACH NOTES, return a time-blocked plan as a JSON object.
+
+Rules for the plan:
+- The blocks array must cover the full duration. Sum of block durationMinutes must equal the requested duration (±2 minutes is acceptable).
+- Always start with a "warmup" block (10–15 min) and end with either a brief team meeting (5 min) OR a conditioning block (5–10 min).
+- For each FOCUS AREA the coach picked, include AT LEAST one drill block that targets it. Distribute time roughly proportional to the count of focus areas.
+- Drills must be age-appropriate for youth baseball (ages 8–14). Be specific — name the drill (e.g. "4-corners infield", "tee work + soft toss combo", "pitchers' fielding practice (PFP)") and describe how to run it in 1–3 sentences with concrete coaching cues.
+- If the coach mentioned specific players in COACH NOTES, weave them into the relevant blocks (e.g. "Sarah works at catcher with Coach during this block").
+- Each block has these fields exactly: title (short), durationMinutes (positive int), description (1–3 sentences), drillType (one of "warmup" | "drill" | "scrimmage" | "conditioning" | "meeting"), focusAreas (array of focus-area keys this block targets — subset of the picked focus areas).
+
+Return ONLY a JSON object — no markdown fences, no extra prose. Schema:
+{
+  "blocks": [
+    { "title": string, "durationMinutes": integer, "description": string, "drillType": string, "focusAreas": string[] }
+  ],
+  "rationale": string
+}`;
+
+interface RawBlock {
+  title?: unknown;
+  durationMinutes?: unknown;
+  description?: unknown;
+  drillType?: unknown;
+  focusAreas?: unknown;
+}
+interface RawPlan {
+  blocks?: unknown;
+  rationale?: unknown;
+}
+
+function parseAiPlan(
+  raw: string,
+  pickedFocusAreas: string[],
+): { blocks: PracticeBlockJson[]; rationale: string } | null {
+  const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  let obj: unknown;
+  try {
+    obj = JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const r = obj as RawPlan;
+  if (!Array.isArray(r.blocks) || r.blocks.length === 0) return null;
+
+  // Sanitize each block. Coerce out-of-range / unknown values to safe
+  // defaults rather than dropping the block — the UI is editable so the
+  // coach can tweak anything off, but missing blocks would leave a hole
+  // in the timeline.
+  const fallbackFocus =
+    pickedFocusAreas.find((f) => VALID_FOCUS_AREAS.has(f)) ?? "drill";
+  const blocks: PracticeBlockJson[] = (r.blocks as RawBlock[])
+    .map((b, i): PracticeBlockJson | null => {
+      if (!b || typeof b !== "object") return null;
+      const title = typeof b.title === "string" && b.title.trim().length > 0
+        ? b.title.trim().slice(0, 200)
+        : `Block ${i + 1}`;
+      const durRaw = typeof b.durationMinutes === "number" ? b.durationMinutes : NaN;
+      const durationMinutes = Number.isFinite(durRaw) && durRaw > 0
+        ? Math.min(240, Math.max(1, Math.round(durRaw)))
+        : 10;
+      const description = typeof b.description === "string"
+        ? b.description.trim().slice(0, 2000)
+        : "";
+      const drillType =
+        typeof b.drillType === "string" && VALID_DRILL_TYPES.has(b.drillType)
+          ? b.drillType
+          : "drill";
+      const rawFocus = Array.isArray(b.focusAreas) ? b.focusAreas : [];
+      const focusAreas = rawFocus
+        .filter((f): f is string => typeof f === "string" && VALID_FOCUS_AREAS.has(f))
+        .slice(0, 5);
+      return {
+        id: randomUUID(),
+        orderIndex: i,
+        title,
+        durationMinutes,
+        description,
+        drillType,
+        focusAreas: focusAreas.length > 0 ? focusAreas : [fallbackFocus],
+      };
+    })
+    .filter((b): b is PracticeBlockJson => b !== null);
+
+  if (blocks.length === 0) return null;
+
+  const rationale =
+    typeof r.rationale === "string" && r.rationale.trim().length > 0
+      ? r.rationale.trim().slice(0, 500)
+      : "Time-blocked plan covering the focus areas you selected.";
+  return { blocks, rationale };
+}
+
+router.post(
+  "/practices/:id/generate-plan",
+  async (req, res): Promise<void> => {
+    const userId = req.ownerUserId!;
+    const params = GeneratePracticePlanParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = GeneratePracticePlanBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+
+    const [practice] = await db
+      .select()
+      .from(practicesTable)
+      .where(
+        and(
+          eq(practicesTable.id, params.data.id),
+          eq(practicesTable.userId, userId),
+        ),
+      );
+    if (!practice) {
+      res.status(404).json({ error: "Practice not found" });
+      return;
+    }
+
+    // Sanitize requested focus areas so the prompt only uses keys the UI
+    // can render. Drop unknowns silently — the coach picked them via a
+    // chip menu so this is defensive only.
+    const pickedFocusAreas = Array.from(
+      new Set(body.data.focusAreas.filter((f) => VALID_FOCUS_AREAS.has(f))),
+    );
+    if (pickedFocusAreas.length === 0) {
+      res.status(400).json({ error: "Pick at least one focus area" });
+      return;
+    }
+
+    // Active roster scoped to this coach (gives the AI player names + pitcher
+    // status it can reference in drill descriptions).
+    const allPlayers = await db
+      .select()
+      .from(playersTable)
+      .where(eq(playersTable.userId, userId));
+    const activePlayers = allPlayers.filter((p) => p.active);
+
+    const rosterLines =
+      activePlayers.length === 0
+        ? "(no roster yet — give a generic plan)"
+        : activePlayers
+            .map(
+              (p) =>
+                `- ${p.name}${p.number != null ? ` #${p.number}` : ""} preferred=[${(p.preferredPositions ?? []).join(",") || "any"}]${p.canPitch ? " canPitch" : ""}`,
+            )
+            .join("\n");
+
+    const userPrompt = `Practice duration: ${body.data.durationMinutes} minutes
+Focus areas the coach picked (use these keys verbatim in block focusAreas): ${pickedFocusAreas.join(", ")}
+${body.data.ageGroup ? `Age group: ${body.data.ageGroup}\n` : ""}
+Roster:
+${rosterLines}
+
+Coach notes (free text, may be empty):
+${body.data.coachNotes?.trim() || "(none)"}
+
+Build the time-blocked plan now.`;
+
+    // Hard ceiling on the upstream call so a hung OpenAI request never ties
+    // up an Express worker indefinitely (availability/DOS surface). 45s is
+    // generous for gpt-5.2 + 1800-token plans and well under the proxy's
+    // request timeout.
+    let raw = "";
+    try {
+      const completion = await openai.chat.completions.create(
+        {
+          model: "gpt-5.2",
+          max_completion_tokens: 1800,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+        },
+        { signal: AbortSignal.timeout(45_000) },
+      );
+      raw = completion.choices[0]?.message?.content ?? "";
+    } catch (err) {
+      const aborted =
+        err instanceof Error &&
+        (err.name === "AbortError" || err.name === "TimeoutError");
+      req.log.error({ err, aborted }, "Practice plan generation failed");
+      res
+        .status(aborted ? 504 : 502)
+        .json({ error: aborted ? "AI request timed out" : "AI service unavailable" });
+      return;
+    }
+
+    const parsed = parseAiPlan(raw, pickedFocusAreas);
+    if (!parsed) {
+      req.log.warn({ raw }, "Could not parse practice plan AI response");
+      res.status(502).json({ error: "Could not parse AI response" });
+      return;
+    }
+
+    res.json(parsed);
+  },
+);
+
+export default router;

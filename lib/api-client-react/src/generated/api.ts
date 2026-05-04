@@ -19,14 +19,22 @@ import type {
 import type {
   CreateGameBody,
   CreatePlayerBody,
+  CreatePracticeBody,
   CreateTournamentBody,
   Game,
   GenerateLineupBody,
+  GeneratePracticePlanBody,
+  GeneratedPracticePlan,
   HealthStatus,
   LineupEntry,
   PitchCount,
   Player,
   PlayerStats,
+  Practice,
+  PracticeAttendance,
+  PracticeDetail,
+  PracticeSummary,
+  ReplaceAttendanceBody,
   SaveLineupBody,
   SeasonStats,
   TeamSettings,
@@ -35,6 +43,7 @@ import type {
   TournamentSummary,
   UpdateGameBody,
   UpdatePlayerBody,
+  UpdatePracticeBody,
   UpdatePreferencesBody,
   UpdateTeamSettingsBody,
   UpdateTournamentBody,
@@ -2361,6 +2370,608 @@ export const useDeleteGamePitchCount = <
   TContext
 > => {
   return useMutation(getDeleteGamePitchCountMutationOptions(options));
+};
+
+/**
+ * @summary List practice plans (most recent first), with attendance roll-ups
+ */
+export const getListPracticesUrl = () => {
+  return `/api/practices`;
+};
+
+export const listPractices = async (
+  options?: RequestInit,
+): Promise<PracticeSummary[]> => {
+  return customFetch<PracticeSummary[]>(getListPracticesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPracticesQueryKey = () => {
+  return [`/api/practices`] as const;
+};
+
+export const getListPracticesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPractices>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPractices>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPracticesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPractices>>> = ({
+    signal,
+  }) => listPractices({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPractices>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPracticesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPractices>>
+>;
+export type ListPracticesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List practice plans (most recent first), with attendance roll-ups
+ */
+
+export function useListPractices<
+  TData = Awaited<ReturnType<typeof listPractices>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPractices>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPracticesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a practice (blocks default to empty until coach generates or adds)
+ */
+export const getCreatePracticeUrl = () => {
+  return `/api/practices`;
+};
+
+export const createPractice = async (
+  createPracticeBody: CreatePracticeBody,
+  options?: RequestInit,
+): Promise<Practice> => {
+  return customFetch<Practice>(getCreatePracticeUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPracticeBody),
+  });
+};
+
+export const getCreatePracticeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPractice>>,
+    TError,
+    { data: BodyType<CreatePracticeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPractice>>,
+  TError,
+  { data: BodyType<CreatePracticeBody> },
+  TContext
+> => {
+  const mutationKey = ["createPractice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPractice>>,
+    { data: BodyType<CreatePracticeBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPractice(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePracticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPractice>>
+>;
+export type CreatePracticeMutationBody = BodyType<CreatePracticeBody>;
+export type CreatePracticeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a practice (blocks default to empty until coach generates or adds)
+ */
+export const useCreatePractice = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPractice>>,
+    TError,
+    { data: BodyType<CreatePracticeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPractice>>,
+  TError,
+  { data: BodyType<CreatePracticeBody> },
+  TContext
+> => {
+  return useMutation(getCreatePracticeMutationOptions(options));
+};
+
+/**
+ * @summary Get a practice with its blocks and per-player attendance
+ */
+export const getGetPracticeUrl = (id: number) => {
+  return `/api/practices/${id}`;
+};
+
+export const getPractice = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PracticeDetail> => {
+  return customFetch<PracticeDetail>(getGetPracticeUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPracticeQueryKey = (id: number) => {
+  return [`/api/practices/${id}`] as const;
+};
+
+export const getGetPracticeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPractice>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPractice>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPracticeQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPractice>>> = ({
+    signal,
+  }) => getPractice(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPractice>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPracticeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPractice>>
+>;
+export type GetPracticeQueryError = ErrorType<void>;
+
+/**
+ * @summary Get a practice with its blocks and per-player attendance
+ */
+
+export function useGetPractice<
+  TData = Awaited<ReturnType<typeof getPractice>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPractice>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPracticeQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a practice's metadata or replace its blocks
+ */
+export const getUpdatePracticeUrl = (id: number) => {
+  return `/api/practices/${id}`;
+};
+
+export const updatePractice = async (
+  id: number,
+  updatePracticeBody: UpdatePracticeBody,
+  options?: RequestInit,
+): Promise<Practice> => {
+  return customFetch<Practice>(getUpdatePracticeUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updatePracticeBody),
+  });
+};
+
+export const getUpdatePracticeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePractice>>,
+    TError,
+    { id: number; data: BodyType<UpdatePracticeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePractice>>,
+  TError,
+  { id: number; data: BodyType<UpdatePracticeBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePractice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePractice>>,
+    { id: number; data: BodyType<UpdatePracticeBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePractice(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePracticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePractice>>
+>;
+export type UpdatePracticeMutationBody = BodyType<UpdatePracticeBody>;
+export type UpdatePracticeMutationError = ErrorType<void>;
+
+/**
+ * @summary Update a practice's metadata or replace its blocks
+ */
+export const useUpdatePractice = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePractice>>,
+    TError,
+    { id: number; data: BodyType<UpdatePracticeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePractice>>,
+  TError,
+  { id: number; data: BodyType<UpdatePracticeBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePracticeMutationOptions(options));
+};
+
+/**
+ * @summary Delete a practice (attendance cascades)
+ */
+export const getDeletePracticeUrl = (id: number) => {
+  return `/api/practices/${id}`;
+};
+
+export const deletePractice = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeletePracticeUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePracticeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePractice>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePractice>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deletePractice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePractice>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deletePractice(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePracticeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePractice>>
+>;
+
+export type DeletePracticeMutationError = ErrorType<void>;
+
+/**
+ * @summary Delete a practice (attendance cascades)
+ */
+export const useDeletePractice = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePractice>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePractice>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeletePracticeMutationOptions(options));
+};
+
+/**
+ * @summary Bulk-upsert per-player attendance for a practice
+ */
+export const getReplacePracticeAttendanceUrl = (id: number) => {
+  return `/api/practices/${id}/attendance`;
+};
+
+export const replacePracticeAttendance = async (
+  id: number,
+  replaceAttendanceBody: ReplaceAttendanceBody,
+  options?: RequestInit,
+): Promise<PracticeAttendance[]> => {
+  return customFetch<PracticeAttendance[]>(
+    getReplacePracticeAttendanceUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replaceAttendanceBody),
+    },
+  );
+};
+
+export const getReplacePracticeAttendanceMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replacePracticeAttendance>>,
+    TError,
+    { id: number; data: BodyType<ReplaceAttendanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replacePracticeAttendance>>,
+  TError,
+  { id: number; data: BodyType<ReplaceAttendanceBody> },
+  TContext
+> => {
+  const mutationKey = ["replacePracticeAttendance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replacePracticeAttendance>>,
+    { id: number; data: BodyType<ReplaceAttendanceBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replacePracticeAttendance(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplacePracticeAttendanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replacePracticeAttendance>>
+>;
+export type ReplacePracticeAttendanceMutationBody =
+  BodyType<ReplaceAttendanceBody>;
+export type ReplacePracticeAttendanceMutationError = ErrorType<void>;
+
+/**
+ * @summary Bulk-upsert per-player attendance for a practice
+ */
+export const useReplacePracticeAttendance = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replacePracticeAttendance>>,
+    TError,
+    { id: number; data: BodyType<ReplaceAttendanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replacePracticeAttendance>>,
+  TError,
+  { id: number; data: BodyType<ReplaceAttendanceBody> },
+  TContext
+> => {
+  return useMutation(getReplacePracticeAttendanceMutationOptions(options));
+};
+
+/**
+ * Calls OpenAI with the active roster, focus areas, and duration, and
+returns a proposed `blocks` array. Does NOT save the plan — the coach
+reviews + saves via PATCH /practices/{id}.
+
+ * @summary AI-generate a time-blocked plan from focus areas + duration
+ */
+export const getGeneratePracticePlanUrl = (id: number) => {
+  return `/api/practices/${id}/generate-plan`;
+};
+
+export const generatePracticePlan = async (
+  id: number,
+  generatePracticePlanBody: GeneratePracticePlanBody,
+  options?: RequestInit,
+): Promise<GeneratedPracticePlan> => {
+  return customFetch<GeneratedPracticePlan>(getGeneratePracticePlanUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(generatePracticePlanBody),
+  });
+};
+
+export const getGeneratePracticePlanMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generatePracticePlan>>,
+    TError,
+    { id: number; data: BodyType<GeneratePracticePlanBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generatePracticePlan>>,
+  TError,
+  { id: number; data: BodyType<GeneratePracticePlanBody> },
+  TContext
+> => {
+  const mutationKey = ["generatePracticePlan"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generatePracticePlan>>,
+    { id: number; data: BodyType<GeneratePracticePlanBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return generatePracticePlan(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GeneratePracticePlanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generatePracticePlan>>
+>;
+export type GeneratePracticePlanMutationBody =
+  BodyType<GeneratePracticePlanBody>;
+export type GeneratePracticePlanMutationError = ErrorType<void>;
+
+/**
+ * @summary AI-generate a time-blocked plan from focus areas + duration
+ */
+export const useGeneratePracticePlan = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generatePracticePlan>>,
+    TError,
+    { id: number; data: BodyType<GeneratePracticePlanBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generatePracticePlan>>,
+  TError,
+  { id: number; data: BodyType<GeneratePracticePlanBody> },
+  TContext
+> => {
+  return useMutation(getGeneratePracticePlanMutationOptions(options));
 };
 
 /**

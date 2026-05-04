@@ -509,3 +509,130 @@ export interface UpdatePreferencesBody {
   defaultEnsureAllPositions?: boolean;
   defaultPitcherRotation?: boolean;
 }
+
+/**
+ * One time-block within a practice plan (warmup, drill, scrimmage, etc.)
+ */
+export interface PracticeBlock {
+  /** Stable client-generated UUID for React keys + drag-reorder */
+  id: string;
+  /** @minimum 0 */
+  orderIndex: number;
+  title: string;
+  /**
+   * @minimum 1
+   * @maximum 240
+   */
+  durationMinutes: number;
+  description: string;
+  /** One of warmup | drill | scrimmage | conditioning | meeting */
+  drillType: string;
+  focusAreas: string[];
+}
+
+export interface Practice {
+  id: number;
+  date: string;
+  durationMinutes: number;
+  /** @nullable */
+  title?: string | null;
+  focusAreas: string[];
+  blocks: PracticeBlock[];
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PracticeSummary = Practice & {
+  /** Number of players with explicit attendance row (attended OR absent) */
+  attendanceMarked: number;
+  /** Number of players marked present */
+  attendancePresent: number;
+};
+
+export interface PracticeAttendance {
+  id: number;
+  practiceId: number;
+  playerId: number;
+  attended: boolean;
+  /** @nullable */
+  notes?: string | null;
+  recordedAt: string;
+}
+
+export type PracticeDetail = Practice & {
+  attendance: PracticeAttendance[];
+};
+
+export interface CreatePracticeBody {
+  date: string;
+  /**
+   * @minimum 15
+   * @maximum 360
+   */
+  durationMinutes?: number;
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  title?: string | null;
+  focusAreas?: string[];
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface UpdatePracticeBody {
+  date?: string;
+  /**
+   * @minimum 15
+   * @maximum 360
+   */
+  durationMinutes?: number;
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  title?: string | null;
+  focusAreas?: string[];
+  blocks?: PracticeBlock[];
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface AttendanceEntry {
+  playerId: number;
+  attended: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface ReplaceAttendanceBody {
+  entries: AttendanceEntry[];
+}
+
+export interface GeneratePracticePlanBody {
+  /** @minItems 1 */
+  focusAreas: string[];
+  /**
+   * @minimum 15
+   * @maximum 360
+   */
+  durationMinutes: number;
+  /**
+   * Optional override (e.g. "10U") — falls back to team default
+   * @nullable
+   */
+  ageGroup?: string | null;
+  /**
+   * Free-text guidance for the AI (e.g. "Sarah's first practice as catcher")
+   * @nullable
+   */
+  coachNotes?: string | null;
+}
+
+export interface GeneratedPracticePlan {
+  blocks: PracticeBlock[];
+  /** One- or two-sentence summary of why the AI chose these drills */
+  rationale: string;
+}
