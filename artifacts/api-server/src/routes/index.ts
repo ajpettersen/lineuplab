@@ -19,6 +19,7 @@ import preferencesRouter from "./preferences";
 import teamRouter from "./team";
 import practicesRouter from "./practices";
 import practicePlanAiRouter from "./practice-plan-ai";
+import demoSeedRouter from "./demo-seed";
 
 const router: IRouter = Router();
 
@@ -49,5 +50,6 @@ router.use(preferencesRouter);
 router.use(teamRouter);
 router.use(practicesRouter);
 router.use(practicePlanAiRouter);
+router.use(demoSeedRouter);
 
 export default router;

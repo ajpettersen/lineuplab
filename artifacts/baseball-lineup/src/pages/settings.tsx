@@ -28,9 +28,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Trophy } from "lucide-react";
+import { Loader2, Save, Trophy, Wand2 } from "lucide-react";
 import { CoachesCard } from "@/components/coaches-card";
 import { PITCH_RULESET_OPTIONS } from "@/lib/pitch-rulesets";
+import { useSeedDemoMutation, DEMO_SEED_ENABLED } from "@/hooks/use-demo-seeder";
 
 const NO_DEFAULT = "__none";
 
@@ -383,6 +384,49 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {DEMO_SEED_ENABLED && <DemoDataCard />}
     </div>
+  );
+}
+
+/**
+ * Dev-preview-only card that lets the coach load a demo roster + schedule
+ * with a single click so they can click around the app without first
+ * setting everything up by hand. Hidden in production builds via
+ * DEMO_SEED_ENABLED so a real coach signing into the live app never sees
+ * this affordance.
+ */
+function DemoDataCard() {
+  const seed = useSeedDemoMutation();
+  return (
+    <Card data-testid="card-demo-data">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Wand2 className="h-5 w-5" /> Demo data
+        </CardTitle>
+        <CardDescription>
+          Load a sample roster of 12 players and 3 games so you can explore
+          the app. Only available in the preview environment — your live
+          deployment is untouched. Already have data? This button is a
+          no-op (we won't overwrite anything).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          onClick={() => seed.mutate()}
+          disabled={seed.isPending}
+          className="gap-2"
+          data-testid="button-load-demo"
+        >
+          {seed.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Wand2 className="h-4 w-4" />
+          )}
+          {seed.isPending ? "Loading…" : "Load demo data"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
