@@ -119,50 +119,113 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
     return;
   }
 
-  // Skip duplicates by case-insensitive name + (number if given) match against
-  // THIS coach's existing roster (other coaches' rosters are invisible).
-  const existing = await db
-    .select({ name: playersTable.name, number: playersTable.number })
-    .from(playersTable)
-    .where(eq(playersTable.userId, userId));
-  const existingKeys = new Set(
-    existing.map((e) => `${e.name.trim().toLowerCase()}|${e.number ?? ""}`)
-  );
-
-  const rows: typeof playersTable.$inferInsert[] = [];
-  const skipped: { name: string; reason: string }[] = [];
-  for (const p of parsed.data.players) {
-    const key = `${p.name.trim().toLowerCase()}|${p.number ?? ""}`;
-    if (existingKeys.has(key)) {
-      skipped.push({ name: p.name, reason: "already on roster" });
-      continue;
-    }
-    existingKeys.add(key); // also dedupe within the batch itself
-    // Eligibility is auto-derived from canPitch (see deriveEligible). The AI
-    // extractor sometimes still sends `eligiblePositions` in legacy payloads,
-    // and the bulk schema also accepts it for back-compat — both are merged
-    // into preferredPositions so the coach's intent isn't lost.
-    const preferredRaw = [
-      ...(p.preferredPositions ?? []),
-      ...(p.eligiblePositions ?? []),
-    ];
-    const preferred = Array.from(
-      new Set(preferredRaw.filter((pp) => KNOWN_POSITIONS.has(pp))),
+  // Match against THIS coach's existing roster (other coaches' rosters are
+  // invisible) by case-insensitive name + (number if given). Existing players
+  // are UPDATED with the new screenshot's positions/canPitch (merged, not
+  // overwritten — see merge semantics below) so re-importing an updated
+  // roster picks up new preferred positions instead of silently dropping
+  // them. New players are inserted as before. The whole batch runs in one
+  // transaction so a partial failure doesn't leave the roster half-updated.
+  const { created, updated } = await db.transaction(async (tx) => {
+    const existing = await tx
+      .select()
+      .from(playersTable)
+      .where(eq(playersTable.userId, userId));
+    type ExistingPlayer = (typeof existing)[number];
+    const existingByKey = new Map<string, ExistingPlayer>(
+      existing.map((e) => [`${e.name.trim().toLowerCase()}|${e.number ?? ""}`, e]),
     );
-    rows.push({
-      userId,
-      name: p.name,
-      number: p.number ?? null,
-      eligiblePositions: deriveEligible(p.canPitch),
-      preferredPositions: preferred,
-      canPitch: p.canPitch,
-      active: true,
-      notes: p.notes ?? null,
-    });
-  }
 
-  const created = rows.length > 0 ? await db.insert(playersTable).values(rows).returning() : [];
-  res.status(201).json({ created, skipped });
+    const insertRows: typeof playersTable.$inferInsert[] = [];
+    const updatedRows: ExistingPlayer[] = [];
+    const seenKeysInBatch = new Set<string>();
+    for (const p of parsed.data.players) {
+      const key = `${p.name.trim().toLowerCase()}|${p.number ?? ""}`;
+      if (seenKeysInBatch.has(key)) continue; // dedupe within the batch itself
+      seenKeysInBatch.add(key);
+
+      // Eligibility is auto-derived from canPitch (see deriveEligible). The AI
+      // extractor sometimes still sends `eligiblePositions` in legacy payloads,
+      // and the bulk schema also accepts it for back-compat — both are merged
+      // into preferredPositions so the coach's intent isn't lost.
+      const incomingPositionsRaw = [
+        ...(p.preferredPositions ?? []),
+        ...(p.eligiblePositions ?? []),
+      ];
+      const incomingPositions = Array.from(
+        new Set(incomingPositionsRaw.filter((pp) => KNOWN_POSITIONS.has(pp))),
+      );
+
+      const existingPlayer = existingByKey.get(key);
+      if (existingPlayer) {
+        // Merge semantics for an updated roster screenshot:
+        // - preferredPositions: UNION of existing + incoming (additive — the
+        //   coach has likely refined positions in-app between screenshots, so
+        //   we never silently remove a position; explicit per-player edits
+        //   still happen on the player detail page).
+        // - canPitch: OR (a new screenshot listing them as a pitcher promotes
+        //   them; demotion stays an explicit edit).
+        // - notes: NEVER touched on update. The notes field is for coach
+        //   commentary edited in the UI; re-importing a roster shouldn't
+        //   overwrite it (and historically the client even leaked UI status
+        //   strings here, so we hard-ignore incoming notes for existing
+        //   players as defense-in-depth).
+        const mergedPositions = Array.from(
+          new Set([...existingPlayer.preferredPositions, ...incomingPositions]),
+        );
+        const mergedCanPitch = existingPlayer.canPitch || p.canPitch;
+
+        // Skip the round-trip if nothing actually changed — keeps the
+        // `updated` count meaningful for the UI ("we updated 3 players, the
+        // other 8 already had everything").
+        const positionsChanged =
+          mergedPositions.length !== existingPlayer.preferredPositions.length ||
+          mergedPositions.some(
+            (pos) => !existingPlayer.preferredPositions.includes(pos),
+          );
+        const canPitchChanged = mergedCanPitch !== existingPlayer.canPitch;
+        if (!positionsChanged && !canPitchChanged) continue;
+
+        const [row] = await tx
+          .update(playersTable)
+          .set({
+            preferredPositions: mergedPositions,
+            canPitch: mergedCanPitch,
+            eligiblePositions: deriveEligible(mergedCanPitch),
+          })
+          .where(
+            and(
+              eq(playersTable.id, existingPlayer.id),
+              eq(playersTable.userId, userId),
+            ),
+          )
+          .returning();
+        if (row) updatedRows.push(row);
+        continue;
+      }
+
+      insertRows.push({
+        userId,
+        name: p.name,
+        number: p.number ?? null,
+        eligiblePositions: deriveEligible(p.canPitch),
+        preferredPositions: incomingPositions,
+        canPitch: p.canPitch,
+        active: true,
+        notes: p.notes ?? null,
+      });
+    }
+
+    const createdRows =
+      insertRows.length > 0
+        ? await tx.insert(playersTable).values(insertRows).returning()
+        : [];
+    return { created: createdRows, updated: updatedRows };
+  });
+
+  // `skipped` is kept in the response for backwards compat with any older
+  // clients (always empty now — duplicates are merged, not skipped).
+  res.status(201).json({ created, updated, skipped: [] });
 });
 
 router.get("/players", async (req, res): Promise<void> => {
@@ -245,7 +308,7 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   const [existing] = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.id, id), eq(playersTable.userId, userId)));
+    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)));
   if (!existing) {
     res.status(404).json({ error: "Player not found" });
     return;

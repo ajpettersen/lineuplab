@@ -49,6 +49,10 @@ type ExtractedPlayer = {
   canPitch: boolean;
   notes: string | null;
   include: boolean;
+  // UI-only flag for "this name+number already exists on the roster". Drives
+  // the inline badge in the preview table — must NOT leak into the notes
+  // field that gets persisted to the player record.
+  dup: boolean;
 };
 
 function ImportRosterDialog({
@@ -155,8 +159,16 @@ function ImportRosterDialog({
             eligiblePositions: [],
             preferredPositions: positions,
             canPitch: !!r.canPitch,
-            notes: dup ? "Already on roster" : r.notes ?? null,
-            include: !dup,
+            // Notes is the actual player.notes field that gets persisted.
+            // Never stuff UI status here — that's what `dup` is for.
+            notes: r.notes ?? null,
+            // For duplicates we now MERGE the screenshot's preferred positions
+            // into the existing player on the server (see /players/bulk).
+            // Pre-include them so re-importing an updated roster picks up
+            // the new positions automatically; the coach can still uncheck
+            // individuals to skip.
+            include: true,
+            dup,
           };
         })
       );
@@ -221,15 +233,24 @@ function ImportRosterDialog({
         const body = await resp.json().catch(() => ({}));
         throw new Error(body.error ?? "Import failed");
       }
-      const { created = [], skipped = [] } = (await resp.json()) as {
+      const { created = [], updated = [] } = (await resp.json()) as {
         created: unknown[];
-        skipped: { name: string; reason: string }[];
+        updated: unknown[];
+        skipped?: { name: string; reason: string }[];
       };
       qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
-      const skippedSuffix =
-        skipped.length > 0 ? ` (skipped ${skipped.length} duplicate${skipped.length === 1 ? "" : "s"})` : "";
+      const parts: string[] = [];
+      if (created.length > 0) {
+        parts.push(`added ${created.length} new player${created.length === 1 ? "" : "s"}`);
+      }
+      if (updated.length > 0) {
+        parts.push(
+          `updated positions for ${updated.length} existing player${updated.length === 1 ? "" : "s"}`,
+        );
+      }
+      const summary = parts.length > 0 ? parts.join(" · ") : "No changes";
       toast({
-        title: `Imported ${created.length} player${created.length === 1 ? "" : "s"}${skippedSuffix}`,
+        title: summary.charAt(0).toUpperCase() + summary.slice(1),
       });
       handleClose();
     } catch (e) {
@@ -375,6 +396,14 @@ function ImportRosterDialog({
                           className="h-8"
                           data-testid={`input-name-${i}`}
                         />
+                        {row.dup && (
+                          <span
+                            className="inline-block mt-1 text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                            data-testid={`badge-dup-${i}`}
+                          >
+                            Will update positions
+                          </span>
+                        )}
                         {row.notes && (
                           <p className="text-xs text-muted-foreground mt-1 italic">{row.notes}</p>
                         )}
