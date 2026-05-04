@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin } from "lucide-react";
 import { format, isToday, isTomorrow } from "date-fns";
-import { isTrulyUpcoming } from "@/lib/game-status";
+import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -31,26 +31,42 @@ export default function Dashboard() {
   const upcomingGames = games.filter((g) => isTrulyUpcoming(g));
   const wins = completedGames.filter((g) => (g.ourScore ?? 0) > (g.opponentScore ?? 0)).length;
 
-  // "Today / Up Next" hero card. Picks the soonest non-completed actual game.
-  // Drives the prominent Field Display CTA — the whole point is that on game
-  // day a coach opens the app and is ONE tap from launching the iPad display.
+  // "Today / Up Next" hero card. Picks the soonest FUTURE game so loading the
+  // app on game day surfaces the right game with one tap to the Field Display.
+  //
+  // Two-tier strategy so a forgotten un-completed game from last week doesn't
+  // hijack the hero slot away from a real upcoming game:
+  //  1) Prefer the soonest truly-upcoming game (date >= now). Sorted ascending
+  //     so today's game beats next week's.
+  //  2) Only if nothing is scheduled going forward, fall back to the MOST
+  //     RECENT past-uncompleted game so the coach can close it out (score it,
+  //     mark cancelled, etc.). Sorted descending here.
   const heroGame = (() => {
-    const candidates = actualGames
-      .filter((g) => g.status !== "completed" && g.status !== "cancelled")
+    const upcoming = actualGames
+      .filter((g) => isTrulyUpcoming(g))
       .map((g) => ({ g, when: new Date(g.gameDate).getTime() }))
       .sort((a, b) => a.when - b.when);
-    // Prefer a game today/in the future. If everything's in the past (e.g. a
-    // forgotten un-completed game from last week), still surface it so the
-    // coach can either close it out or open the display for it.
-    return candidates[0]?.g ?? null;
+    if (upcoming[0]) return upcoming[0].g;
+
+    const pastUnfinished = actualGames
+      .filter((g) => isPastUnrecorded(g))
+      .map((g) => ({ g, when: new Date(g.gameDate).getTime() }))
+      .sort((a, b) => b.when - a.when);
+    return pastUnfinished[0]?.g ?? null;
   })();
   const heroDate = heroGame ? new Date(heroGame.gameDate) : null;
+  // If we fell back to a past-uncompleted game (because there are no future
+  // ones), call it out instead of mis-labeling it "Up Next" — the coach needs
+  // to either record a result or cancel it.
+  const heroIsPast = heroGame ? isPastUnrecorded(heroGame) : false;
   const heroLabel = heroDate
-    ? isToday(heroDate)
-      ? "Today's Game"
-      : isTomorrow(heroDate)
-        ? "Tomorrow's Game"
-        : "Up Next"
+    ? heroIsPast
+      ? "Needs Result"
+      : isToday(heroDate)
+        ? "Today's Game"
+        : isTomorrow(heroDate)
+          ? "Tomorrow's Game"
+          : "Up Next"
     : "";
 
   const mostBenchPlayer = playerStats
@@ -110,31 +126,44 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+              {/*
+               * CTAs swap based on whether the hero is upcoming or a past
+               * fallback. Upcoming game day → Field Display is primary (one tap
+               * to the dugout iPad). Past-uncompleted fallback → coach needs
+               * to score it / cancel it, so Open Game becomes primary and the
+               * Field Display button drops out (irrelevant for a played game).
+               */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-                <Button
-                  size="lg"
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-                  onClick={() =>
-                    window.open(
-                      `${BASE}/games/${heroGame.id}/display`,
-                      "_blank",
-                      "noopener",
-                    )
-                  }
-                  data-testid="button-hero-field-display"
-                  title="Open the dugout / fence-iPad display in a new tab"
-                >
-                  <Tv className="h-5 w-5 mr-2" />
-                  Open Field Display
-                </Button>
+                {!heroIsPast && (
+                  <Button
+                    size="lg"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                    onClick={() =>
+                      window.open(
+                        `${BASE}/games/${heroGame.id}/display`,
+                        "_blank",
+                        "noopener",
+                      )
+                    }
+                    data-testid="button-hero-field-display"
+                    title="Open the dugout / fence-iPad display in a new tab"
+                  >
+                    <Tv className="h-5 w-5 mr-2" />
+                    Open Field Display
+                  </Button>
+                )}
                 <Link href={`/games/${heroGame.id}`}>
                   <Button
                     size="lg"
-                    variant="outline"
-                    className="w-full sm:w-auto"
+                    variant={heroIsPast ? "default" : "outline"}
+                    className={
+                      heroIsPast
+                        ? "w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                        : "w-full sm:w-auto"
+                    }
                     data-testid="button-hero-open-game"
                   >
-                    Open Game
+                    {heroIsPast ? "Record Result" : "Open Game"}
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </Link>
