@@ -1396,6 +1396,13 @@ export default function GameDetail() {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
           qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+          // Marking a game complete is the exact transition that flips its
+          // lineup entries from "ignored by stats" (status='upcoming') to
+          // "counted by stats" (status='completed'), so the cached season +
+          // player stats must be invalidated or the dashboard / Stats page
+          // would keep showing pre-completion numbers until manual refresh.
+          qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
           toast({ title: "Game marked as completed" });
           setCompleteOpen(false);
         },

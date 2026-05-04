@@ -43,11 +43,18 @@ router.get("/stats/season", async (req, res): Promise<void> => {
   const totalGames = games.length;
   const completedGames = games.filter((g) => g.status === "completed").length;
 
-  // Lineup entries are tenant-isolated via the parent game id set we just
-  // loaded. If the coach has no games yet, skip the entries query entirely.
-  const gameIds = allRows.map((g) => g.id);
-  const entries = gameIds.length > 0
-    ? await db.select().from(lineupEntriesTable).where(inArray(lineupEntriesTable.gameId, gameIds))
+  // Stats only reflect completed games — a draft lineup on an upcoming game
+  // shouldn't move the position distribution / fairness needles until the
+  // coach actually plays the game and marks it complete. Practices and other
+  // event rows are likewise excluded by the type filter above.
+  const completedGameIds = games
+    .filter((g) => g.status === "completed")
+    .map((g) => g.id);
+  const entries = completedGameIds.length > 0
+    ? await db
+        .select()
+        .from(lineupEntriesTable)
+        .where(inArray(lineupEntriesTable.gameId, completedGameIds))
     : [];
   const fieldEntries = entries.filter((e) => e.position !== "Bench");
   const totalInnings = fieldEntries.length;
@@ -85,24 +92,31 @@ router.get("/stats/players", async (req, res): Promise<void> => {
     return;
   }
   const playerIds = players.map((p) => p.id);
-  // Bound entries + historical to this coach's player ids.
-  const allEntries = await db
+  // Pull this coach's games so we can (a) restrict live entries to COMPLETED
+  // games only — a draft lineup on an upcoming game shouldn't move season
+  // tallies — and (b) compute "unavailable innings" against each game's
+  // total inning count. Practices and other non-game events have lineup
+  // entries too (e.g. drill rotations) but should never count toward season
+  // playing time, so we filter to type === "game" here as well.
+  const userGames = await db
+    .select({ id: gamesTable.id, innings: gamesTable.innings, status: gamesTable.status, type: gamesTable.type })
+    .from(gamesTable)
+    .where(eq(gamesTable.userId, userId));
+  const completedGameIds = userGames
+    .filter((g) => g.type === "game" && g.status === "completed")
+    .map((g) => g.id);
+  const completedGameIdSet = new Set<number>(completedGameIds);
+  // Bound entries + historical to this coach's player ids, then drop entries
+  // whose parent game isn't a completed game.
+  const allEntriesRaw = await db
     .select()
     .from(lineupEntriesTable)
     .where(inArray(lineupEntriesTable.playerId, playerIds));
+  const allEntries = allEntriesRaw.filter((e) => completedGameIdSet.has(e.gameId));
   const allHistorical = await db
     .select()
     .from(historicalFieldingTable)
     .where(inArray(historicalFieldingTable.playerId, playerIds));
-  // Pull this coach's games so we can compute "unavailable innings" — innings
-  // of a game the player attended (had at least one entry in) but is missing
-  // from. Without this, a player who's in the dugout for a couple of innings
-  // shows up with an undercount in their season tally (e.g. 22 instead of 24
-  // across four 6-inning games).
-  const userGames = await db
-    .select({ id: gamesTable.id, innings: gamesTable.innings })
-    .from(gamesTable)
-    .where(eq(gamesTable.userId, userId));
   const inningsByGameId = new Map<number, number>(userGames.map((g) => [g.id, g.innings]));
 
   const stats = players.map((p) => {

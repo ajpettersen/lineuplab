@@ -4,8 +4,10 @@ import {
   db,
   playersTable,
   gamesTable,
+  lineupEntriesTable,
   type InsertPlayer,
   type InsertGame,
+  type InsertLineupEntry,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -64,6 +66,27 @@ function startOfDay(date: Date): Date {
   d.setHours(10, 0, 0, 0);
   return d;
 }
+
+// 6-inning × 12-player rotation for the completed Riverdale Raptors demo
+// game. One position (or "Bench") per cell, indexed by [inning - 1][playerIdx]
+// where playerIdx matches DEMO_PLAYERS order. Designed by hand so:
+//   - every inning has exactly one of each of the 9 positions + 3 benched
+//   - Jordan Park (#3, "Lefty — 4 inning max") pitches innings 1–3 only
+//   - Casey Brooks (#11) takes innings 4–5; Kai Sullivan (#24, "Closer —
+//     2 inning max") closes inning 6
+//   - everyone gets at least 3 field innings and at least 1 bench inning
+//   - assignments mostly land on each player's preferred positions
+// Without this matrix the demo's only completed game would have no lineup
+// entries, so the Stats / Player Detail pages would show 0 across the board.
+const DEMO_LINEUP_GRID: ReadonlyArray<ReadonlyArray<string>> = [
+  // Players: Sam, Jord, Aver, Rile, Case, Drew, Quin, Morg, Tayl, Rees, Kai, Pho
+  ["2B", "P",     "C",     "CF",    "Bench", "RF",    "1B",    "LF",    "3B",    "Bench", "Bench", "SS"   ],
+  ["SS", "P",     "C",     "CF",    "Bench", "2B",    "Bench", "LF",    "1B",    "3B",    "RF",    "Bench"],
+  ["Bench", "P",  "Bench", "CF",    "SS",    "2B",    "1B",    "Bench", "RF",    "C",     "LF",    "3B"   ],
+  ["2B", "1B",    "C",     "CF",    "P",     "RF",    "Bench", "LF",    "Bench", "3B",    "Bench", "SS"   ],
+  ["SS", "Bench", "3B",    "Bench", "P",     "Bench", "1B",    "LF",    "RF",    "C",     "CF",    "2B"   ],
+  ["LF", "Bench", "C",     "CF",    "SS",    "2B",    "Bench", "Bench", "1B",    "3B",    "P",     "RF"   ],
+];
 
 function buildDemoGames(): InsertGame[] {
   const today = startOfDay(new Date());
@@ -192,15 +215,57 @@ router.post("/demo/seed", async (req, res) => {
     return;
   }
 
-  await db.insert(playersTable).values(
-    playerRows.map((row) => ({ ...row, userId: ownerUserId })),
-  );
-  await db.insert(gamesTable).values(
-    gameRows.map((row) => ({ ...row, userId: ownerUserId })),
-  );
+  // One transaction across players + games + lineup entries so the demo
+  // either fully lands or fully rolls back. We need the inserted IDs to
+  // build the lineup rows for the completed game, so use .returning() on
+  // each insert and key entries off the returned arrays (preserving the
+  // input order — Postgres returns rows in insert order).
+  let insertedEntries = 0;
+  await db.transaction(async (tx) => {
+    const insertedPlayers = await tx
+      .insert(playersTable)
+      .values(playerRows.map((row) => ({ ...row, userId: ownerUserId })))
+      .returning({ id: playersTable.id });
+
+    const insertedGames = await tx
+      .insert(gamesTable)
+      .values(gameRows.map((row) => ({ ...row, userId: ownerUserId })))
+      .returning({ id: gamesTable.id, status: gamesTable.status });
+
+    // Find the one completed game (Riverdale Raptors) and seed it with the
+    // hand-designed lineup matrix above. If for some reason the completed
+    // game isn't there (shouldn't happen — buildDemoGames returns it), we
+    // simply skip the lineup insert rather than fail the seed.
+    const completedGame = insertedGames.find((g) => g.status === "completed");
+    if (completedGame && insertedPlayers.length === DEMO_LINEUP_GRID[0]!.length) {
+      const entryRows: InsertLineupEntry[] = [];
+      for (let inningIdx = 0; inningIdx < DEMO_LINEUP_GRID.length; inningIdx++) {
+        const row = DEMO_LINEUP_GRID[inningIdx]!;
+        for (let playerIdx = 0; playerIdx < row.length; playerIdx++) {
+          entryRows.push({
+            gameId: completedGame.id,
+            playerId: insertedPlayers[playerIdx]!.id,
+            inning: inningIdx + 1,
+            position: row[playerIdx]!,
+            // Batting order mirrors roster order so the Innings-by-Position
+            // tally and any "lineup card" view have a sensible top-to-bottom
+            // order out of the box.
+            battingOrder: playerIdx + 1,
+          });
+        }
+      }
+      await tx.insert(lineupEntriesTable).values(entryRows);
+      insertedEntries = entryRows.length;
+    }
+  });
 
   req.log.info(
-    { ownerUserId, players: playerRows.length, games: gameRows.length },
+    {
+      ownerUserId,
+      players: playerRows.length,
+      games: gameRows.length,
+      lineupEntries: insertedEntries,
+    },
     "demo seed created",
   );
 
@@ -208,6 +273,7 @@ router.post("/demo/seed", async (req, res) => {
     created: true,
     players: playerRows.length,
     games: gameRows.length,
+    lineupEntries: insertedEntries,
   });
 });
 
