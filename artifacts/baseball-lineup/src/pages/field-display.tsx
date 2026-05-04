@@ -4,12 +4,14 @@ import {
   useGetGame,
   useGetGameLineup,
   useSaveLineup,
+  useUpdateGame,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
   getGetSeasonStatsQueryKey,
   getGetPlayerStatsQueryKey,
   type LineupEntry,
   type Game,
+  type UpdateGameBody,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,7 +28,7 @@ import {
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2, Moon, Sun, WifiOff } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
@@ -172,6 +174,11 @@ const lineupCacheKey = (gameId: number) => `fd-lineup-cache-v1:${gameId}`;
 const gameCacheKey = (gameId: number) => `fd-game-cache-v1:${gameId}`;
 /** localStorage key for an offline-pending lineup snapshot waiting to POST. */
 const pendingSaveKey = (gameId: number) => `fd-pending-save-v1:${gameId}`;
+/** localStorage key for an offline-pending game patch (score, etc) waiting
+ *  to PATCH. Same offline semantics as `pendingSaveKey` but for the game
+ *  record rather than the lineup. */
+const pendingGamePatchKey = (gameId: number) =>
+  `fd-pending-game-patch-v1:${gameId}`;
 
 /** localStorage with try/catch so private mode / quota errors don't crash. */
 function loadJSON<T>(key: string): T | undefined {
@@ -234,6 +241,136 @@ function useOnlineStatus(): boolean {
   return online;
 }
 
+/**
+ * Manual scoreboard input until GameChanger integration lands.
+ *
+ * The dugout coach needs to enter runs WITHOUT looking away from the
+ * field. So this control offers three input methods that all map to the
+ * same +1 / -1 action — coach can use whichever matches their muscle
+ * memory:
+ *
+ *   • Tap chevron-up / chevron-down — explicit, accessible, works for
+ *     desktop mouse + keyboard users (parents checking from a phone too).
+ *
+ *   • Tap the number itself — defaults to +1 (the overwhelmingly common
+ *     case when our team scores). One-finger one-second action.
+ *
+ *   • Swipe vertically on the number — drag up = +1, drag down = -1.
+ *     The "push up or down on runs" gesture the user requested. The
+ *     SWIPE_THRESHOLD (24px) is small enough that even a half-finger
+ *     flick registers, but large enough that an accidental drift on a
+ *     pure tap doesn't get misread as a swipe.
+ *
+ * Score is floored at 0 — youth baseball doesn't have negative scores
+ * and a coach who fat-fingers down too many times shouldn't have to fight
+ * the UI to get back to zero.
+ *
+ * `touch-action: none` on the number area is critical: without it iOS
+ * Safari interprets a vertical swipe as a page scroll and steals the
+ * gesture before our pointerup fires. With it, the swipe stays bound to
+ * the score control. We also set `setPointerCapture` on pointerdown so
+ * a swipe that drifts off the number's bounding box still resolves on
+ * the original element rather than landing on a sibling button.
+ *
+ * For accessibility: role="spinbutton" + aria-valuenow/min so screen
+ * readers announce the current score, and ArrowUp / ArrowDown / +/- key
+ * bindings so keyboard users can step the value.
+ */
+interface ScoreStepperProps {
+  value: number;
+  onChange: (next: number) => void;
+  ariaLabel: string;
+  testId: string;
+}
+
+function ScoreStepper({ value, onChange, ariaLabel, testId }: ScoreStepperProps) {
+  // Y coord at gesture start; null when no gesture is in progress.
+  const startYRef = useRef<number | null>(null);
+  const SWIPE_THRESHOLD = 24;
+
+  const inc = () => onChange(value + 1);
+  const dec = () => onChange(Math.max(0, value - 1));
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    startYRef.current = e.clientY;
+    // Bind subsequent pointer events to this element even if the finger
+    // drifts off — keeps the swipe gesture coherent.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Some older browsers throw if pointerId isn't recognized; harmless.
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const startY = startYRef.current;
+    startYRef.current = null;
+    if (startY == null) return;
+    const dy = e.clientY - startY;
+    if (Math.abs(dy) >= SWIPE_THRESHOLD) {
+      // Swipe up = +1, swipe down = -1.
+      if (dy < 0) inc();
+      else dec();
+    } else {
+      // Pure tap (no significant vertical motion) defaults to +1, the
+      // most common operation when the home team scores a run.
+      inc();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowUp" || e.key === "+" || e.key === "=") {
+      e.preventDefault();
+      inc();
+    } else if (e.key === "ArrowDown" || e.key === "-" || e.key === "_") {
+      e.preventDefault();
+      dec();
+    }
+  };
+
+  return (
+    <div
+      className="flex flex-col items-stretch select-none min-w-[2.25rem]"
+      data-testid={testId}
+    >
+      <button
+        type="button"
+        onClick={inc}
+        className="flex h-5 items-center justify-center rounded-t-md text-slate-500 hover:bg-slate-800/60 hover:text-emerald-300 active:text-emerald-300 transition-colors"
+        aria-label={`Increase ${ariaLabel}`}
+        data-testid={`${testId}-up`}
+      >
+        <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      <div
+        role="spinbutton"
+        aria-label={ariaLabel}
+        aria-valuenow={value}
+        aria-valuemin={0}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => {
+          startYRef.current = null;
+        }}
+        className="text-xl sm:text-2xl font-bold tabular-nums text-slate-300 px-2 py-0.5 cursor-ns-resize touch-none rounded text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+      >
+        {value}
+      </div>
+      <button
+        type="button"
+        onClick={dec}
+        className="flex h-5 items-center justify-center rounded-b-md text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
+        aria-label={`Decrease ${ariaLabel}`}
+        data-testid={`${testId}-down`}
+      >
+        <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
   morning: {
     grassGradient:
@@ -285,6 +422,14 @@ export default function FieldDisplay() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const saveLineup = useSaveLineup();
+  // Game-record updater for score input. networkMode 'always' so our
+  // explicit navigator.onLine gate inside flushGameSave is what controls
+  // when a request actually goes out — without 'always', React Query's
+  // built-in offline pause would queue mutateAsync indefinitely and hang
+  // the save chain when the iPad is offline.
+  const updateGame = useUpdateGame({
+    mutation: { networkMode: "always" },
+  });
 
   // Sensor config mirrors game-detail.tsx so the dugout iPad behaves the
   // same as a parent's phone: a 5px slop for mouse so a click isn't
@@ -316,15 +461,28 @@ export default function FieldDisplay() {
   // follow-up POST with the final coalesced state.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const pendingLineupRef = useRef<LineupEntry[] | null>(null);
+  // Parallel single-flight chain for game-record patches (score updates).
+  // Same coalescing semantics as lineup, but the pending object is a
+  // partial Game patch (e.g. { ourScore: 4 }) — multiple in-flight patches
+  // merge field-by-field so updating ours+theirs across rapid taps doesn't
+  // lose either field's value.
+  const saveGameQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const pendingGamePatchRef = useRef<UpdateGameBody | null>(null);
 
   // Online/offline + has-unsynced-changes status, surfaced in the header
-  // badge. `hasUnsyncedChanges` is initialized lazily from localStorage so
-  // a refresh while offline (with persisted pending edits) still shows the
-  // correct "Offline · will sync" state on first paint.
+  // badge. Both flags are initialized lazily from localStorage so a refresh
+  // while offline (with persisted pending edits) still shows the correct
+  // "Offline · will sync" state on first paint. Tracked separately by side
+  // (lineup vs score) since their save chains are independent, then OR'd
+  // into one user-facing flag for the badge.
   const online = useOnlineStatus();
-  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState<boolean>(
+  const [hasUnsyncedLineup, setHasUnsyncedLineup] = useState<boolean>(
     () => loadJSON(pendingSaveKey(id)) != null,
   );
+  const [hasUnsyncedScore, setHasUnsyncedScore] = useState<boolean>(
+    () => loadJSON(pendingGamePatchKey(id)) != null,
+  );
+  const hasUnsyncedChanges = hasUnsyncedLineup || hasUnsyncedScore;
 
   // Polling interval: 5s feels live without hammering the API. The query is
   // also re-fetched on window focus (default react-query behavior) so a
@@ -339,10 +497,17 @@ export default function FieldDisplay() {
   // Memoized per game id so we don't repeatedly hit localStorage on every
   // render (initialData closures fire a lot). If the cache is empty, return
   // undefined so React Query falls back to its normal fetching state.
-  const initialGame = useMemo<Game | undefined>(
-    () => loadJSON<Game>(gameCacheKey(id)),
-    [id],
-  );
+  const initialGame = useMemo<Game | undefined>(() => {
+    const cached = loadJSON<Game>(gameCacheKey(id));
+    if (!cached) return undefined;
+    // Apply any pending offline score patch on top of the cached server
+    // game so the UI shows the coach's pending value immediately on
+    // first paint — without this, we'd briefly render the stale server
+    // score, then flicker to the patched value once the restore-pending
+    // effect runs after first commit.
+    const pendingPatch = loadJSON<UpdateGameBody>(pendingGamePatchKey(id));
+    return pendingPatch ? { ...cached, ...pendingPatch } : cached;
+  }, [id]);
   const initialLineup = useMemo<LineupEntry[] | undefined>(() => {
     // If we have an offline-pending snapshot from a previous session,
     // prefer it (it's the freshest desired state, not the server's). The
@@ -389,35 +554,43 @@ export default function FieldDisplay() {
     if (lineup.length > 0) saveJSON(lineupCacheKey(id), lineup);
   }, [id, lineup]);
 
-  // Restore an offline-pending lineup snapshot (from a previous session)
-  // into the in-memory ref so the existing flushSave logic can drain it.
-  // We already hydrated React Query's cache with the same snapshot via
-  // `initialLineup`, so the UI is already showing the right thing — we
-  // just need to wire up the save side. Runs once per game id.
+  // Restore offline-pending edits (lineup snapshot AND game patch) from a
+  // previous session into the in-memory refs so the existing flush chains
+  // can drain them. The React Query cache was already hydrated with the
+  // pending values via `initialLineup` / `initialGame`, so the UI is
+  // already showing the right thing — we just need to wire up the save
+  // side. Runs once per game id.
   useEffect(() => {
     if (!id) return;
-    const pending = loadJSON<LineupEntry[]>(pendingSaveKey(id));
-    if (!pending) return;
-    pendingLineupRef.current = pending;
-    setHasUnsyncedChanges(true);
-    // If we mount already online, kick the chain immediately so the
-    // pending POST happens without waiting for an online flip.
-    if (typeof navigator !== "undefined" && navigator.onLine) {
-      flushSave();
+    const onlineNow = typeof navigator !== "undefined" && navigator.onLine;
+
+    const pendingLine = loadJSON<LineupEntry[]>(pendingSaveKey(id));
+    if (pendingLine) {
+      pendingLineupRef.current = pendingLine;
+      setHasUnsyncedLineup(true);
+      if (onlineNow) flushSave();
     }
-    // Run-once-per-game-id; flushSave is stable enough for our purposes.
+    const pendingPatch = loadJSON<UpdateGameBody>(pendingGamePatchKey(id));
+    if (pendingPatch) {
+      pendingGamePatchRef.current = pendingPatch;
+      setHasUnsyncedScore(true);
+      if (onlineNow) flushGameSave();
+    }
+    // Run-once-per-game-id; the flush functions are stable enough for our
+    // purposes (closures over stable ids).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // When the browser flips from offline → online, drain any pending
-  // snapshot through the same single-flight save chain. flushSave is a
-  // safe no-op when pendingLineupRef is null, so calling it on every
-  // online event is fine. React Query's onlineManager will also resume
-  // polling automatically, which gives us the post-reconnect refresh
-  // for free without any extra work here.
+  // snapshots through their respective single-flight chains. Both flush
+  // functions are safe no-ops when their pending refs are null, so
+  // calling them on every online event is fine. React Query's
+  // onlineManager will also resume polling automatically, which gives
+  // us the post-reconnect refresh for free.
   useEffect(() => {
     if (!online) return;
     flushSave();
+    flushGameSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online]);
 
@@ -672,7 +845,7 @@ export default function FieldDisplay() {
           // we must not wipe its localStorage entry.
           if (pendingLineupRef.current == null) {
             clearKey(pendingSaveKey(id));
-            setHasUnsyncedChanges(false);
+            setHasUnsyncedLineup(false);
           }
           qc.invalidateQueries({ queryKey });
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
@@ -690,7 +863,7 @@ export default function FieldDisplay() {
               pendingLineupRef.current = toSave;
               saveJSON(pendingSaveKey(id), toSave);
             }
-            setHasUnsyncedChanges(true);
+            setHasUnsyncedLineup(true);
             return;
           }
           // Real server error: drop pending, refetch authoritative state,
@@ -698,7 +871,7 @@ export default function FieldDisplay() {
           // because that could clobber newer successful state.
           if (pendingLineupRef.current == null) {
             clearKey(pendingSaveKey(id));
-            setHasUnsyncedChanges(false);
+            setHasUnsyncedLineup(false);
           }
           qc.invalidateQueries({ queryKey });
           toast({
@@ -721,10 +894,98 @@ export default function FieldDisplay() {
     // crash / iPad reboot mid-save doesn't lose the drag. flushSave will
     // clear this entry on success.
     saveJSON(pendingSaveKey(id), nextLineup);
-    setHasUnsyncedChanges(true);
+    setHasUnsyncedLineup(true);
     // flushSave is offline-aware: it'll skip the POST and just leave
     // pending in place if we're offline, then drain on reconnect.
     flushSave();
+  };
+
+  /**
+   * Game-patch sibling of `flushSave`. Drains `pendingGamePatchRef` (a
+   * partial Game body like `{ ourScore: 5 }`) through a single-flight
+   * chain with the same offline detection + coalescing semantics:
+   *
+   *   • Single in-flight at a time (saveGameQueueRef chain).
+   *   • Reads the LATEST pending patch at save-time (so rapid taps
+   *     coalesce — newer fields overwrite older for the same key,
+   *     different keys merge).
+   *   • Skips the actual PATCH if `navigator.onLine` is false; the
+   *     online-flip effect re-calls flushGameSave on reconnect.
+   *   • On offline-failure mid-flight, restores `pendingGamePatchRef`
+   *     only if no NEWER patch came in during the in-flight window.
+   *   • On real server error, drops the pending patch + invalidates
+   *     so the UI snaps back to the server's authoritative score, plus
+   *     a toast so the coach knows their tap didn't take.
+   */
+  const flushGameSave = () => {
+    const queryKey = getGetGameQueryKey(id);
+    saveGameQueueRef.current = saveGameQueueRef.current
+      .then(async () => {
+        const patch = pendingGamePatchRef.current;
+        if (!patch) return;
+        if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
+        pendingGamePatchRef.current = null;
+        try {
+          await qc.cancelQueries({ queryKey });
+          await updateGame.mutateAsync({ id, data: patch });
+          if (pendingGamePatchRef.current == null) {
+            clearKey(pendingGamePatchKey(id));
+            setHasUnsyncedScore(false);
+          }
+          qc.invalidateQueries({ queryKey });
+        } catch {
+          if (typeof navigator !== "undefined" && !navigator.onLine) {
+            // Offline-drop: restore pending only if no newer tap has
+            // already replaced it (which would already be persisted).
+            if (pendingGamePatchRef.current == null) {
+              pendingGamePatchRef.current = patch;
+              saveJSON(pendingGamePatchKey(id), patch);
+            }
+            setHasUnsyncedScore(true);
+            return;
+          }
+          // Real server error — roll back to server truth, surface to coach.
+          if (pendingGamePatchRef.current == null) {
+            clearKey(pendingGamePatchKey(id));
+            setHasUnsyncedScore(false);
+          }
+          qc.invalidateQueries({ queryKey });
+          toast({
+            title: "Couldn't save score",
+            description: "Pulled the latest from the server. Try again.",
+            variant: "destructive",
+          });
+        }
+      })
+      .catch(() => {
+        // Defensive — keep the chain alive no matter what.
+      });
+  };
+
+  /**
+   * Apply a partial game patch (e.g. `{ ourScore: 5 }`) optimistically:
+   * update React Query's cache, merge into the pending ref so multiple
+   * rapid updates coalesce (latest value wins per field), persist the
+   * merged pending to localStorage so a refresh doesn't lose it, and
+   * kick the save chain. flushGameSave skips the PATCH when offline.
+   */
+  const saveGamePatchOptimistically = (patch: UpdateGameBody) => {
+    const queryKey = getGetGameQueryKey(id);
+    qc.setQueryData(queryKey, (prev: Game | undefined) =>
+      prev ? { ...prev, ...patch } : prev,
+    );
+    // Merge field-by-field: newer field values overwrite older for the
+    // same key (e.g. two rapid +1 taps on ourScore: only the latest
+    // ourScore matters), but different keys accumulate (ourScore +
+    // opponentScore both ride along in a single PATCH).
+    pendingGamePatchRef.current = {
+      ...pendingGamePatchRef.current,
+      ...patch,
+    };
+    saveJSON(pendingGamePatchKey(id), pendingGamePatchRef.current);
+    setHasUnsyncedScore(true);
+    flushGameSave();
   };
 
   const handleDragStart = (e: DragStartEvent) => {
@@ -951,10 +1212,33 @@ export default function FieldDisplay() {
               </>
             )}
           </div>
-          <div className="text-xl sm:text-2xl font-bold tabular-nums">
-            <span className="text-slate-300">{ourScore}</span>
-            <span className="mx-1.5 text-slate-600">–</span>
-            <span className="text-slate-300">{oppScore}</span>
+          {/* Manual scoreboard input — until GameChanger integration lands.
+            * Each side: tap chevron to step ±1, OR tap the number to +1,
+            * OR swipe vertically on the number to ±1. Score updates flow
+            * through the same offline-aware single-flight save chain as
+            * lineup edits, so a tap during a WiFi drop is preserved and
+            * synced on reconnect. See ScoreStepper docblock for gesture
+            * details. */}
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <ScoreStepper
+              value={ourScore}
+              onChange={(next) =>
+                saveGamePatchOptimistically({ ourScore: next })
+              }
+              ariaLabel="Our score"
+              testId="score-stepper-ours"
+            />
+            <span className="text-xl sm:text-2xl font-bold tabular-nums text-slate-600">
+              –
+            </span>
+            <ScoreStepper
+              value={oppScore}
+              onChange={(next) =>
+                saveGamePatchOptimistically({ opponentScore: next })
+              }
+              ariaLabel="Opponent score"
+              testId="score-stepper-opp"
+            />
           </div>
           <Button
             variant="ghost"
