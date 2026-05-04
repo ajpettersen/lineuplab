@@ -45,6 +45,7 @@ import {
   Link2,
   Check,
   AlertCircle,
+  Tv,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -584,6 +585,26 @@ export default function Games() {
             </div>
           </Link>
           <div className="flex items-center gap-1 ml-2">
+            {/*
+             * Field Display launcher — only meaningful for actual games that
+             * haven't been cancelled. Open in a new tab so the iPad stays on
+             * the display while the coach uses the source tab to edit.
+             */}
+            {g.type !== "practice" && g.type !== "other" && g.status !== "cancelled" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-primary"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.open(`${BASE}/games/${g.id}/display`, "_blank", "noopener");
+                }}
+                title="Open the dugout / fence-iPad display in a new tab"
+                data-testid={`button-game-display-${g.id}`}
+              >
+                <Tv className="h-3.5 w-3.5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

@@ -1,11 +1,12 @@
 import { Link } from "wouter";
 import { useListGames, useGetSeasonStats, useGetPlayerStats } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield } from "lucide-react";
-import { format } from "date-fns";
+import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin } from "lucide-react";
+import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming } from "@/lib/game-status";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function ScoreBadge({ our, opp }: { our: number | null | undefined; opp: number | null | undefined }) {
   if (our == null || opp == null) return null;
@@ -30,6 +31,28 @@ export default function Dashboard() {
   const upcomingGames = games.filter((g) => isTrulyUpcoming(g));
   const wins = completedGames.filter((g) => (g.ourScore ?? 0) > (g.opponentScore ?? 0)).length;
 
+  // "Today / Up Next" hero card. Picks the soonest non-completed actual game.
+  // Drives the prominent Field Display CTA — the whole point is that on game
+  // day a coach opens the app and is ONE tap from launching the iPad display.
+  const heroGame = (() => {
+    const candidates = actualGames
+      .filter((g) => g.status !== "completed" && g.status !== "cancelled")
+      .map((g) => ({ g, when: new Date(g.gameDate).getTime() }))
+      .sort((a, b) => a.when - b.when);
+    // Prefer a game today/in the future. If everything's in the past (e.g. a
+    // forgotten un-completed game from last week), still surface it so the
+    // coach can either close it out or open the display for it.
+    return candidates[0]?.g ?? null;
+  })();
+  const heroDate = heroGame ? new Date(heroGame.gameDate) : null;
+  const heroLabel = heroDate
+    ? isToday(heroDate)
+      ? "Today's Game"
+      : isTomorrow(heroDate)
+        ? "Tomorrow's Game"
+        : "Up Next"
+    : "";
+
   const mostBenchPlayer = playerStats
     .filter((p) => p.totalInnings > 0)
     .sort((a, b) => b.benchInnings / (b.totalInnings || 1) - a.benchInnings / (a.totalInnings || 1))[0];
@@ -48,6 +71,78 @@ export default function Dashboard() {
           </Button>
         </Link>
       </div>
+
+      {/*
+       * Today / Up Next hero card. Most prominent surface in the app on game
+       * day — gives the coach a one-tap launch of the dugout-fence display
+       * without having to drill into the game.
+       */}
+      {heroGame && heroDate && (
+        <Card
+          className="border-2 border-primary/30 bg-gradient-to-br from-primary/[0.06] via-background to-accent/[0.04] shadow-sm"
+          data-testid="card-hero-game"
+        >
+          <CardContent className="p-5 sm:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-4 min-w-0">
+                <div className="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <CalendarDays className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs uppercase tracking-[0.18em] font-semibold text-primary">
+                    {heroLabel}
+                  </div>
+                  <div className="mt-1 text-2xl sm:text-3xl font-bold text-foreground truncate">
+                    vs. {heroGame.opponent}
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-3 flex-wrap text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {format(heroDate, "EEE, MMM d · h:mm a")}
+                    </span>
+                    {heroGame.location && (
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {heroGame.location}
+                      </span>
+                    )}
+                    <span className="text-xs">{heroGame.innings} innings</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                <Button
+                  size="lg"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                  onClick={() =>
+                    window.open(
+                      `${BASE}/games/${heroGame.id}/display`,
+                      "_blank",
+                      "noopener",
+                    )
+                  }
+                  data-testid="button-hero-field-display"
+                  title="Open the dugout / fence-iPad display in a new tab"
+                >
+                  <Tv className="h-5 w-5 mr-2" />
+                  Open Field Display
+                </Button>
+                <Link href={`/games/${heroGame.id}`}>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    data-testid="button-hero-open-game"
+                  >
+                    Open Game
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
