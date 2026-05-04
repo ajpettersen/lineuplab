@@ -56,7 +56,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
@@ -2112,6 +2112,17 @@ export default function GameDetail() {
                   Remove {selectedEntry.playerName.split(" ")[0]}
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(`${BASE}/games/${id}/display`, "_blank", "noopener")}
+                data-testid="button-open-field-display"
+                className="no-print"
+                title="Open the live dugout / fence-iPad display for this game (auto-updates)"
+              >
+                <Tv className="h-4 w-4 mr-1.5" />
+                Field Display
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

@@ -19,6 +19,7 @@ import PlayerDetail from "@/pages/player-detail";
 import Games from "@/pages/games";
 import NewGame from "@/pages/new-game";
 import GameDetail from "@/pages/game-detail";
+import FieldDisplay from "@/pages/field-display";
 import Stats from "@/pages/stats";
 import Constraints from "@/pages/constraints";
 import Settings from "@/pages/settings";
@@ -154,26 +155,67 @@ function ClerkQueryClientCacheInvalidator() {
  * they can finish accepting the invite.
  */
 const PENDING_INVITE_KEY = "lineupLab.pendingInviteToken";
+const RETURN_URL_KEY = "lineupLab.returnUrl";
 
 function PendingInviteRedirect() {
   const [, setLocation] = useLocation();
   useEffect(() => {
     let token: string | null = null;
+    let returnUrl: string | null = null;
     try {
       token = sessionStorage.getItem(PENDING_INVITE_KEY);
+      returnUrl = sessionStorage.getItem(RETURN_URL_KEY);
     } catch {
       // sessionStorage unavailable — nothing to do.
     }
+    // Invite token wins over generic return URL — the user explicitly clicked
+    // a join link and that flow needs to complete before anything else.
     if (token) {
       try {
         sessionStorage.removeItem(PENDING_INVITE_KEY);
+        sessionStorage.removeItem(RETURN_URL_KEY);
       } catch {
         // ignore
       }
       setLocation(`/join/${token}`);
+      return;
+    }
+    if (returnUrl) {
+      try {
+        sessionStorage.removeItem(RETURN_URL_KEY);
+      } catch {
+        // ignore
+      }
+      setLocation(returnUrl);
     }
   }, [setLocation]);
   return null;
+}
+
+/**
+ * Wraps `<Redirect to="/sign-in" />` for signed-out users so we remember the
+ * URL they were trying to reach. Critical for the dugout / fence-iPad flow:
+ * if the iPad's Clerk session expires mid-game, signing back in must drop the
+ * coach right back on `/games/:id/display`, not on the home dashboard.
+ */
+function StashAndRedirectToSignIn() {
+  const [location] = useLocation();
+  useEffect(() => {
+    // Don't stash auth-flow paths or the bare home route — only meaningful
+    // destinations like /games/123/display, /games/123, etc.
+    const skip =
+      location === "/" ||
+      location.startsWith("/sign-in") ||
+      location.startsWith("/sign-up") ||
+      location.startsWith("/join/");
+    if (skip) return;
+    try {
+      sessionStorage.setItem(RETURN_URL_KEY, location);
+    } catch {
+      // ignore
+    }
+  }, [location]);
+  return <Redirect to="/sign-in" />;
 }
 
 function ProtectedApp() {
@@ -181,23 +223,33 @@ function ProtectedApp() {
     <>
       <Show when="signed-in">
         <PendingInviteRedirect />
-        <Layout>
-          <Switch>
-            <Route path="/" component={Dashboard} />
-            <Route path="/players" component={Players} />
-            <Route path="/players/:id" component={PlayerDetail} />
-            <Route path="/games/new" component={NewGame} />
-            <Route path="/games/:id" component={GameDetail} />
-            <Route path="/games" component={Games} />
-            <Route path="/stats" component={Stats} />
-            <Route path="/constraints" component={Constraints} />
-            <Route path="/settings" component={Settings} />
-            <Route component={NotFound} />
-          </Switch>
-        </Layout>
+        <Switch>
+          {/*
+           * Dugout / fence-iPad display renders OUTSIDE the app shell so the
+           * full screen is usable for at-a-distance reading. Still requires
+           * sign-in (it's wrapped by the surrounding Show).
+           */}
+          <Route path="/games/:id/display" component={FieldDisplay} />
+          <Route>
+            <Layout>
+              <Switch>
+                <Route path="/" component={Dashboard} />
+                <Route path="/players" component={Players} />
+                <Route path="/players/:id" component={PlayerDetail} />
+                <Route path="/games/new" component={NewGame} />
+                <Route path="/games/:id" component={GameDetail} />
+                <Route path="/games" component={Games} />
+                <Route path="/stats" component={Stats} />
+                <Route path="/constraints" component={Constraints} />
+                <Route path="/settings" component={Settings} />
+                <Route component={NotFound} />
+              </Switch>
+            </Layout>
+          </Route>
+        </Switch>
       </Show>
       <Show when="signed-out">
-        <Redirect to="/sign-in" />
+        <StashAndRedirectToSignIn />
       </Show>
     </>
   );
