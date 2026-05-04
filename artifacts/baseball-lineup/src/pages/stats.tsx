@@ -410,7 +410,12 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
     }
   };
 
-  const STAT_COLS = ["AB", "H", "2B", "3B", "HR", "RBI", "BB", "K", "HBP", "SB", "AVG", "OBP", "OPS"];
+  // PA (Plate Appearances) is shown alongside AB so coaches can keep PA
+  // equitable across the roster — kids who walk a lot or get HBP get fewer
+  // ABs but still come to the plate, and that should count for "fairness."
+  // Same formula the league-mode lineup generator uses internally:
+  // PA = AB + BB + HBP + SAC.
+  const STAT_COLS = ["AB", "PA", "H", "2B", "3B", "HR", "RBI", "BB", "K", "HBP", "SAC", "SB", "AVG", "OBP", "OPS"];
   const EDIT_COLS = [
     { label: "AB", key: "ab" }, { label: "H", key: "hits" }, { label: "2B", key: "doubles" },
     { label: "3B", key: "triples" }, { label: "HR", key: "hr" }, { label: "RBI", key: "rbi" },
@@ -419,6 +424,12 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
   ];
 
   const fmtAvg = (v: number | null | undefined) => v != null ? v.toFixed(3).replace(/^0/, "") : "—";
+
+  /** PA is derived, never stored. Treat missing rows as "no plate appearances yet". */
+  const computePA = (s: { ab?: number | null; bb?: number | null; hbp?: number | null; sac?: number | null } | undefined | null): number | null => {
+    if (!s) return null;
+    return (s.ab ?? 0) + (s.bb ?? 0) + (s.hbp ?? 0) + (s.sac ?? 0);
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -445,28 +456,59 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
             <table className="w-full text-xs">
               <thead><tr className="border-b border-yellow-300">
                 <th className="text-left py-1 pr-3">Player</th>
-                {EDIT_COLS.map((c) => <th key={c.key} className="px-1 text-center">{c.label}</th>)}
+                {EDIT_COLS.flatMap((c) =>
+                  c.key === "ab"
+                    ? [
+                        <th key={c.key} className="px-1 text-center">{c.label}</th>,
+                        <th
+                          key="pa"
+                          className="px-1 text-center"
+                          title="Plate Appearances = AB + BB + HBP + SAC"
+                        >
+                          PA
+                        </th>,
+                      ]
+                    : [<th key={c.key} className="px-1 text-center">{c.label}</th>]
+                )}
               </tr></thead>
               <tbody>
-                {extracted.map((row, i) => (
-                  <tr key={i} className="border-b border-yellow-100">
-                    <td className="py-1 pr-3 font-medium">{row.playerName}</td>
-                    {EDIT_COLS.map((c) => (
-                      <td key={c.key} className="px-1 text-center">
-                        <input
-                          type="number"
-                          className="w-10 text-center bg-white border border-yellow-300 rounded text-xs p-0.5"
-                          value={(row as Record<string, number>)[c.key] ?? 0}
-                          onChange={(e) => {
-                            const updated = [...extracted];
-                            (updated[i] as Record<string, number>)[c.key] = parseInt(e.target.value) || 0;
-                            setExtracted(updated);
-                          }}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {extracted.map((row, i) => {
+                  const livePA = computePA(row);
+                  return (
+                    <tr key={i} className="border-b border-yellow-100">
+                      <td className="py-1 pr-3 font-medium">{row.playerName}</td>
+                      {EDIT_COLS.flatMap((c) => {
+                        const inputCell = (
+                          <td key={c.key} className="px-1 text-center">
+                            <input
+                              type="number"
+                              className="w-10 text-center bg-white border border-yellow-300 rounded text-xs p-0.5"
+                              value={(row as Record<string, number>)[c.key] ?? 0}
+                              onChange={(e) => {
+                                const updated = [...extracted];
+                                (updated[i] as Record<string, number>)[c.key] = parseInt(e.target.value) || 0;
+                                setExtracted(updated);
+                              }}
+                            />
+                          </td>
+                        );
+                        if (c.key === "ab") {
+                          return [
+                            inputCell,
+                            <td
+                              key="pa-live"
+                              className="px-1 text-center text-[11px] font-bold text-yellow-900"
+                              title="Plate Appearances = AB + BB + HBP + SAC (auto-calculated)"
+                            >
+                              {livePA ?? 0}
+                            </td>,
+                          ];
+                        }
+                        return [inputCell];
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -490,20 +532,38 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
                 {players.map((p) => {
                   const s = statsMap[p.id];
                   if (editId === p.id) {
+                    const livePA = computePA(editData);
                     return (
                       <tr key={p.id} className="border-b border-border/50 bg-primary/5">
                         <td className="py-2 pr-4 font-medium">{p.name}</td>
-                        {EDIT_COLS.map((c) => (
-                          <td key={c.key} className="px-1">
-                            <input
-                              type="number"
-                              min="0"
-                              className="w-12 text-center border border-primary/30 rounded text-xs p-1 bg-white"
-                              value={(editData as Record<string, number>)[c.key] ?? 0}
-                              onChange={(e) => setEditData((prev) => ({ ...prev, [c.key]: parseInt(e.target.value) || 0 }))}
-                            />
-                          </td>
-                        ))}
+                        {EDIT_COLS.flatMap((c) => {
+                          const inputCell = (
+                            <td key={c.key} className="px-1">
+                              <input
+                                type="number"
+                                min="0"
+                                className="w-12 text-center border border-primary/30 rounded text-xs p-1 bg-white"
+                                value={(editData as Record<string, number>)[c.key] ?? 0}
+                                onChange={(e) => setEditData((prev) => ({ ...prev, [c.key]: parseInt(e.target.value) || 0 }))}
+                              />
+                            </td>
+                          );
+                          // Right after AB, render a live-computed PA cell so
+                          // the coach sees the total update as they type.
+                          if (c.key === "ab") {
+                            return [
+                              inputCell,
+                              <td
+                                key="pa-live"
+                                className="px-1 text-center text-xs font-bold text-primary"
+                                title="Plate Appearances = AB + BB + HBP + SAC (auto-calculated)"
+                              >
+                                {livePA ?? 0}
+                              </td>,
+                            ];
+                          }
+                          return [inputCell];
+                        })}
                         <td className="px-1">—</td>
                         <td className="px-1">—</td>
                         <td className="px-1">—</td>
@@ -516,6 +576,7 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
                       </tr>
                     );
                   }
+                  const pa = computePA(s);
                   return (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30">
                       <td className="py-2.5 pr-4">
@@ -523,6 +584,12 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
                         {p.number != null && <div className="text-xs text-muted-foreground">#{p.number}</div>}
                       </td>
                       <td className="text-center px-2">{s?.ab ?? "—"}</td>
+                      <td
+                        className="text-center px-2 font-medium"
+                        title="Plate Appearances = AB + BB + HBP + SAC"
+                      >
+                        {pa ?? "—"}
+                      </td>
                       <td className="text-center px-2">{s?.hits ?? "—"}</td>
                       <td className="text-center px-2">{s?.doubles ?? "—"}</td>
                       <td className="text-center px-2">{s?.triples ?? "—"}</td>
@@ -531,6 +598,7 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
                       <td className="text-center px-2">{s?.bb ?? "—"}</td>
                       <td className="text-center px-2">{s?.k ?? "—"}</td>
                       <td className="text-center px-2">{s?.hbp ?? "—"}</td>
+                      <td className="text-center px-2">{s?.sac ?? "—"}</td>
                       <td className="text-center px-2">{s?.sb ?? "—"}</td>
                       <td className={`text-center px-2 font-mono font-medium ${s && (s.avg ?? 0) >= 0.3 ? "text-green-700" : ""}`}>{fmtAvg(s?.avg)}</td>
                       <td className={`text-center px-2 font-mono font-medium ${s && (s.obp ?? 0) >= 0.35 ? "text-green-700" : ""}`}>{fmtAvg(s?.obp)}</td>
