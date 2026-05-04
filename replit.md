@@ -51,7 +51,7 @@ This project is a multi-tenant lineup management system for baseball/softball co
 - **Game Status Management**: Differentiates between stored `status` and client-side derived `effectiveStatus`; allows dynamic game endings.
 - **Team Sharing**: Multi-coach co-ownership via single-use invite links.
 - **Tournament Mode**: Supports grouping games into tournaments, with pitch count tracking based on Little League rulesets and per-pitcher availability calculations.
-- **Practice Planner**: Allows coaches to plan practices with date, duration, focus areas, and AI-drafted time-blocked plans, including attendance tracking.
+- **Practice Planner**: Allows coaches to plan practices with date, duration, focus areas, and AI-drafted time-blocked plans, including attendance tracking. The AI generator (`practice-plan-ai.ts`) also pulls up to the 8 most recent past practices with non-empty blocks (filtered at the SQL level via `jsonb_array_length`) and feeds a "coach style digest" — favorite drill titles by frequency, typical block durations per drill type, recurring focus areas, and 4 recent practice skeletons (titles + drillType + duration only, hard-capped to bound prompt size) — into the gpt-5.2 prompt so generated plans lean into the coach's recurring drills and naming conventions while still adapting to today's focus areas.
 - **Offline Support**: Field Display page ensures reads and writes survive offline using `localStorage` for caching and pending changes, with last-writer-wins conflict resolution.
 
 # External Dependencies
