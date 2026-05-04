@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useGetGame,
@@ -83,8 +83,11 @@ export default function FieldDisplay() {
 
   // Coach can tap a batter to mark them as "currently up" — the row pulses
   // and the on-deck/in-the-hole rows show below. Stored as the player's
-  // index in battingOrderRows (not the slot number) so it survives roster
-  // changes without pointing at a deleted player.
+  // index in battingOrderRows (not the slot number). Because polling can
+  // shrink or reorder the batting list while the iPad is showing it, an
+  // effect below pins the index back to the same player (by playerId) when
+  // possible, or clamps into range if that player is gone — otherwise the
+  // hero card silently goes blank exactly when a phone edit lands.
   const [currentBatterIdx, setCurrentBatterIdx] = useState(0);
 
   // Show "Just updated" pulse when the lineup data changes. Driven off a
@@ -157,6 +160,37 @@ export default function FieldDisplay() {
       return a.playerName.localeCompare(b.playerName);
     });
   }, [lineup]);
+
+  // Reconcile the at-bat index against polled changes to the batting order.
+  // The coach is mid-game tracking who's up by playerId in their head; if the
+  // backing list shrinks (player removed from another device) or reorders
+  // (slot 3 swapped with slot 5), we need to either follow that player to
+  // their new index or, if they're gone, clamp into range. Otherwise the
+  // hero card briefly shows "—" or even "no batting order yet" right when a
+  // phone edit lands — exactly the worst time to lose the controls.
+  const lastBatterPlayerIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (battingOrder.length === 0) {
+      lastBatterPlayerIdRef.current = null;
+      if (currentBatterIdx !== 0) setCurrentBatterIdx(0);
+      return;
+    }
+    const tracked = lastBatterPlayerIdRef.current;
+    if (tracked != null) {
+      const movedTo = battingOrder.findIndex((r) => r.playerId === tracked);
+      if (movedTo >= 0) {
+        if (movedTo !== currentBatterIdx) setCurrentBatterIdx(movedTo);
+        return;
+      }
+      // Tracked player is no longer in the order — fall through and clamp.
+    }
+    if (currentBatterIdx >= battingOrder.length) {
+      setCurrentBatterIdx(currentBatterIdx % battingOrder.length);
+    }
+    // Sync the tracked id to whoever currentBatterIdx now points at.
+    const safeIdx = Math.min(currentBatterIdx, battingOrder.length - 1);
+    lastBatterPlayerIdRef.current = battingOrder[safeIdx]?.playerId ?? null;
+  }, [battingOrder, currentBatterIdx]);
 
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
@@ -248,35 +282,103 @@ export default function FieldDisplay() {
     );
   }
 
+  // Derive at-bat / on-deck / in-the-hole rows once so the hero block at the
+  // top of the sidebar and the row highlighting in the full list stay in sync.
+  const atBatRow = battingOrder[currentBatterIdx];
+  const onDeckRow =
+    battingOrder.length > 0
+      ? battingOrder[(currentBatterIdx + 1) % battingOrder.length]
+      : undefined;
+  const inHoleRow =
+    battingOrder.length > 0
+      ? battingOrder[(currentBatterIdx + 2) % battingOrder.length]
+      : undefined;
+
+  const advanceBatter = () =>
+    setCurrentBatterIdx((i) =>
+      battingOrder.length === 0 ? 0 : (i + 1) % battingOrder.length,
+    );
+  const rewindBatter = () =>
+    setCurrentBatterIdx((i) =>
+      battingOrder.length === 0
+        ? 0
+        : (i - 1 + battingOrder.length) % battingOrder.length,
+    );
+
   return (
-    <div className="min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col select-none">
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur">
-        <div className="flex items-center gap-3 min-w-0">
+    // Lock the page to the viewport on tablet+ so the field, bench, and
+    // sidebar all fit without scrolling. On phones (sub-lg) we relax the
+    // height so the stacked layout can grow naturally.
+    <div className="min-h-[100dvh] lg:h-[100dvh] bg-slate-950 text-slate-100 flex flex-col select-none lg:overflow-hidden">
+      {/* ── Header (combined: team + inning + score + actions) ── */}
+      <header className="flex items-center justify-between gap-3 px-3 sm:px-6 py-2 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur shrink-0">
+        {/* Left cluster: exit + team vs opponent */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <Link href={`/games/${id}`}>
             <Button
               variant="ghost"
               size="sm"
-              className="text-slate-300 hover:text-white hover:bg-slate-800"
+              className="text-slate-300 hover:text-white hover:bg-slate-800 px-2 sm:px-3"
               data-testid="button-exit-display"
             >
-              <ArrowLeft className="h-4 w-4 mr-1.5" />
-              Exit
+              <ArrowLeft className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Exit</span>
             </Button>
           </Link>
           <div className="min-w-0">
-            <div className="text-lg sm:text-2xl font-bold truncate">
+            <div className="text-base sm:text-xl font-bold truncate leading-tight">
               {teamShortName || teamName || "Team"}
-              <span className="mx-2 text-slate-500 font-normal">vs</span>
+              <span className="mx-1.5 text-slate-500 font-normal">vs</span>
               <span className="truncate">{game?.opponent ?? ""}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+        {/* Center cluster: compact inning controls (always visible) */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setCurrentInning((i) => Math.max(1, i - 1))}
+            disabled={currentInning <= 1}
+            className="h-11 w-11 sm:h-12 sm:w-12 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700 disabled:opacity-30"
+            data-testid="button-prev-inning"
+            aria-label="Previous inning"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </Button>
+          <div className="text-center min-w-[68px] sm:min-w-[88px]">
+            <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-slate-500 leading-none">
+              Inning
+            </div>
+            <div
+              className="text-3xl sm:text-4xl font-black tabular-nums leading-none mt-0.5"
+              data-testid="text-current-inning"
+            >
+              {currentInning}
+              <span className="text-slate-600 text-lg sm:text-xl font-bold">
+                {" "}/ {innings}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setCurrentInning((i) => Math.min(innings, i + 1))}
+            disabled={currentInning >= innings}
+            className="h-11 w-11 sm:h-12 sm:w-12 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700 disabled:opacity-30"
+            data-testid="button-next-inning"
+            aria-label="Next inning"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </Button>
+        </div>
+
+        {/* Right cluster: live status, score, fullscreen */}
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0 flex-1 justify-end">
           <div
             aria-live="polite"
-            className={`hidden sm:flex items-center gap-2 text-sm uppercase tracking-wider font-semibold transition-opacity duration-500 ${
+            className={`hidden md:flex items-center gap-2 text-xs uppercase tracking-wider font-semibold transition-opacity duration-500 ${
               justUpdated ? "text-emerald-400 opacity-100" : "text-slate-400 opacity-90"
             }`}
             data-testid="text-update-status"
@@ -289,16 +391,16 @@ export default function FieldDisplay() {
             />
             {justUpdated ? "Just updated" : "Live"}
           </div>
-          <div className="text-2xl sm:text-3xl font-bold tabular-nums">
+          <div className="text-xl sm:text-2xl font-bold tabular-nums">
             <span className="text-slate-300">{ourScore}</span>
-            <span className="mx-2 text-slate-600">–</span>
+            <span className="mx-1.5 text-slate-600">–</span>
             <span className="text-slate-300">{oppScore}</span>
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={toggleFullscreen}
-            className="text-slate-300 hover:text-white hover:bg-slate-800"
+            className="text-slate-300 hover:text-white hover:bg-slate-800 px-2"
             aria-label="Toggle fullscreen"
             data-testid="button-fullscreen"
           >
@@ -307,52 +409,15 @@ export default function FieldDisplay() {
         </div>
       </header>
 
-      {/* ── Inning controls ────────────────────────────────────── */}
-      <div className="flex items-center justify-center gap-4 sm:gap-8 px-4 py-4 sm:py-6 border-b border-slate-800/80 bg-slate-900/40">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={() => setCurrentInning((i) => Math.max(1, i - 1))}
-          disabled={currentInning <= 1}
-          className="h-14 w-14 sm:h-16 sm:w-16 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700 disabled:opacity-30"
-          data-testid="button-prev-inning"
-          aria-label="Previous inning"
-        >
-          <ChevronLeft className="h-7 w-7" />
-        </Button>
-        <div className="text-center">
-          <div className="text-xs sm:text-sm uppercase tracking-[0.3em] text-slate-500">
-            Inning
-          </div>
-          <div className="text-5xl sm:text-7xl font-black tabular-nums leading-none mt-1">
-            {currentInning}
-            <span className="text-slate-600 text-3xl sm:text-4xl font-bold">
-              {" "}/ {innings}
-            </span>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={() => setCurrentInning((i) => Math.min(innings, i + 1))}
-          disabled={currentInning >= innings}
-          className="h-14 w-14 sm:h-16 sm:w-16 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700 disabled:opacity-30"
-          data-testid="button-next-inning"
-          aria-label="Next inning"
-        >
-          <ChevronRight className="h-7 w-7" />
-        </Button>
-      </div>
-
-      {/* ── Body: field + batting order ───────────────────────── */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,420px)] gap-0 overflow-hidden">
-        {/* Field diagram */}
+      {/* ── Body: field on the left, batting panel on the right ── */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden">
+        {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
-          className="relative p-4 sm:p-6 overflow-hidden"
+          className="flex flex-col p-3 sm:p-4 min-h-0 lg:overflow-hidden"
           data-testid="section-field"
         >
           <div
-            className="relative w-full h-full min-h-[420px] sm:min-h-[560px] rounded-2xl border border-emerald-900/40 overflow-hidden"
+            className="relative w-full flex-1 min-h-[420px] lg:min-h-0 rounded-2xl border border-emerald-900/40 overflow-hidden"
             style={{
               background:
                 "radial-gradient(ellipse at 50% 90%, rgb(20, 83, 45) 0%, rgb(13, 56, 30) 55%, rgb(10, 40, 22) 100%)",
@@ -387,17 +452,17 @@ export default function FieldDisplay() {
                   style={{ top: layout.top, left: layout.left }}
                   data-testid={`field-pos-${pos}`}
                 >
-                  <div className="text-xs sm:text-sm font-bold tracking-wider uppercase text-emerald-100 mb-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+                  <div className="text-[10px] sm:text-xs font-bold tracking-wider uppercase text-emerald-100 mb-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
                     {pos}
                   </div>
                   <div
-                    className={`px-3 py-2 sm:px-4 sm:py-3 rounded-xl border-2 shadow-lg backdrop-blur-sm min-w-[100px] sm:min-w-[140px] text-center ${
+                    className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border-2 shadow-lg backdrop-blur-sm min-w-[92px] sm:min-w-[120px] text-center ${
                       player
                         ? "bg-white/95 border-white text-slate-900"
                         : "bg-slate-900/60 border-slate-700 text-slate-500"
                     }`}
                   >
-                    <div className="text-base sm:text-xl font-bold leading-tight truncate max-w-[160px] sm:max-w-[200px]">
+                    <div className="text-sm sm:text-base font-bold leading-tight truncate max-w-[140px] sm:max-w-[180px]">
                       {player?.name ?? "—"}
                     </div>
                   </div>
@@ -406,20 +471,20 @@ export default function FieldDisplay() {
             })}
           </div>
 
-          {/* Bench strip below the field */}
-          <div className="mt-3 sm:mt-4 rounded-xl border border-slate-800 bg-slate-900/60 px-3 sm:px-4 py-3 sm:py-4">
-            <div className="flex items-baseline gap-3 sm:gap-4 flex-wrap">
-              <span className="text-xs sm:text-sm uppercase tracking-[0.3em] text-slate-400 font-semibold">
+          {/* Bench strip below the field — single compact line */}
+          <div className="mt-2 sm:mt-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 shrink-0">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-400 font-semibold">
                 Bench
               </span>
               {benchNames.length === 0 ? (
-                <span className="text-base text-slate-500">—</span>
+                <span className="text-sm text-slate-500">—</span>
               ) : (
                 benchNames.flatMap((n, i) => {
                   const node = (
                     <span
                       key={n}
-                      className="text-base sm:text-lg font-semibold text-slate-100"
+                      className="text-sm sm:text-base font-semibold text-slate-100"
                       data-testid={`bench-name-${n}`}
                     >
                       {n}
@@ -428,7 +493,7 @@ export default function FieldDisplay() {
                   return i === 0
                     ? [node]
                     : [
-                        <span key={`sep-${i}`} className="text-slate-600 text-base">
+                        <span key={`sep-${i}`} className="text-slate-600 text-sm">
                           ·
                         </span>,
                         node,
@@ -439,100 +504,148 @@ export default function FieldDisplay() {
           </div>
         </section>
 
-        {/* Batting order panel */}
-        <aside className="border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 p-4 sm:p-6 overflow-y-auto">
-          <div className="flex items-baseline justify-between mb-3 sm:mb-4">
-            <h2 className="text-xs sm:text-sm uppercase tracking-[0.3em] text-slate-500 font-semibold">
-              Batting Order
-            </h2>
-            <span className="text-[10px] uppercase tracking-wider text-slate-600">
-              tap to set up
-            </span>
-          </div>
-          <ol className="flex flex-col gap-1.5 sm:gap-2">
-            {battingOrder.length === 0 && (
-              <li className="text-slate-500 text-sm">No batting order yet.</li>
-            )}
-            {battingOrder.map((r, i) => {
-              const isUp = i === currentBatterIdx;
-              const isOnDeck = i === (currentBatterIdx + 1) % battingOrder.length;
-              const isHole = i === (currentBatterIdx + 2) % battingOrder.length;
-              const slotLabel = r.order != null ? r.order : "—";
-              return (
-                <li key={r.playerId}>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentBatterIdx(i)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 sm:py-3 rounded-lg border transition-colors text-left ${
-                      isUp
-                        ? "bg-amber-400/95 border-amber-300 text-slate-950 shadow-lg"
-                        : isOnDeck
-                          ? "bg-slate-800/80 border-slate-600 text-slate-100"
-                          : isHole
-                            ? "bg-slate-800/40 border-slate-700 text-slate-200"
-                            : "bg-slate-900/40 border-slate-800 text-slate-300 hover:bg-slate-800/60"
-                    }`}
-                    data-testid={`batter-row-${i}`}
-                  >
-                    <span
-                      className={`inline-flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full text-sm sm:text-base font-bold tabular-nums ${
-                        isUp
-                          ? "bg-slate-950 text-amber-300"
-                          : "bg-slate-700 text-slate-100"
-                      }`}
+        {/* Batting panel: sticky AT BAT hero on top, scrollable order below */}
+        <aside className="border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 flex flex-col min-h-0 lg:overflow-hidden">
+          {/* Hero: who's up + on deck/in the hole + Next Batter (always visible, no scrolling) */}
+          <div className="shrink-0 border-b border-slate-800 p-3 sm:p-4 bg-slate-900/60">
+            {atBatRow ? (
+              <>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold">
+                    At Bat
+                  </span>
+                </div>
+                <div
+                  className="flex items-center gap-3"
+                  data-testid="hero-at-bat"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <span className="inline-flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-full bg-amber-400 text-slate-950 text-xl sm:text-2xl font-black tabular-nums shadow-lg">
+                    {atBatRow.order ?? "—"}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xl sm:text-2xl font-bold leading-tight truncate text-white">
+                      {atBatRow.playerName}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <div className="rounded-md bg-slate-800/60 border border-slate-700/60 px-2.5 py-1.5">
+                    <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold leading-none">
+                      On Deck
+                    </div>
+                    <div
+                      className="mt-1 text-sm font-bold text-slate-100 truncate leading-tight"
+                      data-testid="text-on-deck"
                     >
-                      {slotLabel}
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-base sm:text-lg font-bold leading-tight truncate">
-                        {r.playerName}
-                      </span>
-                      {(isUp || isOnDeck || isHole) && (
-                        <span
-                          className={`block text-[10px] sm:text-xs uppercase tracking-wider font-semibold mt-0.5 ${
-                            isUp ? "text-slate-700" : "text-slate-500"
-                          }`}
-                        >
-                          {isUp ? "At Bat" : isOnDeck ? "On Deck" : "In the Hole"}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
+                      {onDeckRow?.playerName ?? "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-md bg-slate-800/40 border border-slate-700/40 px-2.5 py-1.5">
+                    <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold leading-none">
+                      In the Hole
+                    </div>
+                    <div
+                      className="mt-1 text-sm font-bold text-slate-200 truncate leading-tight"
+                      data-testid="text-in-hole"
+                    >
+                      {inHoleRow?.playerName ?? "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-[auto_1fr] gap-2 mt-3">
+                  <Button
+                    variant="outline"
+                    onClick={rewindBatter}
+                    className="h-12 w-12 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700"
+                    aria-label="Previous batter"
+                    data-testid="button-prev-batter"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    onClick={advanceBatter}
+                    className="h-12 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-base shadow-lg"
+                    data-testid="button-next-batter"
+                  >
+                    Next Batter
+                    <ChevronRight className="h-5 w-5 ml-1" />
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="text-slate-400 text-sm py-2">
+                No batting order yet. Set one from the game page.
+              </div>
+            )}
+          </div>
 
-          {battingOrder.length > 0 && (
-            <div className="mt-3 sm:mt-4 grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() =>
-                  setCurrentBatterIdx(
-                    (i) => (i - 1 + battingOrder.length) % battingOrder.length,
-                  )
-                }
-                className="h-12 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700"
-                data-testid="button-prev-batter"
-              >
-                <ChevronLeft className="h-5 w-5 mr-1" />
-                Prev
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() =>
-                  setCurrentBatterIdx((i) => (i + 1) % battingOrder.length)
-                }
-                className="h-12 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700"
-                data-testid="button-next-batter"
-              >
-                Next
-                <ChevronRight className="h-5 w-5 ml-1" />
-              </Button>
+          {/* Full batting order: scrolls inside the sidebar so the hero stays put */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
+            <div className="flex items-baseline justify-between mb-2">
+              <h2 className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">
+                Batting Order
+              </h2>
+              <span className="text-[10px] uppercase tracking-wider text-slate-600">
+                tap to set up
+              </span>
             </div>
-          )}
+            <ol className="flex flex-col gap-1.5">
+              {battingOrder.length === 0 && (
+                <li className="text-slate-500 text-sm">No batting order yet.</li>
+              )}
+              {battingOrder.map((r, i) => {
+                const isUp = i === currentBatterIdx;
+                const isOnDeck = i === (currentBatterIdx + 1) % battingOrder.length;
+                const isHole = i === (currentBatterIdx + 2) % battingOrder.length;
+                const slotLabel = r.order != null ? r.order : "—";
+                return (
+                  <li key={r.playerId}>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentBatterIdx(i)}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors text-left ${
+                        isUp
+                          ? "bg-amber-400/95 border-amber-300 text-slate-950 shadow"
+                          : isOnDeck
+                            ? "bg-slate-800/80 border-slate-600 text-slate-100"
+                            : isHole
+                              ? "bg-slate-800/40 border-slate-700 text-slate-200"
+                              : "bg-slate-900/40 border-slate-800 text-slate-300 hover:bg-slate-800/60"
+                      }`}
+                      data-testid={`batter-row-${i}`}
+                    >
+                      <span
+                        className={`inline-flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full text-xs sm:text-sm font-bold tabular-nums ${
+                          isUp
+                            ? "bg-slate-950 text-amber-300"
+                            : "bg-slate-700 text-slate-100"
+                        }`}
+                      >
+                        {slotLabel}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm sm:text-base font-bold leading-tight truncate">
+                          {r.playerName}
+                        </span>
+                        {(isUp || isOnDeck || isHole) && (
+                          <span
+                            className={`block text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold mt-0.5 leading-none ${
+                              isUp ? "text-slate-700" : "text-slate-500"
+                            }`}
+                          >
+                            {isUp ? "At Bat" : isOnDeck ? "On Deck" : "In the Hole"}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </aside>
       </main>
     </div>
