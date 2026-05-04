@@ -1230,7 +1230,7 @@ export default function FieldDisplay() {
     // Lock the page to the viewport on tablet+ so the field, bench, and
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
-    <div className="min-h-[100dvh] lg:h-[100dvh] bg-slate-950 text-slate-100 flex flex-col select-none lg:overflow-hidden">
+    <div className="min-h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-slate-950 text-slate-100 flex flex-col select-none max-lg:landscape:overflow-hidden lg:overflow-hidden">
       {/* ── Header (combined: team + inning + score + actions) ── */}
       <header className="flex items-center justify-between gap-3 px-3 sm:px-6 py-2 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur shrink-0">
         {/* Left cluster: exit + team vs opponent */}
@@ -1428,14 +1428,32 @@ export default function FieldDisplay() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden">
+      {/* Three responsive layouts:
+       *  - Phone portrait (default): single column, page may scroll if the
+       *    batting order has too many batters to fit under the field.
+       *  - Phone landscape (`max-lg:landscape:`): split like iPad but with
+       *    a narrower 180–240px sidebar so the field stays usable on the
+       *    short side of a phone.
+       *  - iPad/desktop (`lg:`): full split with a 320–400px sidebar.
+       *
+       *  IMPORTANT: phone-landscape rules are scoped with `max-lg:` so
+       *  they cannot apply at iPad-landscape (1024x768). In this Tailwind
+       *  4 build the `landscape:` media query happens to be emitted
+       *  AFTER `lg:` in the compiled CSS, so an unscoped `landscape:`
+       *  rule would win against `lg:` on iPad-landscape and shrink the
+       *  iPad sidebar to phone-landscape width. */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 max-lg:landscape:grid-cols-[1fr_minmax(180px,240px)] max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
-          className="flex flex-col p-3 sm:p-4 min-h-0 lg:overflow-hidden"
+          className="flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden"
           data-testid="section-field"
         >
+          {/* Field min-height is generous in portrait (so the diagram is
+           *  large enough to drag chips on) but drops to 0 in landscape and
+           *  on lg, where the parent already constrains height to the
+           *  viewport and the field is allowed to fill whatever's left. */}
           <div
-            className="relative w-full flex-1 min-h-[420px] lg:min-h-0 rounded-2xl border border-emerald-950/60 overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.45)]"
+            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:landscape:min-h-0 lg:min-h-0 rounded-2xl border border-emerald-950/60 overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.45)]"
             style={{ background: lighting.grassGradient }}
             data-lighting={lighting.label}
             data-testid={`field-lighting-${lighting.label}`}
@@ -1615,17 +1633,22 @@ export default function FieldDisplay() {
           />
         </section>
 
-        {/* Batting panel: full batting order, fits the sidebar height with
-         *  no scrolling. Each row is a flex child of an equal-distribution
-         *  column (`flex-1 basis-0`) so 9 batters get larger rows and 18
-         *  batters get smaller ones — the list always fills the sidebar
-         *  exactly without ever requiring a scroll, which is the whole
-         *  point of mounting an iPad to the dugout fence. The "currently
-         *  at bat" tracker was removed because there's no way to know
-         *  what's actually happening on the field without GameChanger
-         *  integration, and a stale at-bat indicator was worse than no
-         *  indicator. */}
-        <aside className="border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 flex flex-col min-h-0 lg:overflow-hidden p-3 sm:p-4">
+        {/* Batting panel layout per viewport:
+         *  - Phone portrait (default): a 2-column grid with a real per-row
+         *    min-height so 12+ batters render legibly under the field.
+         *    The page itself is allowed to scroll on portrait phones (root
+         *    is min-h, not h), so a deep roster falls below the fold
+         *    instead of crushing into unreadable strips.
+         *  - Phone landscape AND iPad/desktop (`lg:`): the original
+         *    equal-distribution flex column — 9 batters get tall rows, 18
+         *    batters get short ones, and the list always fills the
+         *    sidebar exactly without scrolling. `flex-1 basis-0` is left
+         *    on the items unconditionally because it's a no-op on grid
+         *    children. The "currently at bat" tracker was removed because
+         *    there's no way to know what's actually happening on the
+         *    field without GameChanger integration, and a stale at-bat
+         *    indicator was worse than no indicator. */}
+        <aside className="border-t max-lg:landscape:border-t-0 max-lg:landscape:border-l lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 flex flex-col min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden p-3 sm:p-4">
           <h2 className="shrink-0 text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold mb-2">
             Batting Order
           </h2>
@@ -1633,7 +1656,7 @@ export default function FieldDisplay() {
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
             <ol
-              className="flex-1 min-h-0 flex flex-col gap-1"
+              className="flex-1 min-h-0 grid grid-cols-2 gap-1.5 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:gap-1 lg:flex lg:flex-col lg:gap-1"
               data-testid="batting-order-list"
             >
               {battingOrder.map((r) => {
@@ -1641,7 +1664,7 @@ export default function FieldDisplay() {
                 return (
                   <li
                     key={r.playerId}
-                    className="flex-1 basis-0 min-h-0 flex items-center gap-2.5 px-2.5 rounded-lg border bg-slate-900/40 border-slate-800 text-slate-100"
+                    className="min-h-10 max-lg:landscape:min-h-0 lg:min-h-0 flex-1 basis-0 flex items-center gap-2.5 px-2.5 py-1 max-lg:landscape:py-0 lg:py-0 rounded-lg border bg-slate-900/40 border-slate-800 text-slate-100"
                     data-testid={`batter-row-${r.playerId}`}
                   >
                     <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums bg-slate-700 text-slate-100">

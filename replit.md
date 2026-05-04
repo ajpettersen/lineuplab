@@ -38,7 +38,7 @@ This project is a multi-tenant lineup management system for baseball/softball co
 - **Lineup Grid**: Pill-shaped player chips, circular inning badges, alternating row backgrounds.
 - **Interactive Editing**: Drag-and-drop and tap-to-move for lineup adjustments.
 - **Data Visualization**: Recharts for season statistics.
-- **Field Display**: Read-only page optimized for iPad, featuring dynamic lighting based on time of day, score steppers with swipe gestures, game timer, defensive drag-and-drop, and robust offline support with optimistic UI updates and auto-sync on reconnect.
+- **Field Display**: Read-only page optimized for iPad, featuring dynamic lighting based on time of day, score steppers with swipe gestures, game timer, defensive drag-and-drop, and robust offline support with optimistic UI updates and auto-sync on reconnect. Three responsive layouts via Tailwind 4 `max-lg:landscape:` and `lg:` variants: phone portrait reflows the batting order to a 2-column grid with `min-h-10` rows under the field (page may scroll for deep rosters); phone landscape splits side-by-side with a 180–240px sidebar locked to viewport; iPad/desktop keeps the full 320–400px sidebar with equal-distribution rows. The `max-lg:` scoping is essential because `landscape:` is emitted after `lg:` in the compiled CSS — an unscoped `landscape:` rule would override `lg:` on iPad-landscape and shrink the iPad sidebar to phone width.
 
 ## Technical Implementations
 
