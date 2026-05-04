@@ -32,8 +32,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X } from "lucide-react";
+import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X, AlertTriangle, Info, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -193,6 +199,18 @@ function ImportRosterDialog({
       next[idx] = { ...cur, preferredPositions: preferred };
       return next;
     });
+  };
+
+  const setAllPositions = (idx: number, all: boolean) => {
+    setExtracted((prev) =>
+      prev
+        ? prev.map((p, i) =>
+            i === idx
+              ? { ...p, preferredPositions: all ? [...ALL_POSITIONS] : [] }
+              : p,
+          )
+        : prev,
+    );
   };
 
   const updateRow = (idx: number, patch: Partial<ExtractedPlayer>) => {
@@ -422,7 +440,24 @@ function ImportRosterDialog({
                         />
                       </td>
                       <td className="p-2 align-top">
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {(() => {
+                            const allSelected =
+                              row.preferredPositions.length === ALL_POSITIONS.length &&
+                              ALL_POSITIONS.every((p) => row.preferredPositions.includes(p));
+                            return (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setAllPositions(i, !allSelected)}
+                                className="h-6 px-2 text-xs"
+                                data-testid={`button-pos-all-${i}`}
+                              >
+                                {allSelected ? "Clear" : "All"}
+                              </Button>
+                            );
+                          })()}
                           {ALL_POSITIONS.map((pos) => {
                             const preferred = row.preferredPositions.includes(pos);
                             return (
@@ -568,7 +603,28 @@ function AddPlayerDialog({
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <Label>Preferred Positions</Label>
+            <div className="flex items-center justify-between">
+              <Label>Preferred Positions</Label>
+              {(() => {
+                const allSelected =
+                  preferred.length === ALL_POSITIONS.length &&
+                  ALL_POSITIONS.every((p) => preferred.includes(p));
+                return (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() =>
+                      setPreferred(allSelected ? [] : [...ALL_POSITIONS])
+                    }
+                    data-testid="button-preferred-toggle-all"
+                  >
+                    {allSelected ? "Clear all" : "Select all"}
+                  </Button>
+                );
+              })()}
+            </div>
             <p className="text-xs text-muted-foreground -mt-1">
               Tap positions this player likes or plays best. Optional — every
               player can play any position; this just biases the lineup
@@ -610,6 +666,154 @@ function AddPlayerDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type CoverageLevel = "uncovered" | "thin" | "covered";
+
+function coverageLevel(count: number): CoverageLevel {
+  if (count === 0) return "uncovered";
+  if (count === 1) return "thin";
+  return "covered";
+}
+
+const COVERAGE_STYLES: Record<
+  CoverageLevel,
+  { card: string; abbr: string; count: string; ring: string }
+> = {
+  uncovered: {
+    card: "border-destructive/40 bg-destructive/10",
+    abbr: "text-destructive",
+    count: "text-destructive/90",
+    ring: "ring-destructive/30",
+  },
+  thin: {
+    card: "border-amber-500/40 bg-amber-500/10",
+    abbr: "text-amber-500 dark:text-amber-400",
+    count: "text-amber-600/90 dark:text-amber-300/90",
+    ring: "ring-amber-500/30",
+  },
+  covered: {
+    card: "border-emerald-500/40 bg-emerald-500/10",
+    abbr: "text-emerald-600 dark:text-emerald-400",
+    count: "text-emerald-700/90 dark:text-emerald-300/90",
+    ring: "ring-emerald-500/30",
+  },
+};
+
+const COVERAGE_TOOLTIP: Record<CoverageLevel, string> = {
+  uncovered:
+    "No one prefers this position. Consider training a player here.",
+  thin: "Only one player prefers this position — no backup if they're absent.",
+  covered: "Two or more players prefer this position.",
+};
+
+function PositionCoveragePanel({
+  players,
+}: {
+  players: ReadonlyArray<{ preferredPositions: string[] }>;
+}) {
+  const coverage: Record<string, number> = Object.fromEntries(
+    ALL_POSITIONS.map((p) => [p, 0]),
+  );
+  for (const player of players) {
+    for (const pos of player.preferredPositions ?? []) {
+      if (pos in coverage) coverage[pos]++;
+    }
+  }
+
+  const problems = ALL_POSITIONS.filter((p) => (coverage[p] ?? 0) < 2);
+  const allCovered = problems.length === 0;
+
+  return (
+    <Card className="border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <CardTitle className="text-base font-semibold">
+            Position coverage
+          </CardTitle>
+          <div className="flex items-center gap-2 text-sm">
+            {allCovered ? (
+              <>
+                <ShieldCheck className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
+                <span className="text-muted-foreground">
+                  All positions covered
+                </span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
+                <span className="text-muted-foreground">
+                  Needs depth at:{" "}
+                  {problems.map((pos, i) => {
+                    const level = coverageLevel(coverage[pos] ?? 0);
+                    const styles = COVERAGE_STYLES[level];
+                    return (
+                      <span key={pos}>
+                        <span
+                          className={`font-semibold ${styles.abbr}`}
+                          data-testid={`coverage-summary-${pos}`}
+                        >
+                          {pos}
+                        </span>
+                        {i < problems.length - 1 ? ", " : ""}
+                      </span>
+                    );
+                  })}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <TooltipProvider delayDuration={200}>
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
+            {ALL_POSITIONS.map((pos) => {
+              const count = coverage[pos] ?? 0;
+              const level = coverageLevel(count);
+              const styles = COVERAGE_STYLES[level];
+              return (
+                <Tooltip key={pos}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={`flex flex-col items-center justify-center rounded-md border px-2 py-2 transition-colors ${styles.card}`}
+                      data-testid={`coverage-card-${pos}`}
+                      data-level={level}
+                    >
+                      <div
+                        className={`text-base font-bold leading-none ${styles.abbr}`}
+                      >
+                        {pos}
+                      </div>
+                      <div
+                        className={`mt-1 text-xs font-medium ${styles.count} flex items-center gap-1`}
+                      >
+                        {level === "uncovered" && (
+                          <AlertTriangle
+                            className="h-3 w-3"
+                            aria-hidden
+                          />
+                        )}
+                        {level === "thin" && (
+                          <Info className="h-3 w-3" aria-hidden />
+                        )}
+                        <span>
+                          {pos} / {count}
+                        </span>
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {COVERAGE_TOOLTIP[level]}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </TooltipProvider>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -655,6 +859,10 @@ export default function Players() {
           </Button>
         </div>
       </div>
+
+      {!isLoading && players.length >= 1 && (
+        <PositionCoveragePanel players={players} />
+      )}
 
       {isLoading ? (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">

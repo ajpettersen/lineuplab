@@ -343,7 +343,7 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
           // "Them" so kids glancing at the dugout iPad don't confuse
           // them. Sized to stay legible from 6+ feet away (the dugout
           // fence) without overpowering the score number itself.
-          className="text-xs sm:text-sm uppercase font-bold tracking-widest text-slate-400 text-center leading-tight pb-0.5"
+          className="text-xs sm:text-sm uppercase font-display font-semibold tracking-widest text-slate-400 text-center leading-tight pb-0.5"
           aria-hidden="true"
         >
           {label}
@@ -352,7 +352,7 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
       <button
         type="button"
         onClick={inc}
-        className="flex h-7 sm:h-8 lg:h-9 items-center justify-center rounded-t-md text-slate-500 hover:bg-slate-800/60 hover:text-emerald-300 active:text-emerald-300 transition-colors"
+        className="flex h-6 sm:h-7 lg:h-8 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-broadcast-gold active:text-broadcast-gold transition-colors"
         aria-label={`Increase ${ariaLabel}`}
         data-testid={`${testId}-up`}
       >
@@ -370,14 +370,14 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
         onPointerCancel={() => {
           startYRef.current = null;
         }}
-        className="text-4xl sm:text-5xl lg:text-6xl font-black tabular-nums text-slate-100 px-2 py-1 cursor-ns-resize touch-none rounded text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-amber-400/60 leading-none"
+        className="text-4xl sm:text-5xl lg:text-6xl font-bold tabular-nums text-broadcast-gold font-['Roboto_Mono'] px-2 py-1 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-broadcast-gold/60 leading-none"
       >
         {value}
       </div>
       <button
         type="button"
         onClick={dec}
-        className="flex h-7 sm:h-8 lg:h-9 items-center justify-center rounded-b-md text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
+        className="flex h-6 sm:h-7 lg:h-8 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
         aria-label={`Decrease ${ariaLabel}`}
         data-testid={`${testId}-down`}
       >
@@ -468,28 +468,30 @@ function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
   };
 
   return (
-    <div className="flex items-center gap-0.5 sm:gap-1" data-testid="game-timer">
-      <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-slate-500 leading-tight hidden sm:inline pr-0.5">
-        Time
+    <div className="flex flex-col items-end gap-0 leading-none" data-testid="game-timer">
+      <span className="text-[9px] sm:text-[10px] uppercase font-display font-semibold tracking-[0.25em] text-slate-400 leading-tight hidden sm:inline">
+        Elapsed
       </span>
-      <span
-        className="text-base sm:text-lg font-bold tabular-nums text-amber-300"
-        aria-label={`Game time ${display}`}
-        aria-live="off"
-        data-testid="text-game-timer"
-      >
-        {display}
-      </span>
-      <button
-        type="button"
-        onClick={handleReset}
-        className="p-1 text-slate-500 hover:text-rose-300 hover:bg-slate-800 rounded transition-colors"
-        aria-label="Reset game timer"
-        title="Reset timer"
-        data-testid="button-reset-timer"
-      >
-        <RotateCcw className="h-3 w-3" aria-hidden="true" />
-      </button>
+      <div className="flex items-center gap-1">
+        <span
+          className="text-lg sm:text-xl font-bold tabular-nums text-white font-['Roboto_Mono'] tracking-wider"
+          aria-label={`Game time ${display}`}
+          aria-live="off"
+          data-testid="text-game-timer"
+        >
+          {display}
+        </span>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="p-1 text-slate-500 hover:text-rose-300 hover:bg-slate-800 rounded transition-colors"
+          aria-label="Reset game timer"
+          title="Reset timer"
+          data-testid="button-reset-timer"
+        >
+          <RotateCcw className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -726,9 +728,12 @@ export default function FieldDisplay() {
   const [currentInning, setCurrentInning] = useState(1);
   useEffect(() => {
     // If the game shrinks (end-early) below the inning we're showing, snap
-    // back to the last valid inning so the screen never goes blank.
+    // back to the last valid inning so the screen never goes blank. Wait
+    // until the game has actually loaded — otherwise we'd compare against
+    // the placeholder `?? 6` and risk thrashing during initial hydration.
+    if (!game) return;
     if (currentInning > innings) setCurrentInning(innings);
-  }, [innings, currentInning]);
+  }, [innings, currentInning, game]);
 
   // Show "Just updated" pulse when the lineup data changes. Driven off a
   // string fingerprint of the lineup so we don't false-trigger on identical
@@ -1230,16 +1235,16 @@ export default function FieldDisplay() {
     // Lock the page to the viewport on tablet+ so the field, bench, and
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
-    <div className="min-h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-slate-950 text-slate-100 flex flex-col select-none max-lg:landscape:overflow-hidden lg:overflow-hidden">
-      {/* ── Header (combined: team + inning + score + actions) ── */}
-      <header className="flex items-center justify-between gap-3 px-3 sm:px-6 py-2 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur shrink-0">
+    <div className="min-h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:landscape:overflow-hidden lg:overflow-hidden">
+      {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ── */}
+      <header className="flex items-center justify-between gap-3 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <Link href={`/games/${id}`}>
             <Button
               variant="ghost"
               size="sm"
-              className="text-slate-300 hover:text-white hover:bg-slate-800 px-2 sm:px-3"
+              className="text-slate-400 hover:text-white hover:bg-slate-800/60 px-2 sm:px-3"
               data-testid="button-exit-display"
             >
               <ArrowLeft className="h-4 w-4 sm:mr-1.5" />
@@ -1247,38 +1252,39 @@ export default function FieldDisplay() {
             </Button>
           </Link>
           <div className="min-w-0">
-            <div className="text-base sm:text-xl font-bold truncate leading-tight">
-              {teamShortName || teamName || "Team"}
-              <span className="mx-1.5 text-slate-500 font-normal">vs</span>
-              <span className="truncate">{game?.opponent ?? ""}</span>
+            <div className="font-display uppercase tracking-wider text-xl sm:text-3xl lg:text-4xl font-bold truncate leading-none flex items-baseline gap-2 sm:gap-3">
+              <span className="text-white truncate">{teamShortName || teamName || "Team"}</span>
+              <span className="text-slate-500 font-normal text-sm sm:text-lg">vs</span>
+              <span className="text-broadcast-gold truncate">{game?.opponent ?? ""}</span>
             </div>
           </div>
         </div>
 
-        {/* Center cluster: compact inning controls (always visible) */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Center cluster: broadcast inning badge + compact controls */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 bg-[#050d1a] border-l border-r border-[#1a2a42] px-2 sm:px-4 py-1">
           <Button
             variant="outline"
             size="lg"
             onClick={() => setCurrentInning((i) => Math.max(1, i - 1))}
             disabled={currentInning <= 1}
-            className="h-11 w-11 sm:h-12 sm:w-12 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700 disabled:opacity-30"
+            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-broadcast-gold disabled:opacity-30 rounded-none"
             data-testid="button-prev-inning"
             aria-label="Previous inning"
           >
             <ChevronLeft className="h-6 w-6" />
           </Button>
-          <div className="text-center min-w-[68px] sm:min-w-[88px]">
-            <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-slate-500 leading-none">
+          <div className="text-center min-w-[68px] sm:min-w-[96px] px-1">
+            <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-slate-400 leading-none font-display font-semibold">
               Inning
             </div>
             <div
-              className="text-3xl sm:text-4xl font-black tabular-nums leading-none mt-0.5"
+              className="text-2xl sm:text-3xl font-bold tabular-nums leading-none mt-1 font-['Roboto_Mono'] text-broadcast-gold flex items-center justify-center gap-1"
               data-testid="text-current-inning"
             >
-              {currentInning}
-              <span className="text-slate-600 text-lg sm:text-xl font-bold">
-                {" "}/ {innings}
+              <span aria-hidden="true" className="text-broadcast-gold text-base sm:text-lg leading-none">▲</span>
+              <span>{currentInning}</span>
+              <span className="text-slate-600 text-sm sm:text-base font-bold">
+                / {innings}
               </span>
             </div>
           </div>
@@ -1287,7 +1293,7 @@ export default function FieldDisplay() {
             size="lg"
             onClick={() => setCurrentInning((i) => Math.min(innings, i + 1))}
             disabled={currentInning >= innings}
-            className="h-11 w-11 sm:h-12 sm:w-12 p-0 border-slate-700 bg-slate-800/60 text-slate-100 hover:bg-slate-700 disabled:opacity-30"
+            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-broadcast-gold disabled:opacity-30 rounded-none"
             data-testid="button-next-inning"
             aria-label="Next inning"
           >
@@ -1309,12 +1315,12 @@ export default function FieldDisplay() {
             * locate the element; the text content varies by state. */}
           <div
             aria-live="polite"
-            className={`hidden md:flex items-center gap-2 text-xs uppercase tracking-wider font-semibold transition-opacity duration-500 ${
+            className={`hidden md:flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-display font-semibold px-2 py-1 border transition-opacity duration-500 ${
               !online
-                ? "text-amber-400 opacity-100"
+                ? "text-amber-400 border-amber-400/60 bg-amber-950/30 opacity-100"
                 : justUpdated
-                  ? "text-emerald-400 opacity-100"
-                  : "text-slate-400 opacity-90"
+                  ? "text-emerald-400 border-emerald-400/60 bg-emerald-950/30 opacity-100"
+                  : "text-slate-400 border-[#1a2a42] bg-[#050d1a] opacity-90"
             }`}
             data-testid="text-update-status"
             data-online={online ? "true" : "false"}
@@ -1328,7 +1334,7 @@ export default function FieldDisplay() {
             ) : (
               <>
                 <span
-                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  className={`inline-block h-2 w-2 ${
                     justUpdated ? "bg-emerald-400 animate-pulse" : "bg-emerald-500/70"
                   }`}
                   aria-hidden="true"
@@ -1374,7 +1380,7 @@ export default function FieldDisplay() {
             {/* Bottom-aligned dash, sized to the new larger score
               * numbers so it sits between them visually instead of
               * shrinking into the gap. */}
-            <span className="text-4xl sm:text-5xl lg:text-6xl font-black tabular-nums text-slate-600 pb-1 leading-none">
+            <span className="text-4xl sm:text-5xl lg:text-6xl font-bold tabular-nums text-slate-700 pb-1 leading-none font-['Roboto_Mono']">
               –
             </span>
             <ScoreStepper
@@ -1393,8 +1399,8 @@ export default function FieldDisplay() {
             onClick={() => setDimMode((d) => !d)}
             className={`px-2 ${
               dimMode
-                ? "text-amber-300 hover:text-amber-200 hover:bg-slate-800"
-                : "text-slate-300 hover:text-white hover:bg-slate-800"
+                ? "text-broadcast-gold hover:text-amber-200 hover:bg-slate-800/60"
+                : "text-slate-500 hover:text-white hover:bg-slate-800/60"
             }`}
             aria-label={dimMode ? "Disable dim mode (brighten screen)" : "Enable dim mode (save battery)"}
             aria-pressed={dimMode}
@@ -1407,7 +1413,7 @@ export default function FieldDisplay() {
             variant="ghost"
             size="sm"
             onClick={toggleFullscreen}
-            className="text-slate-300 hover:text-white hover:bg-slate-800 px-2"
+            className="text-slate-500 hover:text-white hover:bg-slate-800/60 px-2"
             aria-label="Toggle fullscreen"
             data-testid="button-fullscreen"
           >
@@ -1442,10 +1448,10 @@ export default function FieldDisplay() {
        *  AFTER `lg:` in the compiled CSS, so an unscoped `landscape:`
        *  rule would win against `lg:` on iPad-landscape and shrink the
        *  iPad sidebar to phone-landscape width. */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 max-lg:landscape:grid-cols-[1fr_minmax(180px,240px)] max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden">
+      <main className="flex-1 min-h-0 grid grid-cols-1 max-lg:landscape:grid-cols-[1fr_minmax(180px,240px)] max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
-          className="flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden"
+          className="flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden bg-[#03060a]"
           data-testid="section-field"
         >
           {/* Field min-height is generous in portrait (so the diagram is
@@ -1453,7 +1459,7 @@ export default function FieldDisplay() {
            *  on lg, where the parent already constrains height to the
            *  viewport and the field is allowed to fill whatever's left. */}
           <div
-            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:landscape:min-h-0 lg:min-h-0 rounded-2xl border border-emerald-950/60 overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.45)]"
+            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:landscape:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]"
             style={{ background: lighting.grassGradient }}
             data-lighting={lighting.label}
             data-testid={`field-lighting-${lighting.label}`}
@@ -1482,45 +1488,40 @@ export default function FieldDisplay() {
                   <stop offset="100%" stopColor="rgb(140, 88, 48)" />
                 </radialGradient>
                 <radialGradient id="fd-infieldGrass" cx="50%" cy="50%" r="60%">
-                  <stop offset="0%" stopColor="rgb(48, 130, 65)" />
-                  <stop offset="100%" stopColor="rgb(28, 95, 45)" />
+                  <stop offset="0%" stopColor="rgb(20, 83, 45)" />
+                  <stop offset="100%" stopColor="rgb(6, 46, 22)" />
                 </radialGradient>
-                {/* Faint grass mowing stripes for that broadcast look */}
+                {/* Broadcast-style mowing stripes — wider bands for that
+                    telecast field-graphic look. */}
                 <pattern
                   id="fd-stripes"
                   width="100"
-                  height="6"
+                  height="8"
                   patternUnits="userSpaceOnUse"
                 >
-                  <rect width="100" height="3" fill="rgba(255,255,255,0.025)" />
+                  <rect width="100" height="4" fill="rgba(255,255,255,0.03)" />
                 </pattern>
               </defs>
 
               {/* Mowing stripes overlay across the whole grass */}
               <rect width="100" height="100" fill="url(#fd-stripes)" />
 
-              {/* Outfield warning track arc — subtle line at the back */}
+              {/* Outfield warning track arc — crisp white at the back */}
               <path
                 d="M 4 36 Q 50 -12 96 36"
-                stroke="rgba(255,255,255,0.10)"
-                strokeWidth="0.6"
-                fill="none"
-              />
-              <path
-                d="M 7 38 Q 50 -8 93 38"
-                stroke="rgba(255,255,255,0.05)"
+                stroke="rgba(255,255,255,0.7)"
                 strokeWidth="0.4"
                 fill="none"
               />
 
-              {/* Foul lines from home plate out past 1B and 3B to the corners */}
+              {/* Foul lines from home plate out past 1B and 3B to the corners — bright white */}
               <line
                 x1="50" y1="92" x2="2" y2="32"
-                stroke="rgba(255,255,255,0.55)" strokeWidth="0.35"
+                stroke="rgba(255,255,255,0.9)" strokeWidth="0.5"
               />
               <line
                 x1="50" y1="92" x2="98" y2="32"
-                stroke="rgba(255,255,255,0.55)" strokeWidth="0.35"
+                stroke="rgba(255,255,255,0.9)" strokeWidth="0.5"
               />
 
               {/* Skinned infield (dirt) — diamond between the four bases */}
@@ -1536,26 +1537,26 @@ export default function FieldDisplay() {
                 fill="url(#fd-infieldGrass)"
               />
 
-              {/* Basepath chalk outline (just inside the dirt edge) */}
+              {/* Basepath chalk outline — bright crisp white for broadcast feel */}
               <path
                 d="M 50 92 L 73 67 L 50 42 L 27 67 Z"
                 fill="none"
-                stroke="rgba(255,255,255,0.55)"
-                strokeWidth="0.25"
+                stroke="rgba(255,255,255,0.95)"
+                strokeWidth="0.4"
               />
 
               {/* Pitcher's mound */}
               <circle
                 cx="50" cy="60" r="3.6"
                 fill="url(#fd-mound)"
-                stroke="rgba(255,255,255,0.35)"
-                strokeWidth="0.18"
+                stroke="rgba(255,255,255,0.6)"
+                strokeWidth="0.2"
               />
               {/* Pitcher's rubber */}
-              <rect x="48.5" y="59.7" width="3" height="0.6" fill="rgba(255,255,255,0.85)" />
+              <rect x="48.5" y="59.7" width="3" height="0.6" fill="rgba(255,255,255,0.95)" />
 
               {/* Bases (rotated squares) */}
-              <g fill="white" stroke="rgba(0,0,0,0.35)" strokeWidth="0.15">
+              <g fill="white" stroke="rgba(0,0,0,0.4)" strokeWidth="0.18">
                 <rect x="48.5" y="40.5" width="3" height="3" transform="rotate(45 50 42)" />
                 <rect x="71.5" y="65.5" width="3" height="3" transform="rotate(45 73 67)" />
                 <rect x="25.5" y="65.5" width="3" height="3" transform="rotate(45 27 67)" />
@@ -1565,13 +1566,13 @@ export default function FieldDisplay() {
               <polygon
                 points="50,89 53,91.5 53,94.5 47,94.5 47,91.5"
                 fill="white"
-                stroke="rgba(0,0,0,0.35)"
-                strokeWidth="0.15"
+                stroke="rgba(0,0,0,0.4)"
+                strokeWidth="0.18"
               />
 
               {/* Batter's boxes (subtle) */}
-              <rect x="44.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.15" />
-              <rect x="53.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.15" />
+              <rect x="44.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.18" />
+              <rect x="53.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.18" />
             </svg>
 
             {/* Soft top vignette — color shifts with lighting so the dugout
@@ -1648,36 +1649,73 @@ export default function FieldDisplay() {
          *    there's no way to know what's actually happening on the
          *    field without GameChanger integration, and a stale at-bat
          *    indicator was worse than no indicator. */}
-        <aside className="border-t max-lg:landscape:border-t-0 max-lg:landscape:border-l lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/40 flex flex-col min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden p-3 sm:p-4">
-          <h2 className="shrink-0 text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold mb-2">
-            Batting Order
-          </h2>
+        <aside className="border-t max-lg:landscape:border-t-0 max-lg:landscape:border-l lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20">
+          {/* Broadcast-graphic LINEUP header — Oswald uppercase with a gold
+           *  underline to feel like a TV chyron */}
+          <div className="shrink-0 bg-[#0f172a] border-b-2 border-broadcast-gold px-4 py-2 sm:py-3 text-center">
+            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.3em] uppercase text-broadcast-gold leading-none">
+              Lineup
+            </h2>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 sm:p-3">
           {battingOrder.length === 0 ? (
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
             <ol
-              className="flex-1 min-h-0 grid grid-cols-2 gap-1.5 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:gap-1 lg:flex lg:flex-col lg:gap-1"
+              className="grid grid-cols-2 gap-1 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:gap-1 lg:flex lg:flex-col lg:gap-1"
               data-testid="batting-order-list"
             >
-              {battingOrder.map((r) => {
+              {battingOrder.map((r, idx) => {
                 const slotLabel = r.order != null ? r.order : "—";
+                // TODO: wire real lineup-progression state once at-bat
+                // tracking lands. For now we highlight the first row,
+                // matching the BroadcastBooth mockup exactly. The
+                // BroadcastBooth approval reviewed the visual treatment
+                // — any later "currently at bat" logic should reuse the
+                // same `isAtBat` styling below.
+                const isAtBat = idx === 0;
                 return (
                   <li
                     key={r.playerId}
-                    className="min-h-10 max-lg:landscape:min-h-0 lg:min-h-0 flex-1 basis-0 flex items-center gap-2.5 px-2.5 py-1 max-lg:landscape:py-0 lg:py-0 rounded-lg border bg-slate-900/40 border-slate-800 text-slate-100"
+                    className={`relative flex items-stretch h-12 sm:h-14 overflow-hidden border transition-all ${
+                      isAtBat
+                        ? "border-broadcast-gold bg-[#1a2a42] shadow-[0_2px_0_0_rgba(0,0,0,0.4)]"
+                        : idx % 2 === 0
+                          ? "border-transparent bg-slate-900/60"
+                          : "border-transparent bg-slate-900/30"
+                    }`}
                     data-testid={`batter-row-${r.playerId}`}
+                    data-at-bat={isAtBat ? "true" : "false"}
                   >
-                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums bg-slate-700 text-slate-100">
+                    {isAtBat && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-0 left-0 w-1 bg-broadcast-gold"
+                      />
+                    )}
+                    <span
+                      className={`shrink-0 w-10 sm:w-12 flex items-center justify-center font-display font-bold text-lg sm:text-xl tabular-nums ${
+                        isAtBat
+                          ? "bg-broadcast-gold text-black"
+                          : "bg-white/5 text-slate-400"
+                      }`}
+                    >
                       {slotLabel}
                     </span>
-                    <span className="flex-1 min-w-0 text-sm sm:text-base font-bold leading-tight truncate">
+                    <span className="flex-1 min-w-0 flex items-center px-2 sm:px-3 text-sm sm:text-base font-bold leading-tight truncate text-white">
                       {r.playerName}
                     </span>
+                    {isAtBat && (
+                      <span className="shrink-0 px-2 sm:px-3 flex items-center justify-center bg-broadcast-gold/10 text-broadcast-gold text-[11px] sm:text-xs font-display font-bold tracking-widest">
+                        AB
+                      </span>
+                    )}
                   </li>
                 );
               })}
             </ol>
           )}
+          </div>
         </aside>
       </main>
 
@@ -1689,13 +1727,13 @@ export default function FieldDisplay() {
       <DragOverlay dropAnimation={null}>
         {activeDragInfo ? (
           <div
-            className="rounded-xl bg-slate-950/95 border-2 border-amber-300 shadow-[0_10px_30px_rgba(0,0,0,0.7)] px-4 py-2 cursor-grabbing select-none"
+            className="flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_8px_0_rgba(0,0,0,0.7)] cursor-grabbing select-none overflow-hidden"
             data-testid="drag-overlay-chip"
           >
-            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300 leading-none mb-1">
-              {activeDragInfo.position === "Bench" ? "Bench" : activeDragInfo.position}
+            <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-2 py-1 flex items-center justify-center text-xs uppercase tracking-wider min-w-[40px]">
+              {activeDragInfo.position === "Bench" ? "BN" : activeDragInfo.position}
             </div>
-            <div className="text-sm font-bold text-white leading-tight">
+            <div className="px-3 py-1 font-bold text-sm text-white whitespace-nowrap tracking-wide flex items-center">
               {activeDragInfo.name}
             </div>
           </div>
@@ -1794,7 +1832,7 @@ interface DraggableFieldChipProps {
  *  fingers can grab anywhere. */
 function DraggableFieldChip({
   pos,
-  accent,
+  accent: _accent,
   name,
   entryId,
   isOver,
@@ -1804,24 +1842,27 @@ function DraggableFieldChip({
     id: `player-${entryId}`,
   });
   const hidden = isDragging || isBeingDragged;
+  // Broadcast-graphic chip: hard-edged rectangle, gold position block
+  // abutting a navy name block, hard shadow (no blur) for that TV
+  // chyron feel. The `_accent` prop is kept in the signature to avoid
+  // changing the parent contract — color is now sourced from the
+  // broadcast palette globally.
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`relative rounded-xl backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.55)] border bg-slate-950/85 border-white/20 touch-none cursor-grab active:cursor-grabbing select-none transition-shadow ${
-        isOver ? "ring-2 ring-amber-300 shadow-[0_0_24px_rgba(252,211,77,0.55)]" : ""
+      className={`relative flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_4px_0_rgba(0,0,0,0.7)] touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
+        isOver ? "ring-2 ring-broadcast-gold" : ""
       } ${hidden ? "opacity-30" : ""}`}
       data-testid={`field-chip-${pos}`}
       title={`${name} — drag to swap with another player`}
     >
-      <div
-        className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black tracking-[0.18em] uppercase shadow-md whitespace-nowrap ${accent}`}
-      >
+      <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px]">
         {pos}
       </div>
-      <div className="px-3 pt-3 pb-2 min-w-[96px] sm:min-w-[120px] max-w-[160px] sm:max-w-[180px] text-center">
-        <div className="text-sm sm:text-base font-bold leading-tight truncate text-white">
+      <div className="px-2 sm:px-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
+        <div className="text-xs sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
           {name}
         </div>
       </div>
@@ -1834,24 +1875,24 @@ function DraggableFieldChip({
 function EmptyFieldChip({ pos, isOver }: { pos: string; isOver: boolean }) {
   return (
     <div
-      className={`relative rounded-xl backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.55)] border border-dashed transition-colors ${
+      className={`relative flex items-stretch border border-dashed shadow-[0_4px_0_rgba(0,0,0,0.5)] transition-colors overflow-hidden ${
         isOver
-          ? "bg-amber-300/15 border-amber-300"
-          : "bg-slate-950/45 border-white/10"
+          ? "bg-broadcast-gold/20 border-broadcast-gold"
+          : "bg-[#0f172a]/70 border-white/15"
       }`}
       data-testid={`field-chip-${pos}-empty`}
     >
       <div
-        className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black tracking-[0.18em] uppercase shadow-md whitespace-nowrap ${
-          isOver ? "bg-amber-300 text-slate-950" : "bg-slate-700 text-slate-400"
+        className={`font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px] ${
+          isOver ? "bg-broadcast-gold text-black" : "bg-slate-800 text-slate-400"
         }`}
       >
         {pos}
       </div>
-      <div className="px-3 pt-3 pb-2 min-w-[96px] sm:min-w-[120px] max-w-[160px] sm:max-w-[180px] text-center">
+      <div className="px-2 sm:px-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
         <div
-          className={`text-sm sm:text-base font-bold leading-tight truncate italic ${
-            isOver ? "text-amber-200" : "text-slate-500"
+          className={`text-xs sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
+            isOver ? "text-broadcast-gold" : "text-slate-500"
           }`}
         >
           {isOver ? "Drop here" : "Open"}
@@ -1877,15 +1918,15 @@ function BenchStrip({ entries, activeDragEntryId }: BenchStripProps) {
   return (
     <div
       ref={setNodeRef}
-      className={`mt-2 sm:mt-3 rounded-xl border bg-slate-900/70 backdrop-blur-md px-3 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.35)] transition-colors ${
+      className={`mt-2 sm:mt-3 border bg-[#050d1a] px-3 sm:px-6 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
         isOver
-          ? "border-amber-300 ring-2 ring-amber-300/60 bg-amber-950/30"
-          : "border-slate-800/80"
+          ? "border-broadcast-gold ring-2 ring-broadcast-gold/60 bg-amber-950/20"
+          : "border-[#1a2a42]"
       }`}
       data-testid="bench-strip"
     >
-      <div className="flex items-baseline gap-3 flex-wrap">
-        <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-amber-300/90 font-bold">
+      <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+        <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-400 font-display font-bold">
           Bench
         </span>
         {entries.length === 0 ? (
@@ -1893,24 +1934,16 @@ function BenchStrip({ entries, activeDragEntryId }: BenchStripProps) {
             {isOver ? "Drop here to bench" : "—"}
           </span>
         ) : (
-          entries.flatMap((entry, i) => {
-            const node = (
+          <div className="flex gap-2 sm:gap-3 flex-wrap">
+            {entries.map((entry) => (
               <DraggableBenchChip
                 key={entry.entryId}
                 name={entry.name}
                 entryId={entry.entryId}
                 isBeingDragged={entry.entryId === activeDragEntryId}
               />
-            );
-            return i === 0
-              ? [node]
-              : [
-                  <span key={`sep-${i}`} className="text-slate-600 text-sm" aria-hidden="true">
-                    ·
-                  </span>,
-                  node,
-                ];
-          })
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -1937,7 +1970,7 @@ function DraggableBenchChip({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`text-sm sm:text-base font-semibold text-slate-100 touch-none cursor-grab active:cursor-grabbing select-none px-1 py-0.5 rounded transition-opacity ${
+      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2 sm:px-3 py-1 sm:py-1.5 bg-[#0f172a] border border-broadcast-gold/40 hover:border-broadcast-gold transition-all whitespace-nowrap tracking-wide ${
         hidden ? "opacity-30" : ""
       }`}
       data-testid={`bench-name-${name}`}

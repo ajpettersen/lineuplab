@@ -62,6 +62,12 @@
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
   --font-mono: var(--app-font-mono);
+  --font-display: "Oswald", system-ui, sans-serif;
+
+  --color-broadcast-gold: #fbbf24;
+  --color-broadcast-navy: #0f172a;
+  --color-broadcast-navy-deep: #050d1a;
+  --color-broadcast-navy-border: #1a2a42;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
