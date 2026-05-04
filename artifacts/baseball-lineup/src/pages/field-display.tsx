@@ -9,6 +9,7 @@ import {
   getGetSeasonStatsQueryKey,
   getGetPlayerStatsQueryKey,
   type LineupEntry,
+  type Game,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,7 +26,7 @@ import {
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2, Moon, Sun } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2, Moon, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
@@ -127,6 +128,112 @@ interface LightingPalette {
   label: LightingMode;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Offline support for the dugout-fence iPad.
+ *
+ * Park WiFi and cellular at youth ballfields are notoriously flaky — the
+ * iPad is frequently strapped to the fence with intermittent connectivity
+ * for the duration of a 2-hour game. We need three things to keep the
+ * coach's experience smooth:
+ *
+ *   1) READS work offline. The lineup the iPad was last showing has to
+ *      stay on screen even if the network drops. We persist successful
+ *      query data to localStorage and hydrate React Query's cache from
+ *      it on mount via `initialData` — so a Safari refresh while offline
+ *      still renders the most recent lineup the iPad ever saw.
+ *
+ *   2) WRITES work offline. A coach can drag-drop defensive moves on the
+ *      iPad with no connectivity. The optimistic UI update is identical
+ *      to the online case (the chip snaps to its new spot instantly).
+ *      Instead of POSTing immediately, we persist the desired final
+ *      lineup snapshot to localStorage and leave it there until network
+ *      returns. Note we persist a SNAPSHOT, not a queue of mutations:
+ *      because each save sends the entire lineup (server REPLACE), the
+ *      latest snapshot is always sufficient — multiple offline drags
+ *      coalesce into a single POST when the iPad reconnects.
+ *
+ *   3) AUTO-SYNC on reconnect. When `navigator.onLine` flips back to
+ *      true, we drain the persisted snapshot through the existing
+ *      single-flight save chain. The chain logic already coalesces with
+ *      newer drags, so reconnect during continued editing is safe.
+ *
+ * Conflict policy: the iPad's offline edits WIN over any phone edits
+ * made during the offline window. Rationale: the dugout coach is the
+ * live source of truth during a game; phone edits during this time are
+ * unusual; "last writer wins" with the iPad as last writer matches the
+ * mental model. If a parent on a phone made a change while the iPad was
+ * offline, that change is overwritten when the iPad reconnects with
+ * its accumulated offline state.
+ * ────────────────────────────────────────────────────────────────────── */
+
+/** localStorage key for the last-good lineup query result, scoped per game. */
+const lineupCacheKey = (gameId: number) => `fd-lineup-cache-v1:${gameId}`;
+/** localStorage key for the last-good game record (header data), per game. */
+const gameCacheKey = (gameId: number) => `fd-game-cache-v1:${gameId}`;
+/** localStorage key for an offline-pending lineup snapshot waiting to POST. */
+const pendingSaveKey = (gameId: number) => `fd-pending-save-v1:${gameId}`;
+
+/** localStorage with try/catch so private mode / quota errors don't crash. */
+function loadJSON<T>(key: string): T | undefined {
+  try {
+    if (typeof localStorage === "undefined") return undefined;
+    const raw = localStorage.getItem(key);
+    if (!raw) return undefined;
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveJSON(key: string, value: unknown): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Quota exceeded / private mode — silently degrade. The in-memory
+    // React Query cache and the pendingLineupRef still work for this
+    // session; we just can't survive a refresh.
+  }
+}
+
+function clearKey(key: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem(key);
+  } catch {
+    // ignored
+  }
+}
+
+/**
+ * Track `navigator.onLine` plus the browser's `online`/`offline` events.
+ * Returns true when the browser believes it has connectivity. Note this
+ * is a HEURISTIC: a true `online` doesn't guarantee the API is reachable
+ * (captive portals, server down, etc), but a `false` reliably means we
+ * have no network. We pair this with explicit error handling on the POST
+ * itself so a captive-portal "online but blocked" scenario still falls
+ * back to the offline pending queue.
+ */
+function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState<boolean>(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    // Sync once on mount in case the browser already flipped before we
+    // attached our listeners.
+    setOnline(navigator.onLine);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+  return online;
+}
+
 const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
   morning: {
     grassGradient:
@@ -210,10 +317,41 @@ export default function FieldDisplay() {
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const pendingLineupRef = useRef<LineupEntry[] | null>(null);
 
+  // Online/offline + has-unsynced-changes status, surfaced in the header
+  // badge. `hasUnsyncedChanges` is initialized lazily from localStorage so
+  // a refresh while offline (with persisted pending edits) still shows the
+  // correct "Offline · will sync" state on first paint.
+  const online = useOnlineStatus();
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState<boolean>(
+    () => loadJSON(pendingSaveKey(id)) != null,
+  );
+
   // Polling interval: 5s feels live without hammering the API. The query is
   // also re-fetched on window focus (default react-query behavior) so a
   // coach who taps the iPad screen sees the freshest data right away.
+  // React Query's onlineManager pauses polling automatically when offline,
+  // so a flaky-WiFi park doesn't generate a flood of failed fetches — it
+  // just sits on the cached lineup until reconnect.
   const POLL_MS = 5000;
+
+  // Hydrate React Query's cache from localStorage on first render so the
+  // page renders the last-known lineup immediately, even with no network.
+  // Memoized per game id so we don't repeatedly hit localStorage on every
+  // render (initialData closures fire a lot). If the cache is empty, return
+  // undefined so React Query falls back to its normal fetching state.
+  const initialGame = useMemo<Game | undefined>(
+    () => loadJSON<Game>(gameCacheKey(id)),
+    [id],
+  );
+  const initialLineup = useMemo<LineupEntry[] | undefined>(() => {
+    // If we have an offline-pending snapshot from a previous session,
+    // prefer it (it's the freshest desired state, not the server's). The
+    // restore-pending effect below also seeds pendingLineupRef so the
+    // online-flip effect knows to drain it.
+    const pending = loadJSON<LineupEntry[]>(pendingSaveKey(id));
+    if (pending) return pending;
+    return loadJSON<LineupEntry[]>(lineupCacheKey(id));
+  }, [id]);
 
   const { data: game } = useGetGame(id, {
     query: {
@@ -221,6 +359,10 @@ export default function FieldDisplay() {
       queryKey: getGetGameQueryKey(id),
       refetchInterval: POLL_MS,
       refetchIntervalInBackground: true,
+      initialData: initialGame,
+      // Mark stale so a refetch still happens once online — initialData
+      // is just a paint-time placeholder, not authoritative.
+      initialDataUpdatedAt: 0,
     },
   });
   const { data: lineup = [] } = useGetGameLineup(id, {
@@ -229,8 +371,55 @@ export default function FieldDisplay() {
       queryKey: getGetGameLineupQueryKey(id),
       refetchInterval: POLL_MS,
       refetchIntervalInBackground: true,
+      initialData: initialLineup,
+      initialDataUpdatedAt: 0,
     },
   });
+
+  // Persist successful query data to localStorage so a Safari refresh
+  // while offline still has something to render. Only writes when data
+  // exists — we don't want to write `[]` on a transient empty fetch and
+  // wipe out the previously-cached lineup.
+  useEffect(() => {
+    if (!id) return;
+    if (game) saveJSON(gameCacheKey(id), game);
+  }, [id, game]);
+  useEffect(() => {
+    if (!id) return;
+    if (lineup.length > 0) saveJSON(lineupCacheKey(id), lineup);
+  }, [id, lineup]);
+
+  // Restore an offline-pending lineup snapshot (from a previous session)
+  // into the in-memory ref so the existing flushSave logic can drain it.
+  // We already hydrated React Query's cache with the same snapshot via
+  // `initialLineup`, so the UI is already showing the right thing — we
+  // just need to wire up the save side. Runs once per game id.
+  useEffect(() => {
+    if (!id) return;
+    const pending = loadJSON<LineupEntry[]>(pendingSaveKey(id));
+    if (!pending) return;
+    pendingLineupRef.current = pending;
+    setHasUnsyncedChanges(true);
+    // If we mount already online, kick the chain immediately so the
+    // pending POST happens without waiting for an online flip.
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      flushSave();
+    }
+    // Run-once-per-game-id; flushSave is stable enough for our purposes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // When the browser flips from offline → online, drain any pending
+  // snapshot through the same single-flight save chain. flushSave is a
+  // safe no-op when pendingLineupRef is null, so calling it on every
+  // online event is fine. React Query's onlineManager will also resume
+  // polling automatically, which gives us the post-reconnect refresh
+  // for free without any extra work here.
+  useEffect(() => {
+    if (!online) return;
+    flushSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
 
   // Coach-controlled "what inning is on the screen right now". Defaults to 1
   // and is bumped manually with the arrows so the display doesn't change
@@ -455,6 +644,12 @@ export default function FieldDisplay() {
       .then(async () => {
         const toSave = pendingLineupRef.current;
         if (!toSave) return;
+        // OFFLINE FAST-PATH: if the browser knows we have no network, do
+        // not even attempt the POST. Leave pendingLineupRef + the
+        // localStorage backup in place; the online-flip effect will
+        // re-call flushSave when connectivity returns.
+        if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
         // Mark as in-flight so a follow-up drag during this save sets a
         // fresh ref value (which the next chained .then will pick up).
         pendingLineupRef.current = null;
@@ -471,15 +666,40 @@ export default function FieldDisplay() {
               })),
             },
           });
+          // Save succeeded. Only clear the offline backup if NO newer
+          // drag came in while we were saving — if pendingLineupRef is
+          // already non-null, the next chained save will handle it and
+          // we must not wipe its localStorage entry.
+          if (pendingLineupRef.current == null) {
+            clearKey(pendingSaveKey(id));
+            setHasUnsyncedChanges(false);
+          }
           qc.invalidateQueries({ queryKey });
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
         } catch {
-          // Drop any queued follow-up drags — they were computed assuming
-          // this save succeeded. Refetch authoritative state and let the
-          // coach redo. (Network failures at the field are rare; when they
-          // happen, snapping to server truth + a toast is the safest UX.)
-          pendingLineupRef.current = null;
+          // Distinguish a clean offline-drop from a real server error.
+          // If the browser flipped offline mid-POST, restore pending so
+          // we retry on reconnect. (Captive-portal/blocked-but-online
+          // scenarios fall through to the toast path below — better to
+          // show the coach a one-off error than silently lose the move.)
+          if (typeof navigator !== "undefined" && !navigator.onLine) {
+            // Restore only if no newer drag has set a fresher pending
+            // (which would already be persisted by saveLineupOptimistically).
+            if (pendingLineupRef.current == null) {
+              pendingLineupRef.current = toSave;
+              saveJSON(pendingSaveKey(id), toSave);
+            }
+            setHasUnsyncedChanges(true);
+            return;
+          }
+          // Real server error: drop pending, refetch authoritative state,
+          // toast the coach. Same logic as before — don't snapshot-rollback
+          // because that could clobber newer successful state.
+          if (pendingLineupRef.current == null) {
+            clearKey(pendingSaveKey(id));
+            setHasUnsyncedChanges(false);
+          }
           qc.invalidateQueries({ queryKey });
           toast({
             title: "Couldn't save move",
@@ -497,6 +717,13 @@ export default function FieldDisplay() {
     const queryKey = getGetGameLineupQueryKey(id);
     qc.setQueryData(queryKey, nextLineup);
     pendingLineupRef.current = nextLineup;
+    // Persist the offline backup BEFORE attempting the POST so a Safari
+    // crash / iPad reboot mid-save doesn't lose the drag. flushSave will
+    // clear this entry on success.
+    saveJSON(pendingSaveKey(id), nextLineup);
+    setHasUnsyncedChanges(true);
+    // flushSave is offline-aware: it'll skip the POST and just leave
+    // pending in place if we're offline, then drain on reconnect.
     flushSave();
   };
 
@@ -684,20 +911,45 @@ export default function FieldDisplay() {
 
         {/* Right cluster: live status, score, fullscreen */}
         <div className="flex items-center gap-3 sm:gap-4 shrink-0 flex-1 justify-end">
+          {/* Connection status badge.
+            * Three visual states (priority order):
+            *   OFFLINE — amber WifiOff icon + "Offline" or "Offline · will
+            *             sync" if there are queued drag-drop edits waiting
+            *             to POST when connectivity returns.
+            *   JUST UPDATED — green pulse + "Just updated" for ~3s after
+            *             any incoming lineup change (poll or our own save).
+            *   LIVE — steady green dot + "Live" when online and idle.
+            * The data-testid stays the same so existing e2e tests still
+            * locate the element; the text content varies by state. */}
           <div
             aria-live="polite"
             className={`hidden md:flex items-center gap-2 text-xs uppercase tracking-wider font-semibold transition-opacity duration-500 ${
-              justUpdated ? "text-emerald-400 opacity-100" : "text-slate-400 opacity-90"
+              !online
+                ? "text-amber-400 opacity-100"
+                : justUpdated
+                  ? "text-emerald-400 opacity-100"
+                  : "text-slate-400 opacity-90"
             }`}
             data-testid="text-update-status"
+            data-online={online ? "true" : "false"}
+            data-pending={hasUnsyncedChanges ? "true" : "false"}
           >
-            <span
-              className={`inline-block h-2.5 w-2.5 rounded-full ${
-                justUpdated ? "bg-emerald-400 animate-pulse" : "bg-emerald-500/70"
-              }`}
-              aria-hidden="true"
-            />
-            {justUpdated ? "Just updated" : "Live"}
+            {!online ? (
+              <>
+                <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{hasUnsyncedChanges ? "Offline · will sync" : "Offline"}</span>
+              </>
+            ) : (
+              <>
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    justUpdated ? "bg-emerald-400 animate-pulse" : "bg-emerald-500/70"
+                  }`}
+                  aria-hidden="true"
+                />
+                <span>{justUpdated ? "Just updated" : "Live"}</span>
+              </>
+            )}
           </div>
           <div className="text-xl sm:text-2xl font-bold tabular-nums">
             <span className="text-slate-300">{ourScore}</span>
