@@ -22,9 +22,45 @@ type SeedResponse = {
   games: number;
 };
 
+/**
+ * Custom error so `onError` can branch on the real HTTP status (401, 404,
+ * 5xx, network) and surface a useful next-step message instead of a generic
+ * "something broke" toast. Carries the raw status code so the UI doesn't
+ * have to parse strings.
+ */
+class SeedError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "SeedError";
+  }
+}
+
 async function postSeed(): Promise<SeedResponse> {
-  const resp = await fetch(`${BASE}/api/demo/seed`, { method: "POST" });
-  if (!resp.ok) throw new Error(`Seed failed (${resp.status})`);
+  let resp: Response;
+  try {
+    resp = await fetch(`${BASE}/api/demo/seed`, {
+      method: "POST",
+      // Belt-and-suspenders: in same-origin dev preview cookies travel
+      // automatically, but be explicit so this also works if the API ever
+      // moves to a sub-domain behind the proxy.
+      credentials: "include",
+    });
+  } catch (e) {
+    // Network failure — fetch threw before we got any response.
+    throw new SeedError(0, e instanceof Error ? e.message : "Network error");
+  }
+  if (!resp.ok) {
+    // Try to pull the server's error string for the toast description; fall
+    // back to status text if the response body isn't JSON.
+    let serverMsg = resp.statusText;
+    try {
+      const body = (await resp.json()) as { error?: string };
+      if (typeof body.error === "string") serverMsg = body.error;
+    } catch {
+      /* ignore — body wasn't JSON */
+    }
+    throw new SeedError(resp.status, serverMsg);
+  }
   return (await resp.json()) as SeedResponse;
 }
 
@@ -34,6 +70,10 @@ async function postSeed(): Promise<SeedResponse> {
  * success so the UI re-renders with the new rows. The endpoint is
  * idempotent — if the team already has any data the server returns
  * `created: false` and we surface that with a toast instead of an error.
+ *
+ * On error, branches on the HTTP status so the coach actually knows what to
+ * do next (vs. the old generic "try again" message that hid auth/expired
+ * session issues — which was the most common real failure mode).
  */
 export function useSeedDemoMutation() {
   const qc = useQueryClient();
@@ -56,12 +96,26 @@ export function useSeedDemoMutation() {
         });
       }
     },
-    onError: () => {
-      toast({
-        title: "Couldn't load demo data",
-        description: "Try again, or add a player manually.",
-        variant: "destructive",
-      });
+    onError: (err) => {
+      const status = err instanceof SeedError ? err.status : -1;
+      let title = "Couldn't load demo data";
+      let description = "Try again, or add a player manually.";
+      if (status === 401) {
+        title = "Please sign in again";
+        description =
+          "Your session expired. Refresh the page, sign in, then try Load demo data again.";
+      } else if (status === 404) {
+        title = "Demo data isn't available here";
+        description =
+          "The seed endpoint is preview/dev only. Add players and games manually.";
+      } else if (status === 0) {
+        title = "Network error";
+        description = "Couldn't reach the server. Check your connection and retry.";
+      } else if (status >= 500) {
+        title = "Server error";
+        description = `The seed failed (${status}). Try again in a moment.`;
+      }
+      toast({ title, description, variant: "destructive" });
     },
   });
 }
