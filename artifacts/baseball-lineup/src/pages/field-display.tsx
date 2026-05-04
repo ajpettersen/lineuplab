@@ -7,7 +7,7 @@ import {
   getGetGameLineupQueryKey,
 } from "@workspace/api-client-react";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
@@ -202,6 +202,30 @@ export default function FieldDisplay() {
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
   const oppScore = game?.opponentScore ?? 0;
+
+  // Dim Mode — drops a translucent black overlay across the whole page so the
+  // iPad's backlight isn't pumping out full brightness during dead time
+  // (between innings, between games on a 3-game weekend, etc). On LCD iPads
+  // this is a perceptual dimmer that also nudges the user to drop the system
+  // brightness slider; on OLED it directly saves battery because dark pixels
+  // are off pixels. Persisted to localStorage so an accidental Exit → back
+  // doesn't lose the setting mid-game.
+  const DIM_KEY = "fd-dim-mode";
+  const [dimMode, setDimMode] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && localStorage.getItem(DIM_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(DIM_KEY, dimMode ? "1" : "0");
+    } catch {
+      // Private mode / storage disabled — silent no-op; the in-memory state
+      // still works for this session.
+    }
+  }, [dimMode]);
 
   // Toggle browser fullscreen — gives an iPad-mounted display the most real
   // estate possible. Falls back gracefully if the API isn't available (some
@@ -403,6 +427,22 @@ export default function FieldDisplay() {
             <span className="mx-1.5 text-slate-600">–</span>
             <span className="text-slate-300">{oppScore}</span>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDimMode((d) => !d)}
+            className={`px-2 ${
+              dimMode
+                ? "text-amber-300 hover:text-amber-200 hover:bg-slate-800"
+                : "text-slate-300 hover:text-white hover:bg-slate-800"
+            }`}
+            aria-label={dimMode ? "Disable dim mode (brighten screen)" : "Enable dim mode (save battery)"}
+            aria-pressed={dimMode}
+            title={dimMode ? "Brighten" : "Dim screen to save battery"}
+            data-testid="button-dim-mode"
+          >
+            {dimMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -769,6 +809,24 @@ export default function FieldDisplay() {
           </div>
         </aside>
       </main>
+
+      {/*
+       * Dim overlay. Fixed/full-viewport so it works in fullscreen mode too.
+       * pointer-events-none → taps pass straight through to the controls
+       * underneath, so the coach can still hit Next Batter / Next Inning /
+       * the dim toggle itself without disabling dim first. Smooth fade so it
+       * doesn't snap at the eye when toggled. 40% opacity = clearly dimmer
+       * without becoming unreadable in any reasonable lighting; tested
+       * against the bright amber At Bat pill which is the highest-contrast
+       * element on screen.
+       */}
+      <div
+        aria-hidden="true"
+        data-testid="dim-overlay"
+        className={`pointer-events-none fixed inset-0 z-50 bg-black transition-opacity duration-300 ${
+          dimMode ? "opacity-40" : "opacity-0"
+        }`}
+      />
     </div>
   );
 }
