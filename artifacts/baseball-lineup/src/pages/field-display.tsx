@@ -334,15 +334,16 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
 
   return (
     <div
-      className="flex flex-col items-stretch select-none min-w-[2.25rem]"
+      className="flex flex-col items-stretch select-none min-w-[3.25rem] sm:min-w-[4.25rem] lg:min-w-[5rem]"
       data-testid={testId}
     >
       {label && (
         <span
-          // Bold, wide-tracked caps so the label reads clearly even at
-          // a glance from the dugout. text-[10px] is intentionally tiny
-          // to avoid stealing visual weight from the score number itself.
-          className="text-[10px] sm:text-xs uppercase font-bold tracking-widest text-slate-500 text-center leading-tight pb-0.5"
+          // Bold, wide-tracked caps marking which column is "Us" vs
+          // "Them" so kids glancing at the dugout iPad don't confuse
+          // them. Sized to stay legible from 6+ feet away (the dugout
+          // fence) without overpowering the score number itself.
+          className="text-xs sm:text-sm uppercase font-bold tracking-widest text-slate-400 text-center leading-tight pb-0.5"
           aria-hidden="true"
         >
           {label}
@@ -351,11 +352,11 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
       <button
         type="button"
         onClick={inc}
-        className="flex h-5 items-center justify-center rounded-t-md text-slate-500 hover:bg-slate-800/60 hover:text-emerald-300 active:text-emerald-300 transition-colors"
+        className="flex h-7 sm:h-8 lg:h-9 items-center justify-center rounded-t-md text-slate-500 hover:bg-slate-800/60 hover:text-emerald-300 active:text-emerald-300 transition-colors"
         aria-label={`Increase ${ariaLabel}`}
         data-testid={`${testId}-up`}
       >
-        <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+        <ChevronUp className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden="true" />
       </button>
       <div
         role="spinbutton"
@@ -369,18 +370,18 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
         onPointerCancel={() => {
           startYRef.current = null;
         }}
-        className="text-xl sm:text-2xl font-bold tabular-nums text-slate-300 px-2 py-0.5 cursor-ns-resize touch-none rounded text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+        className="text-4xl sm:text-5xl lg:text-6xl font-black tabular-nums text-slate-100 px-2 py-1 cursor-ns-resize touch-none rounded text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-amber-400/60 leading-none"
       >
         {value}
       </div>
       <button
         type="button"
         onClick={dec}
-        className="flex h-5 items-center justify-center rounded-b-md text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
+        className="flex h-7 sm:h-8 lg:h-9 items-center justify-center rounded-b-md text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
         aria-label={`Decrease ${ariaLabel}`}
         data-testid={`${testId}-down`}
       >
-        <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+        <ChevronDown className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden="true" />
       </button>
     </div>
   );
@@ -553,15 +554,17 @@ export default function FieldDisplay() {
     mutation: { networkMode: "always" },
   });
 
-  // Sensor config mirrors game-detail.tsx so the dugout iPad behaves the
-  // same as a parent's phone: a 5px slop for mouse so a click isn't
-  // misread as a drag, and a 150ms long-press + 5px tolerance for touch
-  // so scrolling the page doesn't accidentally start a drag (and vice
-  // versa). Field Display has no scroll on tablet+, but the mobile
-  // fallback layout does, so the touch delay matters there.
+  // Sensor config: distance-based activation for BOTH mouse and touch so
+  // chips begin dragging the instant the coach moves their finger — no
+  // long-press, no two-step "tap then drag". An earlier 150ms touch
+  // delay was meant to prevent accidental drags during page scroll, but
+  // (a) the field display is `lg:overflow-hidden` on iPad/desktop, so
+  // there's nothing to scroll, and (b) the long-press felt broken to
+  // dugout coaches who expected raw drag. 8px tolerance is enough to
+  // distinguish a tap from a drag without making the chip feel sticky.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
   );
   // Tracks the entry whose chip is currently being dragged so we can hide
   // the original (it's flying around in the DragOverlay) and so the
@@ -1358,7 +1361,7 @@ export default function FieldDisplay() {
             * labels above the steppers help kids in the dugout
             * identify which column is theirs at a glance. See
             * ScoreStepper docblock for gesture details. */}
-          <div className="flex items-end gap-1 sm:gap-1.5">
+          <div className="flex items-end gap-1 sm:gap-2">
             <ScoreStepper
               value={ourScore}
               onChange={(next) =>
@@ -1368,9 +1371,10 @@ export default function FieldDisplay() {
               testId="score-stepper-ours"
               label="Us"
             />
-            {/* Bottom-aligned dash so the "Us"/"Them" labels above the
-              * numbers don't shove the dash up out of line with them. */}
-            <span className="text-xl sm:text-2xl font-bold tabular-nums text-slate-600 pb-0.5">
+            {/* Bottom-aligned dash, sized to the new larger score
+              * numbers so it sits between them visually instead of
+              * shrinking into the gap. */}
+            <span className="text-4xl sm:text-5xl lg:text-6xl font-black tabular-nums text-slate-600 pb-1 leading-none">
               –
             </span>
             <ScoreStepper
