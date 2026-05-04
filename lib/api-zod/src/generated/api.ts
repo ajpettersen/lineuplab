@@ -144,6 +144,12 @@ export const ListGamesResponseItem = zod.object({
     .describe(
       'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
     ),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -182,6 +188,10 @@ export const CreateGameBody = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe("Optionally create the game already linked to a tournament."),
 });
 
 /**
@@ -220,6 +230,12 @@ export const GetGameResponse = zod.object({
     .nullish()
     .describe(
       'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
     ),
   notes: zod.string().nullish(),
   planSnapshot: zod
@@ -271,6 +287,12 @@ export const UpdateGameBody = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Set to a tournaments.id to link this game into that tournament; set to null to detach.",
+    ),
 });
 
 export const UpdateGameResponse = zod.object({
@@ -302,6 +324,12 @@ export const UpdateGameResponse = zod.object({
     .nullish()
     .describe(
       'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
     ),
   notes: zod.string().nullish(),
   planSnapshot: zod
@@ -369,6 +397,12 @@ export const SnapshotPlanResponse = zod.object({
     .describe(
       'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
     ),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -426,6 +460,12 @@ export const ClearPlanSnapshotResponse = zod.object({
     .nullish()
     .describe(
       'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+    ),
+  tournamentId: zod
+    .number()
+    .nullish()
+    .describe(
+      "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
     ),
   notes: zod.string().nullish(),
   planSnapshot: zod
@@ -597,6 +637,16 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
     ),
+  defaultPitchRuleset: zod
+    .string()
+    .nullish()
+    .describe(
+      "Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.",
+    ),
+  defaultAgeGroup: zod
+    .string()
+    .nullish()
+    .describe('Free-text team age group label (e.g. \"10U\", \"11-12U\").'),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -620,6 +670,8 @@ export const UpdateTeamSettingsBody = zod.object({
     .max(updateTeamSettingsBodyTeamShortNameMax)
     .optional(),
   battingStyle: zod.enum(["continuous", "nine_man"]).optional(),
+  defaultPitchRuleset: zod.string().nullish(),
+  defaultAgeGroup: zod.string().nullish(),
 });
 
 export const UpdateTeamSettingsResponse = zod.object({
@@ -631,8 +683,309 @@ export const UpdateTeamSettingsResponse = zod.object({
     .describe(
       "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
     ),
+  defaultPitchRuleset: zod
+    .string()
+    .nullish()
+    .describe(
+      "Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.",
+    ),
+  defaultAgeGroup: zod
+    .string()
+    .nullish()
+    .describe('Free-text team age group label (e.g. \"10U\", \"11-12U\").'),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List the coach's tournaments (most recent first)
+ */
+export const ListTournamentsResponseItem = zod
+  .object({
+    id: zod.number(),
+    name: zod.string(),
+    startDate: zod.coerce.date(),
+    endDate: zod.coerce.date(),
+    location: zod.string().nullish(),
+    notes: zod.string().nullish(),
+    pitchCountRuleset: zod
+      .string()
+      .nullish()
+      .describe(
+        "Ruleset key (see pitch-rules catalog). Null = inherit team default.",
+      ),
+    dailyPitchMax: zod
+      .number()
+      .nullish()
+      .describe("Override daily pitch maximum. Null = use ruleset default."),
+    createdAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      gameCount: zod.number(),
+      pitchersUsed: zod
+        .number()
+        .describe(
+          "Distinct player count with at least one recorded pitch in this tournament",
+        ),
+      totalPitches: zod
+        .number()
+        .describe("Sum of pitches across all games in this tournament"),
+    }),
+  );
+export const ListTournamentsResponse = zod.array(ListTournamentsResponseItem);
+
+/**
+ * @summary Create a tournament
+ */
+export const createTournamentBodyNameMax = 120;
+
+export const CreateTournamentBody = zod.object({
+  name: zod.string().min(1).max(createTournamentBodyNameMax),
+  startDate: zod.coerce.date(),
+  endDate: zod.coerce.date(),
+  location: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  pitchCountRuleset: zod.string().nullish(),
+  dailyPitchMax: zod.number().nullish(),
+});
+
+/**
+ * @summary Get a tournament with its games and per-pitcher availability
+ */
+export const GetTournamentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetTournamentResponse = zod
+  .object({
+    id: zod.number(),
+    name: zod.string(),
+    startDate: zod.coerce.date(),
+    endDate: zod.coerce.date(),
+    location: zod.string().nullish(),
+    notes: zod.string().nullish(),
+    pitchCountRuleset: zod
+      .string()
+      .nullish()
+      .describe(
+        "Ruleset key (see pitch-rules catalog). Null = inherit team default.",
+      ),
+    dailyPitchMax: zod
+      .number()
+      .nullish()
+      .describe("Override daily pitch maximum. Null = use ruleset default."),
+    createdAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      games: zod.array(
+        zod.object({
+          id: zod.number(),
+          opponent: zod.string(),
+          gameDate: zod.coerce.date(),
+          location: zod.string().nullish(),
+          innings: zod.number().describe("Number of innings in the game"),
+          status: zod.enum(["upcoming", "completed", "cancelled"]),
+          type: zod
+            .enum(["game", "practice", "other"])
+            .describe(
+              "Event kind — distinguishes games from practices and other team events",
+            ),
+          gameType: zod
+            .union([
+              zod.literal("league"),
+              zod.literal("tournament"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+            ),
+          ourScore: zod.number().nullish(),
+          opponentScore: zod.number().nullish(),
+          startedAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              'Wall-clock time of the actual first pitch (coach taps \"Start Game\" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.',
+            ),
+          tournamentId: zod
+            .number()
+            .nullish()
+            .describe(
+              "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
+            ),
+          notes: zod.string().nullish(),
+          planSnapshot: zod
+            .union([
+              zod.null(),
+              zod.array(
+                zod.object({
+                  playerId: zod.number(),
+                  playerName: zod.string(),
+                  inning: zod.number(),
+                  position: zod.string(),
+                  battingOrder: zod.number().nullable(),
+                }),
+              ),
+            ])
+            .optional()
+            .describe(
+              "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+            ),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
+      pitcherAvailability: zod.array(
+        zod
+          .object({
+            playerId: zod.number(),
+            playerName: zod.string(),
+            playerNumber: zod.number().nullish(),
+            totalPitchesInTournament: zod.number(),
+            pitchesToday: zod.number(),
+            pitchesAvailableToday: zod.number(),
+            dailyMax: zod.number(),
+            restingUntil: zod
+              .union([
+                zod.null(),
+                zod.object({
+                  availableOn: zod.coerce.date(),
+                  fromOutingDate: zod.coerce.date(),
+                  fromOutingPitches: zod.number(),
+                  daysRest: zod.number(),
+                }),
+              ])
+              .optional(),
+            outings: zod.array(
+              zod.object({
+                gameId: zod.number(),
+                date: zod.coerce.date(),
+                pitches: zod.number(),
+              }),
+            ),
+          })
+          .describe(
+            "Per-player pitch totals + remaining-today availability for a tournament.",
+          ),
+      ),
+      effectiveRuleset: zod
+        .string()
+        .describe(
+          "Ruleset key actually applied (after fallback to team default)",
+        ),
+      effectiveDailyMax: zod
+        .number()
+        .describe(
+          "Daily pitch max actually applied (after override + ruleset fallback)",
+        ),
+    }),
+  );
+
+/**
+ * @summary Update a tournament
+ */
+export const UpdateTournamentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateTournamentBodyNameMax = 120;
+
+export const UpdateTournamentBody = zod.object({
+  name: zod.string().min(1).max(updateTournamentBodyNameMax).optional(),
+  startDate: zod.coerce.date().optional(),
+  endDate: zod.coerce.date().optional(),
+  location: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  pitchCountRuleset: zod.string().nullish(),
+  dailyPitchMax: zod.number().nullish(),
+});
+
+export const UpdateTournamentResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  startDate: zod.coerce.date(),
+  endDate: zod.coerce.date(),
+  location: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  pitchCountRuleset: zod
+    .string()
+    .nullish()
+    .describe(
+      "Ruleset key (see pitch-rules catalog). Null = inherit team default.",
+    ),
+  dailyPitchMax: zod
+    .number()
+    .nullish()
+    .describe("Override daily pitch maximum. Null = use ruleset default."),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a tournament (linked games are detached, not deleted)
+ */
+export const DeleteTournamentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Get all pitch counts recorded for a game
+ */
+export const GetGamePitchCountsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const getGamePitchCountsResponsePitchesMin = 0;
+
+export const GetGamePitchCountsResponseItem = zod.object({
+  id: zod.number(),
+  gameId: zod.number(),
+  playerId: zod.number(),
+  pitches: zod.number().min(getGamePitchCountsResponsePitchesMin),
+  notes: zod.string().nullish(),
+  recordedAt: zod.coerce.date(),
+});
+export const GetGamePitchCountsResponse = zod.array(
+  GetGamePitchCountsResponseItem,
+);
+
+/**
+ * @summary Upsert a player's pitch count for this game (one row per game+player)
+ */
+export const UpsertGamePitchCountParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const upsertGamePitchCountBodyPitchesMin = 0;
+export const upsertGamePitchCountBodyPitchesMax = 500;
+
+export const UpsertGamePitchCountBody = zod.object({
+  playerId: zod.number(),
+  pitches: zod
+    .number()
+    .min(upsertGamePitchCountBodyPitchesMin)
+    .max(upsertGamePitchCountBodyPitchesMax),
+  notes: zod.string().nullish(),
+});
+
+export const upsertGamePitchCountResponsePitchesMin = 0;
+
+export const UpsertGamePitchCountResponse = zod.object({
+  id: zod.number(),
+  gameId: zod.number(),
+  playerId: zod.number(),
+  pitches: zod.number().min(upsertGamePitchCountResponsePitchesMin),
+  notes: zod.string().nullish(),
+  recordedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a player's pitch count for this game
+ */
+export const DeleteGamePitchCountParams = zod.object({
+  gameId: zod.coerce.number(),
+  playerId: zod.coerce.number(),
 });
 
 /**

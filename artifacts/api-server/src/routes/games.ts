@@ -296,6 +296,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   }
   if (d.notes !== undefined) updates.notes = d.notes;
   if (d.gameType !== undefined) updates.gameType = d.gameType;
+  if (d.tournamentId !== undefined) updates.tournamentId = d.tournamentId;
 
   // If the coach is shrinking the game's innings (e.g. they hit the 10-run
   // rule and ended early), drop any lineup data that would now point past the

@@ -19,9 +19,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Trophy } from "lucide-react";
 import { CoachesCard } from "@/components/coaches-card";
+import { PITCH_RULESET_OPTIONS } from "@/lib/pitch-rulesets";
+
+const NO_DEFAULT = "__none";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -67,6 +77,8 @@ export default function Settings() {
   const [battingStyle, setBattingStyle] = useState<"continuous" | "nine_man">(
     "continuous"
   );
+  const [defaultAgeGroup, setDefaultAgeGroup] = useState("");
+  const [defaultPitchRuleset, setDefaultPitchRuleset] = useState<string>(NO_DEFAULT);
   const [innings, setInnings] = useState(6);
   const [maxPos, setMaxPos] = useState(2);
   const [maxBench, setMaxBench] = useState(2);
@@ -80,6 +92,8 @@ export default function Settings() {
       setBattingStyle(
         teamQuery.data.battingStyle === "nine_man" ? "nine_man" : "continuous"
       );
+      setDefaultAgeGroup(teamQuery.data.defaultAgeGroup ?? "");
+      setDefaultPitchRuleset(teamQuery.data.defaultPitchRuleset ?? NO_DEFAULT);
     }
   }, [teamQuery.data]);
 
@@ -107,7 +121,14 @@ export default function Settings() {
       return;
     }
     updateTeam.mutate({
-      data: { teamName: name, teamShortName: short, battingStyle },
+      data: {
+        teamName: name,
+        teamShortName: short,
+        battingStyle,
+        defaultAgeGroup: defaultAgeGroup.trim() || null,
+        defaultPitchRuleset:
+          defaultPitchRuleset === NO_DEFAULT ? null : defaultPitchRuleset,
+      },
     });
   };
 
@@ -190,6 +211,50 @@ export default function Settings() {
               disabled={teamLoading}
               data-testid="switch-batting-style"
             />
+          </div>
+
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-purple-600" />
+              <Label className="text-sm font-medium">Tournament defaults</Label>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Used when you create a new tournament — you can still override per tournament.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="defaultAgeGroup" className="text-xs">Age group</Label>
+                <Input
+                  id="defaultAgeGroup"
+                  value={defaultAgeGroup}
+                  onChange={(e) => setDefaultAgeGroup(e.target.value)}
+                  placeholder="e.g. 11-12U"
+                  maxLength={20}
+                  disabled={teamLoading}
+                  data-testid="input-default-age-group"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="defaultPitchRuleset" className="text-xs">Pitch ruleset</Label>
+                <Select
+                  value={defaultPitchRuleset}
+                  onValueChange={setDefaultPitchRuleset}
+                  disabled={teamLoading}
+                >
+                  <SelectTrigger id="defaultPitchRuleset" data-testid="select-default-pitch-ruleset">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_DEFAULT}>None (pick per tournament)</SelectItem>
+                    {PITCH_RULESET_OPTIONS.map((r) => (
+                      <SelectItem key={r.key} value={r.key}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end">

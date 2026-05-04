@@ -22,6 +22,19 @@ export const teamSettingsTable = pgTable("team_settings", {
    * Defaults to continuous so existing teams behave the same as before.
    */
   battingStyle: text("batting_style").notNull().default("continuous"),
+  /**
+   * Default pitch-count ruleset key for new tournaments / per-game
+   * pitch tracking. Examples: "littleLeague_7_8", "littleLeague_9_10",
+   * "littleLeague_11_12", "littleLeague_13_16". See `pitch-rules.ts`
+   * for the catalog. Null = no default (UI will prompt on first use).
+   */
+  defaultPitchRuleset: text("default_pitch_ruleset"),
+  /**
+   * Free-text age group label (e.g. "10U", "11-12U", "14U travel").
+   * Surfaces on team settings + tournament defaults so a coach who
+   * coaches multiple ages doesn't have to re-pick rules each tournament.
+   */
+  defaultAgeGroup: text("default_age_group"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -30,6 +43,8 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   teamName: true,
   teamShortName: true,
   battingStyle: true,
+  defaultPitchRuleset: true,
+  defaultAgeGroup: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

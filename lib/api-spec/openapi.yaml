@@ -12,6 +12,10 @@ tags:
     description: Health operations
   - name: players
     description: Player management
+  - name: tournaments
+    description: Tournament containers grouping multiple games
+  - name: pitchCounts
+    description: Per-game per-pitcher pitch count tracking
   - name: games
     description: Game management
   - name: lineups
@@ -408,6 +412,165 @@ paths:
         "400":
           description: Invalid input
 
+  /tournaments:
+    get:
+      operationId: listTournaments
+      tags: [tournaments]
+      summary: List the coach's tournaments (most recent first)
+      responses:
+        "200":
+          description: Tournaments with rolling stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TournamentSummary"
+    post:
+      operationId: createTournament
+      tags: [tournaments]
+      summary: Create a tournament
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTournamentBody"
+      responses:
+        "201":
+          description: Created tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+
+  /tournaments/{id}:
+    get:
+      operationId: getTournament
+      tags: [tournaments]
+      summary: Get a tournament with its games and per-pitcher availability
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tournament detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDetail"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateTournament
+      tags: [tournaments]
+      summary: Update a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTournamentBody"
+      responses:
+        "200":
+          description: Updated tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteTournament
+      tags: [tournaments]
+      summary: Delete a tournament (linked games are detached, not deleted)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /games/{id}/pitch-counts:
+    get:
+      operationId: getGamePitchCounts
+      tags: [pitchCounts]
+      summary: Get all pitch counts recorded for a game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pitch counts for the game
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PitchCount"
+    post:
+      operationId: upsertGamePitchCount
+      tags: [pitchCounts]
+      summary: Upsert a player's pitch count for this game (one row per game+player)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertPitchCountBody"
+      responses:
+        "200":
+          description: Upserted pitch count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PitchCount"
+
+  /games/{gameId}/pitch-counts/{playerId}:
+    delete:
+      operationId: deleteGamePitchCount
+      tags: [pitchCounts]
+      summary: Delete a player's pitch count for this game
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
   /preferences:
     get:
       operationId: getPreferences
@@ -571,6 +734,9 @@ components:
           type: ["string", "null"]
           format: date-time
           description: Wall-clock time of the actual first pitch (coach taps "Start Game" on the field display). Null until kicked off. Distinct from gameDate (scheduled start) — used by the running game timer.
+        tournamentId:
+          type: ["integer", "null"]
+          description: Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.
         notes:
           type: ["string", "null"]
         planSnapshot:
@@ -629,6 +795,9 @@ components:
         gameType:
           type: ["string", "null"]
           enum: [league, tournament, null]
+        tournamentId:
+          type: ["integer", "null"]
+          description: Optionally create the game already linked to a tournament.
       required:
         - opponent
         - gameDate
@@ -662,6 +831,9 @@ components:
         gameType:
           type: ["string", "null"]
           enum: [league, tournament, null]
+        tournamentId:
+          type: ["integer", "null"]
+          description: Set to a tournaments.id to link this game into that tournament; set to null to detach.
 
     LineupEntry:
       type: object
@@ -821,6 +993,12 @@ components:
           description: |
             Continuous = every player on the roster bats. Nine-man = only the
             top 9 batters get a slot in the order.
+        defaultPitchRuleset:
+          type: ["string", "null"]
+          description: Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.
+        defaultAgeGroup:
+          type: ["string", "null"]
+          description: Free-text team age group label (e.g. "10U", "11-12U").
         createdAt:
           type: string
           format: date-time
@@ -849,6 +1027,10 @@ components:
         battingStyle:
           type: string
           enum: [continuous, nine_man]
+        defaultPitchRuleset:
+          type: ["string", "null"]
+        defaultAgeGroup:
+          type: ["string", "null"]
 
     UserPreferences:
       type: object
@@ -886,6 +1068,232 @@ components:
         - defaultPitcherRotation
         - createdAt
         - updatedAt
+
+    Tournament:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        location:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        pitchCountRuleset:
+          type: ["string", "null"]
+          description: Ruleset key (see pitch-rules catalog). Null = inherit team default.
+        dailyPitchMax:
+          type: ["integer", "null"]
+          description: Override daily pitch maximum. Null = use ruleset default.
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - startDate
+        - endDate
+        - createdAt
+
+    TournamentSummary:
+      allOf:
+        - $ref: "#/components/schemas/Tournament"
+        - type: object
+          properties:
+            gameCount:
+              type: integer
+            pitchersUsed:
+              type: integer
+              description: Distinct player count with at least one recorded pitch in this tournament
+            totalPitches:
+              type: integer
+              description: Sum of pitches across all games in this tournament
+          required:
+            - gameCount
+            - pitchersUsed
+            - totalPitches
+
+    TournamentDetail:
+      allOf:
+        - $ref: "#/components/schemas/Tournament"
+        - type: object
+          properties:
+            games:
+              type: array
+              items:
+                $ref: "#/components/schemas/Game"
+            pitcherAvailability:
+              type: array
+              items:
+                $ref: "#/components/schemas/PitcherAvailability"
+            effectiveRuleset:
+              type: string
+              description: Ruleset key actually applied (after fallback to team default)
+            effectiveDailyMax:
+              type: integer
+              description: Daily pitch max actually applied (after override + ruleset fallback)
+          required:
+            - games
+            - pitcherAvailability
+            - effectiveRuleset
+            - effectiveDailyMax
+
+    CreateTournamentBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        location:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        pitchCountRuleset:
+          type: ["string", "null"]
+        dailyPitchMax:
+          type: ["integer", "null"]
+      required:
+        - name
+        - startDate
+        - endDate
+
+    UpdateTournamentBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        location:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        pitchCountRuleset:
+          type: ["string", "null"]
+        dailyPitchMax:
+          type: ["integer", "null"]
+
+    PitchCount:
+      type: object
+      properties:
+        id:
+          type: integer
+        gameId:
+          type: integer
+        playerId:
+          type: integer
+        pitches:
+          type: integer
+          minimum: 0
+        notes:
+          type: ["string", "null"]
+        recordedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - gameId
+        - playerId
+        - pitches
+        - recordedAt
+
+    UpsertPitchCountBody:
+      type: object
+      properties:
+        playerId:
+          type: integer
+        pitches:
+          type: integer
+          minimum: 0
+          maximum: 500
+        notes:
+          type: ["string", "null"]
+      required:
+        - playerId
+        - pitches
+
+    PitcherAvailability:
+      type: object
+      description: Per-player pitch totals + remaining-today availability for a tournament.
+      properties:
+        playerId:
+          type: integer
+        playerName:
+          type: string
+        playerNumber:
+          type: ["integer", "null"]
+        totalPitchesInTournament:
+          type: integer
+        pitchesToday:
+          type: integer
+        pitchesAvailableToday:
+          type: integer
+        dailyMax:
+          type: integer
+        restingUntil:
+          oneOf:
+            - type: "null"
+            - type: object
+              properties:
+                availableOn:
+                  type: string
+                  format: date-time
+                fromOutingDate:
+                  type: string
+                  format: date-time
+                fromOutingPitches:
+                  type: integer
+                daysRest:
+                  type: integer
+              required:
+                - availableOn
+                - fromOutingDate
+                - fromOutingPitches
+                - daysRest
+        outings:
+          type: array
+          items:
+            type: object
+            properties:
+              gameId:
+                type: integer
+              date:
+                type: string
+                format: date-time
+              pitches:
+                type: integer
+            required:
+              - gameId
+              - date
+              - pitches
+      required:
+        - playerId
+        - playerName
+        - totalPitchesInTournament
+        - pitchesToday
+        - pitchesAvailableToday
+        - dailyMax
+        - outings
 
     UpdatePreferencesBody:
       type: object

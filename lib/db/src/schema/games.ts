@@ -39,6 +39,13 @@ export const gamesTable = pgTable(
     // scheduled slot. Null until the coach kicks it off; resettable via
     // a PATCH with `startedAt: null` if they fat-fingered the button.
     startedAt: timestamp("started_at", { withTimezone: true }),
+    // Optional link to a tournaments row when this game is part of a
+    // multi-game tournament weekend. Drives the rolling per-pitcher
+    // pitch-count math ("how many pitches does Sarah have left today
+    // given what she threw in earlier games of this tournament").
+    // Null for league games / one-offs. ON DELETE SET NULL so removing
+    // a tournament doesn't blow away its games.
+    tournamentId: integer("tournament_id"),
     notes: text("notes"),
     // Snapshot of the planned lineup (taken when the coach chose "Keep both"
     // before overriding with a post-game photo). Null = no snapshot.

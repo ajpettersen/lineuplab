@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Settings as SettingsIcon,
   LogOut,
+  Trophy,
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/", label: "Dashboard", icon: Home },
     { href: "/players", label: "Roster", icon: Users },
     { href: "/games", label: "Schedule", icon: CalendarDays },
+    { href: "/tournaments", label: "Tournaments", icon: Trophy },
     { href: "/stats", label: "Season Stats", icon: BarChart2 },
     { href: "/constraints", label: "Constraints", icon: SlidersHorizontal },
     { href: "/settings", label: "Settings", icon: SettingsIcon },

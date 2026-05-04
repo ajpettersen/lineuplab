@@ -11,19 +11,23 @@ import {
 
 const router: IRouter = Router();
 
-// PATCH semantics: both fields optional, but at least one must be provided.
+// PATCH semantics: every field optional, but at least one must be provided.
 const UpdateBody = z
   .object({
     teamName: z.string().trim().min(1, "Team name required").max(80).optional(),
     teamShortName: z.string().trim().min(1, "Short name required").max(20).optional(),
     battingStyle: z.enum(["continuous", "nine_man"]).optional(),
+    defaultPitchRuleset: z.string().nullish(),
+    defaultAgeGroup: z.string().nullish(),
   })
   .refine(
     (v) =>
       v.teamName !== undefined ||
       v.teamShortName !== undefined ||
-      v.battingStyle !== undefined,
-    { message: "Provide teamName, teamShortName, or battingStyle" }
+      v.battingStyle !== undefined ||
+      v.defaultPitchRuleset !== undefined ||
+      v.defaultAgeGroup !== undefined,
+    { message: "Provide at least one field to update" }
   );
 
 /**
@@ -67,6 +71,8 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     teamName?: string;
     teamShortName?: string;
     battingStyle?: "continuous" | "nine_man";
+    defaultPitchRuleset?: string | null;
+    defaultAgeGroup?: string | null;
     updatedAt: ReturnType<typeof sql>;
   } = {
     updatedAt: sql`now()`,
@@ -74,6 +80,10 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
   if (parsed.data.teamShortName !== undefined) patch.teamShortName = parsed.data.teamShortName;
   if (parsed.data.battingStyle !== undefined) patch.battingStyle = parsed.data.battingStyle;
+  if (parsed.data.defaultPitchRuleset !== undefined)
+    patch.defaultPitchRuleset = parsed.data.defaultPitchRuleset ?? null;
+  if (parsed.data.defaultAgeGroup !== undefined)
+    patch.defaultAgeGroup = parsed.data.defaultAgeGroup ?? null;
   const [updated] = await db
     .update(teamSettingsTable)
     .set(patch)

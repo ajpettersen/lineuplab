@@ -4,6 +4,8 @@ import { resolveTeamContext } from "../middlewares/resolveTeamContext";
 import healthRouter from "./health";
 import playersRouter from "./players";
 import gamesRouter from "./games";
+import tournamentsRouter from "./tournaments";
+import pitchCountsRouter from "./pitch-counts";
 import lineupsRouter from "./lineups";
 import statsRouter from "./stats";
 import historyRouter from "./history";
@@ -30,6 +32,8 @@ router.use(resolveTeamContext);
 
 router.use(playersRouter);
 router.use(gamesRouter);
+router.use(tournamentsRouter);
+router.use(pitchCountsRouter);
 router.use(lineupsRouter);
 router.use(statsRouter);
 router.use(historyRouter);

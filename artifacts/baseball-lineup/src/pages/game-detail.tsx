@@ -61,6 +61,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus } from "@/lib/game-status";
+import { PitchCountsCard } from "@/components/pitch-counts-card";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
@@ -2558,6 +2559,9 @@ export default function GameDetail() {
           </CardContent>
         </Card>
       )}
+
+      {/* Pitch counts (always visible — works standalone or rolls into a tournament). */}
+      {game && <PitchCountsCard gameId={id} game={game} />}
 
       {/* Generate Dialog */}
       <Dialog open={generateOpen} onOpenChange={(o) => !o && setGenerateOpen(false)}>

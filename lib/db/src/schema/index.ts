@@ -11,3 +11,6 @@ export * from "./user_preferences";
 export * from "./team_memberships";
 export * from "./team_invites";
 export * from "./user_active_team";
+export * from "./tournaments";
+export * from "./pitch_counts";
+export * from "./pitch-rules";

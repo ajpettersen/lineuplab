@@ -116,6 +116,11 @@ export interface Game {
    * @nullable
    */
   startedAt?: string | null;
+  /**
+   * Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.
+   * @nullable
+   */
+  tournamentId?: number | null;
   /** @nullable */
   notes?: string | null;
   /** Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken) */
@@ -145,6 +150,11 @@ export interface CreateGameBody {
   notes?: string | null;
   /** @nullable */
   gameType?: CreateGameBodyGameType;
+  /**
+   * Optionally create the game already linked to a tournament.
+   * @nullable
+   */
+  tournamentId?: number | null;
 }
 
 export type UpdateGameBodyStatus =
@@ -188,6 +198,11 @@ export interface UpdateGameBody {
   notes?: string | null;
   /** @nullable */
   gameType?: UpdateGameBodyGameType;
+  /**
+   * Set to a tournaments.id to link this game into that tournament; set to null to detach.
+   * @nullable
+   */
+  tournamentId?: number | null;
 }
 
 export interface LineupEntry {
@@ -286,6 +301,16 @@ export interface TeamSettings {
 top 9 batters get a slot in the order.
  */
   battingStyle: TeamSettingsBattingStyle;
+  /**
+   * Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.
+   * @nullable
+   */
+  defaultPitchRuleset?: string | null;
+  /**
+   * Free-text team age group label (e.g. "10U", "11-12U").
+   * @nullable
+   */
+  defaultAgeGroup?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -310,6 +335,10 @@ export interface UpdateTeamSettingsBody {
    */
   teamShortName?: string;
   battingStyle?: UpdateTeamSettingsBodyBattingStyle;
+  /** @nullable */
+  defaultPitchRuleset?: string | null;
+  /** @nullable */
+  defaultAgeGroup?: string | null;
 }
 
 export interface UserPreferences {
@@ -333,6 +362,132 @@ export interface UserPreferences {
   defaultPitcherRotation: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Tournament {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /**
+   * Ruleset key (see pitch-rules catalog). Null = inherit team default.
+   * @nullable
+   */
+  pitchCountRuleset?: string | null;
+  /**
+   * Override daily pitch maximum. Null = use ruleset default.
+   * @nullable
+   */
+  dailyPitchMax?: number | null;
+  createdAt: string;
+}
+
+export type TournamentSummary = Tournament & {
+  gameCount: number;
+  /** Distinct player count with at least one recorded pitch in this tournament */
+  pitchersUsed: number;
+  /** Sum of pitches across all games in this tournament */
+  totalPitches: number;
+};
+
+export type PitcherAvailabilityRestingUntil = null | {
+  availableOn: string;
+  fromOutingDate: string;
+  fromOutingPitches: number;
+  daysRest: number;
+};
+
+export type PitcherAvailabilityOutingsItem = {
+  gameId: number;
+  date: string;
+  pitches: number;
+};
+
+/**
+ * Per-player pitch totals + remaining-today availability for a tournament.
+ */
+export interface PitcherAvailability {
+  playerId: number;
+  playerName: string;
+  /** @nullable */
+  playerNumber?: number | null;
+  totalPitchesInTournament: number;
+  pitchesToday: number;
+  pitchesAvailableToday: number;
+  dailyMax: number;
+  restingUntil?: PitcherAvailabilityRestingUntil;
+  outings: PitcherAvailabilityOutingsItem[];
+}
+
+export type TournamentDetail = Tournament & {
+  games: Game[];
+  pitcherAvailability: PitcherAvailability[];
+  /** Ruleset key actually applied (after fallback to team default) */
+  effectiveRuleset: string;
+  /** Daily pitch max actually applied (after override + ruleset fallback) */
+  effectiveDailyMax: number;
+};
+
+export interface CreateTournamentBody {
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  pitchCountRuleset?: string | null;
+  /** @nullable */
+  dailyPitchMax?: number | null;
+}
+
+export interface UpdateTournamentBody {
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  pitchCountRuleset?: string | null;
+  /** @nullable */
+  dailyPitchMax?: number | null;
+}
+
+export interface PitchCount {
+  id: number;
+  gameId: number;
+  playerId: number;
+  /** @minimum 0 */
+  pitches: number;
+  /** @nullable */
+  notes?: string | null;
+  recordedAt: string;
+}
+
+export interface UpsertPitchCountBody {
+  playerId: number;
+  /**
+   * @minimum 0
+   * @maximum 500
+   */
+  pitches: number;
+  /** @nullable */
+  notes?: string | null;
 }
 
 export interface UpdatePreferencesBody {
