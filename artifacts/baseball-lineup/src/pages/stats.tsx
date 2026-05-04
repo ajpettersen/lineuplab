@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -480,13 +481,14 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
                       {EDIT_COLS.flatMap((c) => {
                         const inputCell = (
                           <td key={c.key} className="px-1 text-center">
-                            <input
-                              type="number"
-                              className="w-10 text-center bg-white border border-yellow-300 rounded text-xs p-0.5"
+                            <NumberInput
+                              min={0}
+                              fallback={0}
+                              className="h-auto w-10 rounded border-yellow-300 bg-white p-0.5 text-center text-xs shadow-none"
                               value={(row as Record<string, number>)[c.key] ?? 0}
-                              onChange={(e) => {
+                              onChange={(n) => {
                                 const updated = [...extracted];
-                                (updated[i] as Record<string, number>)[c.key] = parseInt(e.target.value) || 0;
+                                (updated[i] as Record<string, number>)[c.key] = n;
                                 setExtracted(updated);
                               }}
                             />
@@ -539,12 +541,12 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
                         {EDIT_COLS.flatMap((c) => {
                           const inputCell = (
                             <td key={c.key} className="px-1">
-                              <input
-                                type="number"
-                                min="0"
-                                className="w-12 text-center border border-primary/30 rounded text-xs p-1 bg-white"
+                              <NumberInput
+                                min={0}
+                                fallback={0}
+                                className="h-auto w-12 rounded border-primary/30 bg-white p-1 text-center text-xs shadow-none"
                                 value={(editData as Record<string, number>)[c.key] ?? 0}
-                                onChange={(e) => setEditData((prev) => ({ ...prev, [c.key]: parseInt(e.target.value) || 0 }))}
+                                onChange={(n) => setEditData((prev) => ({ ...prev, [c.key]: n }))}
                               />
                             </td>
                           );

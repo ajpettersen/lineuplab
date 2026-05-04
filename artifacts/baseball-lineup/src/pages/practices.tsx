@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -163,14 +164,14 @@ export default function Practices() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="p-duration">Length (min)</Label>
-                  <Input
+                  <NumberInput
                     id="p-duration"
-                    type="number"
                     min={15}
                     max={360}
                     step={5}
                     value={duration}
-                    onChange={(e) => setDuration(parseInt(e.target.value, 10) || DEFAULT_PRACTICE_DURATION)}
+                    onChange={setDuration}
+                    fallback={DEFAULT_PRACTICE_DURATION}
                     data-testid="input-practice-duration"
                   />
                 </div>

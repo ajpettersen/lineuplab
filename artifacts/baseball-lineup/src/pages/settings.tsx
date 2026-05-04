@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -286,39 +287,39 @@ export default function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="innings">Default innings</Label>
-              <Input
+              <NumberInput
                 id="innings"
-                type="number"
                 min={1}
                 max={15}
                 value={innings}
-                onChange={(e) => setInnings(Number(e.target.value) || 0)}
+                onChange={setInnings}
+                fallback={1}
                 disabled={prefsLoading}
                 data-testid="input-default-innings"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="maxPos">Max innings / position</Label>
-              <Input
+              <NumberInput
                 id="maxPos"
-                type="number"
                 min={1}
                 max={15}
                 value={maxPos}
-                onChange={(e) => setMaxPos(Number(e.target.value) || 0)}
+                onChange={setMaxPos}
+                fallback={1}
                 disabled={prefsLoading}
                 data-testid="input-max-position"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="maxBench">Max innings on bench</Label>
-              <Input
+              <NumberInput
                 id="maxBench"
-                type="number"
                 min={0}
                 max={15}
                 value={maxBench}
-                onChange={(e) => setMaxBench(Number(e.target.value) || 0)}
+                onChange={setMaxBench}
+                fallback={0}
                 disabled={prefsLoading}
                 data-testid="input-max-bench"
               />

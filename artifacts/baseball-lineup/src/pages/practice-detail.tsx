@@ -24,6 +24,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -888,14 +889,14 @@ export default function PracticeDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="eh-duration">Length (min)</Label>
-                <Input
+                <NumberInput
                   id="eh-duration"
-                  type="number"
                   min={15}
                   max={360}
                   step={5}
                   value={hDuration}
-                  onChange={(e) => setHDuration(parseInt(e.target.value, 10) || 90)}
+                  onChange={setHDuration}
+                  fallback={90}
                 />
               </div>
               <div className="space-y-1.5">
@@ -977,14 +978,14 @@ export default function PracticeDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="b-duration">Length (min)</Label>
-                <Input
+                <NumberInput
                   id="b-duration"
-                  type="number"
                   min={1}
                   max={240}
                   step={5}
                   value={bDuration}
-                  onChange={(e) => setBDuration(parseInt(e.target.value, 10) || 15)}
+                  onChange={setBDuration}
+                  fallback={15}
                 />
               </div>
               <div className="space-y-1.5">
