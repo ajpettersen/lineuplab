@@ -117,9 +117,11 @@ export default function GameDetail() {
   });
   const { data: players = [] } = useListPlayers();
   // Read coach preferences so the Generate flow can honor "always lock
-  // pitchers and catchers" — see the AlertDialog flow on `openGenerate` and
-  // the `missingPCInnings` memo below.
-  const { data: prefs } = useGetPreferences();
+  // pitchers and catchers" — see the AlertDialog flow on `openGenerate`
+  // below. We track `prefsLoading` explicitly so an early click on
+  // "Generate Lineup" (before the prefs query resolves) doesn't silently
+  // bypass the gate or fire it incorrectly.
+  const { data: prefs, isLoading: prefsLoading } = useGetPreferences();
   const generateLineup = useGenerateLineup();
   const saveLineup = useSaveLineup();
   const updateGame = useUpdateGame();
@@ -446,6 +448,19 @@ export default function GameDetail() {
    * jumping straight into the player-picker dialog.
    */
   const openGenerate = () => {
+    // Race protection: both `prefs` and `locks` are async-loaded. If a
+    // coach clicks Generate before either query settles we'd risk either
+    // skipping the prompt (prefs not yet known to be ON) or firing it
+    // incorrectly (locks not yet known to exist). Defer the click with a
+    // brief toast — in practice both queries resolve in well under a
+    // second so this branch is almost never hit.
+    if (prefsLoading || locksLoading) {
+      toast({
+        title: "Just a moment…",
+        description: "Loading your settings.",
+      });
+      return;
+    }
     if (prefs?.alwaysLockPitcherCatcher && game) {
       // Compute which innings still need a P or C lock. We treat any lock
       // (single-inning or all-innings) at position P/C as fulfilling that
