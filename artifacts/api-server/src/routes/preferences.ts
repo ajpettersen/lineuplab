@@ -11,6 +11,7 @@ const UpdateBody = z.object({
   defaultMaxInningsBench: z.number().int().min(0).max(15).optional(),
   defaultEnsureAllPositions: z.boolean().optional(),
   defaultPitcherRotation: z.boolean().optional(),
+  alwaysLockPitcherCatcher: z.boolean().optional(),
 });
 
 /**

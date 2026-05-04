@@ -1210,6 +1210,9 @@ components:
           type: boolean
         defaultPitcherRotation:
           type: boolean
+        alwaysLockPitcherCatcher:
+          type: boolean
+          description: When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating.
         createdAt:
           type: string
           format: date-time
@@ -1223,6 +1226,7 @@ components:
         - defaultMaxInningsBench
         - defaultEnsureAllPositions
         - defaultPitcherRotation
+        - alwaysLockPitcherCatcher
         - createdAt
         - updatedAt
 
@@ -1471,6 +1475,9 @@ components:
           type: boolean
         defaultPitcherRotation:
           type: boolean
+        alwaysLockPitcherCatcher:
+          type: boolean
+          description: When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating.
 
     PracticeBlock:
       type: object

@@ -28,6 +28,7 @@ import {
   useListPlayers,
   useSnapshotPlan,
   useClearPlanSnapshot,
+  useGetPreferences,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
   getListGamesQueryKey,
@@ -49,6 +50,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -105,6 +116,10 @@ export default function GameDetail() {
     query: { enabled: !!id, queryKey: getGetGameLineupQueryKey(id) },
   });
   const { data: players = [] } = useListPlayers();
+  // Read coach preferences so the Generate flow can honor "always lock
+  // pitchers and catchers" — see the AlertDialog flow on `openGenerate` and
+  // the `missingPCInnings` memo below.
+  const { data: prefs } = useGetPreferences();
   const generateLineup = useGenerateLineup();
   const saveLineup = useSaveLineup();
   const updateGame = useUpdateGame();
@@ -123,6 +138,14 @@ export default function GameDetail() {
   const [viewPlanOpen, setViewPlanOpen] = useState(false);
 
   const [generateOpen, setGenerateOpen] = useState(false);
+  // Confirmation dialog shown when the coach has the "always lock pitchers
+  // and catchers" preference on but hasn't placed P/C locks for every
+  // inning. Holds the list of innings still missing locks so we can list
+  // them in the prompt body. `null` = dialog closed.
+  const [lockPromptInnings, setLockPromptInnings] = useState<{
+    p: number[];
+    c: number[];
+  } | null>(null);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<number[]>([]);
   // "Edit Available Players" dialog: lets the coach toggle players in/out of
   // an EXISTING lineup (e.g. someone got hurt mid-warmup). Separate from the
@@ -404,10 +427,48 @@ export default function GameDetail() {
     }
   };
 
-  const openGenerate = () => {
+  /**
+   * Internal: actually open the Generate Lineup dialog. Split out so the
+   * "always lock P/C" prompt can call this after the coach picks "Generate
+   * anyway" without re-running the lock check.
+   */
+  const openGenerateDialog = () => {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
     setPreviewLineup(null);
     setGenerateOpen(true);
+  };
+
+  /**
+   * Coach-facing entry point for "Generate Lineup". If the coach turned on
+   * "Always lock pitchers and catchers" in Settings AND any inning of this
+   * game is missing a Pitcher or Catcher lock, we show a prompt first
+   * (with options to set the locks, generate anyway, or cancel) instead of
+   * jumping straight into the player-picker dialog.
+   */
+  const openGenerate = () => {
+    if (prefs?.alwaysLockPitcherCatcher && game) {
+      // Compute which innings still need a P or C lock. We treat any lock
+      // (single-inning or all-innings) at position P/C as fulfilling that
+      // inning's requirement.
+      const innings = game.innings;
+      const pInnings = new Set<number>();
+      const cInnings = new Set<number>();
+      for (const l of locks) {
+        if (l.position === "P") pInnings.add(l.inning);
+        else if (l.position === "C") cInnings.add(l.inning);
+      }
+      const missingP: number[] = [];
+      const missingC: number[] = [];
+      for (let i = 1; i <= innings; i++) {
+        if (!pInnings.has(i)) missingP.push(i);
+        if (!cInnings.has(i)) missingC.push(i);
+      }
+      if (missingP.length > 0 || missingC.length > 0) {
+        setLockPromptInnings({ p: missingP, c: missingC });
+        return;
+      }
+    }
+    openGenerateDialog();
   };
 
   /**
@@ -1950,9 +2011,11 @@ export default function GameDetail() {
       </Card>
 
       {/* Position Locks — pin specific players to specific positions/innings.
-          The lineup generator and AI assistant honor these. */}
+          The lineup generator and AI assistant honor these. The id is used
+          by the "always lock P/C" prompt so "Set locks first" can scroll the
+          coach straight here. */}
       {game.status !== "cancelled" && (
-        <Card data-testid="card-locks">
+        <Card id="position-locks-card" data-testid="card-locks">
           <CardHeader className="flex-row items-start justify-between space-y-0 gap-3 pb-3">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
@@ -2569,6 +2632,75 @@ export default function GameDetail() {
 
       {/* Pitch counts (always visible — works standalone or rolls into a tournament). */}
       {game && <PitchCountsCard gameId={id} game={game} />}
+
+      {/* "Always lock pitchers and catchers" prompt — fires when the coach
+          enabled the preference in Settings and hits "Generate Lineup" while
+          one or more innings still lack a P or C lock. */}
+      <AlertDialog
+        open={lockPromptInnings != null}
+        onOpenChange={(o) => !o && setLockPromptInnings(null)}
+      >
+        <AlertDialogContent data-testid="dialog-lock-pc-prompt">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Lock pitchers and catchers first?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Your settings ask you to set Pitcher and Catcher locks before
+                  generating a lineup. These innings are still missing locks:
+                </p>
+                {lockPromptInnings && lockPromptInnings.p.length > 0 && (
+                  <p>
+                    <span className="font-medium text-foreground">Pitcher:</span>{" "}
+                    inning{lockPromptInnings.p.length === 1 ? "" : "s"}{" "}
+                    {lockPromptInnings.p.join(", ")}
+                  </p>
+                )}
+                {lockPromptInnings && lockPromptInnings.c.length > 0 && (
+                  <p>
+                    <span className="font-medium text-foreground">Catcher:</span>{" "}
+                    inning{lockPromptInnings.c.length === 1 ? "" : "s"}{" "}
+                    {lockPromptInnings.c.join(", ")}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Tip: turn this off in Settings → Defaults if you don't want
+                  to be reminded.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel data-testid="button-lock-prompt-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-lock-prompt-set-locks"
+              onClick={() => {
+                setLockPromptInnings(null);
+                // Defer scroll to next paint so the dialog has time to
+                // unmount and release focus before we move the viewport.
+                requestAnimationFrame(() => {
+                  document
+                    .getElementById("position-locks-card")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                });
+              }}
+            >
+              Set locks first
+            </AlertDialogAction>
+            <AlertDialogAction
+              data-testid="button-lock-prompt-generate-anyway"
+              onClick={() => {
+                setLockPromptInnings(null);
+                openGenerateDialog();
+              }}
+            >
+              Generate anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Generate Dialog */}
       <Dialog open={generateOpen} onOpenChange={(o) => !o && setGenerateOpen(false)}>

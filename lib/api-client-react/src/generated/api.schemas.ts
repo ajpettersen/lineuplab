@@ -360,6 +360,8 @@ export interface UserPreferences {
   defaultMaxInningsBench: number;
   defaultEnsureAllPositions: boolean;
   defaultPitcherRotation: boolean;
+  /** When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating. */
+  alwaysLockPitcherCatcher: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -508,6 +510,8 @@ export interface UpdatePreferencesBody {
   defaultMaxInningsBench?: number;
   defaultEnsureAllPositions?: boolean;
   defaultPitcherRotation?: boolean;
+  /** When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating. */
+  alwaysLockPitcherCatcher?: boolean;
 }
 
 /**

@@ -86,6 +86,10 @@ export default function Settings() {
   const [maxBench, setMaxBench] = useState(2);
   const [ensureAll, setEnsureAll] = useState(true);
   const [pitcherRotation, setPitcherRotation] = useState(false);
+  // When on, the per-game Generate Lineup flow blocks (with override) until
+  // the coach has set Pitcher and Catcher locks for every inning. Mirrors the
+  // `alwaysLockPitcherCatcher` column on `user_preferences`.
+  const [alwaysLockPC, setAlwaysLockPC] = useState(false);
 
   useEffect(() => {
     if (teamQuery.data) {
@@ -106,6 +110,7 @@ export default function Settings() {
       setMaxBench(prefsQuery.data.defaultMaxInningsBench);
       setEnsureAll(prefsQuery.data.defaultEnsureAllPositions);
       setPitcherRotation(prefsQuery.data.defaultPitcherRotation);
+      setAlwaysLockPC(prefsQuery.data.alwaysLockPitcherCatcher);
     }
   }, [prefsQuery.data]);
 
@@ -142,6 +147,7 @@ export default function Settings() {
         defaultMaxInningsBench: maxBench,
         defaultEnsureAllPositions: ensureAll,
         defaultPitcherRotation: pitcherRotation,
+        alwaysLockPitcherCatcher: alwaysLockPC,
       },
     });
   };
@@ -364,6 +370,28 @@ export default function Settings() {
               onCheckedChange={setPitcherRotation}
               disabled={prefsLoading}
               data-testid="switch-pitcher-rotation"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label
+                htmlFor="alwaysLockPC"
+                className="text-sm font-medium"
+              >
+                Always lock pitchers and catchers
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Before generating a lineup, prompt me to set Pitcher and Catcher
+                locks for every inning. I can still generate without them.
+              </p>
+            </div>
+            <Switch
+              id="alwaysLockPC"
+              checked={alwaysLockPC}
+              onCheckedChange={setAlwaysLockPC}
+              disabled={prefsLoading}
+              data-testid="switch-always-lock-pc"
             />
           </div>
 

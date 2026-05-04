@@ -15,6 +15,14 @@ export const userPreferencesTable = pgTable("user_preferences", {
   defaultMaxInningsBench: integer("default_max_innings_bench").notNull().default(2),
   defaultEnsureAllPositions: boolean("default_ensure_all_positions").notNull().default(true),
   defaultPitcherRotation: boolean("default_pitcher_rotation").notNull().default(false),
+  /**
+   * When true, the Generate Lineup flow on a game will warn the coach if any
+   * inning is missing a Pitcher (P) or Catcher (C) lock and ask them to set
+   * those locks first (with an "Generate anyway" override). Off by default
+   * so existing coaches see no behavior change. Defensive-minded coaches who
+   * always plan their battery first can flip this on in Settings.
+   */
+  alwaysLockPitcherCatcher: boolean("always_lock_pitcher_catcher").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -25,6 +33,7 @@ export const updateUserPreferencesSchema = createInsertSchema(userPreferencesTab
   defaultMaxInningsBench: true,
   defaultEnsureAllPositions: true,
   defaultPitcherRotation: true,
+  alwaysLockPitcherCatcher: true,
 });
 export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
 export type UserPreferences = typeof userPreferencesTable.$inferSelect;

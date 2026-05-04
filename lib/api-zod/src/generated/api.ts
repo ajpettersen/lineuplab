@@ -1366,6 +1366,11 @@ export const GetPreferencesResponse = zod.object({
     .max(getPreferencesResponseDefaultMaxInningsBenchMax),
   defaultEnsureAllPositions: zod.boolean(),
   defaultPitcherRotation: zod.boolean(),
+  alwaysLockPitcherCatcher: zod
+    .boolean()
+    .describe(
+      "When true, the Generate Lineup UI prompts the coach to set Pitcher\/Catcher locks before generating.",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1398,6 +1403,12 @@ export const UpdatePreferencesBody = zod.object({
     .optional(),
   defaultEnsureAllPositions: zod.boolean().optional(),
   defaultPitcherRotation: zod.boolean().optional(),
+  alwaysLockPitcherCatcher: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the Generate Lineup UI prompts the coach to set Pitcher\/Catcher locks before generating.",
+    ),
 });
 
 export const updatePreferencesResponseDefaultInningsMax = 15;
@@ -1423,6 +1434,11 @@ export const UpdatePreferencesResponse = zod.object({
     .max(updatePreferencesResponseDefaultMaxInningsBenchMax),
   defaultEnsureAllPositions: zod.boolean(),
   defaultPitcherRotation: zod.boolean(),
+  alwaysLockPitcherCatcher: zod
+    .boolean()
+    .describe(
+      "When true, the Generate Lineup UI prompts the coach to set Pitcher\/Catcher locks before generating.",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
