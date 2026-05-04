@@ -111,7 +111,7 @@ export default function GameDetail() {
   const clearPlanSnapshot = useClearPlanSnapshot();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { teamName } = useTeamSettings();
+  const { teamName, battingStyle } = useTeamSettings();
   // Two new dialogs introduced for the post-game photo override flow:
   // - replaceConfirmOpen: shown after a photo is parsed AND a saved lineup
   //   already exists, asking whether to keep the original as a plan snapshot.
@@ -2417,7 +2417,12 @@ export default function GameDetail() {
                       key={r.playerId}
                       row={r}
                       slot={i + 1}
-                      showStarterDivider={i === 8 && battingOrderRows.length > 9}
+                      showStarterDivider={
+                        battingStyle === "nine_man" &&
+                        i === 8 &&
+                        battingOrderRows.length > 9
+                      }
+                      isContinuous={battingStyle === "continuous"}
                       testId={`row-batting-order-${i}`}
                     />
                   ))}
@@ -3538,6 +3543,14 @@ interface SortableBattingRowProps {
   row: { playerId: number; playerName: string; order: number | null; positions: string[] };
   slot: number;
   showStarterDivider: boolean;
+  /**
+   * When true, the team plays a continuous lineup (everyone bats). Players
+   * who happen to bench every inning still get a numbered slot and aren't
+   * tagged "bench only" — the divider above them is also suppressed. When
+   * false (nine-man), unbatted players keep the muted slot + "bench only"
+   * tag because they truly aren't in the order.
+   */
+  isContinuous: boolean;
   testId: string;
 }
 
@@ -3549,7 +3562,7 @@ interface SortableBattingRowProps {
  * activator, so coaches can still tap/click anywhere on the row without
  * accidentally starting a drag.
  */
-function SortableBattingRow({ row, slot, showStarterDivider, testId }: SortableBattingRowProps) {
+function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testId }: SortableBattingRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.playerId,
   });
@@ -3557,7 +3570,11 @@ function SortableBattingRow({ row, slot, showStarterDivider, testId }: SortableB
     transform: CSS.Transform.toString(transform),
     transition,
   };
-  const benchOnly = row.order == null;
+  // In continuous mode every roster spot bats, so a missing batting order is
+  // just an artifact of the player benching every inning — they still belong
+  // in the order at their visual slot. In nine-man mode a missing order
+  // genuinely means "not batting", so we keep the muted styling + tag.
+  const benchOnly = !isContinuous && row.order == null;
   return (
     <>
       {showStarterDivider && (
