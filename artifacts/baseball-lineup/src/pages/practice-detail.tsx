@@ -161,12 +161,26 @@ export default function PracticeDetailPage() {
         saveBlocksOptimistically(reindex(resp.blocks));
         toast({ title: "Plan generated", description: resp.rationale });
       },
-      onError: (err) =>
-        toast({
-          title: "Couldn't generate plan",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        }),
+      onError: (err) => {
+        // ApiError exposes `status`; surface specific HTTP failures with
+        // actionable copy so a transient (server restart / Clerk session
+        // rotation) doesn't look like a generic AI outage.
+        const status =
+          err && typeof err === "object" && "status" in err
+            ? (err as { status?: unknown }).status
+            : undefined;
+        let title = "Couldn't generate plan";
+        let description = err instanceof Error ? err.message : String(err);
+        if (status === 401) {
+          title = "Session expired";
+          description = "Refresh the page and try again.";
+        } else if (status === 504) {
+          description = "The AI took too long to respond. Try again.";
+        } else if (status === 502) {
+          description = "AI service is unavailable right now. Try again in a minute.";
+        }
+        toast({ title, description, variant: "destructive" });
+      },
     },
   });
 
