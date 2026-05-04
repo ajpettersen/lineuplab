@@ -1,16 +1,48 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useGetGame,
   useGetGameLineup,
+  useSaveLineup,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
+  getGetSeasonStatsQueryKey,
+  getGetPlayerStatsQueryKey,
+  type LineupEntry,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ChevronLeft, ChevronRight, Maximize2, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
+
+/**
+ * Drag-and-drop "where am I dropping" payload, attached to each droppable
+ * via @dnd-kit's `data` field and pulled out in handleDragEnd. Field Display
+ * only ever shows one inning at a time so we don't carry inning info in the
+ * payload — the component reads `currentInning` directly when applying moves.
+ *   tile       → drop onto an occupied position chip (swap)
+ *   emptyField → drop onto an empty position chip (move into open slot)
+ *   benchArea  → drop onto the bench strip itself (send to bench)
+ */
+type MoveTarget =
+  | { kind: "tile"; entryId: number; position: string }
+  | { kind: "emptyField"; position: string }
+  | { kind: "benchArea" };
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -65,6 +97,40 @@ export default function FieldDisplay() {
   const [, params] = useRoute("/games/:id/display");
   const id = parseInt(params?.id ?? "0");
   const { teamName, teamShortName } = useTeamSettings();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const saveLineup = useSaveLineup();
+
+  // Sensor config mirrors game-detail.tsx so the dugout iPad behaves the
+  // same as a parent's phone: a 5px slop for mouse so a click isn't
+  // misread as a drag, and a 150ms long-press + 5px tolerance for touch
+  // so scrolling the page doesn't accidentally start a drag (and vice
+  // versa). Field Display has no scroll on tablet+, but the mobile
+  // fallback layout does, so the touch delay matters there.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+  );
+  // Tracks the entry whose chip is currently being dragged so we can hide
+  // the original (it's flying around in the DragOverlay) and so the
+  // bench/field can mute the same player elsewhere if they show twice.
+  const [activeDragEntryId, setActiveDragEntryId] = useState<number | null>(null);
+
+  // Single-flight save coordination. The dugout coach can fire off 2-3
+  // drags in quick succession (e.g. Aiden ↔ Mason, then Mason ↔ Owen),
+  // and a parent's phone might be editing the same lineup at the same
+  // time. Two hazards we have to defend against:
+  //   1) Overlapping POSTs racing — server REPLACE means whichever lands
+  //      last "wins", which could undo an earlier successful drag.
+  //   2) Stale-snapshot rollback on a late failure clobbering newer
+  //      successful state.
+  // Solution: chain saves through a single promise so only one POST is
+  // ever in flight, and have each save read the LATEST optimistic state
+  // at save-time (rather than the state captured when the drag fired).
+  // Multiple drags during an in-flight save coalesce into a single
+  // follow-up POST with the final coalesced state.
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const pendingLineupRef = useRef<LineupEntry[] | null>(null);
 
   // Polling interval: 5s feels live without hammering the API. The query is
   // also re-fetched on window focus (default react-query behavior) so a
@@ -133,24 +199,27 @@ export default function FieldDisplay() {
   }, [fingerprint]);
 
   // Defense for the current inning, keyed by position. Only one player per
-  // position per inning is supported (server enforces).
+  // position per inning is supported (server enforces). `entryId` is the
+  // server-assigned lineup row id we need for drag-and-drop save mutations.
   const fieldByPos = useMemo(() => {
-    const map = new Map<string, { name: string; playerId: number }>();
+    const map = new Map<string, { name: string; playerId: number; entryId: number }>();
     for (const e of lineup) {
       if (e.inning !== currentInning) continue;
       if (e.position === "Bench") continue;
-      map.set(e.position, { name: e.playerName, playerId: e.playerId });
+      map.set(e.position, { name: e.playerName, playerId: e.playerId, entryId: e.id });
     }
     return map;
   }, [lineup, currentInning]);
 
   // Bench list for the current inning, name-sorted so the dugout can spot
-  // their kids quickly.
-  const benchNames = useMemo(() => {
+  // their kids quickly. `entryId` is carried so each bench chip can be
+  // dragged onto a field position (the row's `position` flips from
+  // "Bench" to the dropped-on position via the same save mutation).
+  const benchEntries = useMemo(() => {
     return lineup
       .filter((e) => e.inning === currentInning && e.position === "Bench")
-      .map((e) => e.playerName)
-      .sort((a, b) => a.localeCompare(b));
+      .map((e) => ({ name: e.playerName, entryId: e.id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [lineup, currentInning]);
 
   // Batting order: collapse per-player, take the first non-null order. Players
@@ -226,6 +295,180 @@ export default function FieldDisplay() {
       // still works for this session.
     }
   }, [dimMode]);
+
+  /**
+   * Apply a single drag-drop move to the lineup. Mirrors the semantics from
+   * game-detail.tsx so a coach who learned the gestures on the planning view
+   * gets the same behavior on the dugout-fence iPad:
+   *   field  → field player    : SWAP positions (both stay on the field)
+   *   field  → bench player    : SWAP (source onto bench, bench onto field)
+   *   field  → empty field cell: MOVE (source position becomes "Open")
+   *   field  → bench area      : MOVE source to bench
+   *   bench  → field player    : SWAP (source takes pos, displaced → bench)
+   *   bench  → empty field cell: MOVE (bench player into open slot)
+   *   bench  → bench player    : no-op
+   *   bench  → bench area      : no-op
+   * All operations are constrained to `currentInning` (the only inning the
+   * iPad is showing); cross-inning drops aren't possible because chips for
+   * other innings aren't even rendered.
+   */
+  const applyMove = (sourceEntryId: number, target: MoveTarget): LineupEntry[] | null => {
+    const sourceEntry = lineup.find((e) => e.id === sourceEntryId);
+    if (!sourceEntry) return null;
+    if (sourceEntry.inning !== currentInning) return null;
+
+    if (target.kind === "tile") {
+      if (target.entryId === sourceEntry.id) return null;
+      const targetEntry = lineup.find((e) => e.id === target.entryId);
+      if (!targetEntry) return null;
+      if (targetEntry.inning !== currentInning) return null;
+      if (sourceEntry.position === "Bench" && targetEntry.position === "Bench") return null;
+      if (targetEntry.position === "Bench") {
+        // Field source onto bench player → swap, both seats keep an occupant.
+        return lineup.map((e) => {
+          if (e.id === sourceEntry.id) return { ...e, position: "Bench" };
+          if (e.id === targetEntry.id) return { ...e, position: sourceEntry.position };
+          return e;
+        });
+      }
+      if (sourceEntry.position === "Bench") {
+        // Bench source onto field player → source takes the field, target sits.
+        return lineup.map((e) => {
+          if (e.id === sourceEntry.id) return { ...e, position: targetEntry.position };
+          if (e.id === targetEntry.id) return { ...e, position: "Bench" };
+          return e;
+        });
+      }
+      // Field-to-field swap.
+      const sourcePos = sourceEntry.position;
+      const targetPos = targetEntry.position;
+      return lineup.map((e) => {
+        if (e.id === sourceEntry.id) return { ...e, position: targetPos };
+        if (e.id === targetEntry.id) return { ...e, position: sourcePos };
+        return e;
+      });
+    }
+    if (target.kind === "emptyField") {
+      if (sourceEntry.position === target.position) return null;
+      return lineup.map((e) =>
+        e.id === sourceEntry.id ? { ...e, position: target.position } : e,
+      );
+    }
+    // benchArea
+    if (sourceEntry.position === "Bench") return null;
+    return lineup.map((e) =>
+      e.id === sourceEntry.id ? { ...e, position: "Bench" } : e,
+    );
+  };
+
+  /**
+   * Apply an optimistic lineup change and persist it. The chip snaps to its
+   * new spot the instant the coach lifts their finger (cache update is
+   * synchronous), then a serialized background save POSTs to the server.
+   *
+   * Concurrency model:
+   *   • Cache update is immediate — UI never waits on the network.
+   *   • Saves are chained through `saveQueueRef` so only one POST is in
+   *     flight at a time. The server's REPLACE semantics mean racing POSTs
+   *     could undo each other; serializing prevents that entirely.
+   *   • Each chained save reads the LATEST optimistic lineup
+   *     (`pendingLineupRef.current`) at save-time, not at queue-time. So
+   *     three rapid drags during one in-flight save coalesce into a single
+   *     follow-up POST carrying the final state — fewer server round trips
+   *     and the server only ever sees consistent snapshots.
+   *   • `cancelQueries` inside each save aborts any in-flight 5s poll so
+   *     a stale poll response can't overwrite our optimistic state.
+   *   • On failure we DON'T roll back to a snapshot (which could be stale
+   *     and clobber newer successful state). Instead we invalidate the
+   *     lineup so React Query refetches the authoritative server state,
+   *     and toast so the coach knows their drag didn't take.
+   *   • On success we also invalidate season + per-player stats queries —
+   *     position counts changed, so fairness math on the Stats tab needs
+   *     a refresh on next view.
+   */
+  const flushSave = () => {
+    const queryKey = getGetGameLineupQueryKey(id);
+    // Wrap the ENTIRE queued body in try/catch — if anything outside the
+    // mutateAsync (e.g. cancelQueries) ever rejects, the chain promise
+    // would become permanently rejected and every future flushSave
+    // would silently no-op. Belt-and-suspenders: also append a terminal
+    // `.catch(()=>{})` to the reassigned chain so we can never end up
+    // with a rejected saveQueueRef.
+    saveQueueRef.current = saveQueueRef.current
+      .then(async () => {
+        const toSave = pendingLineupRef.current;
+        if (!toSave) return;
+        // Mark as in-flight so a follow-up drag during this save sets a
+        // fresh ref value (which the next chained .then will pick up).
+        pendingLineupRef.current = null;
+        try {
+          await qc.cancelQueries({ queryKey });
+          await saveLineup.mutateAsync({
+            id,
+            data: {
+              entries: toSave.map((e) => ({
+                playerId: e.playerId,
+                inning: e.inning,
+                position: e.position,
+                battingOrder: e.battingOrder ?? null,
+              })),
+            },
+          });
+          qc.invalidateQueries({ queryKey });
+          qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
+        } catch {
+          // Drop any queued follow-up drags — they were computed assuming
+          // this save succeeded. Refetch authoritative state and let the
+          // coach redo. (Network failures at the field are rare; when they
+          // happen, snapping to server truth + a toast is the safest UX.)
+          pendingLineupRef.current = null;
+          qc.invalidateQueries({ queryKey });
+          toast({
+            title: "Couldn't save move",
+            description: "Pulled the latest lineup from the server. Try again.",
+            variant: "destructive",
+          });
+        }
+      })
+      .catch(() => {
+        // Defensive — keep the queue alive no matter what.
+      });
+  };
+
+  const saveLineupOptimistically = (nextLineup: LineupEntry[]) => {
+    const queryKey = getGetGameLineupQueryKey(id);
+    qc.setQueryData(queryKey, nextLineup);
+    pendingLineupRef.current = nextLineup;
+    flushSave();
+  };
+
+  const handleDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    if (!id.startsWith("player-")) return;
+    setActiveDragEntryId(parseInt(id.slice("player-".length), 10));
+  };
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setActiveDragEntryId(null);
+    if (!e.over) return;
+    const sourceId = String(e.active.id);
+    if (!sourceId.startsWith("player-")) return;
+    const sourceEntryId = parseInt(sourceId.slice("player-".length), 10);
+    const target = e.over.data.current as MoveTarget | undefined;
+    if (!target) return;
+    const next = applyMove(sourceEntryId, target);
+    if (next) saveLineupOptimistically(next);
+  };
+
+  const handleDragCancel = () => setActiveDragEntryId(null);
+
+  // Resolve the floating chip's player name for the DragOverlay preview.
+  const activeDragInfo = useMemo(() => {
+    if (activeDragEntryId == null) return null;
+    const entry = lineup.find((e) => e.id === activeDragEntryId);
+    return entry ? { name: entry.playerName, position: entry.position } : null;
+  }, [activeDragEntryId, lineup]);
 
   // Toggle browser fullscreen — gives an iPad-mounted display the most real
   // estate possible. Falls back gracefully if the API isn't available (some
@@ -456,7 +699,18 @@ export default function FieldDisplay() {
         </div>
       </header>
 
-      {/* ── Body: field on the left, batting panel on the right ── */}
+      {/* ── Body: field on the left, batting panel on the right ──
+       * Wrapped in a DndContext so chips on the field and on the bench can
+       * be dragged onto each other to swap positions in the current inning.
+       * The context only intercepts pointer events on elements that opt in
+       * via useDraggable / useDroppable — the inning controls, dim toggle,
+       * fullscreen, and the batting-order list are untouched. */}
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
       <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
@@ -590,79 +844,27 @@ export default function FieldDisplay() {
                 top of the bright grass */}
             <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/30 to-transparent" />
 
-            {FIELD_POSITIONS.map((pos) => {
-              const player = fieldByPos.get(pos);
-              const layout = POSITION_LAYOUT[pos];
-              const accent = POSITION_ACCENT[pos];
-              return (
-                <div
-                  key={pos}
-                  className="absolute -translate-x-1/2 -translate-y-1/2"
-                  style={{ top: layout.top, left: layout.left }}
-                  data-testid={`field-pos-${pos}`}
-                >
-                  <div
-                    className={`relative rounded-xl backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.55)] border ${
-                      player
-                        ? "bg-slate-950/85 border-white/20"
-                        : "bg-slate-950/45 border-white/10 border-dashed"
-                    }`}
-                  >
-                    {/* Position pill, color-coded by group */}
-                    <div
-                      className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black tracking-[0.18em] uppercase shadow-md whitespace-nowrap ${
-                        player ? accent : "bg-slate-700 text-slate-400"
-                      }`}
-                    >
-                      {pos}
-                    </div>
-                    {/* Player name */}
-                    <div className="px-3 pt-3 pb-2 min-w-[96px] sm:min-w-[120px] max-w-[160px] sm:max-w-[180px] text-center">
-                      <div
-                        className={`text-sm sm:text-base font-bold leading-tight truncate ${
-                          player ? "text-white" : "text-slate-500 italic"
-                        }`}
-                      >
-                        {player?.name ?? "Open"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {FIELD_POSITIONS.map((pos) => (
+              <FieldPositionSlot
+                key={pos}
+                pos={pos}
+                player={fieldByPos.get(pos)}
+                layout={POSITION_LAYOUT[pos]}
+                accent={POSITION_ACCENT[pos]}
+                isBeingDragged={
+                  activeDragEntryId != null &&
+                  fieldByPos.get(pos)?.entryId === activeDragEntryId
+                }
+              />
+            ))}
           </div>
 
-          {/* Bench strip below the field — single compact line */}
-          <div className="mt-2 sm:mt-3 rounded-xl border border-slate-800/80 bg-slate-900/70 backdrop-blur-md px-3 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.35)]">
-            <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-amber-300/90 font-bold">
-                Bench
-              </span>
-              {benchNames.length === 0 ? (
-                <span className="text-sm text-slate-500">—</span>
-              ) : (
-                benchNames.flatMap((n, i) => {
-                  const node = (
-                    <span
-                      key={n}
-                      className="text-sm sm:text-base font-semibold text-slate-100"
-                      data-testid={`bench-name-${n}`}
-                    >
-                      {n}
-                    </span>
-                  );
-                  return i === 0
-                    ? [node]
-                    : [
-                        <span key={`sep-${i}`} className="text-slate-600 text-sm">
-                          ·
-                        </span>,
-                        node,
-                      ];
-                })
-              )}
-            </div>
-          </div>
+          {/* Bench strip below the field — single compact line, also a drop
+              zone so a fielder can be benched by dragging their chip onto it. */}
+          <BenchStrip
+            entries={benchEntries}
+            activeDragEntryId={activeDragEntryId}
+          />
         </section>
 
         {/* Batting panel: sticky AT BAT hero on top, scrollable order below */}
@@ -810,6 +1012,28 @@ export default function FieldDisplay() {
         </aside>
       </main>
 
+      {/* Floating chip that follows the cursor / finger during a drag.
+          dropAnimation={null} so the chip vanishes the moment the move
+          lands — the optimistic cache update makes it instantly appear in
+          its new spot, so animating the floating chip back to the source
+          would just be confusing. */}
+      <DragOverlay dropAnimation={null}>
+        {activeDragInfo ? (
+          <div
+            className="rounded-xl bg-slate-950/95 border-2 border-amber-300 shadow-[0_10px_30px_rgba(0,0,0,0.7)] px-4 py-2 cursor-grabbing select-none"
+            data-testid="drag-overlay-chip"
+          >
+            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300 leading-none mb-1">
+              {activeDragInfo.position === "Bench" ? "Bench" : activeDragInfo.position}
+            </div>
+            <div className="text-sm font-bold text-white leading-tight">
+              {activeDragInfo.name}
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
+      </DndContext>
+
       {/*
        * Dim overlay. Fixed/full-viewport so it works in fullscreen mode too.
        * pointer-events-none → taps pass straight through to the controls
@@ -828,6 +1052,230 @@ export default function FieldDisplay() {
         }`}
       />
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sub-components for drag & drop. Pulled out of the render loop so each
+// chip can call useDraggable / useDroppable at the top level of its own
+// component (React's rules-of-hooks).
+// ─────────────────────────────────────────────────────────────────────────
+
+interface FieldPositionSlotProps {
+  pos: string;
+  player: { name: string; playerId: number; entryId: number } | undefined;
+  layout: { top: string; left: string };
+  accent: string;
+  isBeingDragged: boolean;
+}
+
+/**
+ * One position cell on the diamond. Always droppable (so even an empty
+ * "Open" slot accepts a drop and the dragged player moves into it). When
+ * occupied, the chip body itself is also draggable.
+ */
+function FieldPositionSlot({
+  pos,
+  player,
+  layout,
+  accent,
+  isBeingDragged,
+}: FieldPositionSlotProps) {
+  const dropData: MoveTarget = player
+    ? { kind: "tile", entryId: player.entryId, position: pos }
+    : { kind: "emptyField", position: pos };
+  const { isOver, setNodeRef } = useDroppable({
+    id: `field-${pos}`,
+    data: dropData,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className="absolute -translate-x-1/2 -translate-y-1/2"
+      style={{ top: layout.top, left: layout.left }}
+      data-testid={`field-pos-${pos}`}
+    >
+      {player ? (
+        <DraggableFieldChip
+          pos={pos}
+          accent={accent}
+          name={player.name}
+          entryId={player.entryId}
+          isOver={isOver}
+          isBeingDragged={isBeingDragged}
+        />
+      ) : (
+        <EmptyFieldChip pos={pos} isOver={isOver} />
+      )}
+    </div>
+  );
+}
+
+interface DraggableFieldChipProps {
+  pos: string;
+  accent: string;
+  name: string;
+  entryId: number;
+  isOver: boolean;
+  isBeingDragged: boolean;
+}
+
+/** A filled position chip — the entire visible rectangle (including the
+ *  position pill above it) is the drag handle so a coach with thick
+ *  fingers can grab anywhere. */
+function DraggableFieldChip({
+  pos,
+  accent,
+  name,
+  entryId,
+  isOver,
+  isBeingDragged,
+}: DraggableFieldChipProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `player-${entryId}`,
+  });
+  const hidden = isDragging || isBeingDragged;
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`relative rounded-xl backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.55)] border bg-slate-950/85 border-white/20 touch-none cursor-grab active:cursor-grabbing select-none transition-shadow ${
+        isOver ? "ring-2 ring-amber-300 shadow-[0_0_24px_rgba(252,211,77,0.55)]" : ""
+      } ${hidden ? "opacity-30" : ""}`}
+      data-testid={`field-chip-${pos}`}
+      title={`${name} — drag to swap with another player`}
+    >
+      <div
+        className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black tracking-[0.18em] uppercase shadow-md whitespace-nowrap ${accent}`}
+      >
+        {pos}
+      </div>
+      <div className="px-3 pt-3 pb-2 min-w-[96px] sm:min-w-[120px] max-w-[160px] sm:max-w-[180px] text-center">
+        <div className="text-sm sm:text-base font-bold leading-tight truncate text-white">
+          {name}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Empty position cell — not draggable, but the parent slot is droppable
+ *  so a chip can be dragged onto it. Highlights when something hovers. */
+function EmptyFieldChip({ pos, isOver }: { pos: string; isOver: boolean }) {
+  return (
+    <div
+      className={`relative rounded-xl backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.55)] border border-dashed transition-colors ${
+        isOver
+          ? "bg-amber-300/15 border-amber-300"
+          : "bg-slate-950/45 border-white/10"
+      }`}
+      data-testid={`field-chip-${pos}-empty`}
+    >
+      <div
+        className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black tracking-[0.18em] uppercase shadow-md whitespace-nowrap ${
+          isOver ? "bg-amber-300 text-slate-950" : "bg-slate-700 text-slate-400"
+        }`}
+      >
+        {pos}
+      </div>
+      <div className="px-3 pt-3 pb-2 min-w-[96px] sm:min-w-[120px] max-w-[160px] sm:max-w-[180px] text-center">
+        <div
+          className={`text-sm sm:text-base font-bold leading-tight truncate italic ${
+            isOver ? "text-amber-200" : "text-slate-500"
+          }`}
+        >
+          {isOver ? "Drop here" : "Open"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface BenchStripProps {
+  entries: { name: string; entryId: number }[];
+  activeDragEntryId: number | null;
+}
+
+/** Bench strip below the field — the whole strip is one drop zone so a
+ *  fielder can be benched by dragging anywhere in the bar. Each name
+ *  inside is itself draggable so a benched player can be subbed in. */
+function BenchStrip({ entries, activeDragEntryId }: BenchStripProps) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: "bench-area",
+    data: { kind: "benchArea" } satisfies MoveTarget,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`mt-2 sm:mt-3 rounded-xl border bg-slate-900/70 backdrop-blur-md px-3 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.35)] transition-colors ${
+        isOver
+          ? "border-amber-300 ring-2 ring-amber-300/60 bg-amber-950/30"
+          : "border-slate-800/80"
+      }`}
+      data-testid="bench-strip"
+    >
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-amber-300/90 font-bold">
+          Bench
+        </span>
+        {entries.length === 0 ? (
+          <span className="text-sm text-slate-500">
+            {isOver ? "Drop here to bench" : "—"}
+          </span>
+        ) : (
+          entries.flatMap((entry, i) => {
+            const node = (
+              <DraggableBenchChip
+                key={entry.entryId}
+                name={entry.name}
+                entryId={entry.entryId}
+                isBeingDragged={entry.entryId === activeDragEntryId}
+              />
+            );
+            return i === 0
+              ? [node]
+              : [
+                  <span key={`sep-${i}`} className="text-slate-600 text-sm" aria-hidden="true">
+                    ·
+                  </span>,
+                  node,
+                ];
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A single bench player name — draggable onto any field position to sub
+ *  in (the displaced fielder takes the bench seat). */
+function DraggableBenchChip({
+  name,
+  entryId,
+  isBeingDragged,
+}: {
+  name: string;
+  entryId: number;
+  isBeingDragged: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `player-${entryId}`,
+  });
+  const hidden = isDragging || isBeingDragged;
+  return (
+    <span
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`text-sm sm:text-base font-semibold text-slate-100 touch-none cursor-grab active:cursor-grabbing select-none px-1 py-0.5 rounded transition-opacity ${
+        hidden ? "opacity-30" : ""
+      }`}
+      data-testid={`bench-name-${name}`}
+      title={`${name} — drag onto a position to sub in`}
+    >
+      {name}
+    </span>
   );
 }
 
