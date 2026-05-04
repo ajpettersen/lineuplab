@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useGetGame,
@@ -25,15 +25,33 @@ const POSITION_LAYOUT: Record<
   (typeof FIELD_POSITIONS)[number],
   { top: string; left: string }
 > = {
-  CF: { top: "8%", left: "50%" },
-  LF: { top: "16%", left: "20%" },
-  RF: { top: "16%", left: "80%" },
-  SS: { top: "40%", left: "36%" },
-  "2B": { top: "40%", left: "64%" },
-  "3B": { top: "52%", left: "18%" },
-  "1B": { top: "52%", left: "82%" },
-  P: { top: "52%", left: "50%" },
-  C: { top: "82%", left: "50%" },
+  CF: { top: "11%", left: "50%" },
+  LF: { top: "20%", left: "22%" },
+  RF: { top: "20%", left: "78%" },
+  SS: { top: "46%", left: "38%" },
+  "2B": { top: "46%", left: "62%" },
+  "3B": { top: "58%", left: "23%" },
+  "1B": { top: "58%", left: "77%" },
+  P: { top: "62%", left: "50%" },
+  C: { top: "88%", left: "50%" },
+};
+
+/**
+ * Color-code each position by group so the field reads at a glance from
+ * across the dugout. Pitcher = bold gold (matches the at-bat hero accent),
+ * infield = warm amber, outfield = cool sky, catcher = neutral white. The
+ * accent shows up on the position pill above each player chip.
+ */
+const POSITION_ACCENT: Record<(typeof FIELD_POSITIONS)[number], string> = {
+  P: "bg-amber-400 text-slate-950",
+  C: "bg-slate-100 text-slate-900",
+  "1B": "bg-amber-300 text-slate-900",
+  "2B": "bg-amber-300 text-slate-900",
+  "3B": "bg-amber-300 text-slate-900",
+  SS: "bg-amber-300 text-slate-900",
+  LF: "bg-sky-300 text-slate-900",
+  CF: "bg-sky-300 text-slate-900",
+  RF: "bg-sky-300 text-slate-900",
 };
 
 /**
@@ -162,35 +180,24 @@ export default function FieldDisplay() {
   }, [lineup]);
 
   // Reconcile the at-bat index against polled changes to the batting order.
-  // The coach is mid-game tracking who's up by playerId in their head; if the
-  // backing list shrinks (player removed from another device) or reorders
-  // (slot 3 swapped with slot 5), we need to either follow that player to
-  // their new index or, if they're gone, clamp into range. Otherwise the
-  // hero card briefly shows "—" or even "no batting order yet" right when a
-  // phone edit lands — exactly the worst time to lose the controls.
-  const lastBatterPlayerIdRef = useRef<number | null>(null);
+  // Only depends on the LIST length / shape — never on currentBatterIdx —
+  // because we must not undo a coach's Next/Prev tap. When phone edits land
+  // and the list shrinks, we clamp the index into range so the hero never
+  // blanks out at the worst possible moment. (We intentionally don't try to
+  // chase the same player across reorders: simple is safer than clever for
+  // the dugout-fence case, and a same-length reorder is rare mid-game.)
   useEffect(() => {
     if (battingOrder.length === 0) {
-      lastBatterPlayerIdRef.current = null;
       if (currentBatterIdx !== 0) setCurrentBatterIdx(0);
       return;
-    }
-    const tracked = lastBatterPlayerIdRef.current;
-    if (tracked != null) {
-      const movedTo = battingOrder.findIndex((r) => r.playerId === tracked);
-      if (movedTo >= 0) {
-        if (movedTo !== currentBatterIdx) setCurrentBatterIdx(movedTo);
-        return;
-      }
-      // Tracked player is no longer in the order — fall through and clamp.
     }
     if (currentBatterIdx >= battingOrder.length) {
       setCurrentBatterIdx(currentBatterIdx % battingOrder.length);
     }
-    // Sync the tracked id to whoever currentBatterIdx now points at.
-    const safeIdx = Math.min(currentBatterIdx, battingOrder.length - 1);
-    lastBatterPlayerIdRef.current = battingOrder[safeIdx]?.playerId ?? null;
-  }, [battingOrder, currentBatterIdx]);
+    // We deliberately omit currentBatterIdx from the dep array — adding it
+    // would make this effect fight Next/Prev clicks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battingOrder.length]);
 
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
@@ -417,53 +424,167 @@ export default function FieldDisplay() {
           data-testid="section-field"
         >
           <div
-            className="relative w-full flex-1 min-h-[420px] lg:min-h-0 rounded-2xl border border-emerald-900/40 overflow-hidden"
+            className="relative w-full flex-1 min-h-[420px] lg:min-h-0 rounded-2xl border border-emerald-950/60 overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.45)]"
             style={{
               background:
-                "radial-gradient(ellipse at 50% 90%, rgb(20, 83, 45) 0%, rgb(13, 56, 30) 55%, rgb(10, 40, 22) 100%)",
+                "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(38, 120, 60) 0%, rgb(22, 86, 40) 55%, rgb(8, 38, 18) 100%)",
             }}
           >
-            {/* Stylized infield diamond — purely decorative. */}
+            {/* Field geometry: foul lines, skinned infield, basepaths, bases,
+                pitcher's mound, home plate. The SVG stretches with the
+                container (preserveAspectRatio="none") which is fine for a
+                stylized broadcast-style diagram — the diamond stays roughly
+                the right shape on iPad landscape, and the player chips below
+                are anchored in the same percentage coordinate space so they
+                always sit at their fielding position. */}
             <svg
-              className="absolute inset-0 w-full h-full opacity-40"
+              className="absolute inset-0 w-full h-full"
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
               aria-hidden="true"
             >
-              <polygon
-                points="50,55 36,65 50,82 64,65"
-                fill="rgb(180, 130, 70)"
-                opacity="0.55"
+              <defs>
+                <radialGradient id="fd-dirt" cx="50%" cy="68%" r="38%">
+                  <stop offset="0%" stopColor="rgb(208, 142, 82)" />
+                  <stop offset="75%" stopColor="rgb(158, 96, 50)" />
+                  <stop offset="100%" stopColor="rgb(118, 70, 36)" />
+                </radialGradient>
+                <radialGradient id="fd-mound" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="rgb(195, 130, 78)" />
+                  <stop offset="100%" stopColor="rgb(140, 88, 48)" />
+                </radialGradient>
+                <radialGradient id="fd-infieldGrass" cx="50%" cy="50%" r="60%">
+                  <stop offset="0%" stopColor="rgb(48, 130, 65)" />
+                  <stop offset="100%" stopColor="rgb(28, 95, 45)" />
+                </radialGradient>
+                {/* Faint grass mowing stripes for that broadcast look */}
+                <pattern
+                  id="fd-stripes"
+                  width="100"
+                  height="6"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <rect width="100" height="3" fill="rgba(255,255,255,0.025)" />
+                </pattern>
+              </defs>
+
+              {/* Mowing stripes overlay across the whole grass */}
+              <rect width="100" height="100" fill="url(#fd-stripes)" />
+
+              {/* Outfield warning track arc — subtle line at the back */}
+              <path
+                d="M 4 36 Q 50 -12 96 36"
+                stroke="rgba(255,255,255,0.10)"
+                strokeWidth="0.6"
+                fill="none"
               />
-              <circle cx="50" cy="55" r="3" fill="rgb(220, 220, 210)" opacity="0.7" />
-              <line x1="50" y1="82" x2="36" y2="65" stroke="white" strokeWidth="0.4" opacity="0.5" />
-              <line x1="36" y1="65" x2="50" y2="55" stroke="white" strokeWidth="0.4" opacity="0.5" />
-              <line x1="50" y1="55" x2="64" y2="65" stroke="white" strokeWidth="0.4" opacity="0.5" />
-              <line x1="64" y1="65" x2="50" y2="82" stroke="white" strokeWidth="0.4" opacity="0.5" />
+              <path
+                d="M 7 38 Q 50 -8 93 38"
+                stroke="rgba(255,255,255,0.05)"
+                strokeWidth="0.4"
+                fill="none"
+              />
+
+              {/* Foul lines from home plate out past 1B and 3B to the corners */}
+              <line
+                x1="50" y1="92" x2="2" y2="32"
+                stroke="rgba(255,255,255,0.55)" strokeWidth="0.35"
+              />
+              <line
+                x1="50" y1="92" x2="98" y2="32"
+                stroke="rgba(255,255,255,0.55)" strokeWidth="0.35"
+              />
+
+              {/* Skinned infield (dirt) — diamond between the four bases */}
+              <path
+                d="M 50 92 L 73 67 L 50 42 L 27 67 Z"
+                fill="url(#fd-dirt)"
+              />
+
+              {/* Inner infield grass — sits inside the basepath strip so the
+                  basepaths read as a clean white-edged dirt strip */}
+              <path
+                d="M 50 88 L 70 67 L 50 46 L 30 67 Z"
+                fill="url(#fd-infieldGrass)"
+              />
+
+              {/* Basepath chalk outline (just inside the dirt edge) */}
+              <path
+                d="M 50 92 L 73 67 L 50 42 L 27 67 Z"
+                fill="none"
+                stroke="rgba(255,255,255,0.55)"
+                strokeWidth="0.25"
+              />
+
+              {/* Pitcher's mound */}
+              <circle
+                cx="50" cy="60" r="3.6"
+                fill="url(#fd-mound)"
+                stroke="rgba(255,255,255,0.35)"
+                strokeWidth="0.18"
+              />
+              {/* Pitcher's rubber */}
+              <rect x="48.5" y="59.7" width="3" height="0.6" fill="rgba(255,255,255,0.85)" />
+
+              {/* Bases (rotated squares) */}
+              <g fill="white" stroke="rgba(0,0,0,0.35)" strokeWidth="0.15">
+                <rect x="48.5" y="40.5" width="3" height="3" transform="rotate(45 50 42)" />
+                <rect x="71.5" y="65.5" width="3" height="3" transform="rotate(45 73 67)" />
+                <rect x="25.5" y="65.5" width="3" height="3" transform="rotate(45 27 67)" />
+              </g>
+
+              {/* Home plate (pentagon) */}
+              <polygon
+                points="50,89 53,91.5 53,94.5 47,94.5 47,91.5"
+                fill="white"
+                stroke="rgba(0,0,0,0.35)"
+                strokeWidth="0.15"
+              />
+
+              {/* Batter's boxes (subtle) */}
+              <rect x="44.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.15" />
+              <rect x="53.5" y="89.5" width="2" height="5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.15" />
             </svg>
+
+            {/* Soft top vignette so the inning header reads cleanly over the
+                top of the bright grass */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/30 to-transparent" />
 
             {FIELD_POSITIONS.map((pos) => {
               const player = fieldByPos.get(pos);
               const layout = POSITION_LAYOUT[pos];
+              const accent = POSITION_ACCENT[pos];
               return (
                 <div
                   key={pos}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+                  className="absolute -translate-x-1/2 -translate-y-1/2"
                   style={{ top: layout.top, left: layout.left }}
                   data-testid={`field-pos-${pos}`}
                 >
-                  <div className="text-[10px] sm:text-xs font-bold tracking-wider uppercase text-emerald-100 mb-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
-                    {pos}
-                  </div>
                   <div
-                    className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border-2 shadow-lg backdrop-blur-sm min-w-[92px] sm:min-w-[120px] text-center ${
+                    className={`relative rounded-xl backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.55)] border ${
                       player
-                        ? "bg-white/95 border-white text-slate-900"
-                        : "bg-slate-900/60 border-slate-700 text-slate-500"
+                        ? "bg-slate-950/85 border-white/20"
+                        : "bg-slate-950/45 border-white/10 border-dashed"
                     }`}
                   >
-                    <div className="text-sm sm:text-base font-bold leading-tight truncate max-w-[140px] sm:max-w-[180px]">
-                      {player?.name ?? "—"}
+                    {/* Position pill, color-coded by group */}
+                    <div
+                      className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black tracking-[0.18em] uppercase shadow-md whitespace-nowrap ${
+                        player ? accent : "bg-slate-700 text-slate-400"
+                      }`}
+                    >
+                      {pos}
+                    </div>
+                    {/* Player name */}
+                    <div className="px-3 pt-3 pb-2 min-w-[96px] sm:min-w-[120px] max-w-[160px] sm:max-w-[180px] text-center">
+                      <div
+                        className={`text-sm sm:text-base font-bold leading-tight truncate ${
+                          player ? "text-white" : "text-slate-500 italic"
+                        }`}
+                      >
+                        {player?.name ?? "Open"}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -472,9 +593,9 @@ export default function FieldDisplay() {
           </div>
 
           {/* Bench strip below the field — single compact line */}
-          <div className="mt-2 sm:mt-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 shrink-0">
+          <div className="mt-2 sm:mt-3 rounded-xl border border-slate-800/80 bg-slate-900/70 backdrop-blur-md px-3 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.35)]">
             <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-400 font-semibold">
+              <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-amber-300/90 font-bold">
                 Bench
               </span>
               {benchNames.length === 0 ? (
