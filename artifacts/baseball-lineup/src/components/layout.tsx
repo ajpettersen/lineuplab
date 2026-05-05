@@ -50,25 +50,38 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const displayTeamName = teamName || "Loading…";
 
-  // Wheel-to-horizontal scroll for the desktop top bar. When the user
-  // hovers the right cluster and uses a vertical mouse wheel, we
-  // translate it into horizontal scroll so they can reach overflowed
-  // items (Sign out etc.) without having to find a scrollbar.
+  // Hover-to-scrub scrolling for the desktop top bar. As the mouse
+  // moves horizontally across the bar, scrollLeft is mapped linearly
+  // from 0 (mouse at left edge) → maxScroll (mouse at right edge), so
+  // the user can reveal every overflowed item just by sweeping their
+  // mouse across the bar. Vertical wheel also still scrolls horizontally
+  // as a fallback for users who prefer the wheel.
   const rightClusterRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = rightClusterRef.current;
     if (!el) return;
+    const onMouseMove = (e: MouseEvent) => {
+      const max = el.scrollWidth - el.clientWidth;
+      if (max <= 0) return;
+      const rect = el.getBoundingClientRect();
+      const ratio = Math.min(
+        1,
+        Math.max(0, (e.clientX - rect.left) / rect.width),
+      );
+      el.scrollLeft = ratio * max;
+    };
     const onWheel = (e: WheelEvent) => {
-      // Only intercept when there is actually horizontal overflow.
       if (el.scrollWidth <= el.clientWidth) return;
-      // If the user is already scrolling horizontally (touchpad
-      // two-finger swipe), let the browser handle it natively.
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       e.preventDefault();
       el.scrollLeft += e.deltaY;
     };
+    el.addEventListener("mousemove", onMouseMove);
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    return () => {
+      el.removeEventListener("mousemove", onMouseMove);
+      el.removeEventListener("wheel", onWheel);
+    };
   }, []);
 
   useEffect(() => {
@@ -243,7 +256,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               Read-only
             </div>
           )}
-          <nav className="flex items-center gap-1 shrink-0">
+          <nav className="flex items-center gap-2 shrink-0">
             {navItems.map((item) => {
               const isActive =
                 location === item.href ||
@@ -253,7 +266,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   data-testid={`link-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  className={`relative shrink-0 whitespace-nowrap px-3 py-2 rounded-md font-broadcast uppercase tracking-[0.14em] text-[13px] transition-colors ${
+                  className={`relative shrink-0 whitespace-nowrap px-4 py-2.5 rounded-md font-broadcast uppercase tracking-[0.14em] text-[15px] transition-colors ${
                     isActive
                       ? "text-primary-foreground bg-white/10"
                       : "text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/5"
@@ -261,7 +274,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 >
                   {item.label}
                   {isActive && (
-                    <span className="absolute -bottom-[7px] left-3 right-3 h-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-broadcast-gold)]" />
+                    <span className="absolute -bottom-[7px] left-4 right-4 h-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-broadcast-gold)]" />
                   )}
                 </Link>
               );
