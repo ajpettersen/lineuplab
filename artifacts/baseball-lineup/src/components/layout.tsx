@@ -98,7 +98,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Button
               variant="outline"
               size="icon"
-              className="shrink-0 lg:hidden bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
+              className="shrink-0 xl:hidden bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
               data-testid="button-mobile-nav"
             >
               <Menu className="h-5 w-5" />
@@ -184,27 +184,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </SheetContent>
         </Sheet>
-        <div className="flex items-center gap-3 w-full justify-center lg:justify-start lg:w-auto">
-          <div className="hidden lg:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)]">
+        <div className="flex items-center gap-3 w-full justify-center xl:justify-start xl:w-auto">
+          <div className="hidden xl:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)]">
             <Shield className="h-5 w-5 text-primary" />
           </div>
           <div className="flex flex-col leading-tight">
             <h1
-              className="text-xl lg:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none"
+              className="text-xl xl:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none"
               data-testid="text-team-name"
             >
               {displayTeamName}
             </h1>
-            <span className="hidden lg:block eyebrow text-accent">
+            <span className="hidden xl:block eyebrow text-accent">
               Lineup Lab
             </span>
           </div>
         </div>
         {/* Mobile-only team switcher (desktop is in the right cluster). */}
-        <div className="lg:hidden ml-auto">
+        <div className="xl:hidden ml-auto">
           <TeamSwitcher />
         </div>
-        <div className="ml-auto hidden lg:flex items-center gap-4">
+        <div className="ml-auto hidden xl:flex items-center gap-4">
           {isReadOnly && (
             <div
               className="inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-100"
