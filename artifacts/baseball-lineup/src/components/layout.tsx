@@ -98,7 +98,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Button
               variant="outline"
               size="icon"
-              className="shrink-0 xl:hidden bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
+              className="shrink-0 md:hidden bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
               data-testid="button-mobile-nav"
             >
               <Menu className="h-5 w-5" />
@@ -184,30 +184,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </SheetContent>
         </Sheet>
-        <div className="flex items-center gap-3 w-full justify-center xl:justify-start xl:w-auto">
-          <div className="hidden xl:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)]">
+        <div className="flex items-center gap-3 w-full justify-center md:justify-start md:w-auto md:shrink-0">
+          <div className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)] shrink-0">
             <Shield className="h-5 w-5 text-primary" />
           </div>
           <div className="flex flex-col leading-tight">
             <h1
-              className="text-xl xl:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none"
+              className="text-xl md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none whitespace-nowrap"
               data-testid="text-team-name"
             >
               {displayTeamName}
             </h1>
-            <span className="hidden xl:block eyebrow text-accent">
+            <span className="hidden md:block eyebrow text-accent">
               Lineup Lab
             </span>
           </div>
         </div>
         {/* Mobile-only team switcher (desktop is in the right cluster). */}
-        <div className="xl:hidden ml-auto">
+        <div className="md:hidden ml-auto">
           <TeamSwitcher />
         </div>
-        <div className="ml-auto hidden xl:flex items-center gap-4">
+        {/* Desktop right cluster: takes remaining width, justifies items
+            to the right, and scrolls horizontally when content overflows
+            so the sign-out button is always reachable on narrow desktops. */}
+        <div
+          className="hidden md:flex flex-1 min-w-0 overflow-x-auto items-center gap-4 justify-end [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-thumb]:rounded-full"
+          data-testid="header-right-cluster"
+        >
           {isReadOnly && (
             <div
-              className="inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-100"
+              className="shrink-0 inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-100"
               data-testid="badge-read-only"
               title="You have read-only access on this team. Ask the head coach for edit access."
             >
@@ -215,7 +221,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               Read-only
             </div>
           )}
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1 shrink-0">
             {navItems.map((item) => {
               const isActive =
                 location === item.href ||
@@ -225,7 +231,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   data-testid={`link-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  className={`relative px-3 py-2 rounded-md font-broadcast uppercase tracking-[0.14em] text-[13px] transition-colors ${
+                  className={`relative shrink-0 whitespace-nowrap px-3 py-2 rounded-md font-broadcast uppercase tracking-[0.14em] text-[13px] transition-colors ${
                     isActive
                       ? "text-primary-foreground bg-white/10"
                       : "text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/5"
@@ -239,10 +245,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <TeamSwitcher />
+          <div className="shrink-0">
+            <TeamSwitcher />
+          </div>
           {displayIdentity && (
             <div
-              className="flex flex-col leading-tight max-w-[180px]"
+              className="shrink-0 flex flex-col leading-tight max-w-[180px]"
               data-testid="text-user-identity"
             >
               <span className="text-sm font-medium text-primary-foreground truncate">
@@ -259,7 +267,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             variant="outline"
             size="sm"
             onClick={handleSignOut}
-            className="gap-2 border-white/20 bg-white/5 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+            className="shrink-0 gap-2 border-white/20 bg-white/5 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
             data-testid="button-sign-out"
           >
             <LogOut className="h-4 w-4" />
