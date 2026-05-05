@@ -1870,9 +1870,12 @@ export default function GameDetail() {
       <Card>
         <CardContent className="p-5">
           <div className="flex flex-col gap-4">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
+            <div>
               <div className="eyebrow text-primary/70">Game</div>
+              {/* Title row: opponent + status badge on the left, status-
+                  changing actions (Mark Complete / Game Ended Early)
+                  pushed to the right with ml-auto so they sit on the
+                  same line as the title even when the card is narrow. */}
               <div className="flex items-center gap-3 flex-wrap mt-1">
                 <h1 className="page-title text-foreground text-2xl sm:text-3xl">
                   <span className="text-foreground/50">vs.</span>{" "}
@@ -1888,6 +1891,31 @@ export default function GameDetail() {
                     return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
                   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
                 })()}
+                {(game.status === "upcoming" ||
+                  (game.status !== "cancelled" && game.innings > 1)) && (
+                  <div className="ml-auto flex gap-2 flex-wrap justify-end">
+                    {game.status === "upcoming" && (
+                      <Button variant="outline" size="sm" onClick={() => setCompleteOpen(true)}>
+                        <Trophy className="h-4 w-4 mr-2" />
+                        Mark Complete
+                      </Button>
+                    )}
+                    {game.status !== "cancelled" && game.innings > 1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEndEarlyLastInning(String(game.innings - 1));
+                          setEndEarlyOpen(true);
+                        }}
+                        data-testid="button-game-ended-early"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Game Ended Early
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1">
@@ -1921,35 +1949,6 @@ export default function GameDetail() {
                   </div>
                 );
               })()}
-            </div>
-              {/* Status-changing actions sit INLINE with the title on
-                  the same top row (right-aligned). They're conceptually
-                  about the game itself, so they belong with the title;
-                  lineup-management lives on its own row below. */}
-              {(game.status === "upcoming" ||
-                (game.status !== "cancelled" && game.innings > 1)) && (
-                <div className="flex gap-2 flex-wrap shrink-0 sm:justify-end">
-                  {game.status === "upcoming" && (
-                    <Button variant="outline" onClick={() => setCompleteOpen(true)}>
-                      <Trophy className="h-4 w-4 mr-2" />
-                      Mark Complete
-                    </Button>
-                  )}
-                  {game.status !== "cancelled" && game.innings > 1 && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setEndEarlyLastInning(String(game.innings - 1));
-                        setEndEarlyOpen(true);
-                      }}
-                      data-testid="button-game-ended-early"
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Game Ended Early
-                    </Button>
-                  )}
-                </div>
-              )}
             </div>
             {/* Lineup-management actions on their own row spanning the
                 full width below the title block. */}
