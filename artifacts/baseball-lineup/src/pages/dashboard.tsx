@@ -18,6 +18,7 @@ import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -91,6 +92,10 @@ export default function Dashboard() {
     .sort((a, b) => b.benchInnings / (b.totalInnings || 1) - a.benchInnings / (a.totalInnings || 1))[0];
 
   const { data: tasks = [] } = useListDashboardTasks();
+  // Game creation is a write — partial+ tiers see the button. View-only
+  // coaches don't (it would 403 anyway).
+  const { can } = usePermission();
+  const canCreateGame = can("partial");
 
   return (
     <div className="flex flex-col gap-6">
@@ -100,15 +105,17 @@ export default function Dashboard() {
           <h1 className="page-title text-foreground mt-1">Season Dashboard</h1>
           <p className="text-muted-foreground mt-2 text-sm">Track your team's progress and fairness</p>
         </div>
-        <Link href="/games/new">
-          <Button
-            className="bg-primary text-primary-foreground hover:bg-primary/90 font-broadcast uppercase tracking-wider shadow-md"
-            data-testid="button-add-game"
-          >
-            <CalendarDays className="h-4 w-4 mr-2" />
-            Add Game
-          </Button>
-        </Link>
+        {canCreateGame && (
+          <Link href="/games/new">
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90 font-broadcast uppercase tracking-wider shadow-md"
+              data-testid="button-add-game"
+            >
+              <CalendarDays className="h-4 w-4 mr-2" />
+              Add Game
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/*

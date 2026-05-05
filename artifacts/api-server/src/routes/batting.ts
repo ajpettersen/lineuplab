@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import multer from "multer";
 import { db, battingStatsTable, playersTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
@@ -7,6 +8,7 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
+router.use("/batting", gateWrites("partial"));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const BattingRowSchema = z.object({

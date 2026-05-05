@@ -21,6 +21,8 @@ import practicesRouter from "./practices";
 import practicePlanAiRouter from "./practice-plan-ai";
 import demoSeedRouter from "./demo-seed";
 import dashboardRouter from "./dashboard";
+import coachProfileRouter from "./coach-profile";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -53,5 +55,7 @@ router.use(practicesRouter);
 router.use(practicePlanAiRouter);
 router.use(demoSeedRouter);
 router.use(dashboardRouter);
+router.use(coachProfileRouter);
+router.use(adminRouter);
 
 export default router;

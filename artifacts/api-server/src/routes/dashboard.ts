@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   db,
@@ -9,6 +10,7 @@ import {
 import { DismissDashboardTaskBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+router.use("/dashboard", gateWrites("partial"));
 
 const MAX_TASKS = 20;
 

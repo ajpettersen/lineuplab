@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
@@ -19,6 +20,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+router.use("/practices", gateWrites("partial"));
 
 /**
  * Verify a practice belongs to the calling coach. Returns the row on

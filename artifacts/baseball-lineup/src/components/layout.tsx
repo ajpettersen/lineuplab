@@ -7,6 +7,8 @@ import {
   BarChart2,
   Menu,
   Shield,
+  ShieldCheck,
+  Eye,
   Settings as SettingsIcon,
   LogOut,
   Trophy,
@@ -17,12 +19,33 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TeamSwitcher } from "@/components/team-switcher";
+import { CoachProfilePrompt } from "@/components/coach-profile-prompt";
+import { useTeamContext } from "@/hooks/use-team-context";
+import { usePermission } from "@/hooks/use-permission";
+import { useAdminMe } from "@/hooks/use-admin";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { teamName } = useTeamSettings();
   const { signOut } = useClerk();
   const { user } = useUser();
+  const { data: ctx } = useTeamContext();
+  const { tier, isLoading: permissionLoading } = usePermission();
+  const { data: adminMe } = useAdminMe();
+  // Don't surface the "Read-only" badge while the team context is
+  // still loading. `usePermission` defensively defaults `tier='view'`
+  // during load so write-buttons stay hidden, but flashing a
+  // "Read-only" badge to the actual head coach for ~300ms on every
+  // hard refresh looks like a bug.
+  const isReadOnly = !permissionLoading && tier === "view";
+  const isMasterAdmin = !!adminMe?.isMasterAdmin;
+  // Prefer the per-team displayName so other coaches see the name the
+  // user picked for THIS team (which may differ from team to team).
+  // Falls back to Clerk's email so we always show *something*.
+  const displayIdentity =
+    ctx?.currentUser.displayName ??
+    user?.primaryEmailAddress?.emailAddress ??
+    null;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const displayTeamName = teamName || "Loading…";
@@ -49,6 +72,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/tournaments", label: "Tournaments", icon: Trophy },
     { href: "/practices", label: "Practices", icon: Clipboard },
     { href: "/settings", label: "Settings", icon: SettingsIcon },
+    // Master-admin-only: tucked at the end so it doesn't visually
+    // dominate for users who'll never see it.
+    ...(isMasterAdmin
+      ? [{ href: "/admin", label: "Admin", icon: ShieldCheck }]
+      : []),
   ];
 
   const handleSignOut = () => {
@@ -122,12 +150,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
               })}
             </nav>
             <div className="mt-auto border-t border-sidebar-border p-4">
-              {user?.primaryEmailAddress?.emailAddress && (
+              {displayIdentity && (
                 <div
                   className="text-xs text-sidebar-foreground/60 mb-2 truncate"
                   data-testid="text-user-email-mobile"
                 >
-                  {user.primaryEmailAddress.emailAddress}
+                  {displayIdentity}
+                  {ctx?.currentUser.role && (
+                    <span className="ml-1 text-sidebar-foreground/40">
+                      · {ctx.currentUser.role}
+                    </span>
+                  )}
+                </div>
+              )}
+              {isReadOnly && (
+                <div
+                  className="mb-2 inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-amber-200"
+                  data-testid="badge-read-only-mobile"
+                >
+                  <Eye className="h-3 w-3" />
+                  Read-only
                 </div>
               )}
               <Button
@@ -163,6 +205,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <TeamSwitcher />
         </div>
         <div className="ml-auto hidden md:flex items-center gap-4">
+          {isReadOnly && (
+            <div
+              className="inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-100"
+              data-testid="badge-read-only"
+              title="You have read-only access on this team. Ask the head coach for edit access."
+            >
+              <Eye className="h-3 w-3" />
+              Read-only
+            </div>
+          )}
           <nav className="flex items-center gap-1">
             {navItems.map((item) => {
               const isActive =
@@ -188,6 +240,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <TeamSwitcher />
+          {displayIdentity && (
+            <div
+              className="flex flex-col leading-tight max-w-[180px]"
+              data-testid="text-user-identity"
+            >
+              <span className="text-sm font-medium text-primary-foreground truncate">
+                {displayIdentity}
+              </span>
+              {ctx?.currentUser.role && (
+                <span className="text-[11px] text-primary-foreground/60 truncate uppercase tracking-wide">
+                  {ctx.currentUser.role}
+                </span>
+              )}
+            </div>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -203,6 +270,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
         {children}
       </main>
+      {/* First-time onboarding modal — auto-opens once per (user, team)
+          when the coach hasn't filled in their per-team displayName yet. */}
+      <CoachProfilePrompt />
     </div>
   );
 }

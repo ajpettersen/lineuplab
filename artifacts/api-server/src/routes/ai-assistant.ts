@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -18,6 +19,7 @@ import {
 import { getOwnedGame } from "../lib/ownership";
 
 const router: IRouter = Router();
+router.use("/games", gateWrites("partial"));
 
 const ParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const BodySchema = z.object({ message: z.string().trim().min(1).max(1000) });

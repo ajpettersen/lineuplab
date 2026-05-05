@@ -9,9 +9,13 @@ import {
   teamInvitesTable,
   teamSettingsTable,
   userActiveTeamTable,
+  ensureOwnerMembership,
+  isPermissionTier,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
+  type PermissionTier,
 } from "@workspace/db";
+import { assertPermission, isMasterAdmin } from "../lib/permissions";
 
 const router: IRouter = Router();
 
@@ -65,10 +69,62 @@ router.get("/team/context", async (req, res): Promise<void> => {
   const userId = req.userId!;
   const ownerUserId = req.ownerUserId!;
 
+  // Idempotently make sure the user has an owner-row in their OWN team
+  // so subsequent profile reads/writes have something to update. We do
+  // this here (vs in resolveTeamContext) because /team/context is loaded
+  // once at app start, not on every API request — keeps the hot path
+  // free of the extra SELECT/INSERT round trip.
+  let ownerEmail: string | null = null;
+  try {
+    const u = await clerkClient.users.getUser(userId);
+    ownerEmail =
+      u.primaryEmailAddress?.emailAddress ??
+      u.emailAddresses[0]?.emailAddress ??
+      null;
+  } catch (err) {
+    req.log.warn({ err }, "Failed to fetch owner email from Clerk");
+  }
+  await ensureOwnerMembership(userId, ownerEmail);
+
+  // Look up the calling user's profile row for the ACTIVE team. For
+  // owners on their own team this is the just-ensured owner-row; for
+  // assistant coaches it's their member-row created at invite-accept.
+  // Master admins switched into a foreign team won't have a row at all
+  // — synthesize a 'full' tier so the UI doesn't think they're locked
+  // out.
+  const [profileRow] = await db
+    .select()
+    .from(teamMembershipsTable)
+    .where(
+      and(
+        eq(teamMembershipsTable.ownerUserId, ownerUserId),
+        eq(teamMembershipsTable.memberUserId, userId),
+      ),
+    );
+
+  const adminBypass = !profileRow && isMasterAdmin(userId);
+  const permission: PermissionTier = profileRow
+    ? (isPermissionTier(profileRow.permission) ? profileRow.permission : "view")
+    : adminBypass
+      ? "full"
+      : "view";
+  const displayName = profileRow?.displayName ?? null;
+  const role = profileRow?.role ?? null;
+  // Owner-row counts as profile-complete only when displayName is set;
+  // master-admin bypass is implicitly complete (they don't get prompted).
+  const profileComplete = adminBypass
+    ? true
+    : !!displayName && displayName.trim().length >= 2;
+
   const memberships = await db
     .select({ ownerUserId: teamMembershipsTable.ownerUserId })
     .from(teamMembershipsTable)
-    .where(eq(teamMembershipsTable.memberUserId, userId));
+    .where(
+      and(
+        eq(teamMembershipsTable.memberUserId, userId),
+        eq(teamMembershipsTable.isOwner, false),
+      ),
+    );
 
   const otherOwnerIds = memberships.map((m) => m.ownerUserId);
   const allOwnerIds = Array.from(new Set([userId, ...otherOwnerIds]));
@@ -88,6 +144,13 @@ router.get("/team/context", async (req, res): Promise<void> => {
       teamName: labels[oid]!.teamName,
       teamShortName: labels[oid]!.teamShortName,
     })),
+    currentUser: {
+      displayName,
+      role,
+      permission,
+      profileComplete,
+      isMasterAdmin: isMasterAdmin(userId),
+    },
   });
 });
 
@@ -109,18 +172,23 @@ router.post("/team/active", async (req, res): Promise<void> => {
   const target = parsed.data.ownerUserId;
 
   if (target !== userId) {
-    const [m] = await db
-      .select({ id: teamMembershipsTable.id })
-      .from(teamMembershipsTable)
-      .where(
-        and(
-          eq(teamMembershipsTable.ownerUserId, target),
-          eq(teamMembershipsTable.memberUserId, userId),
-        ),
-      );
-    if (!m) {
-      res.status(403).json({ error: "Not a member of that team" });
-      return;
+    // Master admins can switch into ANY team without being a member
+    // — that's the whole point of master admin (debug/support a team
+    // without provisioning a coach row first).
+    if (!isMasterAdmin(userId)) {
+      const [m] = await db
+        .select({ id: teamMembershipsTable.id })
+        .from(teamMembershipsTable)
+        .where(
+          and(
+            eq(teamMembershipsTable.ownerUserId, target),
+            eq(teamMembershipsTable.memberUserId, userId),
+          ),
+        );
+      if (!m) {
+        res.status(403).json({ error: "Not a member of that team" });
+        return;
+      }
     }
   }
 
@@ -165,7 +233,7 @@ const CreateInviteBody = z.object({
   label: z.string().trim().max(60).optional(),
 });
 
-router.post("/team/invites", async (req, res): Promise<void> => {
+router.post("/team/invites", assertPermission("full"), async (req, res): Promise<void> => {
   const ownerUserId = req.ownerUserId!;
   const parsed = CreateInviteBody.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -193,7 +261,7 @@ router.post("/team/invites", async (req, res): Promise<void> => {
   });
 });
 
-router.delete("/team/invites/:id", async (req, res): Promise<void> => {
+router.delete("/team/invites/:id", assertPermission("full"), async (req, res): Promise<void> => {
   const ownerUserId = req.ownerUserId!;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -222,9 +290,13 @@ router.delete("/team/invites/:id", async (req, res): Promise<void> => {
 });
 
 /**
- * GET /api/team/members — list coaches on the current team (excluding
- * the implicit owner). Augments each row with the member's email/name
- * from Clerk so the UI can display something human.
+ * GET /api/team/members — list ALL coaches on the current team
+ * including the head coach (whose row is `isOwner = true`). Each row is
+ * augmented with the member's email/name from Clerk for fallback
+ * display when they haven't set their own `displayName`.
+ *
+ * Owner-row first (sorted by `isOwner desc`), then assistants by
+ * join date so the head coach is always at the top of the list.
  */
 router.get("/team/members", async (req, res): Promise<void> => {
   const ownerUserId = req.ownerUserId!;
@@ -232,7 +304,7 @@ router.get("/team/members", async (req, res): Promise<void> => {
     .select()
     .from(teamMembershipsTable)
     .where(eq(teamMembershipsTable.ownerUserId, ownerUserId))
-    .orderBy(desc(teamMembershipsTable.joinedAt));
+    .orderBy(desc(teamMembershipsTable.isOwner), desc(teamMembershipsTable.joinedAt));
 
   const enriched = await Promise.all(
     rows.map(async (r) => {
@@ -259,6 +331,10 @@ router.get("/team/members", async (req, res): Promise<void> => {
         memberUserId: r.memberUserId,
         memberEmail: email,
         memberName: name,
+        displayName: r.displayName,
+        role: r.role,
+        permission: isPermissionTier(r.permission) ? r.permission : "view",
+        isOwner: r.isOwner,
         joinedAt: r.joinedAt,
       };
     }),
@@ -267,12 +343,137 @@ router.get("/team/members", async (req, res): Promise<void> => {
   res.json(enriched);
 });
 
-router.delete("/team/members/:memberUserId", async (req, res): Promise<void> => {
+const UpdateMemberBody = z.object({
+  displayName: z.string().trim().min(2).max(40).nullable().optional(),
+  role: z.string().trim().max(40).nullable().optional(),
+  permission: z.enum(["full", "partial", "view"]).optional(),
+});
+
+/**
+ * PATCH /api/team/members/:memberUserId — update a coach's per-team
+ * profile + permission tier.
+ *
+ * Authorization rules:
+ *   - Anyone on the team can edit THEIR OWN displayName/role.
+ *   - Only the actual team owner can edit ANYONE'S permission tier.
+ *   - The owner-row's permission is locked to 'full' (the head coach
+ *     can't demote themselves).
+ *   - Master admins acting in another team's context get owner powers.
+ */
+router.patch("/team/members/:memberUserId", async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const ownerUserId = req.ownerUserId!;
   const memberUserId = req.params.memberUserId;
   if (!memberUserId) {
     res.status(400).json({ error: "memberUserId required" });
     return;
+  }
+  const parsed = UpdateMemberBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+  const body = parsed.data;
+  if (body.displayName === undefined && body.role === undefined && body.permission === undefined) {
+    res.status(400).json({ error: "Nothing to update" });
+    return;
+  }
+
+  const isSelf = memberUserId === userId;
+  const callerIsOwner = userId === ownerUserId || isMasterAdmin(userId);
+
+  // Permission edits require owner-equivalent authority.
+  if (body.permission !== undefined && !callerIsOwner) {
+    res.status(403).json({ error: "Only the head coach can change permissions" });
+    return;
+  }
+
+  // Profile edits (displayName/role) require either self OR owner.
+  if (
+    (body.displayName !== undefined || body.role !== undefined) &&
+    !isSelf &&
+    !callerIsOwner
+  ) {
+    res.status(403).json({ error: "You can only edit your own profile" });
+    return;
+  }
+
+  // Find the existing row.
+  const [existing] = await db
+    .select()
+    .from(teamMembershipsTable)
+    .where(
+      and(
+        eq(teamMembershipsTable.ownerUserId, ownerUserId),
+        eq(teamMembershipsTable.memberUserId, memberUserId),
+      ),
+    );
+  if (!existing) {
+    res.status(404).json({ error: "Coach not on this team" });
+    return;
+  }
+
+  // Owner-row's permission is locked to 'full'.
+  if (existing.isOwner && body.permission !== undefined && body.permission !== "full") {
+    res.status(400).json({ error: "Head coach must keep full access" });
+    return;
+  }
+
+  const updates: Partial<typeof teamMembershipsTable.$inferInsert> = {};
+  if (body.displayName !== undefined) updates.displayName = body.displayName;
+  if (body.role !== undefined) updates.role = body.role;
+  if (body.permission !== undefined) updates.permission = body.permission;
+
+  const [updated] = await db
+    .update(teamMembershipsTable)
+    .set(updates)
+    .where(eq(teamMembershipsTable.id, existing.id))
+    .returning();
+
+  res.json({
+    id: updated!.id,
+    memberUserId: updated!.memberUserId,
+    displayName: updated!.displayName,
+    role: updated!.role,
+    permission: isPermissionTier(updated!.permission) ? updated!.permission : "view",
+    isOwner: updated!.isOwner,
+  });
+});
+
+router.delete("/team/members/:memberUserId", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const ownerUserId = req.ownerUserId!;
+  const memberUserId = req.params.memberUserId;
+  if (!memberUserId) {
+    res.status(400).json({ error: "memberUserId required" });
+    return;
+  }
+  // Allow self-removal (a coach leaves the team) without an owner-tier
+  // permission check; otherwise require 'full' access (head coach can
+  // remove any other coach). Refuse to delete the owner-row entirely
+  // — the head coach can't kick themselves off their own team.
+  if (memberUserId === ownerUserId) {
+    res.status(400).json({ error: "Head coach can't be removed from their own team" });
+    return;
+  }
+  if (memberUserId !== userId) {
+    // Not self-removal — caller must have full access.
+    const callerIsOwner = userId === ownerUserId || isMasterAdmin(userId);
+    if (!callerIsOwner) {
+      const [callerRow] = await db
+        .select({ permission: teamMembershipsTable.permission })
+        .from(teamMembershipsTable)
+        .where(
+          and(
+            eq(teamMembershipsTable.ownerUserId, ownerUserId),
+            eq(teamMembershipsTable.memberUserId, userId),
+          ),
+        );
+      if (!callerRow || callerRow.permission !== "full") {
+        res.status(403).json({ error: "Only the head coach can remove other coaches" });
+        return;
+      }
+    }
   }
   await db.transaction(async (tx) => {
     await tx
@@ -409,14 +610,19 @@ router.post("/invites/:token/accept", async (req, res): Promise<void> => {
       return { ok: false as const, status: 410, error: "Invite already used" };
     }
 
-    // STEP 2 — Now (and only now) record the membership. No-op if the
-    // user was already a member from a previous accepted invite.
+    // STEP 2 — Now (and only now) record the membership. New coaches
+    // start at 'view' tier so they can browse the team safely; the head
+    // coach upgrades them from the Coaches card. No-op if the user was
+    // already a member from a previous accepted invite (we explicitly
+    // do NOT re-grant tier on re-acceptance).
     await tx
       .insert(teamMembershipsTable)
       .values({
         ownerUserId: invite.ownerUserId,
         memberUserId: userId,
         memberEmail,
+        permission: "view",
+        isOwner: false,
       })
       .onConflictDoNothing({
         target: [teamMembershipsTable.ownerUserId, teamMembershipsTable.memberUserId],

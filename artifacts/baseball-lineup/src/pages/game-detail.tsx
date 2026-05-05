@@ -70,6 +70,7 @@ import {
 import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus } from "@/lib/game-status";
 import { PitchCountsCard } from "@/components/pitch-counts-card";
@@ -124,6 +125,11 @@ export default function GameDetail() {
   const { data: prefs, isLoading: prefsLoading } = useGetPreferences();
   const generateLineup = useGenerateLineup();
   const saveLineup = useSaveLineup();
+  // Lineup edits require partial+. View-only coaches can browse the
+  // game (read the lineup, see scores, watch the field display) but
+  // can't generate, edit, or save. Server enforces independently.
+  const { can } = usePermission();
+  const canEditLineup = can("partial");
   const updateGame = useUpdateGame();
   const snapshotPlan = useSnapshotPlan();
   const clearPlanSnapshot = useClearPlanSnapshot();
@@ -1903,25 +1909,9 @@ export default function GameDetail() {
               )}
               {game.status !== "cancelled" && (
                 <>
-                  {lineup.length > 0 ? (
-                    <Button
-                      variant="default"
-                      onClick={openImage}
-                      data-testid="button-update-from-photo"
-                    >
-                      <Camera className="h-4 w-4 mr-2" />
-                      Update from Photo
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      onClick={openImage}
-                      data-testid="button-from-screenshot"
-                    >
-                      <ImageIcon className="h-4 w-4 mr-2" />
-                      From Screenshot
-                    </Button>
-                  )}
+                  {/* "View Original Plan" is read-only — leave it on
+                      for view-tier coaches so they can still see how
+                      the lineup was originally drawn up. */}
                   {game.planSnapshot && game.planSnapshot.length > 0 && (
                     <Button
                       variant="outline"
@@ -1932,24 +1922,48 @@ export default function GameDetail() {
                       View Original Plan
                     </Button>
                   )}
-                  <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
-                    <CopyIcon className="h-4 w-4 mr-2" />
-                    Copy from Previous
-                  </Button>
-                  {(lineup.length > 0 || previewLineup || editedLineup) && (
-                    <Button
-                      variant="outline"
-                      onClick={openEditAvailable}
-                      data-testid="button-edit-available"
-                    >
-                      <Users className="h-4 w-4 mr-2" />
-                      Edit Available
-                    </Button>
+                  {/* All of these mutate the lineup → partial+ only. */}
+                  {canEditLineup && (
+                    <>
+                      {lineup.length > 0 ? (
+                        <Button
+                          variant="default"
+                          onClick={openImage}
+                          data-testid="button-update-from-photo"
+                        >
+                          <Camera className="h-4 w-4 mr-2" />
+                          Update from Photo
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          onClick={openImage}
+                          data-testid="button-from-screenshot"
+                        >
+                          <ImageIcon className="h-4 w-4 mr-2" />
+                          From Screenshot
+                        </Button>
+                      )}
+                      <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
+                        <CopyIcon className="h-4 w-4 mr-2" />
+                        Copy from Previous
+                      </Button>
+                      {(lineup.length > 0 || previewLineup || editedLineup) && (
+                        <Button
+                          variant="outline"
+                          onClick={openEditAvailable}
+                          data-testid="button-edit-available"
+                        >
+                          <Users className="h-4 w-4 mr-2" />
+                          Edit Available
+                        </Button>
+                      )}
+                      <Button onClick={openGenerate} data-testid="button-generate-lineup">
+                        <Wand2 className="h-4 w-4 mr-2" />
+                        {lineup.length > 0 ? "Replace Lineup" : "Generate Lineup"}
+                      </Button>
+                    </>
                   )}
-                  <Button onClick={openGenerate} data-testid="button-generate-lineup">
-                    <Wand2 className="h-4 w-4 mr-2" />
-                    {lineup.length > 0 ? "Replace Lineup" : "Generate Lineup"}
-                  </Button>
                 </>
               )}
             </div>
@@ -2083,8 +2097,13 @@ export default function GameDetail() {
         </Card>
       )}
 
-      {/* Lineup Grid */}
-      {previewLineup && (
+      {/* Lineup Grid — Save buttons gated on partial+. View-only
+          coaches shouldn't see a "preview" state at all because the
+          actions that produce one (Generate / Update from Photo /
+          Edit Available) are themselves hidden, but the gate here is
+          a defense-in-depth so the buttons can't appear via stale
+          state from a permission downgrade mid-session. */}
+      {previewLineup && canEditLineup && (
         <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg" data-testid="banner-preview">
           <span className="text-sm text-yellow-800 font-medium">Preview — lineup not saved yet</span>
           <div className="flex gap-2">
@@ -2096,7 +2115,7 @@ export default function GameDetail() {
           </div>
         </div>
       )}
-      {!previewLineup && editedLineup && (
+      {!previewLineup && editedLineup && canEditLineup && (
         <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="banner-edited">
           <span className="text-sm text-amber-800 font-medium">Unsaved changes — you've moved players around</span>
           <div className="flex gap-2">

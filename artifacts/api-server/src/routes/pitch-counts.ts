@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, eq } from "drizzle-orm";
 import {
   db,
@@ -14,6 +15,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+router.use("/games", gateWrites("partial"));
 
 /**
  * Verify a game belongs to the calling coach. Returns the gameId on

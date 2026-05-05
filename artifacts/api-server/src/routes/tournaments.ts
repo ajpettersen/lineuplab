@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
@@ -20,6 +21,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+router.use("/tournaments", gateWrites("full"));
 
 router.get("/tournaments", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;

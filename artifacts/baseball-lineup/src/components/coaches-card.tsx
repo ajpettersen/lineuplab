@@ -18,6 +18,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -27,8 +34,11 @@ import {
   useCreateInvite,
   useRevokeInvite,
   useRemoveMember,
+  useUpdateMember,
   type TeamInvite,
+  type PermissionTier,
 } from "@/hooks/use-team-context";
+import { usePermission } from "@/hooks/use-permission";
 import {
   Copy,
   Loader2,
@@ -39,7 +49,35 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Crown,
+  Eye,
+  Pencil,
 } from "lucide-react";
+
+const PERMISSION_LABEL: Record<PermissionTier, string> = {
+  full: "Full access",
+  partial: "Edit lineups & games",
+  view: "Read-only",
+};
+
+function PermissionBadge({ tier }: { tier: PermissionTier }) {
+  const cls =
+    tier === "full"
+      ? "text-blue-700 bg-blue-50 border-blue-200"
+      : tier === "partial"
+        ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+        : "text-muted-foreground bg-muted border-border";
+  const Icon = tier === "full" ? Crown : tier === "partial" ? Pencil : Eye;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${cls}`}
+      data-testid={`badge-permission-${tier}`}
+    >
+      <Icon className="h-3 w-3" />
+      {PERMISSION_LABEL[tier]}
+    </span>
+  );
+}
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -86,13 +124,22 @@ function StatusBadge({ tone, label }: { tone: string; label: string }) {
 export function CoachesCard() {
   const { toast } = useToast();
   const { data: ctx } = useTeamContext();
+  const { can, tier } = usePermission();
   const isOwnTeam = !!ctx?.isOwner;
+  // The server only lets the actual team owner (or a master admin)
+  // change permission tiers and manage invites — a non-owner coach
+  // who was promoted to 'full' can read/write team data but cannot
+  // re-grant permissions. Mirror that here so we don't render a
+  // permission Select that 403s on submit.
+  const isMasterAdmin = !!ctx?.currentUser.isMasterAdmin;
+  const canManageCoaches = (isOwnTeam || isMasterAdmin) && can("full");
 
   const invitesQuery = useTeamInvites();
   const membersQuery = useTeamMembers();
   const createInvite = useCreateInvite();
   const revokeInvite = useRevokeInvite();
   const removeMember = useRemoveMember();
+  const updateMember = useUpdateMember();
 
   const [newLabel, setNewLabel] = useState("");
   const [justCreated, setJustCreated] = useState<TeamInvite | null>(null);
@@ -151,6 +198,27 @@ export function CoachesCard() {
     });
   };
 
+  const onChangePermission = (
+    memberUserId: string,
+    permission: PermissionTier,
+  ): void => {
+    updateMember.mutate(
+      { memberUserId, permission },
+      {
+        onSuccess: () =>
+          toast({
+            title: `Updated to ${PERMISSION_LABEL[permission].toLowerCase()}`,
+          }),
+        onError: (err) =>
+          toast({
+            title: "Couldn't change access",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
   // Active (pending) invites first, then history (accepted/revoked/expired).
   const invites = invitesQuery.data ?? [];
   const pending = invites.filter(
@@ -176,7 +244,10 @@ export function CoachesCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Invite form */}
+        {/* Invite form — only the head coach (full tier) can mint
+            invites. Hidden entirely for assistants so the UI doesn't
+            tease an action that 403s on click. */}
+        {canManageCoaches && (
         <div className="space-y-2">
           <div className="flex flex-col sm:flex-row gap-2">
             <Input
@@ -229,6 +300,7 @@ export function CoachesCard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Current coaches */}
         <div className="space-y-2">
@@ -243,73 +315,155 @@ export function CoachesCard() {
             <ul className="divide-y rounded-md border" data-testid="list-coaches">
               {members.map((m) => {
                 const isSelf = m.memberUserId === ctx?.userId;
+                // Best display name: per-team displayName (their choice
+                // for this team) → Clerk full name → email → generic.
+                const primaryLabel =
+                  m.displayName ?? m.memberName ?? m.memberEmail ?? "Coach";
+                // The owner row's permission is locked to 'full' on the
+                // server side; show "Head Coach" in the role slot if
+                // they didn't pick their own role label.
+                const roleLabel =
+                  m.role ?? (m.isOwner ? "Head Coach" : null);
                 return (
                   <li
                     key={m.id}
                     className="flex items-center gap-3 px-3 py-2"
                     data-testid={`row-coach-${m.memberUserId}`}
                   >
-                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                    {m.isOwner ? (
+                      <Crown className="h-4 w-4 text-amber-500 shrink-0" />
+                    ) : (
+                      <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">
-                        {m.memberName ?? m.memberEmail ?? "Coach"}
+                        {primaryLabel}
                         {isSelf && (
                           <span className="ml-2 text-xs text-muted-foreground">
                             (you)
                           </span>
                         )}
                       </div>
-                      {m.memberName && m.memberEmail && (
-                        <div className="text-xs text-muted-foreground truncate">
-                          {m.memberEmail}
-                        </div>
-                      )}
+                      <div className="text-xs text-muted-foreground truncate">
+                        {roleLabel && <span>{roleLabel}</span>}
+                        {roleLabel && m.memberEmail && (
+                          <span className="mx-1">·</span>
+                        )}
+                        {m.memberEmail && <span>{m.memberEmail}</span>}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         Joined {new Date(m.joinedAt).toLocaleDateString()}
                       </div>
                     </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          data-testid={`button-remove-coach-${m.memberUserId}`}
+                    {/* Owner row: locked badge. Non-owner row + caller
+                        is owner: editable Select. Otherwise: badge only. */}
+                    {m.isOwner ? (
+                      <PermissionBadge tier="full" />
+                    ) : canManageCoaches && !isSelf ? (
+                      <Select
+                        value={m.permission}
+                        onValueChange={(v) =>
+                          onChangePermission(
+                            m.memberUserId,
+                            v as PermissionTier,
+                          )
+                        }
+                        disabled={updateMember.isPending}
+                      >
+                        <SelectTrigger
+                          className="h-8 w-[180px] text-xs"
+                          data-testid={`select-permission-${m.memberUserId}`}
                         >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            {isSelf ? "Leave this team?" : "Remove this coach?"}
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {isSelf
-                              ? "You'll lose access to this team's roster, games, and lineups. You'll be returned to your own team. The head coach can re-invite you any time."
-                              : "They'll immediately lose access to this team's data. They keep their own team. You can re-invite them later if you change your mind."}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => onRemoveMember(m.memberUserId)}
-                            className="bg-destructive hover:bg-destructive/90"
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="full">
+                            {PERMISSION_LABEL.full}
+                          </SelectItem>
+                          <SelectItem value="partial">
+                            {PERMISSION_LABEL.partial}
+                          </SelectItem>
+                          <SelectItem value="view">
+                            {PERMISSION_LABEL.view}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <PermissionBadge tier={m.permission} />
+                    )}
+                    {/* Remove button: visible for self (leave team) OR
+                        for the head coach removing an assistant. The
+                        head coach's own row has neither (you can't kick
+                        yourself off your own team). */}
+                    {!m.isOwner && (canManageCoaches || isSelf) && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            data-testid={`button-remove-coach-${m.memberUserId}`}
                           >
-                            {isSelf ? "Leave team" : "Remove coach"}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              {isSelf ? "Leave this team?" : "Remove this coach?"}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {isSelf
+                                ? "You'll lose access to this team's roster, games, and lineups. You'll be returned to your own team. The head coach can re-invite you any time."
+                                : "They'll immediately lose access to this team's data. They keep their own team. You can re-invite them later if you change your mind."}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => onRemoveMember(m.memberUserId)}
+                              className="bg-destructive hover:bg-destructive/90"
+                            >
+                              {isSelf ? "Leave team" : "Remove coach"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                   </li>
                 );
               })}
             </ul>
           )}
+          {/* Permission tier explainer — only useful when there's
+              more than one coach + caller can actually edit tiers. */}
+          {canManageCoaches && members.length > 1 && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="text-permission-help"
+            >
+              <Crown className="inline h-3 w-3 mr-1" />
+              Full = everything ·
+              <Pencil className="inline h-3 w-3 mx-1" />
+              Edit = lineups / games / practices ·
+              <Eye className="inline h-3 w-3 mx-1" />
+              Read-only = no edits
+            </p>
+          )}
+          {!canManageCoaches && tier !== "full" && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="text-permission-locked"
+            >
+              Only the head coach can change access levels or invite new
+              coaches. Ask them if you need a different tier.
+            </p>
+          )}
         </div>
 
-        {/* Pending invites */}
-        {pending.length > 0 && (
+        {/* Pending invites — only meaningful for the head coach who
+            can actually mint and revoke them. */}
+        {canManageCoaches && pending.length > 0 && (
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">Pending invites</h3>
             <ul className="divide-y rounded-md border" data-testid="list-pending-invites">
@@ -352,8 +506,8 @@ export function CoachesCard() {
           </div>
         )}
 
-        {/* Invite history */}
-        {past.length > 0 && (
+        {/* Invite history — same gating as the rest of the invite UI. */}
+        {canManageCoaches && past.length > 0 && (
           <details className="text-sm">
             <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
               Invite history ({past.length})

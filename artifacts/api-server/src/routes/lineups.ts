@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, battingStatsTable, teamSettingsTable } from "@workspace/db";
 import {
@@ -12,6 +13,7 @@ import { generateFairLineup, FIELD_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame, filterOwnedPlayerIds } from "../lib/ownership";
 
 const router: IRouter = Router();
+router.use("/games", gateWrites("partial"));
 
 router.get("/games/:id/lineup", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;

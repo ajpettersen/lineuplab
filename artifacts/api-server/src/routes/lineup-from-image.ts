@@ -5,8 +5,10 @@ import { db, playersTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { FIELD_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame } from "../lib/ownership";
+import { gateWrites } from "../lib/permissions";
 
 const router: IRouter = Router();
+router.use("/games", gateWrites("partial"));
 
 const ParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 

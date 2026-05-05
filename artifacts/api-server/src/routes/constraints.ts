@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { db, lineupConstraintsTable, playersTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -6,6 +7,7 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
+router.use("/constraints", gateWrites("full"));
 
 const CreateConstraintSchema = z.object({
   type: z.string(),

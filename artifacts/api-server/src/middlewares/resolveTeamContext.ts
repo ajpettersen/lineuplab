@@ -5,6 +5,7 @@ import {
   teamMembershipsTable,
   userActiveTeamTable,
 } from "@workspace/db";
+import { isMasterAdmin } from "../lib/permissions";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -76,6 +77,19 @@ export async function resolveTeamContext(
       );
 
     if (membership) {
+      req.ownerUserId = active.activeOwnerUserId;
+      next();
+      return;
+    }
+
+    // Master-admin bypass: app owners can switch into any team via
+    // `POST /team/active` without a membership row (that's the whole
+    // point of the admin "view as this team" flow). If we re-validated
+    // strictly here we'd silently snap them back to their own team on
+    // the very next request after switching, which the architect
+    // review flagged as a feature-break. So preserve the foreign
+    // pointer for master admins.
+    if (isMasterAdmin(userId)) {
       req.ownerUserId = active.activeOwnerUserId;
       next();
       return;

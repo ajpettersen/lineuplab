@@ -105,7 +105,8 @@ function AcceptFlow({ token }: { token: string }) {
       onSuccess: (team) => {
         toast({
           title: `Welcome to ${team.teamName}`,
-          description: "You now have full access to this team's data.",
+          description:
+            "You're in! You start with read-only access — the head coach can grant edit permission from the Coaches card.",
         });
         setLocation("/");
       },
@@ -233,8 +234,8 @@ function AcceptFlow({ token }: { token: string }) {
         <CardTitle>Join {p.teamName}</CardTitle>
         <CardDescription>
           You've been invited to be an assistant coach for{" "}
-          <strong>{p.teamName}</strong>. Accepting gives you full access to
-          their roster, schedule, lineups, and AI memory.
+          <strong>{p.teamName}</strong>. You'll start with read-only access —
+          the head coach can grant edit permission once you're on the team.
           {user?.primaryEmailAddress?.emailAddress && (
             <>
               {" "}

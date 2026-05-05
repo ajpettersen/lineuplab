@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+router.use("/practices", gateWrites("partial"));
 
 /**
  * Valid drill type and focus area keys the model is allowed to emit.

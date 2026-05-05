@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, userPreferencesTable, type UserPreferences } from "@workspace/db";
 
 const router: IRouter = Router();
+router.use("/preferences", gateWrites("partial"));
 
 const UpdateBody = z.object({
   defaultInnings: z.number().int().min(1).max(15).optional(),

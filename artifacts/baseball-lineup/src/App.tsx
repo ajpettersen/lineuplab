@@ -26,6 +26,8 @@ import PracticeDetail from "@/pages/practice-detail";
 import FieldDisplay from "@/pages/field-display";
 import Stats from "@/pages/stats";
 import Settings from "@/pages/settings";
+import Admin from "@/pages/admin";
+import AdminTeamDetail from "@/pages/admin-team-detail";
 import Join from "@/pages/join";
 import NotFound from "@/pages/not-found";
 
@@ -252,6 +254,12 @@ function ProtectedApp() {
                   <Redirect to="/settings#constraints-section" />
                 </Route>
                 <Route path="/settings" component={Settings} />
+                {/* Master-admin only — server-side `requireMasterAdmin`
+                    middleware 403s the underlying APIs for non-admins,
+                    and the page itself shows an "access denied" panel.
+                    The nav item that links here is also gated. */}
+                <Route path="/admin/teams/:ownerUserId" component={AdminTeamDetail} />
+                <Route path="/admin" component={Admin} />
                 <Route component={NotFound} />
               </Switch>
             </Layout>

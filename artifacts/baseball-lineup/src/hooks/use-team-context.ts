@@ -2,10 +2,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+export type PermissionTier = "full" | "partial" | "view";
+
 export interface TeamSummary {
   ownerUserId: string;
   teamName: string;
   teamShortName: string;
+}
+
+/**
+ * Per-team profile + access info for the calling user. Populated by the
+ * server based on the user's row in `team_memberships` for the active
+ * team. Master admins on a foreign team get a synthesized 'full' tier
+ * with `profileComplete = true` (no prompt — they're not really on the
+ * team, just visiting in support mode).
+ */
+export interface CurrentUserContext {
+  displayName: string | null;
+  role: string | null;
+  permission: PermissionTier;
+  profileComplete: boolean;
+  isMasterAdmin: boolean;
 }
 
 export interface TeamContext {
@@ -14,6 +31,7 @@ export interface TeamContext {
   isOwner: boolean;
   ownedTeam: TeamSummary;
   memberOf: TeamSummary[];
+  currentUser: CurrentUserContext;
 }
 
 export const teamContextQueryKey = ["team", "context"] as const;
@@ -87,6 +105,10 @@ export interface TeamMember {
   memberUserId: string;
   memberEmail: string | null;
   memberName: string | null;
+  displayName: string | null;
+  role: string | null;
+  permission: PermissionTier;
+  isOwner: boolean;
   joinedAt: string;
 }
 
@@ -143,10 +165,75 @@ export function useRemoveMember() {
     mutationFn: (memberUserId: string) =>
       fetch(`${BASE}/api/team/members/${encodeURIComponent(memberUserId)}`, {
         method: "DELETE",
-      }).then((r) => {
-        if (!r.ok) throw new Error(`Request failed (${r.status})`);
+      }).then(async (r) => {
+        if (!r.ok) {
+          let msg = `Request failed (${r.status})`;
+          try {
+            const body = (await r.json()) as { error?: string };
+            if (body.error) msg = body.error;
+          } catch {
+            // ignore
+          }
+          throw new Error(msg);
+        }
       }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamMembersQueryKey });
+    },
+  });
+}
+
+export interface UpdateMemberInput {
+  memberUserId: string;
+  displayName?: string | null;
+  role?: string | null;
+  permission?: PermissionTier;
+}
+
+export function useUpdateMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberUserId, ...patch }: UpdateMemberInput) =>
+      fetchJson<TeamMember>(
+        `${BASE}/api/team/members/${encodeURIComponent(memberUserId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamMembersQueryKey });
+      void qc.invalidateQueries({ queryKey: teamContextQueryKey });
+    },
+  });
+}
+
+export interface UpdateCoachProfileInput {
+  displayName: string;
+  role?: string | null;
+}
+
+/**
+ * Update the calling user's per-team coach profile (the displayName +
+ * free-form role label shown to teammates). Used by the first-time
+ * onboarding prompt and from the coach's own row in the Coaches card.
+ */
+export function useUpdateCoachProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateCoachProfileInput) =>
+      fetchJson<{
+        displayName: string | null;
+        role: string | null;
+        permission: PermissionTier;
+      }>(`${BASE}/api/coach-profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamContextQueryKey });
       void qc.invalidateQueries({ queryKey: teamMembersQueryKey });
     },
   });

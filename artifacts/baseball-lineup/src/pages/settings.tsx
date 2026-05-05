@@ -26,6 +26,7 @@ import { CoachesCard } from "@/components/coaches-card";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { useSeedDemoMutation, DEMO_SEED_ENABLED } from "@/hooks/use-demo-seeder";
+import { usePermission } from "@/hooks/use-permission";
 import Constraints from "@/pages/constraints";
 
 /**
@@ -77,6 +78,12 @@ export default function Settings() {
       },
     },
   });
+
+  // Per-team permission gate. 'full' tier can edit team branding +
+  // tournament defaults + constraint editor; everyone else gets a
+  // disabled form (server still 403s as the source of truth).
+  const { can } = usePermission();
+  const canEditTeam = can("full");
 
   const [teamName, setTeamName] = useState("");
   const [teamShortName, setTeamShortName] = useState("");
@@ -214,7 +221,7 @@ export default function Settings() {
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               placeholder="e.g. Eastside Eagles"
-              disabled={teamLoading}
+              disabled={teamLoading || !canEditTeam}
               maxLength={80}
               data-testid="input-team-name"
             />
@@ -226,7 +233,7 @@ export default function Settings() {
               value={teamShortName}
               onChange={(e) => setTeamShortName(e.target.value)}
               placeholder="e.g. Eagles"
-              disabled={teamLoading}
+              disabled={teamLoading || !canEditTeam}
               maxLength={20}
               data-testid="input-team-short-name"
             />
@@ -251,7 +258,7 @@ export default function Settings() {
               onCheckedChange={(v) =>
                 setBattingStyle(v ? "continuous" : "nine_man")
               }
-              disabled={teamLoading}
+              disabled={teamLoading || !canEditTeam}
               data-testid="switch-batting-style"
             />
           </div>
@@ -276,7 +283,7 @@ export default function Settings() {
                   value={defaultDailyMax}
                   onChange={(e) => setDefaultDailyMax(e.target.value)}
                   placeholder="e.g. 85"
-                  disabled={teamLoading}
+                  disabled={teamLoading || !canEditTeam}
                   data-testid="input-default-daily-max"
                 />
               </div>
@@ -291,7 +298,7 @@ export default function Settings() {
                   value={defaultTournamentMax}
                   onChange={(e) => setDefaultTournamentMax(e.target.value)}
                   placeholder="e.g. 200"
-                  disabled={teamLoading}
+                  disabled={teamLoading || !canEditTeam}
                   data-testid="input-default-tournament-max"
                 />
               </div>
@@ -304,7 +311,7 @@ export default function Settings() {
               <RestTiersEditor
                 value={defaultRestTiers}
                 onChange={setDefaultRestTiers}
-                disabled={teamLoading}
+                disabled={teamLoading || !canEditTeam}
                 testIdPrefix="default-rest-tier"
               />
             </div>
@@ -313,7 +320,7 @@ export default function Settings() {
           <div className="flex justify-end">
             <Button
               onClick={onSaveTeam}
-              disabled={updateTeam.isPending || teamLoading}
+              disabled={updateTeam.isPending || teamLoading || !canEditTeam}
               className="gap-2"
               data-testid="button-save-team"
             >

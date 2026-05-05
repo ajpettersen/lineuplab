@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, playersTable, lineupLocksTable } from "@workspace/db";
@@ -6,6 +7,7 @@ import { FIELD_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame, getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
+router.use("/games", gateWrites("partial"));
 
 const VALID_POSITIONS = [...FIELD_POSITIONS, "Bench"] as const;
 const PositionEnum = z.enum(VALID_POSITIONS);

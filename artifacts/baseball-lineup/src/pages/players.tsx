@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X, AlertTriangle, Info, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import {
   Tooltip,
   TooltipContent,
@@ -822,6 +823,11 @@ export default function Players() {
   const deletePlayer = useDeletePlayer();
   const qc = useQueryClient();
   const { toast } = useToast();
+  // Roster mutations are head-coach-only ('full' tier). Assistant
+  // coaches and view-only members can browse the roster but not add,
+  // edit, or delete players. Server enforces independently.
+  const { can } = usePermission();
+  const canEditRoster = can("full");
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -849,16 +855,21 @@ export default function Players() {
           <h1 className="page-title text-foreground mt-1">Roster</h1>
           <p className="text-muted-foreground mt-2 text-sm">{players.length} players</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="button-open-import">
-            <Sparkles className="h-4 w-4 mr-2" />
-            Import Roster
-          </Button>
-          <Button onClick={() => setAddOpen(true)}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Add Player
-          </Button>
-        </div>
+        {/* Add/import are roster mutations — hidden from non-full
+            tiers. View-only and partial coaches can still browse the
+            roster, just not edit it. */}
+        {canEditRoster && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="button-open-import">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Import Roster
+            </Button>
+            <Button onClick={() => setAddOpen(true)} data-testid="button-add-player">
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add Player
+            </Button>
+          </div>
+        )}
       </div>
 
       {!isLoading && players.length >= 1 && (
@@ -875,10 +886,16 @@ export default function Players() {
         <Card className="py-12">
           <CardContent className="flex flex-col items-center gap-3 text-center">
             <CircleUser className="h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">No players yet. Add your first player to get started.</p>
-            <Button onClick={() => setAddOpen(true)}>
-              <UserPlus className="h-4 w-4 mr-2" /> Add Player
-            </Button>
+            <p className="text-muted-foreground">
+              {canEditRoster
+                ? "No players yet. Add your first player to get started."
+                : "No players on the roster yet. The head coach hasn't added anyone."}
+            </p>
+            {canEditRoster && (
+              <Button onClick={() => setAddOpen(true)} data-testid="button-add-player-empty">
+                <UserPlus className="h-4 w-4 mr-2" /> Add Player
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -930,14 +947,17 @@ export default function Players() {
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() => setDeleteId(p.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canEditRoster && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => setDeleteId(p.id)}
+                        data-testid={`button-delete-player-${p.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>

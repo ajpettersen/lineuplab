@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@workspace/db";
 
 const router: IRouter = Router();
+router.use("/team-settings", gateWrites("full"));
 
 // Single rest-tier shape — matches OpenAPI's RestTier component.
 const RestTierZ = z.object({

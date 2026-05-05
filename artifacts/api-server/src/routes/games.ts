@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, eq, gt, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -35,6 +36,7 @@ const ConfirmICalBodySchema = z.object({
 import ical from "node-ical";
 
 const router: IRouter = Router();
+router.use("/games", gateWrites("partial"));
 
 router.get("/games", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;

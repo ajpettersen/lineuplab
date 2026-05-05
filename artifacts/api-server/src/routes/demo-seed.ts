@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -11,6 +12,7 @@ import {
 } from "@workspace/db";
 
 const router: IRouter = Router();
+router.use("/demo", gateWrites("full"));
 
 /**
  * Demo seed endpoint — used so a freshly-signed-in coach can click around

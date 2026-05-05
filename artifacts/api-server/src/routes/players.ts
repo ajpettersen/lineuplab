@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { gateWrites } from "../lib/permissions";
 import { and, eq } from "drizzle-orm";
 import multer from "multer";
 import { z } from "zod";
@@ -13,6 +14,10 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+// Scope to /players so the middleware doesn't 403 unrelated routes
+// like PUT /coach-profile that just happen to flow through this
+// router on their way to the next mounted feature router.
+router.use("/players", gateWrites("full"));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
