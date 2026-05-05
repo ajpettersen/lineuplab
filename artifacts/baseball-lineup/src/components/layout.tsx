@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Home,
@@ -23,8 +23,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { teamName } = useTeamSettings();
   const { signOut } = useClerk();
   const { user } = useUser();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const displayTeamName = teamName || "Loading…";
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location]);
 
   useEffect(() => {
     if (teamName) {
@@ -60,7 +65,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-accent" />
-        <Sheet>
+        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           <SheetTrigger asChild>
             <Button
               variant="outline"
@@ -103,6 +108,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     data-testid={`link-nav-mobile-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                    onClick={() => setMobileNavOpen(false)}
                     className={`flex items-center gap-3 rounded-md px-3 py-2.5 font-broadcast uppercase tracking-[0.12em] text-sm transition-all ${
                       isActive
                         ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-[3px] border-accent shadow-inner"
