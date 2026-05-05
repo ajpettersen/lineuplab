@@ -27,6 +27,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { shortenTeamName } from "@/lib/team-name";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,46 +50,10 @@ type MoveTarget =
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-/**
- * Trim youth-baseball "modifier" suffixes off a team name so the dugout
- * scoreboard reads as a clean "Edina vs Minnetonka" instead of the full
- * "Edina Green 10AA vs Minnetonka 10AA Blue". We strip from the END so
- * compound city names ("Lakeville South") survive — a token only counts
- * as a modifier if it matches a known color word OR a youth age/level
- * code (10AA, 12U, U10, 11A, 13B, etc.). The first non-matching token
- * stops the strip, so "Wilsonville Blazers" stays intact (Blazers is
- * the mascot, not a modifier). Always returns at least the first word
- * so we never collapse to an empty string.
- */
-const TEAM_MODIFIER_COLORS = new Set([
-  "red", "blue", "green", "gold", "black", "white", "orange", "purple",
-  "yellow", "silver", "maroon", "navy", "crimson", "gray", "grey", "pink",
-  "teal", "royal", "scarlet", "cardinal", "carolina", "forest",
-]);
-// e.g. "10AA", "12U", "U10", "11A", "13B", "8C", "AAA", "AA". Tested
-// case-insensitively (token is upper-cased before .test) so coaches who
-// type "12u" or "u10" still get the same shortening.
-const TEAM_LEVEL_RE = /^(?:\d{1,2}[A-Z]{1,3}|U\d{1,2}|A{1,3}|B|C)$/;
-function shortenTeamName(name: string | null | undefined): string {
-  if (!name) return "";
-  const tokens = name.trim().split(/\s+/);
-  if (tokens.length <= 1) return name.trim();
-  // Walk from the right, dropping modifier tokens until we hit a
-  // "real" word. Don't strip below the first token (so an all-modifier
-  // tail like "Blue 12U" still leaves "Blue" rather than collapsing
-  // to empty).
-  let end = tokens.length;
-  while (end > 1) {
-    // Strip trailing punctuation (commas, periods) before classifying
-    // so "Edina, 10AA" still recognises "10AA" as a level token.
-    const raw = tokens[end - 1].replace(/[.,;:]+$/, "");
-    const isColor = TEAM_MODIFIER_COLORS.has(raw.toLowerCase());
-    const isLevel = TEAM_LEVEL_RE.test(raw.toUpperCase());
-    if (!isColor && !isLevel) break;
-    end -= 1;
-  }
-  return tokens.slice(0, end).join(" ");
-}
+// Team-name shortening lives in `@/lib/team-name` so the Dashboard hero
+// card and recent-games lists share the exact same logic — coaches see
+// "Edina vs Minnetonka" everywhere instead of one screen showing the
+// full "Edina Green 10AA" and another showing the trimmed name.
 
 /**
  * Diamond-shaped position layout for the dugout-fence iPad. Coordinates are

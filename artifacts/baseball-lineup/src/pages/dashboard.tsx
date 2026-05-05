@@ -19,6 +19,7 @@ import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
+import { shortenTeamName } from "@/lib/team-name";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -179,8 +180,14 @@ export default function Dashboard() {
                   <span className="text-white/60 font-broadcast uppercase tracking-widest text-base sm:text-lg leading-none">
                     vs.
                   </span>
-                  <span className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-broadcast-gold truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]">
-                    {heroGame.opponent}
+                  {/* Show the auto-shortened opponent name (matches the
+                      Field Display header). Tooltip preserves the full
+                      official name so coaches can confirm the matchup. */}
+                  <span
+                    className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-broadcast-gold truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
+                    title={heroGame.opponent ?? undefined}
+                  >
+                    {shortenTeamName(heroGame.opponent) || heroGame.opponent}
                   </span>
                 </div>
                 <div className="mt-4 flex items-center gap-4 sm:gap-6 flex-wrap">
@@ -336,7 +343,7 @@ export default function Dashboard() {
                   <Link key={g.id} href={`/games/${g.id}`}>
                     <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer border border-border/50">
                       <div>
-                        <div className="font-medium text-sm">vs. {g.opponent}</div>
+                        <div className="font-medium text-sm" title={g.opponent ?? undefined}>vs. {shortenTeamName(g.opponent) || g.opponent}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {format(new Date(g.gameDate), "EEE, MMM d")} {g.location ? `· ${g.location}` : ""}
                         </div>
@@ -369,7 +376,7 @@ export default function Dashboard() {
                   <Link key={g.id} href={`/games/${g.id}`}>
                     <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer border border-border/50">
                       <div>
-                        <div className="font-medium text-sm">vs. {g.opponent}</div>
+                        <div className="font-medium text-sm" title={g.opponent ?? undefined}>vs. {shortenTeamName(g.opponent) || g.opponent}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{format(new Date(g.gameDate), "MMM d, yyyy")}</div>
                       </div>
                       <ScoreBadge our={g.ourScore} opp={g.opponentScore} />
@@ -476,8 +483,8 @@ function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
             data-testid={`row-task-${t.id}`}
           >
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">
-                vs. {t.opponent}
+              <div className="text-sm font-medium truncate" title={t.opponent ?? undefined}>
+                vs. {shortenTeamName(t.opponent) || t.opponent}
                 <span className="text-xs text-muted-foreground font-normal ml-2">
                   {format(new Date(t.gameDate), "MMM d, yyyy")}
                 </span>
