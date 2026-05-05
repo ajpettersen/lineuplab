@@ -1251,11 +1251,24 @@ export default function FieldDisplay() {
               <span className="hidden sm:inline">Exit</span>
             </Button>
           </Link>
-          <div className="min-w-0">
-            <div className="font-display uppercase tracking-wider text-xl sm:text-3xl lg:text-4xl font-bold truncate leading-none flex items-baseline gap-2 sm:gap-3">
-              <span className="text-white truncate">{teamShortName || teamName || "Team"}</span>
-              <span className="text-slate-500 font-normal text-sm sm:text-lg">vs</span>
-              <span className="text-broadcast-gold truncate">{game?.opponent ?? ""}</span>
+          {/* Team-vs-opponent title.
+           *  Sized down from the original text-4xl on lg because the
+           *  header carries a lot of fixed-width siblings (inning chip,
+           *  game timer, score steppers, dim toggle) and the leftover
+           *  flex-1 space can't fit ~20-character team names at that
+           *  size — they truncated mid-word. text-2xl on lg gives us
+           *  comfortable room for typical youth-league names like
+           *  "Wilsonville Blazers vs Scrappers" while still reading as
+           *  a broadcast lower-third. tracking-wide (instead of
+           *  tracking-wider) trims a few more pixels per character.
+           *  whitespace-nowrap + min-w-0 means the truncate only
+           *  engages on truly extreme names — the common case shows
+           *  in full. */}
+          <div className="min-w-0 flex-1">
+            <div className="font-display uppercase tracking-wide text-base sm:text-xl lg:text-2xl font-bold leading-none flex items-baseline gap-2 sm:gap-3 min-w-0">
+              <span className="text-white truncate" title={teamName || undefined}>{teamShortName || teamName || "Team"}</span>
+              <span className="text-slate-500 font-normal text-xs sm:text-sm shrink-0">vs</span>
+              <span className="text-broadcast-gold truncate" title={game?.opponent ?? undefined}>{game?.opponent ?? ""}</span>
             </div>
           </div>
         </div>
@@ -1657,12 +1670,25 @@ export default function FieldDisplay() {
               Lineup
             </h2>
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 sm:p-3">
+          {/* In landscape and lg/desktop the batting list MUST fit the
+           *  panel without an internal scroll — the dugout iPad is
+           *  strapped to a fence and a coach glancing at it shouldn't
+           *  have to swipe to see the bottom of the order. We give the
+           *  wrapper `flex flex-col overflow-hidden` and make the <ol>
+           *  itself flex-1 + min-h-0 so it owns all leftover vertical
+           *  space, then let each <li> grow via flex-1 basis-0 so 9
+           *  batters get tall comfy rows and 18 batters get shorter
+           *  rows that still read clearly (min-h-[2rem] floor keeps
+           *  them tappable). On phone-portrait the panel uses a 2-col
+           *  grid with fixed row heights, which can grow past the
+           *  viewport — that's intentional, the page itself scrolls
+           *  in that mode (root is min-h, not h). */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-2 sm:p-3">
           {battingOrder.length === 0 ? (
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
             <ol
-              className="grid grid-cols-2 gap-1 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:gap-1 lg:flex lg:flex-col lg:gap-1"
+              className="grid grid-cols-2 gap-1 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:flex-1 max-lg:landscape:min-h-0 max-lg:landscape:gap-1 lg:flex lg:flex-col lg:flex-1 lg:min-h-0 lg:gap-1"
               data-testid="batting-order-list"
             >
               {battingOrder.map((r, idx) => {
@@ -1677,7 +1703,7 @@ export default function FieldDisplay() {
                 return (
                   <li
                     key={r.playerId}
-                    className={`relative flex items-stretch h-12 sm:h-14 overflow-hidden border transition-all ${
+                    className={`relative flex items-stretch h-12 sm:h-14 max-lg:landscape:h-auto max-lg:landscape:flex-1 max-lg:landscape:basis-0 max-lg:landscape:min-h-[2rem] lg:h-auto lg:flex-1 lg:basis-0 lg:min-h-[2rem] overflow-hidden border transition-all ${
                       isAtBat
                         ? "border-broadcast-gold bg-[#1a2a42] shadow-[0_2px_0_0_rgba(0,0,0,0.4)]"
                         : idx % 2 === 0
