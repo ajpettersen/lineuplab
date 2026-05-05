@@ -1977,7 +1977,7 @@ export default function GameDetail() {
                           data-testid="button-update-from-photo"
                         >
                           <Camera className="h-4 w-4 mr-2" />
-                          Update from Photo
+                          Upload Lineup Screenshot
                         </Button>
                       ) : (
                         <Button
@@ -1986,12 +1986,12 @@ export default function GameDetail() {
                           data-testid="button-from-screenshot"
                         >
                           <ImageIcon className="h-4 w-4 mr-2" />
-                          From Screenshot
+                          Upload Lineup Screenshot
                         </Button>
                       )}
                       <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
                         <CopyIcon className="h-4 w-4 mr-2" />
-                        Copy from Previous
+                        Copy Previous Lineup
                       </Button>
                       {(lineup.length > 0 || previewLineup || editedLineup) && (
                         <Button
