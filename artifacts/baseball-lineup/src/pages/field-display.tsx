@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRoute, Link } from "wouter";
 import {
   useGetGame,
@@ -1786,22 +1787,31 @@ export default function FieldDisplay() {
           dropAnimation={null} so the chip vanishes the moment the move
           lands — the optimistic cache update makes it instantly appear in
           its new spot, so animating the floating chip back to the source
-          would just be confusing. */}
-      <DragOverlay dropAnimation={null}>
-        {activeDragInfo ? (
-          <div
-            className="flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_8px_0_rgba(0,0,0,0.7)] cursor-grabbing select-none overflow-hidden"
-            data-testid="drag-overlay-chip"
-          >
-            <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-2 py-1 flex items-center justify-center text-xs uppercase tracking-wider min-w-[40px]">
-              {activeDragInfo.position === "Bench" ? "BN" : activeDragInfo.position}
+          would just be confusing.
+          Portal to <body> so the chip's `position: fixed` stays anchored
+          to the viewport instead of getting trapped under any ancestor
+          with a `transform`/`filter`/`will-change` style (the dim overlay
+          and broadcast theme wrappers both qualify). Without the portal,
+          the chip appears far from the cursor and the dragged tile just
+          looks like it vanished. */}
+      {createPortal(
+        <DragOverlay dropAnimation={null} style={{ zIndex: 1000 }}>
+          {activeDragInfo ? (
+            <div
+              className="flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_8px_0_rgba(0,0,0,0.7)] cursor-grabbing select-none overflow-hidden"
+              data-testid="drag-overlay-chip"
+            >
+              <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-2 py-1 flex items-center justify-center text-xs uppercase tracking-wider min-w-[40px]">
+                {activeDragInfo.position === "Bench" ? "BN" : activeDragInfo.position}
+              </div>
+              <div className="px-3 py-1 font-bold text-sm text-white whitespace-nowrap tracking-wide flex items-center">
+                {activeDragInfo.name}
+              </div>
             </div>
-            <div className="px-3 py-1 font-bold text-sm text-white whitespace-nowrap tracking-wide flex items-center">
-              {activeDragInfo.name}
-            </div>
-          </div>
-        ) : null}
-      </DragOverlay>
+          ) : null}
+        </DragOverlay>,
+        document.body,
+      )}
       </DndContext>
 
       {/*

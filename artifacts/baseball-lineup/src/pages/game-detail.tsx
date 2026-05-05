@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRoute, Link } from "wouter";
 import {
   DndContext,
@@ -2641,15 +2642,26 @@ export default function GameDetail() {
                 </table>
               </div>
 
-              <DragOverlay dropAnimation={null}>
-                {draggedEntry ? (
-                  <div
-                    className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${positionColor(draggedEntry.position)} shadow-lg ring-2 ring-primary cursor-grabbing`}
-                  >
-                    {formatPlayerNameShort(draggedEntry.playerName)}
-                  </div>
-                ) : null}
-              </DragOverlay>
+              {/* Portal the DragOverlay to <body> so the floating chip
+                * always positions itself relative to the viewport. Without
+                * the portal, any `transform`, `filter`, or `will-change`
+                * style on an ancestor (Cards, animation wrappers, etc.)
+                * makes @dnd-kit's `position: fixed` overlay anchor to
+                * that ancestor instead of the viewport — the chip ends up
+                * far from the cursor and the original tile just looks like
+                * it disappeared. createPortal sidesteps the whole tree. */}
+              {createPortal(
+                <DragOverlay dropAnimation={null} style={{ zIndex: 1000 }}>
+                  {draggedEntry ? (
+                    <div
+                      className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${positionColor(draggedEntry.position)} shadow-lg ring-2 ring-primary cursor-grabbing`}
+                    >
+                      {formatPlayerNameShort(draggedEntry.playerName)}
+                    </div>
+                  ) : null}
+                </DragOverlay>,
+                document.body,
+              )}
             </DndContext>
           )}
         </CardContent>
