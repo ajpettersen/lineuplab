@@ -89,6 +89,8 @@ pnpm generate # Orval codegen
 - The `formatPlayerNameShort()` helper in `src/lib/player-name.ts` should always be used for short player name displays (`First L.`) instead of manual string splitting.
 - When changing the tie badge format, ensure consistency across `dashboard.tsx`, `games.tsx`, and `game-detail.tsx`.
 - The team's `team_settings.activeFieldPositions` (standard 9 with CF, or 10-player with LCF+RCF) is the source of truth for defensive shape — flow it through any new lineup-generating or grid-rendering surface (see `lineups.ts`, `ai-assistant.ts`, `game-detail.tsx`, `field-display.tsx` for the pattern; render historical lineups via the `active ∪ positions present` union so old games don't lose columns).
+- iCal opponent extraction uses `extractOpponentFromSummary(summary, teamName)` in `api-server/src/routes/games.ts` — it splits the SUMMARY on `vs/v/@/at` and matches each side against the user's `team_settings.teamName` at the token level so road games where the league shortened your team to just a color (e.g. `Plymouth @ Blue`) don't store your own team as the opponent.
+- Every matchup display shows `{teamName from settings} vs. {shortenTeamName(opponent)}`. Inline subcomponents (e.g. `GameCard` in `games.tsx`) must receive `teamName` as a prop — Vite's react-refresh transform hoists inline arrow components to module scope, breaking closure references to outer hook values.
 
 ## Pointers
 

@@ -19,6 +19,7 @@ import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { shortenTeamName } from "@/lib/team-name";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -45,6 +46,7 @@ function ScoreBadge({ our, opp }: { our: number | null | undefined; opp: number 
 
 export default function Dashboard() {
   const { data: games = [] } = useListGames();
+  const { teamName } = useTeamSettings();
   const { data: seasonStats } = useGetSeasonStats();
   const { data: playerStats = [] } = useGetPlayerStats();
   // Default true — coaches who haven't toggled it yet see the score, matching
@@ -176,13 +178,20 @@ export default function Dashboard() {
                   <span className="eyebrow text-broadcast-gold">{heroLabel}</span>
                   <span className="h-px w-10 bg-broadcast-gold/40" />
                 </div>
-                <div className="mt-2 flex items-baseline gap-2 sm:gap-3 min-w-0">
+                <div className="mt-2 flex items-baseline gap-2 sm:gap-3 min-w-0 flex-wrap">
+                  {/* Full settings team name on the left, "vs." separator,
+                      auto-shortened opponent (city) on the right. Tooltip
+                      preserves the full official opponent name so coaches
+                      can confirm the matchup. */}
+                  <span
+                    className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-white truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
+                    title={teamName || undefined}
+                  >
+                    {teamName || "Team"}
+                  </span>
                   <span className="text-white/60 font-broadcast uppercase tracking-widest text-base sm:text-lg leading-none">
                     vs.
                   </span>
-                  {/* Show the auto-shortened opponent name (matches the
-                      Field Display header). Tooltip preserves the full
-                      official name so coaches can confirm the matchup. */}
                   <span
                     className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-broadcast-gold truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
                     title={heroGame.opponent ?? undefined}
@@ -343,7 +352,7 @@ export default function Dashboard() {
                   <Link key={g.id} href={`/games/${g.id}`}>
                     <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer border border-border/50">
                       <div>
-                        <div className="font-medium text-sm" title={g.opponent ?? undefined}>vs. {shortenTeamName(g.opponent) || g.opponent}</div>
+                        <div className="font-medium text-sm truncate" title={g.opponent ?? undefined}>{shortenTeamName(teamName) || teamName || "Team"} vs. {shortenTeamName(g.opponent) || g.opponent}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {format(new Date(g.gameDate), "EEE, MMM d")} {g.location ? `· ${g.location}` : ""}
                         </div>
@@ -376,7 +385,7 @@ export default function Dashboard() {
                   <Link key={g.id} href={`/games/${g.id}`}>
                     <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer border border-border/50">
                       <div>
-                        <div className="font-medium text-sm" title={g.opponent ?? undefined}>vs. {shortenTeamName(g.opponent) || g.opponent}</div>
+                        <div className="font-medium text-sm truncate" title={g.opponent ?? undefined}>{shortenTeamName(teamName) || teamName || "Team"} vs. {shortenTeamName(g.opponent) || g.opponent}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{format(new Date(g.gameDate), "MMM d, yyyy")}</div>
                       </div>
                       <ScoreBadge our={g.ourScore} opp={g.opponentScore} />
@@ -428,6 +437,7 @@ function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const { teamName } = useTeamSettings();
 
   const dismiss = useDismissDashboardTask({
     mutation: {
@@ -484,7 +494,7 @@ function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
           >
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium truncate" title={t.opponent ?? undefined}>
-                vs. {shortenTeamName(t.opponent) || t.opponent}
+                {shortenTeamName(teamName) || teamName || "Team"} vs. {shortenTeamName(t.opponent) || t.opponent}
                 <span className="text-xs text-muted-foreground font-normal ml-2">
                   {format(new Date(t.gameDate), "MMM d, yyyy")}
                 </span>

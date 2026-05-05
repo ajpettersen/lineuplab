@@ -1982,6 +1982,7 @@ export default function GameDetail() {
                   same line as the title even when the card is narrow. */}
               <div className="flex items-center gap-3 flex-wrap mt-1">
                 <h1 className="page-title text-foreground text-2xl sm:text-3xl">
+                  <span className="text-foreground" title={teamName || undefined}>{teamName || "Team"}</span>{" "}
                   <span className="text-foreground/50">vs.</span>{" "}
                   <span className="text-primary" title={game.opponent}>{shortenTeamName(game.opponent) || game.opponent}</span>
                 </h1>

@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 import { shortenTeamName } from "@/lib/team-name";
 
@@ -510,6 +511,7 @@ function EditGameDialog({
 // ── Main page ───────────────────────────────────────────────────
 export default function Games() {
   const { data: games = [], isLoading } = useListGames();
+  const { teamName } = useTeamSettings();
   const deleteGame = useDeleteGame();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -551,7 +553,10 @@ export default function Games() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
 
-  const GameCard = ({ g }: { g: typeof games[0] }) => (
+  // teamName is passed in explicitly (not closed over) because Vite's
+  // react-refresh transform hoists inline arrow components to module
+  // scope, breaking closure references.
+  const GameCard = ({ g, teamName }: { g: typeof games[0]; teamName: string }) => (
     <Card className="border-border hover:border-primary/30 transition-colors">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
@@ -564,7 +569,7 @@ export default function Games() {
                 >
                   {g.type && g.type !== "game"
                     ? (shortenTeamName(g.opponent) || g.opponent)
-                    : `vs. ${shortenTeamName(g.opponent) || g.opponent}`}
+                    : `${shortenTeamName(teamName) || teamName || "Team"} vs. ${shortenTeamName(g.opponent) || g.opponent}`}
                 </span>
                 <TypeBadge type={(g.type ?? "game") as EventKind} />
                 <GameTypeBadge gameType={g.gameType as ("league" | "tournament" | null | undefined)} />
@@ -745,7 +750,7 @@ export default function Games() {
           {upcoming.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Upcoming</h2>
-              {upcoming.map((g) => <GameCard key={g.id} g={g} />)}
+              {upcoming.map((g) => <GameCard key={g.id} g={g} teamName={teamName} />)}
             </div>
           )}
           {past.length > 0 && (
@@ -753,7 +758,7 @@ export default function Games() {
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 {filter === "game" ? "Past Games" : "Past"}
               </h2>
-              {past.map((g) => <GameCard key={g.id} g={g} />)}
+              {past.map((g) => <GameCard key={g.id} g={g} teamName={teamName} />)}
             </div>
           )}
         </>

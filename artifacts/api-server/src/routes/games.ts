@@ -9,6 +9,7 @@ import {
   lineupLocksTable,
   aiPinnedAssignmentsTable,
   playersTable,
+  teamSettingsTable,
 } from "@workspace/db";
 import type { PlanSnapshotEntry } from "@workspace/db";
 import {
@@ -34,6 +35,78 @@ const ConfirmICalBodySchema = z.object({
     .min(1, "games array required"),
 });
 import ical from "node-ical";
+
+// Tokens that should never count as a team-name match (separators, articles).
+const STOPWORDS = new Set(["the", "a", "an", "of", "vs", "v", "at"]);
+
+function tokenize(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 0 && !STOPWORDS.has(t));
+}
+
+// Splits an iCal SUMMARY on the common "vs"/"v"/"@"/"at" separators
+// leagues use to express matchups. Returns the parts in order.
+const MATCHUP_SEPARATOR_RE = /\s+(?:vs\.?|v\.?|@|at)\s+/i;
+
+/**
+ * Extract the opponent's name from an iCal event SUMMARY by figuring out
+ * which side of the matchup is the user's OWN team.
+ *
+ * Real-world summaries we have to handle:
+ *   "Minnetonka Blue vs Plymouth Pilots"        → "Plymouth Pilots"
+ *   "Plymouth @ Minnetonka Blue"                → "Plymouth"
+ *   "Plymouth Pilots vs Blue"                   → "Plymouth Pilots"
+ *       (league shortened user's team to color)
+ *   "Edina vs Minnetonka Blue at Field 5"       → "Edina"
+ *       (location after a SECOND separator)
+ *   "Orono Spartans (Orono) at Northwood Park"  → "Orono Spartans (Orono)"
+ *       (no own-team in summary at all)
+ *
+ * Strategy: split the summary on vs/v/@/at, then return the FIRST part
+ * whose meaningful tokens don't overlap the user's team-name tokens.
+ * Token-level overlap matches "Blue" against "Minnetonka Blue 10AA" —
+ * which is exactly the symptom the user reported.
+ */
+export function extractOpponentFromSummary(
+  summary: string,
+  teamName: string | null | undefined,
+): string {
+  const cleanSummary = summary.trim();
+  if (!cleanSummary) return cleanSummary;
+  const parts = cleanSummary
+    .split(MATCHUP_SEPARATOR_RE)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length < 2) return cleanSummary;
+
+  const ownTokens = new Set(tokenize(teamName ?? ""));
+  if (ownTokens.size === 0) {
+    // No team name to match against — fall back to the legacy behavior of
+    // taking whatever follows the first separator.
+    return parts[1] ?? cleanSummary;
+  }
+
+  const isOwnTeam = (part: string): boolean => {
+    const tks = tokenize(part);
+    if (tks.length === 0) return false;
+    return tks.some((t) => ownTokens.has(t));
+  };
+
+  // First part that doesn't look like our own team. Naturally drops any
+  // trailing " at <Field>" location cruft because location parts also
+  // won't match our team-name tokens — but the FIRST non-own part wins,
+  // so the real opponent is preferred over the location string.
+  for (const part of parts) {
+    if (!isOwnTeam(part)) return part;
+  }
+
+  // Both sides matched our team (rare — both are color-only?). Fall back
+  // to the second part so we don't return our own team verbatim.
+  return parts[1] ?? cleanSummary;
+}
 
 const router: IRouter = Router();
 router.use("/games", gateWrites("partial"));
@@ -134,6 +207,17 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
       });
       return;
     }
+    // Pull the user's team name so we can match it against each side of
+    // the matchup (so road games like "Plymouth @ Minnetonka Blue" don't
+    // store the user's own team as the opponent — see
+    // extractOpponentFromSummary).
+    const userId = req.ownerUserId!;
+    const [settings] = await db
+      .select({ teamName: teamSettingsTable.teamName })
+      .from(teamSettingsTable)
+      .where(eq(teamSettingsTable.userId, userId));
+    const ownTeamName = settings?.teamName ?? "";
+
     const events = ical.sync.parseICS(body);
     const games: {
       uid: string;
@@ -189,9 +273,11 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
       const locationStr = toStr(e.location);
       const location = locationStr.length > 0 ? locationStr : null;
       const type = classify(summary + " " + description);
-      // Try to extract opponent from summary: "vs X" / "@ X" / "v X" / just use full summary
-      const opponentMatch = summary.match(/(?:vs\.?\s*|@\s*|v\.?\s*)(.+)/i);
-      const opponent = opponentMatch ? opponentMatch[1]!.trim() : summary;
+      // Extract opponent by matching each side of the matchup against the
+      // user's own team name, so road games where the league shortened our
+      // team to just a color (e.g. "Plymouth @ Blue") don't end up with
+      // "Blue" stored as the opponent.
+      const opponent = extractOpponentFromSummary(summary, ownTeamName);
       games.push({
         uid,
         summary,
