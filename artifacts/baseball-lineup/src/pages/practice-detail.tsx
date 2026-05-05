@@ -373,9 +373,11 @@ export default function PracticeDetailPage() {
     setBlockDialogOpen(false);
   };
 
-  // ---- Generate-plan dialog (collects coach notes + reuses focus areas).
+  // ---- Generate-plan dialog. Reuses the practice's own focus areas +
+  // notes (set in the header dialog) so we don't duplicate fields. The
+  // dialog only collects what's specific to this generation: required
+  // drills the coach wants guaranteed in the plan.
   const [genOpen, setGenOpen] = useState(false);
-  const [genNotes, setGenNotes] = useState("");
   // Coach-supplied "must include" drills, one per line. Sent as a string[]
   // and the AI is told each entry MUST appear as its own block. Kept as
   // free text in the input so the coach can type naturally; we split on
@@ -402,7 +404,9 @@ export default function PracticeDetailPage() {
         data: {
           focusAreas: practice.focusAreas ?? [],
           durationMinutes: practice.durationMinutes,
-          coachNotes: genNotes.trim() || null,
+          // Use the practice's persistent notes as AI guidance rather than
+          // a separate one-shot dialog field — one source of truth.
+          coachNotes: practice.notes?.trim() || null,
           ...(requiredDrills.length > 0 ? { requiredDrills } : {}),
         },
       },
@@ -679,7 +683,6 @@ export default function PracticeDetailPage() {
             <Button
               size="sm"
               onClick={() => {
-                setGenNotes("");
                 setGenRequiredDrills("");
                 setGenOpen(true);
               }}
@@ -1158,17 +1161,19 @@ export default function PracticeDetailPage() {
                 Each line will appear as its own block in the plan.
               </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="g-notes">Coach notes (optional)</Label>
-              <Textarea
-                id="g-notes"
-                value={genNotes}
-                onChange={(e) => setGenNotes(e.target.value)}
-                rows={3}
-                placeholder="e.g. Sarah's first practice as catcher; spend extra time on bunt defense"
-                data-testid="input-generate-notes"
-              />
-            </div>
+            {practice.notes?.trim() && (
+              <div className="space-y-1">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Notes (from practice header)
+                </Label>
+                <p className="text-xs text-muted-foreground italic whitespace-pre-wrap rounded border bg-muted/40 px-2 py-1.5">
+                  {practice.notes}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  These will be sent to the AI. Edit the practice header to change them.
+                </p>
+              </div>
+            )}
             {activePlayers.length > 0 && (
               <p className="text-[11px] text-muted-foreground">
                 For infield/outfield/catching/pitching blocks, the AI may split players into groups by preferred position.
