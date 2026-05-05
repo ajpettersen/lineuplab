@@ -416,6 +416,10 @@ export interface UserPreferences {
   defaultPitcherRotation: boolean;
   /** When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating. */
   alwaysLockPitcherCatcher: boolean;
+  /** When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden. */
+  showFairnessScore: boolean;
+  /** When false, the "Make this lineup more equitable" suggestions popup on a game's lineup view never renders. */
+  showEquitySuggestions: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -589,6 +593,10 @@ export interface UpdatePreferencesBody {
   defaultPitcherRotation?: boolean;
   /** When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating. */
   alwaysLockPitcherCatcher?: boolean;
+  /** When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden. */
+  showFairnessScore?: boolean;
+  /** When false, the "Make this lineup more equitable" suggestions popup on a game's lineup view never renders. */
+  showEquitySuggestions?: boolean;
 }
 
 /**

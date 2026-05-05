@@ -1684,6 +1684,16 @@ export const GetPreferencesResponse = zod.object({
     .describe(
       "When true, the Generate Lineup UI prompts the coach to set Pitcher\/Catcher locks before generating.",
     ),
+  showFairnessScore: zod
+    .boolean()
+    .describe(
+      "When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden.",
+    ),
+  showEquitySuggestions: zod
+    .boolean()
+    .describe(
+      'When false, the \"Make this lineup more equitable\" suggestions popup on a game\'s lineup view never renders.',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1722,6 +1732,18 @@ export const UpdatePreferencesBody = zod.object({
     .describe(
       "When true, the Generate Lineup UI prompts the coach to set Pitcher\/Catcher locks before generating.",
     ),
+  showFairnessScore: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden.",
+    ),
+  showEquitySuggestions: zod
+    .boolean()
+    .optional()
+    .describe(
+      'When false, the \"Make this lineup more equitable\" suggestions popup on a game\'s lineup view never renders.',
+    ),
 });
 
 export const updatePreferencesResponseDefaultInningsMax = 15;
@@ -1751,6 +1773,16 @@ export const UpdatePreferencesResponse = zod.object({
     .boolean()
     .describe(
       "When true, the Generate Lineup UI prompts the coach to set Pitcher\/Catcher locks before generating.",
+    ),
+  showFairnessScore: zod
+    .boolean()
+    .describe(
+      "When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden.",
+    ),
+  showEquitySuggestions: zod
+    .boolean()
+    .describe(
+      'When false, the \"Make this lineup more equitable\" suggestions popup on a game\'s lineup view never renders.',
     ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

@@ -19,6 +19,9 @@ This project is a multi-tenant lineup management system for baseball/softball co
 - I want inline lineup editing with drag-and-drop functionality and the ability to copy the lineup to Sheets.
 - I want a "Innings by Position" tally visible below the lineup card, showing pitching, infield, outfield, and bench counts per player.
 - I want the dashboard "Total Games" stat to only count actual games, excluding practices and other events.
+- I want a Settings → Defaults toggle to hide the Fairness Score (both the Dashboard card and the Rotation Report bar) for coaches who don't want the metric on screen.
+- I want a Settings → Defaults toggle to hide the "Make this lineup more equitable" suggestions popup on the game lineup view.
+- I want a small info tooltip next to the Fairness Score that explains how it's calculated (per-player bench-rate stddev across completed games, scored 100 − stddev × 200).
 
 # System Architecture
 

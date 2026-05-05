@@ -2108,8 +2108,8 @@ export default function GameDetail() {
       {/* Equity insights popup — surfaces the most useful "this isn't fair
           yet" call-outs based on the lineup currently on screen. Dismissible
           per session; reappears with fresh advice on the next regenerate or
-          save. */}
-      {!equityDismissed && equityInsights.items.length > 0 && (
+          save. Coaches can also turn these off entirely in Settings. */}
+      {(prefs?.showEquitySuggestions ?? true) && !equityDismissed && equityInsights.items.length > 0 && (
         <div
           className="rounded-lg border border-blue-200 bg-blue-50 p-3 print:hidden"
           data-testid="equity-insights"

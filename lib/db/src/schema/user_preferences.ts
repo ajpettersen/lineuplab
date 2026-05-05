@@ -23,6 +23,19 @@ export const userPreferencesTable = pgTable("user_preferences", {
    * always plan their battery first can flip this on in Settings.
    */
   alwaysLockPitcherCatcher: boolean("always_lock_pitcher_catcher").notNull().default(false),
+  /**
+   * When false, the Fairness Score stat card on the Dashboard and the
+   * Fairness bar on the Rotation Report are hidden. The score is still
+   * computed server-side (other features may use it), it just isn't shown.
+   * Default true so existing coaches see no behavior change.
+   */
+  showFairnessScore: boolean("show_fairness_score").notNull().default(true),
+  /**
+   * When false, the "Make this lineup more equitable" suggestions popup on
+   * a game's lineup view never renders. Coaches who don't want the nudge
+   * can turn it off in Settings → Defaults. Default true.
+   */
+  showEquitySuggestions: boolean("show_equity_suggestions").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -34,6 +47,8 @@ export const updateUserPreferencesSchema = createInsertSchema(userPreferencesTab
   defaultEnsureAllPositions: true,
   defaultPitcherRotation: true,
   alwaysLockPitcherCatcher: true,
+  showFairnessScore: true,
+  showEquitySuggestions: true,
 });
 export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
 export type UserPreferences = typeof userPreferencesTable.$inferSelect;

@@ -1321,6 +1321,12 @@ components:
         alwaysLockPitcherCatcher:
           type: boolean
           description: When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating.
+        showFairnessScore:
+          type: boolean
+          description: When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden.
+        showEquitySuggestions:
+          type: boolean
+          description: When false, the "Make this lineup more equitable" suggestions popup on a game's lineup view never renders.
         createdAt:
           type: string
           format: date-time
@@ -1335,6 +1341,8 @@ components:
         - defaultEnsureAllPositions
         - defaultPitcherRotation
         - alwaysLockPitcherCatcher
+        - showFairnessScore
+        - showEquitySuggestions
         - createdAt
         - updatedAt
 
@@ -1616,6 +1624,12 @@ components:
         alwaysLockPitcherCatcher:
           type: boolean
           description: When true, the Generate Lineup UI prompts the coach to set Pitcher/Catcher locks before generating.
+        showFairnessScore:
+          type: boolean
+          description: When false, the Dashboard Fairness Score card and Rotation Report fairness bar are hidden.
+        showEquitySuggestions:
+          type: boolean
+          description: When false, the "Make this lineup more equitable" suggestions popup on a game's lineup view never renders.
 
     PracticeBlock:
       type: object

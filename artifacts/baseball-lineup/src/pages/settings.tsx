@@ -94,6 +94,8 @@ export default function Settings() {
   const [ensureAll, setEnsureAll] = useState(true);
   const [pitcherRotation, setPitcherRotation] = useState(false);
   const [alwaysLockPC, setAlwaysLockPC] = useState(false);
+  const [showFairness, setShowFairness] = useState(true);
+  const [showEquityTips, setShowEquityTips] = useState(true);
 
   useEffect(() => {
     if (teamQuery.data) {
@@ -126,6 +128,8 @@ export default function Settings() {
       setEnsureAll(prefsQuery.data.defaultEnsureAllPositions);
       setPitcherRotation(prefsQuery.data.defaultPitcherRotation);
       setAlwaysLockPC(prefsQuery.data.alwaysLockPitcherCatcher);
+      setShowFairness(prefsQuery.data.showFairnessScore);
+      setShowEquityTips(prefsQuery.data.showEquitySuggestions);
     }
   }, [prefsQuery.data]);
 
@@ -176,6 +180,8 @@ export default function Settings() {
         defaultEnsureAllPositions: ensureAll,
         defaultPitcherRotation: pitcherRotation,
         alwaysLockPitcherCatcher: alwaysLockPC,
+        showFairnessScore: showFairness,
+        showEquitySuggestions: showEquityTips,
       },
     });
   };
@@ -430,6 +436,46 @@ export default function Settings() {
               onCheckedChange={setAlwaysLockPC}
               disabled={prefsLoading}
               data-testid="switch-always-lock-pc"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5 pr-3">
+              <Label htmlFor="showFairness" className="text-sm font-medium">
+                Show Fairness Score
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Display the Fairness Score card on the Dashboard and the
+                fairness bar on the Rotation Report. Turn off if you'd rather
+                not see the metric.
+              </p>
+            </div>
+            <Switch
+              id="showFairness"
+              checked={showFairness}
+              onCheckedChange={setShowFairness}
+              disabled={prefsLoading}
+              data-testid="switch-show-fairness"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5 pr-3">
+              <Label htmlFor="showEquityTips" className="text-sm font-medium">
+                Show equitable lineup suggestions
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Show the "Make this lineup more equitable" tip box above a
+                game's lineup when one or more players are getting noticeably
+                less playing time than the rest.
+              </p>
+            </div>
+            <Switch
+              id="showEquityTips"
+              checked={showEquityTips}
+              onCheckedChange={setShowEquityTips}
+              disabled={prefsLoading}
+              data-testid="switch-show-equity-tips"
             />
           </div>
 

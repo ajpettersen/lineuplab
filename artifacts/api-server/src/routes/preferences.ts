@@ -12,6 +12,8 @@ const UpdateBody = z.object({
   defaultEnsureAllPositions: z.boolean().optional(),
   defaultPitcherRotation: z.boolean().optional(),
   alwaysLockPitcherCatcher: z.boolean().optional(),
+  showFairnessScore: z.boolean().optional(),
+  showEquitySuggestions: z.boolean().optional(),
 });
 
 /**

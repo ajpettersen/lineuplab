@@ -4,6 +4,7 @@ import {
   useListGames,
   useGetSeasonStats,
   useGetPlayerStats,
+  useGetPreferences,
   useListDashboardTasks,
   useDismissDashboardTask,
   getListDashboardTasksQueryKey,
@@ -11,7 +12,8 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin, ClipboardList, X } from "lucide-react";
+import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin, ClipboardList, X, Info } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +34,10 @@ export default function Dashboard() {
   const { data: games = [] } = useListGames();
   const { data: seasonStats } = useGetSeasonStats();
   const { data: playerStats = [] } = useGetPlayerStats();
+  // Default true — coaches who haven't toggled it yet see the score, matching
+  // legacy behavior. While prefs are loading we err on the side of showing.
+  const { data: prefs } = useGetPreferences();
+  const showFairness = prefs?.showFairnessScore ?? true;
 
   const actualGames = games.filter((g) => g.type === "game");
   const completedGames = actualGames.filter((g) => g.status === "completed");
@@ -211,18 +217,47 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">W-L this season</p>
           </CardContent>
         </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Fairness Score</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-3xl font-bold ${(seasonStats?.fairnessScore ?? 0) >= 80 ? "text-green-700" : (seasonStats?.fairnessScore ?? 0) >= 60 ? "text-yellow-600" : "text-destructive"}`}>
-              {seasonStats?.fairnessScore ?? "--"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Playing time equity</p>
-          </CardContent>
-        </Card>
+        {showFairness && (
+          <Card className="border-border" data-testid="card-fairness-score">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div className="flex items-center gap-1.5">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Fairness Score</CardTitle>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="How is the Fairness Score calculated?"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      data-testid="tooltip-fairness-info"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-left leading-relaxed">
+                    <p className="font-semibold mb-1">How this is calculated</p>
+                    <p>
+                      For every active player we compute their bench rate
+                      (innings sat ÷ innings played) across all completed
+                      games. The score is{" "}
+                      <span className="font-mono">100 − stddev × 200</span>.
+                      100 means every player has been benched the same
+                      fraction of the time. The score drops as some players
+                      sit noticeably more than others. Practices and
+                      uncompleted games don't count.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Shield className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-3xl font-bold ${(seasonStats?.fairnessScore ?? 0) >= 80 ? "text-green-700" : (seasonStats?.fairnessScore ?? 0) >= 60 ? "text-yellow-600" : "text-destructive"}`}>
+                {seasonStats?.fairnessScore ?? "--"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Playing time equity</p>
+            </CardContent>
+          </Card>
+        )}
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Active Players</CardTitle>

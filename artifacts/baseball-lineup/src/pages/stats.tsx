@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGetSeasonStats, useGetPlayerStats, useListPlayers } from "@workspace/api-client-react";
+import { useGetSeasonStats, useGetPlayerStats, useListPlayers, useGetPreferences } from "@workspace/api-client-react";
 
 interface ExtendedPlayerStats {
   playerId: number;
@@ -34,7 +34,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Upload, Plus, Trash2, Download, Wand2 } from "lucide-react";
+import { Upload, Plus, Trash2, Download, Wand2, Info } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import {
   BarChart,
@@ -42,7 +43,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Cell,
 } from "recharts";
@@ -143,7 +144,34 @@ function FairnessBar({ score }: { score: number }) {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-sm text-muted-foreground">Fairness Score</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-muted-foreground">Fairness Score</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="How is the Fairness Score calculated?"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="tooltip-fairness-info-stats"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-left leading-relaxed">
+              <p className="font-semibold mb-1">How this is calculated</p>
+              <p>
+                For every active player we compute their bench rate
+                (innings sat ÷ innings played) across all completed
+                games. The score is{" "}
+                <span className="font-mono">100 − stddev × 200</span>.
+                100 means every player has been benched the same
+                fraction of the time. The score drops as some players
+                sit noticeably more than others. Practices and
+                uncompleted games don't count.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <span className={`text-2xl font-bold ${score >= 80 ? "text-green-700" : score >= 60 ? "text-yellow-600" : "text-red-600"}`}>
           {score}/100
         </span>
@@ -658,6 +686,10 @@ function BattingTab({ players }: { players: { id: number; name: string; number: 
 // ---- Main Stats component ----
 export default function Stats() {
   const { data: seasonStats } = useGetSeasonStats();
+  // Default true so we don't flash-hide the card on first load before prefs
+  // arrive — matches Dashboard treatment.
+  const { data: prefs } = useGetPreferences();
+  const showFairness = prefs?.showFairnessScore ?? true;
   const { data: rawPlayerStats = [] } = useGetPlayerStats();
   const playerStats = rawPlayerStats as unknown as ExtendedPlayerStats[];
   const { data: players = [] } = useListPlayers();
@@ -680,8 +712,9 @@ export default function Stats() {
         <p className="text-muted-foreground mt-1">Playing time, position fairness, and offensive stats</p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Summary Cards. Fairness card is gated on the user's Show Fairness
+          Score preference; layout collapses cleanly to 2 columns when off. */}
+      <div className={`grid gap-4 ${showFairness ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         <Card>
           <CardContent className="p-5">
             <div className="text-3xl font-bold">{seasonStats?.totalGames ?? 0}</div>
@@ -695,11 +728,13 @@ export default function Stats() {
             <div className="text-sm text-muted-foreground mt-0.5">Live Field Innings</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-5">
-            <FairnessBar score={seasonStats?.fairnessScore ?? 0} />
-          </CardContent>
-        </Card>
+        {showFairness && (
+          <Card data-testid="card-fairness-bar">
+            <CardContent className="p-5">
+              <FairnessBar score={seasonStats?.fairnessScore ?? 0} />
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Tabs defaultValue="fielding">
@@ -806,7 +841,7 @@ export default function Stats() {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 12 }} />
                         <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={65} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} formatter={(v: number) => [`${v} innings`]} />
+                        <RechartsTooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} formatter={(v: number) => [`${v} innings`]} />
                         <Bar dataKey="bench" name="Bench" fill="#e67e22" radius={[0, 4, 4, 0]} stackId="a" />
                         <Bar dataKey="field" name="Field" fill="#1e6b3c" radius={[0, 4, 4, 0]} stackId="a" />
                       </BarChart>
