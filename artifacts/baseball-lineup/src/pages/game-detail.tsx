@@ -1953,7 +1953,7 @@ export default function GameDetail() {
             {/* Lineup-management actions on their own row spanning the
                 full width below the title block. */}
             {game.status !== "cancelled" && (
-              <div className="flex gap-2 flex-wrap justify-end">
+              <div className="flex gap-2 flex-wrap">
                   {/* "View Original Plan" is read-only — leave it on
                       for view-tier coaches so they can still see how
                       the lineup was originally drawn up. */}
