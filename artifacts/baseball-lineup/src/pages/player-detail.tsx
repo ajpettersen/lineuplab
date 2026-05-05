@@ -242,11 +242,11 @@ export default function PlayerDetail() {
         </CardContent>
       </Card>
 
-      {/* Season Stats */}
+      {/* Rotation Report */}
       {stats && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Season Statistics</CardTitle>
+            <CardTitle className="text-base">Rotation Report</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
