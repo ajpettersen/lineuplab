@@ -1872,7 +1872,7 @@ export default function GameDetail() {
             <div>
               <div className="eyebrow text-primary/70">Game</div>
               <div className="flex items-center gap-3 flex-wrap mt-1">
-                <h1 className="page-title text-foreground">
+                <h1 className="page-title text-foreground text-2xl sm:text-3xl">
                   <span className="text-foreground/50">vs.</span>{" "}
                   <span className="text-primary">{game.opponent}</span>
                 </h1>
@@ -1920,28 +1920,35 @@ export default function GameDetail() {
                 );
               })()}
             </div>
-            <div className="flex gap-2 flex-wrap">
-              {game.status === "upcoming" && (
-                <Button variant="outline" onClick={() => setCompleteOpen(true)}>
-                  <Trophy className="h-4 w-4 mr-2" />
-                  Mark Complete
-                </Button>
+            <div className="flex flex-col items-stretch sm:items-end gap-2">
+              {/* Status-changing actions: Mark Complete + Game Ended Early */}
+              {(game.status === "upcoming" ||
+                (game.status !== "cancelled" && game.innings > 1)) && (
+                <div className="flex gap-2 flex-wrap sm:justify-end">
+                  {game.status === "upcoming" && (
+                    <Button variant="outline" onClick={() => setCompleteOpen(true)}>
+                      <Trophy className="h-4 w-4 mr-2" />
+                      Mark Complete
+                    </Button>
+                  )}
+                  {game.status !== "cancelled" && game.innings > 1 && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEndEarlyLastInning(String(game.innings - 1));
+                        setEndEarlyOpen(true);
+                      }}
+                      data-testid="button-game-ended-early"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Game Ended Early
+                    </Button>
+                  )}
+                </div>
               )}
-              {game.status !== "cancelled" && game.innings > 1 && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEndEarlyLastInning(String(game.innings - 1));
-                    setEndEarlyOpen(true);
-                  }}
-                  data-testid="button-game-ended-early"
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Game Ended Early
-                </Button>
-              )}
+              {/* Lineup-management actions on the row below */}
               {game.status !== "cancelled" && (
-                <>
+                <div className="flex gap-2 flex-wrap sm:justify-end">
                   {/* "View Original Plan" is read-only — leave it on
                       for view-tier coaches so they can still see how
                       the lineup was originally drawn up. */}
@@ -1997,7 +2004,7 @@ export default function GameDetail() {
                       </Button>
                     </>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>
