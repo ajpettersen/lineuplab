@@ -1428,10 +1428,16 @@ export default function FieldDisplay() {
             * lands. Each side: tap chevron to step ±1, OR tap the
             * number to +1, OR swipe vertically on the number to ±1.
             * Score updates flow through the same offline-aware
-            * single-flight save chain as lineup edits. The "Us"/"Them"
-            * labels above the steppers help kids in the dugout
-            * identify which column is theirs at a glance. See
-            * ScoreStepper docblock for gesture details. */}
+            * single-flight save chain as lineup edits.
+            *
+            * Stepper labels use the SAME priority as the header
+            * matchup title so the dugout iPad reads consistently:
+            *  - own side: teamShortName override → full settings
+            *    teamName → "Us" placeholder while loading.
+            *  - opponent: city-shortened opponent → raw opponent →
+            *    "Them" placeholder. Long names truncate inside the
+            *    stepper column with a tooltip showing the full text.
+            * See ScoreStepper docblock for gesture details. */}
           <div className="flex items-end gap-1 sm:gap-2">
             <ScoreStepper
               value={ourScore}
@@ -1440,7 +1446,7 @@ export default function FieldDisplay() {
               }
               ariaLabel="Our score"
               testId="score-stepper-ours"
-              label="Us"
+              label={teamShortName || teamName || "Us"}
             />
             {/* Bottom-aligned dash, sized to the new larger score
               * numbers so it sits between them visually instead of
@@ -1455,7 +1461,7 @@ export default function FieldDisplay() {
               }
               ariaLabel="Opponent score"
               testId="score-stepper-opp"
-              label="Them"
+              label={shortenTeamName(game?.opponent) || game?.opponent || "Them"}
             />
           </div>
           <Button
