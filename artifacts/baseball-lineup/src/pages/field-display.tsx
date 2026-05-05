@@ -1298,21 +1298,28 @@ export default function FieldDisplay() {
            *  in full. */}
           <div className="min-w-0 flex-1">
             <div className="font-display uppercase tracking-wide text-base sm:text-xl lg:text-2xl font-bold leading-none flex items-baseline gap-2 sm:gap-3 min-w-0">
-              {/* Team-name display priority:
-               *  1) Coach-set short name from Settings (highest signal — they
-               *     picked it deliberately).
-               *  2) Auto-shorten the full team name (strips "Green 10AA" type
-               *     suffixes so the dugout reads "Edina" not "Edina Green 10AA").
-               *  3) Raw team name as last resort.
+              {/* Team-name display priority — kept consistent with the
+               *  Schedule list and Game Detail header so editing the
+               *  opponent on a game card updates the field display the
+               *  same way:
+               *  1) Coach-set short name from Settings (deliberate override
+               *     for tight headers).
+               *  2) Otherwise the FULL team name from settings (e.g.
+               *     "Minnetonka Blue") — NOT auto-shortened, because the
+               *     coach explicitly asked for the full settings name to
+               *     show on every matchup.
+               *  3) "Team" placeholder if settings haven't loaded yet.
                * Tooltip always shows the FULL official name so coaches can
                * still confirm they're looking at the right matchup. */}
               <span className="text-white truncate" title={teamName || undefined}>
-                {teamShortName || shortenTeamName(teamName) || teamName || "Team"}
+                {teamShortName || teamName || "Team"}
               </span>
-              <span className="text-slate-500 font-normal text-xs sm:text-sm shrink-0">vs</span>
-              {/* Opponent has no per-team short-name field, so just auto-shorten. */}
+              <span className="text-slate-500 font-normal text-xs sm:text-sm shrink-0">vs.</span>
+              {/* Opponent has no per-team short-name field, so just auto-shorten
+               *  to the city. Falls back to the raw stored value if the
+               *  shortener returns empty (matches Schedule list behavior). */}
               <span className="text-broadcast-gold truncate" title={game?.opponent ?? undefined}>
-                {shortenTeamName(game?.opponent) || ""}
+                {shortenTeamName(game?.opponent) || game?.opponent || ""}
               </span>
             </div>
           </div>
