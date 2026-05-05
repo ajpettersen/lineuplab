@@ -116,11 +116,12 @@ export default function Practices() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Clipboard className="h-6 w-6 text-emerald-600" />
+          <div className="eyebrow text-primary/70">Workouts</div>
+          <h1 className="page-title text-foreground mt-1 flex items-center gap-3">
+            <Clipboard className="h-7 w-7 text-emerald-600" />
             Practices
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-2">
             Plan a practice, let the AI draft time-blocked drills, take attendance, and keep your team rotation honest.
           </p>
         </div>

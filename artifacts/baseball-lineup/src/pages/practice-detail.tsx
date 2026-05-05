@@ -568,8 +568,9 @@ export default function PracticeDetailPage() {
             <ArrowLeft className="h-3 w-3" />
             Back to practices
           </Link>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Clipboard className="h-6 w-6 text-emerald-600" />
+          <div className="eyebrow text-primary/70 mt-1">Practice</div>
+          <h1 className="mt-1 page-title text-foreground flex items-center gap-3">
+            <Clipboard className="h-7 w-7 text-emerald-600" />
             {practice.title || `${format(startDt, "EEEE")} practice`}
           </h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">

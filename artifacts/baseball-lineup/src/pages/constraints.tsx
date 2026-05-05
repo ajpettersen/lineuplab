@@ -786,8 +786,9 @@ export default function Constraints({ embedded = false }: { embedded?: boolean }
     <div className={embedded ? "flex flex-col gap-6" : "flex flex-col gap-6 max-w-3xl"}>
       {!embedded && (
         <div>
-          <h1 className="text-3xl font-bold">Lineup Constraints</h1>
-          <p className="text-muted-foreground mt-1">Rules applied automatically whenever you generate a lineup</p>
+          <div className="eyebrow text-primary/70">Lineup Engine</div>
+          <h1 className="page-title text-foreground mt-1">Lineup Constraints</h1>
+          <p className="text-muted-foreground mt-2 text-sm">Rules applied automatically whenever you generate a lineup</p>
         </div>
       )}
 

@@ -128,7 +128,24 @@ export default function PlayerDetail() {
         </Link>
       </div>
 
-      <Card>
+      {!editing && (
+        <div>
+          <div className="eyebrow text-primary/70">Player Card</div>
+          <h1 className="page-title text-foreground mt-1 flex items-baseline gap-3 flex-wrap">
+            {player.number != null && (
+              <span className="font-numeric text-foreground/40 text-2xl md:text-3xl">
+                #{player.number}
+              </span>
+            )}
+            <span>{player.name}</span>
+            {!player.active && (
+              <Badge variant="outline" className="self-center">Inactive</Badge>
+            )}
+          </h1>
+        </div>
+      )}
+
+      <Card className="relative overflow-hidden broadcast-stripe">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             {editing ? (
@@ -147,12 +164,8 @@ export default function PlayerDetail() {
                 />
               </div>
             ) : (
-              <CardTitle className="text-xl flex items-center gap-2">
-                {player.number != null && (
-                  <span className="text-muted-foreground font-mono text-base">#{player.number}</span>
-                )}
-                {player.name}
-                {!player.active && <Badge variant="outline">Inactive</Badge>}
+              <CardTitle className="text-base text-muted-foreground font-broadcast uppercase tracking-wider">
+                Profile
               </CardTitle>
             )}
           </div>

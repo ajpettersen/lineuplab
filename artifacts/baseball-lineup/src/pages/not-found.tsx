@@ -3,16 +3,18 @@ import { AlertCircle } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
+    <div className="min-h-screen w-full flex items-center justify-center bg-background">
+      <Card className="relative overflow-hidden w-full max-w-md mx-4 broadcast-stripe">
+        <CardContent className="pt-7">
+          <div className="flex items-center mb-3 gap-3">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <div>
+              <div className="eyebrow text-destructive/80">Out of bounds</div>
+              <h1 className="page-title text-foreground mt-0.5">404</h1>
+            </div>
           </div>
-
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
+          <p className="mt-2 text-sm text-muted-foreground">
+            That page isn't on the scoreboard. Check the URL or head back to the dashboard.
           </p>
         </CardContent>
       </Card>

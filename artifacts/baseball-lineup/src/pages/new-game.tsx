@@ -76,10 +76,14 @@ export default function NewGame() {
           </Button>
         </Link>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Add New Game</CardTitle>
-        </CardHeader>
+      <div>
+        <div className="eyebrow text-primary/70">New Matchup</div>
+        <h1 className="page-title text-foreground mt-1">Add New Game</h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          Enter your opponent, date, and location to put a game on the schedule.
+        </p>
+      </div>
+      <Card className="relative overflow-hidden broadcast-stripe">
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">

@@ -161,8 +161,9 @@ export default function TournamentDetail() {
         </Link>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Trophy className="h-6 w-6 text-purple-600" />
+            <div className="eyebrow text-primary/70">Tournament</div>
+            <h1 className="page-title text-foreground mt-1 flex items-center gap-3">
+              <Trophy className="h-7 w-7 text-purple-600" />
               {tournament.name}
             </h1>
             <div className="text-sm text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">

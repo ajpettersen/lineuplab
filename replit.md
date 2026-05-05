@@ -38,9 +38,10 @@ This project is a multi-tenant lineup management system for baseball/softball co
 ## UI/UX Decisions
 
 - **Theming**: Deep navy primary, warm gold accent, cool off-white background; dynamic header text.
+- **Broadcast Visual Language**: App-wide "sports broadcast / app-store" treatment that extends the Field Display lower-third aesthetic into the rest of the app. Oswald is loaded as the display face (`font-broadcast` utility, `--font-display`) and Roboto Mono as the numeric face (`font-numeric` utility) — both pulled in via the Google Fonts `@import` in `src/index.css`. Reusable utilities `.eyebrow` (uppercase tracking-widest Oswald) and `.page-title` (large uppercase Oswald) are applied to every page header. The Dashboard "Today / Up Next" hero is a navy gradient panel with a gold top stripe, oversized Oswald opponent name in gold, and Roboto Mono game-time numerals — same chrome as the Field Display lower-third. Stat cards (Dashboard + Rotation Report) share a `BroadcastStatCard` component (`src/components/broadcast-stat-card.tsx`) with a gold top stripe, Oswald uppercase label, and big Roboto Mono numerals. The sidebar/header uses Oswald uppercase tracking-wide for the team name and nav items, and the active route now has a gold underline with a gold glow.
 - **Lineup Grid**: Pill-shaped player chips, circular inning badges, alternating row backgrounds, drag-and-drop editing.
 - **Data Visualization**: Recharts for season statistics.
-- **Field Display**: Optimized for iPad with dynamic lighting, score steppers, game timer, defensive drag-and-drop, and robust offline support. Features responsive layouts for phone portrait, phone landscape, and iPad/desktop. Broadcast Booth visual style with a pure-black background, deep-navy panels, broadcast-gold accents, Oswald display headlines, and Roboto Mono for numerals.
+- **Field Display**: Optimized for iPad with dynamic lighting, score steppers, game timer, defensive drag-and-drop, and robust offline support. Features responsive layouts for phone portrait, phone landscape, and iPad/desktop. Broadcast Booth visual style with a pure-black background, deep-navy panels, broadcast-gold accents, Oswald display headlines, and Roboto Mono for numerals — the same vocabulary now extended app-wide (see "Broadcast Visual Language").
 
 ## Technical Implementations
 

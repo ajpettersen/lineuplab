@@ -20,6 +20,7 @@ interface ExtendedPlayerStats {
 }
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -708,28 +709,25 @@ export default function Stats() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold">Rotation Report</h1>
-        <p className="text-muted-foreground mt-1">Playing time, position fairness, and offensive stats</p>
+        <div className="eyebrow text-primary/70">Season Analytics</div>
+        <h1 className="page-title text-foreground mt-1">Rotation Report</h1>
+        <p className="text-muted-foreground mt-2 text-sm">Playing time, position fairness, and offensive stats</p>
       </div>
 
       {/* Summary Cards. Fairness card is gated on the user's Show Fairness
           Score preference; layout collapses cleanly to 2 columns when off. */}
       <div className={`grid gap-4 ${showFairness ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-3xl font-bold">{seasonStats?.totalGames ?? 0}</div>
-            <div className="text-sm text-muted-foreground mt-0.5">Total Games</div>
-            <div className="text-xs text-muted-foreground">{seasonStats?.completedGames ?? 0} completed</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-3xl font-bold">{seasonStats?.totalInnings ?? 0}</div>
-            <div className="text-sm text-muted-foreground mt-0.5">Live Field Innings</div>
-          </CardContent>
-        </Card>
+        <BroadcastStatCard
+          label="Total Games"
+          value={seasonStats?.totalGames ?? 0}
+          subtext={`${seasonStats?.completedGames ?? 0} completed`}
+        />
+        <BroadcastStatCard
+          label="Live Field Innings"
+          value={seasonStats?.totalInnings ?? 0}
+        />
         {showFairness && (
-          <Card data-testid="card-fairness-bar">
+          <Card className="relative overflow-hidden border-border/80 broadcast-stripe" data-testid="card-fairness-bar">
             <CardContent className="p-5">
               <FairnessBar score={seasonStats?.fairnessScore ?? 0} />
             </CardContent>

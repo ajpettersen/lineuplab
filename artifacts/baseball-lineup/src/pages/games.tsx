@@ -637,8 +637,9 @@ export default function Games() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Schedule</h1>
-          <p className="text-muted-foreground mt-1">
+          <div className="eyebrow text-primary/70">Game Day</div>
+          <h1 className="page-title text-foreground mt-1">Schedule</h1>
+          <p className="text-muted-foreground mt-2 text-sm">
             {counts.all === 0
               ? "Nothing scheduled yet"
               : `${counts.all} item${counts.all !== 1 ? "s" : ""} this season`}

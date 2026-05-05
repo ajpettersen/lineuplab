@@ -1843,8 +1843,12 @@ export default function GameDetail() {
         <CardContent className="p-5">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-bold">vs. {game.opponent}</h1>
+              <div className="eyebrow text-primary/70">Game</div>
+              <div className="flex items-center gap-3 flex-wrap mt-1">
+                <h1 className="page-title text-foreground">
+                  <span className="text-foreground/50">vs.</span>{" "}
+                  <span className="text-primary">{game.opponent}</span>
+                </h1>
                 {(() => {
                   const eff = effectiveStatus(game);
                   if (eff === "completed")

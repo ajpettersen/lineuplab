@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin, ClipboardList, X, Info } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
@@ -95,11 +96,15 @@ export default function Dashboard() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Season Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Track your team's progress and fairness</p>
+          <div className="eyebrow text-primary/70">Coach Console</div>
+          <h1 className="page-title text-foreground mt-1">Season Dashboard</h1>
+          <p className="text-muted-foreground mt-2 text-sm">Track your team's progress and fairness</p>
         </div>
         <Link href="/games/new">
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-broadcast uppercase tracking-wider shadow-md"
+            data-testid="button-add-game"
+          >
             <CalendarDays className="h-4 w-4 mr-2" />
             Add Game
           </Button>
@@ -107,55 +112,73 @@ export default function Dashboard() {
       </div>
 
       {/*
-       * Today / Up Next hero card. Most prominent surface in the app on game
-       * day — gives the coach a one-tap launch of the dugout-fence display
-       * without having to drill into the game.
+       * Today / Up Next hero — broadcast "lower-third" treatment. Deep navy
+       * panel, gold top strip, Oswald uppercase opponent name, Roboto Mono
+       * numeric date. Mirrors the Field Display chrome so the dashboard
+       * feels like part of the same broadcast product on game day.
        */}
       {heroGame && heroDate && (
         <Card
-          className="border-2 border-primary/30 bg-gradient-to-br from-primary/[0.06] via-background to-accent/[0.04] shadow-sm"
+          className="relative overflow-hidden border-0 p-0 shadow-[0_8px_32px_rgba(15,23,42,0.18)]"
           data-testid="card-hero-game"
         >
-          <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-4 min-w-0">
-                <div className="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <CalendarDays className="h-6 w-6" />
+          {/* Gold stripe — broadcast accent. */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-broadcast-gold z-10" />
+          {/* Navy backdrop with subtle radial highlight. */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse at top left, hsl(220 85% 28%) 0%, hsl(220 85% 18%) 55%, hsl(220 85% 14%) 100%)",
+            }}
+          />
+          {/* Subtle diagonal grid overlay for sports-graphic texture. */}
+          <div
+            className="absolute inset-0 opacity-[0.06] pointer-events-none"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(45deg, transparent 0 14px, #fff 14px 15px)",
+            }}
+          />
+          <CardContent className="relative p-6 sm:p-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="eyebrow text-broadcast-gold">{heroLabel}</span>
+                  <span className="h-px w-10 bg-broadcast-gold/40" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xs uppercase tracking-[0.18em] font-semibold text-primary">
-                    {heroLabel}
-                  </div>
-                  <div className="mt-1 text-2xl sm:text-3xl font-bold text-foreground truncate">
-                    vs. {heroGame.opponent}
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-3 flex-wrap text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <CalendarDays className="h-3.5 w-3.5" />
-                      {format(heroDate, "EEE, MMM d · h:mm a")}
+                <div className="mt-2 flex items-baseline gap-2 sm:gap-3 min-w-0">
+                  <span className="text-white/60 font-broadcast uppercase tracking-widest text-base sm:text-lg leading-none">
+                    vs.
+                  </span>
+                  <span className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-broadcast-gold truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]">
+                    {heroGame.opponent}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-center gap-4 sm:gap-6 flex-wrap">
+                  <span className="flex items-center gap-2 text-white">
+                    <CalendarDays className="h-4 w-4 text-broadcast-gold/80" />
+                    <span className="font-numeric text-sm sm:text-base">
+                      {format(heroDate, "EEE · MMM d · h:mm a")}
                     </span>
-                    {heroGame.location && (
-                      <span className="flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5" />
-                        {heroGame.location}
-                      </span>
-                    )}
-                    <span className="text-xs">{heroGame.innings} innings</span>
-                  </div>
+                  </span>
+                  {heroGame.location && (
+                    <span className="flex items-center gap-2 text-white/85">
+                      <MapPin className="h-4 w-4 text-broadcast-gold/80" />
+                      <span className="text-sm sm:text-base">{heroGame.location}</span>
+                    </span>
+                  )}
+                  <span className="flex items-center gap-2 px-2.5 py-0.5 rounded-sm bg-white/10 border border-white/20">
+                    <span className="font-numeric text-sm text-white">{heroGame.innings}</span>
+                    <span className="eyebrow text-white/60">innings</span>
+                  </span>
                 </div>
               </div>
-              {/*
-               * CTAs swap based on whether the hero is upcoming or a past
-               * fallback. Upcoming game day → Field Display is primary (one tap
-               * to the dugout iPad). Past-uncompleted fallback → coach needs
-               * to score it / cancel it, so Open Game becomes primary and the
-               * Field Display button drops out (irrelevant for a played game).
-               */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
                 {!heroIsPast && (
                   <Button
                     size="lg"
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                    className="bg-broadcast-gold text-broadcast-navy hover:bg-amber-300 font-broadcast uppercase tracking-wider shadow-[0_4px_16px_rgba(251,191,36,0.35)] border-0"
                     onClick={() =>
                       window.open(
                         `${BASE}/games/${heroGame.id}/display`,
@@ -173,11 +196,11 @@ export default function Dashboard() {
                 <Link href={`/games/${heroGame.id}`}>
                   <Button
                     size="lg"
-                    variant={heroIsPast ? "default" : "outline"}
+                    variant="outline"
                     className={
                       heroIsPast
-                        ? "w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-                        : "w-full sm:w-auto"
+                        ? "w-full sm:w-auto bg-broadcast-gold text-broadcast-navy hover:bg-amber-300 border-0 font-broadcast uppercase tracking-wider shadow-[0_4px_16px_rgba(251,191,36,0.35)]"
+                        : "w-full sm:w-auto bg-transparent text-white border-white/40 hover:bg-white/10 hover:text-white font-broadcast uppercase tracking-wider"
                     }
                     data-testid="button-hero-open-game"
                   >
@@ -195,79 +218,74 @@ export default function Dashboard() {
           fresh account stays clean). */}
       {tasks.length > 0 && <TasksCard tasks={tasks} />}
 
-      {/* Stats Cards */}
+      {/*
+       * Broadcast-style stat cards. Big Roboto Mono numerals, Oswald uppercase
+       * labels, thin gold top stripe — feels like a TV-graphics scorebug
+       * dashboard rather than a generic admin panel.
+       */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Games</CardTitle>
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{actualGames.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">{completedGames.length} completed</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Record</CardTitle>
-            <Trophy className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{wins}-{completedGames.length - wins}</div>
-            <p className="text-xs text-muted-foreground mt-1">W-L this season</p>
-          </CardContent>
-        </Card>
+        <BroadcastStatCard
+          label="Total Games"
+          value={actualGames.length}
+          subtext={`${completedGames.length} completed`}
+          icon={CalendarDays}
+        />
+        <BroadcastStatCard
+          label="Record"
+          value={`${wins}-${completedGames.length - wins}`}
+          subtext="W-L this season"
+          icon={Trophy}
+          accent={wins > completedGames.length - wins ? "win" : "neutral"}
+        />
         {showFairness && (
-          <Card className="border-border" data-testid="card-fairness-score">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div className="flex items-center gap-1.5">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Fairness Score</CardTitle>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="How is the Fairness Score calculated?"
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      data-testid="tooltip-fairness-info"
-                    >
-                      <Info className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-left leading-relaxed">
-                    <p className="font-semibold mb-1">How this is calculated</p>
-                    <p>
-                      For every active player we compute their bench rate
-                      (innings sat ÷ innings played) across all completed
-                      games. The score is{" "}
-                      <span className="font-mono">100 − stddev × 200</span>.
-                      100 means every player has been benched the same
-                      fraction of the time. The score drops as some players
-                      sit noticeably more than others. Practices and
-                      uncompleted games don't count.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className={`text-3xl font-bold ${(seasonStats?.fairnessScore ?? 0) >= 80 ? "text-green-700" : (seasonStats?.fairnessScore ?? 0) >= 60 ? "text-yellow-600" : "text-destructive"}`}>
-                {seasonStats?.fairnessScore ?? "--"}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Playing time equity</p>
-            </CardContent>
-          </Card>
+          <BroadcastStatCard
+            label="Fairness Score"
+            value={seasonStats?.fairnessScore ?? "--"}
+            subtext="Playing time equity"
+            icon={Shield}
+            accent={
+              (seasonStats?.fairnessScore ?? 0) >= 80
+                ? "win"
+                : (seasonStats?.fairnessScore ?? 0) >= 60
+                  ? "warn"
+                  : "loss"
+            }
+            testId="card-fairness-score"
+            info={
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="How is the Fairness Score calculated?"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="tooltip-fairness-info"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-left leading-relaxed">
+                  <p className="font-semibold mb-1">How this is calculated</p>
+                  <p>
+                    For every active player we compute their bench rate
+                    (innings sat ÷ innings played) across all completed
+                    games. The score is{" "}
+                    <span className="font-mono">100 − stddev × 200</span>.
+                    100 means every player has been benched the same
+                    fraction of the time. The score drops as some players
+                    sit noticeably more than others. Practices and
+                    uncompleted games don't count.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            }
+          />
         )}
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Players</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{playerStats.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">On the roster</p>
-          </CardContent>
-        </Card>
+        <BroadcastStatCard
+          label="Active Players"
+          value={playerStats.length}
+          subtext="On the roster"
+          icon={Users}
+        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

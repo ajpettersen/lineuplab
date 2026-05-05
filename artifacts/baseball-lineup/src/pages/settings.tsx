@@ -189,8 +189,9 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <div className="eyebrow text-primary/70">Configuration</div>
+        <h1 className="page-title text-foreground mt-1">Settings</h1>
+        <p className="text-sm text-muted-foreground mt-2">
           Configure your team branding and lineup defaults. Changes only affect
           your account.
         </p>

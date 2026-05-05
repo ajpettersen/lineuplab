@@ -113,11 +113,12 @@ export default function Tournaments() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Trophy className="h-6 w-6 text-purple-600" />
+          <div className="eyebrow text-primary/70">Multi-Game</div>
+          <h1 className="page-title text-foreground mt-1 flex items-center gap-3">
+            <Trophy className="h-7 w-7 text-purple-600" />
             Tournaments
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-2">
             Group multi-game weekends so the app rolls per-pitcher pitch counts and rest days across every game.
           </p>
         </div>

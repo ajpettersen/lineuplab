@@ -76,23 +76,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
             side="left"
             className="flex w-72 flex-col bg-sidebar text-sidebar-foreground border-r-sidebar-border"
           >
-            <div className="flex h-16 items-center border-b border-sidebar-border px-4 gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent">
+            <div className="flex h-16 items-center border-b-2 border-accent/80 px-4 gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.15)]">
                 <Shield className="h-5 w-5 text-primary" />
               </div>
               <div className="flex flex-col leading-tight">
                 <span
-                  className="text-base font-bold text-sidebar-foreground"
+                  className="text-lg font-bold text-sidebar-foreground font-broadcast uppercase tracking-wide"
                   data-testid="text-team-name-mobile"
                 >
                   {displayTeamName}
                 </span>
-                <span className="text-[11px] uppercase tracking-wider text-accent">
+                <span className="eyebrow text-accent">
                   Lineup Lab
                 </span>
               </div>
             </div>
-            <nav className="grid gap-1 text-base font-medium p-4">
+            <nav className="grid gap-1 p-4">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive =
@@ -103,10 +103,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     data-testid={`link-nav-mobile-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ${
+                    className={`flex items-center gap-3 rounded-md px-3 py-2.5 font-broadcast uppercase tracking-[0.12em] text-sm transition-all ${
                       isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-[3px] border-accent"
-                        : "text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-[3px] border-accent shadow-inner"
+                        : "text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground border-l-[3px] border-transparent"
                     }`}
                   >
                     <Icon className="h-5 w-5" />
@@ -137,17 +137,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </SheetContent>
         </Sheet>
         <div className="flex items-center gap-3 w-full justify-center md:justify-start">
-          <div className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-sm">
+          <div className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)]">
             <Shield className="h-5 w-5 text-primary" />
           </div>
           <div className="flex flex-col leading-tight">
             <h1
-              className="text-lg md:text-xl font-bold tracking-tight text-primary-foreground"
+              className="text-xl md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none"
               data-testid="text-team-name"
             >
               {displayTeamName}
             </h1>
-            <span className="hidden md:block text-[11px] uppercase tracking-[0.18em] text-accent font-semibold">
+            <span className="hidden md:block eyebrow text-accent">
               Lineup Lab
             </span>
           </div>
@@ -157,7 +157,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <TeamSwitcher />
         </div>
         <div className="ml-auto hidden md:flex items-center gap-4">
-          <nav className="flex items-center gap-1 text-sm font-medium">
+          <nav className="flex items-center gap-1">
             {navItems.map((item) => {
               const isActive =
                 location === item.href ||
@@ -167,7 +167,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   data-testid={`link-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  className={`relative px-3 py-2 rounded-md transition-colors ${
+                  className={`relative px-3 py-2 rounded-md font-broadcast uppercase tracking-[0.14em] text-[13px] transition-colors ${
                     isActive
                       ? "text-primary-foreground bg-white/10"
                       : "text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/5"
@@ -175,7 +175,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 >
                   {item.label}
                   {isActive && (
-                    <span className="absolute -bottom-[7px] left-3 right-3 h-[3px] rounded-full bg-accent" />
+                    <span className="absolute -bottom-[7px] left-3 right-3 h-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-broadcast-gold)]" />
                   )}
                 </Link>
               );
