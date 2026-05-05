@@ -50,6 +50,47 @@ type MoveTarget =
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /**
+ * Trim youth-baseball "modifier" suffixes off a team name so the dugout
+ * scoreboard reads as a clean "Edina vs Minnetonka" instead of the full
+ * "Edina Green 10AA vs Minnetonka 10AA Blue". We strip from the END so
+ * compound city names ("Lakeville South") survive — a token only counts
+ * as a modifier if it matches a known color word OR a youth age/level
+ * code (10AA, 12U, U10, 11A, 13B, etc.). The first non-matching token
+ * stops the strip, so "Wilsonville Blazers" stays intact (Blazers is
+ * the mascot, not a modifier). Always returns at least the first word
+ * so we never collapse to an empty string.
+ */
+const TEAM_MODIFIER_COLORS = new Set([
+  "red", "blue", "green", "gold", "black", "white", "orange", "purple",
+  "yellow", "silver", "maroon", "navy", "crimson", "gray", "grey", "pink",
+  "teal", "royal", "scarlet", "cardinal", "carolina", "forest",
+]);
+// e.g. "10AA", "12U", "U10", "11A", "13B", "8C", "AAA", "AA". Tested
+// case-insensitively (token is upper-cased before .test) so coaches who
+// type "12u" or "u10" still get the same shortening.
+const TEAM_LEVEL_RE = /^(?:\d{1,2}[A-Z]{1,3}|U\d{1,2}|A{1,3}|B|C)$/;
+function shortenTeamName(name: string | null | undefined): string {
+  if (!name) return "";
+  const tokens = name.trim().split(/\s+/);
+  if (tokens.length <= 1) return name.trim();
+  // Walk from the right, dropping modifier tokens until we hit a
+  // "real" word. Don't strip below the first token (so an all-modifier
+  // tail like "Blue 12U" still leaves "Blue" rather than collapsing
+  // to empty).
+  let end = tokens.length;
+  while (end > 1) {
+    // Strip trailing punctuation (commas, periods) before classifying
+    // so "Edina, 10AA" still recognises "10AA" as a level token.
+    const raw = tokens[end - 1].replace(/[.,;:]+$/, "");
+    const isColor = TEAM_MODIFIER_COLORS.has(raw.toLowerCase());
+    const isLevel = TEAM_LEVEL_RE.test(raw.toUpperCase());
+    if (!isColor && !isLevel) break;
+    end -= 1;
+  }
+  return tokens.slice(0, end).join(" ");
+}
+
+/**
  * Diamond-shaped position layout for the dugout-fence iPad. Coordinates are
  * percentages of the field's bounding box so the SVG/CSS layout scales to
  * any screen size. Picked to match how a coach in the dugout naturally reads
@@ -1266,9 +1307,22 @@ export default function FieldDisplay() {
            *  in full. */}
           <div className="min-w-0 flex-1">
             <div className="font-display uppercase tracking-wide text-base sm:text-xl lg:text-2xl font-bold leading-none flex items-baseline gap-2 sm:gap-3 min-w-0">
-              <span className="text-white truncate" title={teamName || undefined}>{teamShortName || teamName || "Team"}</span>
+              {/* Team-name display priority:
+               *  1) Coach-set short name from Settings (highest signal — they
+               *     picked it deliberately).
+               *  2) Auto-shorten the full team name (strips "Green 10AA" type
+               *     suffixes so the dugout reads "Edina" not "Edina Green 10AA").
+               *  3) Raw team name as last resort.
+               * Tooltip always shows the FULL official name so coaches can
+               * still confirm they're looking at the right matchup. */}
+              <span className="text-white truncate" title={teamName || undefined}>
+                {teamShortName || shortenTeamName(teamName) || teamName || "Team"}
+              </span>
               <span className="text-slate-500 font-normal text-xs sm:text-sm shrink-0">vs</span>
-              <span className="text-broadcast-gold truncate" title={game?.opponent ?? undefined}>{game?.opponent ?? ""}</span>
+              {/* Opponent has no per-team short-name field, so just auto-shorten. */}
+              <span className="text-broadcast-gold truncate" title={game?.opponent ?? undefined}>
+                {shortenTeamName(game?.opponent) || ""}
+              </span>
             </div>
           </div>
         </div>

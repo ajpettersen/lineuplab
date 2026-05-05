@@ -563,11 +563,24 @@ export default function Games() {
                 <TypeBadge type={(g.type ?? "game") as EventKind} />
                 <GameTypeBadge gameType={g.gameType as ("league" | "tournament" | null | undefined)} />
                 <StatusBadge status={effectiveStatus(g)} />
-                {g.status === "completed" && g.ourScore != null && g.opponentScore != null && (
-                  <span className={`text-sm font-bold px-2 py-0.5 rounded ${g.ourScore > g.opponentScore ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                    {g.ourScore > g.opponentScore ? "W" : "L"} {g.ourScore}-{g.opponentScore}
-                  </span>
-                )}
+                {g.status === "completed" && g.ourScore != null && g.opponentScore != null && (() => {
+                  // Same-score completed games are ties (T), not losses.
+                  // Tournaments routinely end in ties, and miscoding them as
+                  // losses inflates the loss column on the dashboard record.
+                  const tied = g.ourScore === g.opponentScore;
+                  const won = g.ourScore > g.opponentScore;
+                  const cls = tied
+                    ? "bg-amber-100 text-amber-800"
+                    : won
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800";
+                  const letter = tied ? "T" : won ? "W" : "L";
+                  return (
+                    <span className={`text-sm font-bold px-2 py-0.5 rounded ${cls}`}>
+                      {letter} {g.ourScore}-{g.opponentScore}
+                    </span>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">

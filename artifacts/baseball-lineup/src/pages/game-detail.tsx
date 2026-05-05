@@ -1879,13 +1879,25 @@ export default function GameDetail() {
                 )}
                 <span>{game.innings} innings</span>
               </div>
-              {game.status === "completed" && game.ourScore != null && (
-                <div className="mt-2 flex items-center gap-3">
-                  <span className={`text-xl font-bold px-3 py-1 rounded ${(game.ourScore > (game.opponentScore ?? 0)) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                    {game.ourScore > (game.opponentScore ?? 0) ? "W" : "L"} {game.ourScore} - {game.opponentScore}
-                  </span>
-                </div>
-              )}
+              {game.status === "completed" && game.ourScore != null && game.opponentScore != null && (() => {
+                // Same-score completed games are ties (T). See games.tsx for
+                // matching logic — keep these in sync.
+                const tied = game.ourScore === game.opponentScore;
+                const won = game.ourScore > game.opponentScore;
+                const cls = tied
+                  ? "bg-amber-100 text-amber-800"
+                  : won
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800";
+                const letter = tied ? "T" : won ? "W" : "L";
+                return (
+                  <div className="mt-2 flex items-center gap-3">
+                    <span className={`text-xl font-bold px-3 py-1 rounded ${cls}`}>
+                      {letter} {game.ourScore} - {game.opponentScore}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
             <div className="flex gap-2 flex-wrap">
               {game.status === "upcoming" && (

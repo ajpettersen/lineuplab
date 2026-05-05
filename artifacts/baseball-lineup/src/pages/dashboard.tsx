@@ -24,10 +24,20 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function ScoreBadge({ our, opp }: { our: number | null | undefined; opp: number | null | undefined }) {
   if (our == null || opp == null) return null;
+  // Same score on both sides = tie. We treat 0-0 as a tie too — if a coach
+  // recorded the game as completed with no runs (rare but legal in youth
+  // ball when called early), it still isn't a loss.
+  const tied = our === opp;
   const won = our > opp;
+  const cls = tied
+    ? "bg-amber-100 text-amber-800"
+    : won
+      ? "bg-green-100 text-green-800"
+      : "bg-red-100 text-red-800";
+  const letter = tied ? "T" : won ? "W" : "L";
   return (
-    <span className={`text-sm font-bold px-2 py-0.5 rounded ${won ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-      {won ? "W" : "L"} {our}-{opp}
+    <span className={`text-sm font-bold px-2 py-0.5 rounded ${cls}`}>
+      {letter} {our}-{opp}
     </span>
   );
 }
@@ -47,7 +57,18 @@ export default function Dashboard() {
   // that were never marked complete fall out of this list (they show on the
   // Games page under "Past" instead).
   const upcomingGames = games.filter((g) => isTrulyUpcoming(g));
-  const wins = completedGames.filter((g) => (g.ourScore ?? 0) > (g.opponentScore ?? 0)).length;
+  // Win/loss/tie tally. A completed game whose recorded scores are equal
+  // counts as a tie (T) — important for tournaments where a 7-7 game IS a
+  // legitimate result, not a loss. Record displays as "W-L" when there are
+  // no ties, "W-L-T" once any tie exists, matching standard baseball usage.
+  const scoredGames = completedGames.filter(
+    (g) => g.ourScore != null && g.opponentScore != null,
+  );
+  const wins = scoredGames.filter((g) => (g.ourScore ?? 0) > (g.opponentScore ?? 0)).length;
+  const losses = scoredGames.filter((g) => (g.ourScore ?? 0) < (g.opponentScore ?? 0)).length;
+  const ties = scoredGames.filter((g) => (g.ourScore ?? 0) === (g.opponentScore ?? 0)).length;
+  const recordText = ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+  const recordSubtext = ties > 0 ? "W-L-T this season" : "W-L this season";
 
   // "Today / Up Next" hero card. Picks the soonest FUTURE game so loading the
   // app on game day surfaces the right game with one tap to the Field Display.
@@ -239,10 +260,10 @@ export default function Dashboard() {
         />
         <BroadcastStatCard
           label="Record"
-          value={`${wins}-${completedGames.length - wins}`}
-          subtext="W-L this season"
+          value={recordText}
+          subtext={recordSubtext}
           icon={Trophy}
-          accent={wins > completedGames.length - wins ? "win" : "neutral"}
+          accent={wins > losses ? "win" : "neutral"}
         />
         {showFairness && (
           <BroadcastStatCard
