@@ -87,7 +87,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         rafRef.current = null;
         return;
       }
-      el.scrollLeft += d * 8;
+      // Per-frame scroll delta. Halved from the original 8px/frame
+      // (~480px/sec at 60fps) to 4px (~240px/sec) on user request —
+      // the original speed felt like the bar was running away when a
+      // coach just hovered to peek at clipped items.
+      el.scrollLeft += d * 4;
       updateScrollAffordance();
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -161,8 +165,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Button
               variant="outline"
               size="icon"
-              className="shrink-0 md:hidden bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
+              className="shrink-0 bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
               data-testid="button-mobile-nav"
+              aria-label="Open navigation menu"
             >
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle navigation menu</span>
