@@ -28,6 +28,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatPlayerNameShort } from "@/lib/player-name";
 import {
   Dialog,
   DialogContent,
@@ -700,7 +701,7 @@ export default function Stats() {
   const benchData = playerStats
     .filter((p) => p.combinedTotal > 0)
     .map((p) => ({
-      name: p.playerName.split(" ")[0],
+      name: formatPlayerNameShort(p.playerName),
       bench: p.combinedBench,
       field: p.combinedTotal - p.combinedBench,
     }))

@@ -9,13 +9,31 @@ import {
   lineupConstraintsTable,
   lineupLocksTable,
   aiPinnedAssignmentsTable,
+  teamSettingsTable,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import {
   generateFairLineup,
+  ALL_KNOWN_POSITIONS,
   FIELD_POSITIONS,
   type PinnedAssignment,
 } from "../lib/lineup-generator";
+
+const STANDARD_FIELD_POSITIONS = [...FIELD_POSITIONS] as readonly string[];
+
+// Loads the team's active defensive positions (the standard 9 or the
+// 10-player LCF+RCF split). Falls back to the standard 9 when the row is
+// missing/empty so legacy teams behave exactly as before. Mirrors the
+// pattern used in routes/lineups.ts so AI-regenerated lineups honor the
+// same field shape as the manual generate flow.
+async function loadActiveFieldPositions(userId: string): Promise<readonly string[]> {
+  const [row] = await db
+    .select({ activeFieldPositions: teamSettingsTable.activeFieldPositions })
+    .from(teamSettingsTable)
+    .where(eq(teamSettingsTable.userId, userId));
+  const stored = row?.activeFieldPositions;
+  return Array.isArray(stored) && stored.length > 0 ? stored : STANDARD_FIELD_POSITIONS;
+}
 import { getOwnedGame } from "../lib/ownership";
 
 const router: IRouter = Router();
@@ -24,7 +42,7 @@ router.use("/games", gateWrites("partial"));
 const ParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const BodySchema = z.object({ message: z.string().trim().min(1).max(1000) });
 
-const VALID_POSITIONS = new Set<string>([...FIELD_POSITIONS, "Bench"]);
+const VALID_POSITIONS = new Set<string>([...ALL_KNOWN_POSITIONS, "Bench"]);
 
 const SYSTEM_PROMPT = `You are an assistant for a youth baseball coach using a defensive-lineup app.
 
@@ -44,7 +62,7 @@ INTENT "remove" — the coach is saying one or more players need to be PULLED OU
 
 Rules for pinned assignments (intent=regenerate):
 - Each pin is {"playerId": <number>, "inning": <number>, "position": <string>}.
-- "position" must be one of: "P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", or "Bench".
+- "position" must be one of: "P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", or "Bench". Teams using a 10-player field may also use "LCF" and "RCF" (in place of "CF").
 - Use ONLY playerIds from the provided roster.
 - Use ONLY innings that exist (1..innings).
 - A pin assigning a player to "Bench" forces them to sit that inning.
@@ -116,6 +134,7 @@ function parseAiJson(raw: string): AiResponse | null {
 
 router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
+  const activeFieldPositions = await loadActiveFieldPositions(userId);
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -162,7 +181,7 @@ router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
   for (let inn = 1; inn <= game.innings; inn++) {
     const inEntries = lineupRows.filter((e) => e.inning === inn);
     const fieldParts: string[] = [];
-    for (const pos of FIELD_POSITIONS) {
+    for (const pos of activeFieldPositions) {
       const e = inEntries.find((x) => x.position === pos);
       fieldParts.push(`${pos}=${e ? e.playerName : "—"}`);
     }
@@ -485,7 +504,13 @@ ${body.data.message}`;
     pinned.push({ playerId: l.playerId, inning: l.inning, position: l.position });
   }
 
-  const generated = generateFairLineup(activePlayers, game.innings, {}, constraints, pinned);
+  const generated = generateFairLineup(
+    activePlayers,
+    game.innings,
+    { fieldPositions: activeFieldPositions },
+    constraints,
+    pinned,
+  );
 
   // Feasibility check: every inning must have all 9 field positions filled.
   // If pins made staffing impossible, the greedy pass will leave gaps — in that
@@ -499,7 +524,7 @@ ${body.data.message}`;
   const understaffed: number[] = [];
   for (let i = 1; i <= game.innings; i++) {
     const filled = filledByInning.get(i) ?? new Set();
-    if (filled.size < FIELD_POSITIONS.length) understaffed.push(i);
+    if (filled.size < activeFieldPositions.length) understaffed.push(i);
   }
   if (understaffed.length > 0) {
     res.json({
@@ -564,6 +589,7 @@ ${body.data.message}`;
 // indicator in the UI).
 router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
+  const activeFieldPositions = await loadActiveFieldPositions(userId);
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -591,6 +617,7 @@ router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
 // Clear all remembered AI pins for a game ("Reset AI memory" button).
 router.delete("/games/:id/ai-pins", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
+  const activeFieldPositions = await loadActiveFieldPositions(userId);
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });

@@ -20,6 +20,36 @@ const RestTierZ = z.object({
   daysRest: z.number().int().min(0).max(10),
 });
 
+const REQUIRED_CORE_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "RF"] as const;
+const FieldPositionEnum = z.enum(["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "CF", "RCF", "RF"]);
+
+// Active-positions validator: must contain the 8 fixed corners (P, C, IF×4,
+// LF, RF) plus EITHER {CF} (the standard 9) OR {LCF, RCF} (the 10-player
+// field). Anything else (no center, both CF and LCF, etc.) is rejected so
+// the lineup generator always has a coherent slot list to fill.
+const ActiveFieldPositionsZ = z
+  .array(FieldPositionEnum)
+  .min(9)
+  .max(10)
+  .refine(
+    (arr) => {
+      const set = new Set(arr);
+      if (set.size !== arr.length) return false; // no duplicates
+      for (const p of REQUIRED_CORE_POSITIONS) if (!set.has(p)) return false;
+      const hasCF = set.has("CF");
+      const hasLCF = set.has("LCF");
+      const hasRCF = set.has("RCF");
+      // Exactly one of: CF alone, OR (LCF AND RCF) — never mix.
+      const standard = hasCF && !hasLCF && !hasRCF && set.size === 9;
+      const tenMan = hasLCF && hasRCF && !hasCF && set.size === 10;
+      return standard || tenMan;
+    },
+    {
+      message:
+        'activeFieldPositions must be the standard 9 (with "CF") or the 10-player field (with "LCF" and "RCF" instead of "CF").',
+    },
+  );
+
 // PATCH semantics: every field optional, but at least one must be provided.
 const UpdateBody = z
   .object({
@@ -29,6 +59,7 @@ const UpdateBody = z
     defaultDailyPitchMax: z.number().int().min(0).max(500).nullish(),
     defaultTournamentPitchMax: z.number().int().min(0).max(2000).nullish(),
     defaultRestTiers: z.array(RestTierZ).nullish(),
+    activeFieldPositions: ActiveFieldPositionsZ.optional(),
   })
   .refine(
     (v) =>
@@ -37,7 +68,8 @@ const UpdateBody = z
       v.battingStyle !== undefined ||
       v.defaultDailyPitchMax !== undefined ||
       v.defaultTournamentPitchMax !== undefined ||
-      v.defaultRestTiers !== undefined,
+      v.defaultRestTiers !== undefined ||
+      v.activeFieldPositions !== undefined,
     { message: "Provide at least one field to update" }
   );
 
@@ -84,6 +116,7 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     defaultDailyPitchMax?: number | null;
     defaultTournamentPitchMax?: number | null;
     defaultRestTiers?: RestTier[] | null;
+    activeFieldPositions?: string[];
     updatedAt: ReturnType<typeof sql>;
   } = { updatedAt: sql`now()` };
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
@@ -95,6 +128,8 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     patch.defaultTournamentPitchMax = parsed.data.defaultTournamentPitchMax ?? null;
   if (parsed.data.defaultRestTiers !== undefined)
     patch.defaultRestTiers = parsed.data.defaultRestTiers ?? null;
+  if (parsed.data.activeFieldPositions !== undefined)
+    patch.activeFieldPositions = [...parsed.data.activeFieldPositions];
   const [updated] = await db
     .update(teamSettingsTable)
     .set(patch)

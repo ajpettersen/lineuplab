@@ -3,6 +3,16 @@ import { type Player, type LineupConstraint } from "@workspace/db";
 export const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 export type FieldPosition = typeof FIELD_POSITIONS[number];
 
+/**
+ * Every position string the system understands. Includes the optional
+ * `LCF`/`RCF` slots a coach can swap in for `CF` when running a 10-player
+ * field. Server validators (locks, constraints, AI prompts, image import)
+ * accept any of these so the active-positions choice on one team doesn't
+ * cause writes from another team's positions to fail validation.
+ */
+export const ALL_KNOWN_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "CF", "RCF", "RF"] as const;
+export type KnownPosition = typeof ALL_KNOWN_POSITIONS[number];
+
 export interface LineupConstraints {
   maxInningsPerPosition?: number;
   maxInningsBench?: number;
@@ -38,6 +48,13 @@ export interface LineupConstraints {
    * Defaults to "continuous" when unset to preserve existing behavior.
    */
   battingStyle?: "continuous" | "nine_man";
+  /**
+   * Active defensive positions to fill each inning. Defaults to the standard
+   * 9 (`FIELD_POSITIONS`). When a team is configured for a 10-player field
+   * (LF/LCF/RCF/RF outfield instead of LF/CF/RF), the route passes the
+   * 10-element list here and the generator fills 10 slots per inning.
+   */
+  fieldPositions?: readonly string[];
 }
 
 export interface GeneratedEntry {
@@ -157,7 +174,11 @@ export function generateFairLineup(
   const benchedInnings = new Map<number, Set<number>>(players.map((p) => [p.id, new Set()]));
 
   const results: GeneratedEntry[] = [];
-  const fieldSlotsPerInning = Math.min(9, n);
+  const activePositions: readonly string[] =
+    constraints.fieldPositions && constraints.fieldPositions.length > 0
+      ? constraints.fieldPositions
+      : FIELD_POSITIONS;
+  const fieldSlotsPerInning = Math.min(activePositions.length, n);
 
   // Returns true if benching this player in this inning would put them on the bench
   // 2 or more times within any 3-inning window covering this inning
@@ -241,7 +262,7 @@ export function generateFairLineup(
       ? results.filter((e) => e.inning === inning - 1 && e.position === "P")[0]?.playerId ?? null
       : null;
 
-    const positions = [...FIELD_POSITIONS];
+    const positions = [...activePositions];
 
     for (const pos of positions) {
       if (filledPositions.has(pos)) continue;

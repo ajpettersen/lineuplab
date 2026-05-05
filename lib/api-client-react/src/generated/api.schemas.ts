@@ -364,6 +364,11 @@ top 9 batters get a slot in the order.
   defaultTournamentPitchMax?: number | null;
   /** Default rest-tier ladder applied to new tournaments. */
   defaultRestTiers?: null | RestTier[];
+  /** Defensive positions this team uses each inning. Standard 9 is
+["P","C","1B","2B","3B","SS","LF","CF","RF"]. A 10-player field
+swaps CF for LCF + RCF.
+ */
+  activeFieldPositions?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -374,6 +379,23 @@ export type UpdateTeamSettingsBodyBattingStyle =
 export const UpdateTeamSettingsBodyBattingStyle = {
   continuous: "continuous",
   nine_man: "nine_man",
+} as const;
+
+export type UpdateTeamSettingsBodyActiveFieldPositionsItem =
+  (typeof UpdateTeamSettingsBodyActiveFieldPositionsItem)[keyof typeof UpdateTeamSettingsBodyActiveFieldPositionsItem];
+
+export const UpdateTeamSettingsBodyActiveFieldPositionsItem = {
+  P: "P",
+  C: "C",
+  "1B": "1B",
+  "2B": "2B",
+  "3B": "3B",
+  SS: "SS",
+  LF: "LF",
+  LCF: "LCF",
+  CF: "CF",
+  RCF: "RCF",
+  RF: "RF",
 } as const;
 
 export interface UpdateTeamSettingsBody {
@@ -393,6 +415,11 @@ export interface UpdateTeamSettingsBody {
   /** @nullable */
   defaultTournamentPitchMax?: number | null;
   defaultRestTiers?: null | RestTier[];
+  /**
+   * @minItems 9
+   * @maxItems 10
+   */
+  activeFieldPositions?: UpdateTeamSettingsBodyActiveFieldPositionsItem[];
 }
 
 export interface UserPreferences {

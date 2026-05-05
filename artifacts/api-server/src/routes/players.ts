@@ -20,7 +20,9 @@ const router: IRouter = Router();
 router.use("/players", gateWrites("full"));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
+// Includes LCF/RCF — a player whose team runs a 10-player field can have
+// either left-center or right-center marked as a preferred position.
+const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "CF", "RCF", "RF"] as const;
 
 /**
  * Eligibility is no longer a coach-managed concept — every player can play
@@ -67,6 +69,7 @@ Position normalization rules:
 - "First base"/"1st" -> "1B", "Second"/"2nd" -> "2B", "Third"/"3rd" -> "3B"
 - "Shortstop"/"SS" -> "SS"
 - "Left field"/"LF" -> "LF", "Center"/"CF" -> "CF", "Right"/"RF" -> "RF"
+- "Left-center"/"LCF" -> "LCF", "Right-center"/"RCF" -> "RCF"
 - "Outfield"/"OF" -> ["LF","CF","RF"]
 - "Infield"/"IF" -> ["1B","2B","3B","SS"]
 - If no positions listed, return empty array [] for preferredPositions.

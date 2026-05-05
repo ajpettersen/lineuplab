@@ -12,6 +12,10 @@ import {
 import { generateFairLineup, FIELD_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame, filterOwnedPlayerIds } from "../lib/ownership";
 
+// Default 9-position list when team_settings.activeFieldPositions is missing
+// or empty (e.g. a coach who never opened the "Select Positions" dialog).
+const STANDARD_FIELD_POSITIONS = [...FIELD_POSITIONS] as readonly string[];
+
 const router: IRouter = Router();
 router.use("/games", gateWrites("partial"));
 
@@ -154,11 +158,21 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   // Team-wide batting style (continuous = everyone bats; nine_man = only the
   // top 9 batters). Stored per-coach in team_settings; missing row → default.
   const [teamSettingsRow] = await db
-    .select({ battingStyle: teamSettingsTable.battingStyle })
+    .select({
+      battingStyle: teamSettingsTable.battingStyle,
+      activeFieldPositions: teamSettingsTable.activeFieldPositions,
+    })
     .from(teamSettingsTable)
     .where(eq(teamSettingsTable.userId, userId));
   const battingStyle: "continuous" | "nine_man" =
     teamSettingsRow?.battingStyle === "nine_man" ? "nine_man" : "continuous";
+  // Use the team's chosen active positions (e.g. LCF+RCF instead of CF) when
+  // present and non-empty; otherwise fall back to the standard 9 so a coach
+  // who never touched the toggle keeps the legacy behavior.
+  const activeFieldPositions: readonly string[] =
+    teamSettingsRow?.activeFieldPositions && teamSettingsRow.activeFieldPositions.length > 0
+      ? teamSettingsRow.activeFieldPositions
+      : STANDARD_FIELD_POSITIONS;
 
   const generated = generateFairLineup(
     players,
@@ -169,6 +183,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       playerSeasonPlateAppearances: paMap,
       playerSeasonOBP: obpMap,
       battingStyle,
+      fieldPositions: activeFieldPositions,
     },
     storedConstraints,
     pinned,
@@ -188,7 +203,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     const understaffed: number[] = [];
     for (let i = 1; i <= innings; i++) {
       const filled = filledByInning.get(i) ?? new Set();
-      if (filled.size < FIELD_POSITIONS.length) understaffed.push(i);
+      if (filled.size < activeFieldPositions.length) understaffed.push(i);
     }
     if (understaffed.length > 0) {
       res.status(409).json({

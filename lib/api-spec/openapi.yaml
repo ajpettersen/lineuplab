@@ -1258,6 +1258,14 @@ components:
               items:
                 $ref: "#/components/schemas/RestTier"
           description: Default rest-tier ladder applied to new tournaments.
+        activeFieldPositions:
+          type: array
+          items:
+            type: string
+          description: |
+            Defensive positions this team uses each inning. Standard 9 is
+            ["P","C","1B","2B","3B","SS","LF","CF","RF"]. A 10-player field
+            swaps CF for LCF + RCF.
         createdAt:
           type: string
           format: date-time
@@ -1296,6 +1304,13 @@ components:
             - type: array
               items:
                 $ref: "#/components/schemas/RestTier"
+        activeFieldPositions:
+          type: array
+          minItems: 9
+          maxItems: 10
+          items:
+            type: string
+            enum: [P, C, "1B", "2B", "3B", SS, LF, LCF, CF, RCF, RF]
 
     UserPreferences:
       type: object

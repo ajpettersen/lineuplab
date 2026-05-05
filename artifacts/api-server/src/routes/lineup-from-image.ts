@@ -77,7 +77,9 @@ function namesPlausiblyMatch(rosterName: string, nameInImage: string): boolean {
   return false;
 }
 
-const VALID_POSITIONS = new Set<string>([...FIELD_POSITIONS, "Bench"]);
+// Accept the optional LCF/RCF too; some teams use a 10-player outfield and
+// a screenshot might list those even if the active team uses CF.
+const VALID_POSITIONS = new Set<string>([...FIELD_POSITIONS, "LCF", "RCF", "Bench"]);
 
 const SYSTEM_PROMPT = `You are extracting a baseball defensive lineup from an image (a screenshot from a lineup app, a photo of a lineup card, or a hand-drawn grid).
 
@@ -93,7 +95,7 @@ Output ONLY a JSON object — no markdown fences, no extra prose. Schema:
   "innings": number,                       // how many innings you detected in the image (1..15)
   "entries": Array<{
     "inning": number,                      // 1-based
-    "position": string,                    // one of "P","C","1B","2B","3B","SS","LF","CF","RF","Bench"
+    "position": string,                    // one of "P","C","1B","2B","3B","SS","LF","CF","RF","Bench" (or "LCF","RCF" for 10-player fields)
     "playerId": number | null,             // matched roster id, or null if no confident match
     "playerNameInImage": string            // the exact name as you read it from the image
   }>,
@@ -102,7 +104,7 @@ Output ONLY a JSON object — no markdown fences, no extra prose. Schema:
 
 Rules:
 - Match player names from the image to the roster by full name, last name, or first name. Use playerId for the match. If no roster player plausibly matches, set playerId to null and still include the entry with playerNameInImage.
-- Use ONLY positions from the allowed list. Map common variants: "Pitcher"->P, "Catcher"->C, "First"->1B, "Second"->2B, "Third"->3B, "Shortstop"/"SS"->SS, "Left"->LF, "Center"->CF, "Right"->RF, "Sit"/"Out"->Bench.
+- Use ONLY positions from the allowed list. Map common variants: "Pitcher"->P, "Catcher"->C, "First"->1B, "Second"->2B, "Third"->3B, "Shortstop"/"SS"->SS, "Left"->LF, "Center"->CF, "Right"->RF, "Left-center"/"LCF"->LCF, "Right-center"/"RCF"->RCF, "Sit"/"Out"->Bench.
 - Each (inning, position) should appear at most once for a field position. "Bench" can appear multiple times per inning (one per benched player).
 - Do NOT invent players who are not visible in the image.
 - If the image is not a lineup at all, return {"innings":0,"entries":[],"notes":"Image does not appear to contain a lineup."}.`;

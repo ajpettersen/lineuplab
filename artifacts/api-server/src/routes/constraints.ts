@@ -111,7 +111,9 @@ router.post("/constraints/parse", async (req, res): Promise<void> => {
     .from(playersTable)
     .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
   const playerList = players.map((p) => `${p.id}: ${p.name}`).join("\n");
-  const positions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+  // Include the optional LCF/RCF; coaches running a 10-player field may
+  // express constraints against those slots.
+  const positions = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "CF", "RCF", "RF"];
 
   const systemPrompt = `You are a baseball lineup rules assistant. Parse the user's natural language input into one OR MORE structured rules.
 

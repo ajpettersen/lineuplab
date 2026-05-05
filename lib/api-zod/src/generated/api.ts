@@ -675,6 +675,12 @@ export const GetTeamSettingsResponse = zod.object({
     ])
     .optional()
     .describe("Default rest-tier ladder applied to new tournaments."),
+  activeFieldPositions: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      'Defensive positions this team uses each inning. Standard 9 is\n[\"P\",\"C\",\"1B\",\"2B\",\"3B\",\"SS\",\"LF\",\"CF\",\"RF\"]. A 10-player field\nswaps CF for LCF + RCF.\n',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -689,6 +695,9 @@ export const updateTeamSettingsBodyTeamShortNameMax = 20;
 export const updateTeamSettingsBodyDefaultRestTiersTwoItemMaxPitchesMin = 0;
 
 export const updateTeamSettingsBodyDefaultRestTiersTwoItemDaysRestMin = 0;
+
+export const updateTeamSettingsBodyActiveFieldPositionsMin = 9;
+export const updateTeamSettingsBodyActiveFieldPositionsMax = 10;
 
 export const UpdateTeamSettingsBody = zod.object({
   teamName: zod
@@ -728,6 +737,25 @@ export const UpdateTeamSettingsBody = zod.object({
           ),
       ),
     ])
+    .optional(),
+  activeFieldPositions: zod
+    .array(
+      zod.enum([
+        "P",
+        "C",
+        "1B",
+        "2B",
+        "3B",
+        "SS",
+        "LF",
+        "LCF",
+        "CF",
+        "RCF",
+        "RF",
+      ]),
+    )
+    .min(updateTeamSettingsBodyActiveFieldPositionsMin)
+    .max(updateTeamSettingsBodyActiveFieldPositionsMax)
     .optional(),
 });
 
@@ -780,6 +808,12 @@ export const UpdateTeamSettingsResponse = zod.object({
     ])
     .optional()
     .describe("Default rest-tier ladder applied to new tournaments."),
+  activeFieldPositions: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      'Defensive positions this team uses each inning. Standard 9 is\n[\"P\",\"C\",\"1B\",\"2B\",\"3B\",\"SS\",\"LF\",\"CF\",\"RF\"]. A 10-player field\nswaps CF for LCF + RCF.\n',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

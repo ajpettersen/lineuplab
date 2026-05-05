@@ -46,6 +46,16 @@ export const teamSettingsTable = pgTable("team_settings", {
    * Null = no team default.
    */
   defaultRestTiers: jsonb("default_rest_tiers").$type<RestTier[]>(),
+  /**
+   * Active defensive positions for this team's lineups. The full standard
+   * 9 (`["P","C","1B","2B","3B","SS","LF","CF","RF"]`) is the default. A
+   * coach who runs a 10-player field can swap CF for LCF + RCF, giving
+   * `["P","C","1B","2B","3B","SS","LF","LCF","RCF","RF"]`. Position strings
+   * outside this set still validate at write-time (other teams may use them)
+   * but the lineup grid + field display only render columns/slots from this
+   * list. LCF/RCF are categorized as Outfield in tally aggregations.
+   */
+  activeFieldPositions: text("active_field_positions").array().notNull().default(["P","C","1B","2B","3B","SS","LF","CF","RF"]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -59,6 +69,7 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   defaultDailyPitchMax: true,
   defaultTournamentPitchMax: true,
   defaultRestTiers: true,
+  activeFieldPositions: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

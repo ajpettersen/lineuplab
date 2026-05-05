@@ -3,13 +3,16 @@ import { gateWrites } from "../lib/permissions";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, playersTable, lineupLocksTable } from "@workspace/db";
-import { FIELD_POSITIONS } from "../lib/lineup-generator";
+import { ALL_KNOWN_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame, getOwnedPlayer } from "../lib/ownership";
 
 const router: IRouter = Router();
 router.use("/games", gateWrites("partial"));
 
-const VALID_POSITIONS = [...FIELD_POSITIONS, "Bench"] as const;
+// Accept every known position (including the optional LCF/RCF used by teams
+// running a 10-player field). The active-positions toggle on team_settings
+// is for *display*; lock writes from any team must validate.
+const VALID_POSITIONS = [...ALL_KNOWN_POSITIONS, "Bench"] as const;
 const PositionEnum = z.enum(VALID_POSITIONS);
 
 const ListParams = z.object({ id: z.coerce.number().int().positive() });

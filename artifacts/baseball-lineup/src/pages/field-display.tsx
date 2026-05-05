@@ -32,7 +32,12 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
+// Every position the field display knows how to lay out. The team's actual
+// `activeFieldPositions` (from team_settings) is intersected with this list
+// at render time, so a standard-9 team sees the classic LF/CF/RF outfield
+// while a 10-player team sees LF/LCF/RCF/RF.
+const ALL_FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "CF", "RCF", "RF"] as const;
+type FieldPos = (typeof ALL_FIELD_POSITIONS)[number];
 
 /**
  * Drag-and-drop "where am I dropping" payload, attached to each droppable
@@ -62,11 +67,12 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
  * the field: pitcher in the middle, catcher behind home, infielders form an
  * arc, outfielders along the back.
  */
-const POSITION_LAYOUT: Record<
-  (typeof FIELD_POSITIONS)[number],
-  { top: string; left: string }
-> = {
+const POSITION_LAYOUT: Record<FieldPos, { top: string; left: string }> = {
   CF: { top: "11%", left: "50%" },
+  // 10-player split: LCF and RCF sit between LF/CF and CF/RF respectively,
+  // a touch deeper than CF so the back of the outfield reads as a smooth arc.
+  LCF: { top: "13%", left: "36%" },
+  RCF: { top: "13%", left: "64%" },
   LF: { top: "20%", left: "22%" },
   RF: { top: "20%", left: "78%" },
   SS: { top: "46%", left: "38%" },
@@ -83,7 +89,7 @@ const POSITION_LAYOUT: Record<
  * infield = warm amber, outfield = cool sky, catcher = neutral white. The
  * accent shows up on the position pill above each player chip.
  */
-const POSITION_ACCENT: Record<(typeof FIELD_POSITIONS)[number], string> = {
+const POSITION_ACCENT: Record<FieldPos, string> = {
   P: "bg-amber-400 text-slate-950",
   C: "bg-slate-100 text-slate-900",
   "1B": "bg-amber-300 text-slate-900",
@@ -91,7 +97,9 @@ const POSITION_ACCENT: Record<(typeof FIELD_POSITIONS)[number], string> = {
   "3B": "bg-amber-300 text-slate-900",
   SS: "bg-amber-300 text-slate-900",
   LF: "bg-sky-300 text-slate-900",
+  LCF: "bg-sky-300 text-slate-900",
   CF: "bg-sky-300 text-slate-900",
+  RCF: "bg-sky-300 text-slate-900",
   RF: "bg-sky-300 text-slate-900",
 };
 
@@ -549,7 +557,7 @@ const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
 export default function FieldDisplay() {
   const [, params] = useRoute("/games/:id/display");
   const id = parseInt(params?.id ?? "0");
-  const { teamName, teamShortName } = useTeamSettings();
+  const { teamName, teamShortName, activeFieldPositions } = useTeamSettings();
   const qc = useQueryClient();
   const { toast } = useToast();
   const saveLineup = useSaveLineup();
@@ -686,6 +694,24 @@ export default function FieldDisplay() {
     if (!id) return;
     if (lineup.length > 0) saveJSON(lineupCacheKey(id), lineup);
   }, [id, lineup]);
+
+  // Render slots in canonical L→R order (per ALL_FIELD_POSITIONS). Start
+  // from the team's currently-active positions, then UNION in any position
+  // that's actually present in this game's saved entries — so a historical
+  // lineup saved when the team used CF still shows its CF slot even after
+  // switching to LCF/RCF (and vice versa). Mirrors the `displayPositions`
+  // pattern in game-detail.tsx so the dugout iPad stays in sync with the
+  // lineup grid. Filters out anything unknown so a bad team_settings row
+  // can't blow up the page.
+  const displayedFieldPositions: readonly FieldPos[] = useMemo(() => {
+    const known = new Set<string>(ALL_FIELD_POSITIONS);
+    const union = new Set<string>();
+    for (const p of activeFieldPositions) if (known.has(p)) union.add(p);
+    for (const e of lineup) {
+      if (e.position !== "Bench" && known.has(e.position)) union.add(e.position);
+    }
+    return ALL_FIELD_POSITIONS.filter((p) => union.has(p));
+  }, [activeFieldPositions, lineup]);
 
   // Restore offline-pending edits (lineup snapshot AND game patch) from a
   // previous session into the in-memory refs so the existing flush chains
@@ -1643,7 +1669,7 @@ export default function FieldDisplay() {
               />
             )}
 
-            {FIELD_POSITIONS.map((pos) => (
+            {displayedFieldPositions.map((pos) => (
               <FieldPositionSlot
                 key={pos}
                 pos={pos}

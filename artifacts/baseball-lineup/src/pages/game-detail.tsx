@@ -74,10 +74,17 @@ import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus } from "@/lib/game-status";
 import { PitchCountsCard } from "@/components/pitch-counts-card";
+import { SelectPositionsDialog } from "@/components/select-positions-dialog";
+import { formatPlayerNameShort } from "@/lib/player-name";
 
-const FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+const STANDARD_FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
+// Canonical L→R column order for the lineup grid. Includes LCF/RCF so a
+// team using a 10-player outfield gets sensible columns; the active
+// positions list (from team_settings) is intersected with this for display.
+const POSITION_DISPLAY_ORDER = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "CF", "RCF", "RF"] as const;
 const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
-const OUTFIELD = new Set(["LF", "CF", "RF"]);
+// LCF/RCF are categorized as Outfield in the per-player tally.
+const OUTFIELD = new Set(["LF", "LCF", "CF", "RCF", "RF"]);
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type Category = "Pitching" | "Infield" | "Outfield" | "Bench";
@@ -100,7 +107,9 @@ function positionColor(pos: string) {
     "3B": "bg-emerald-50 text-emerald-800 border border-emerald-200/70",
     SS: "bg-cyan-50 text-cyan-800 border border-cyan-200/70",
     LF: "bg-sky-50 text-sky-800 border border-sky-200/70",
+    LCF: "bg-blue-50 text-blue-800 border border-blue-200/70",
     CF: "bg-indigo-50 text-indigo-800 border border-indigo-200/70",
+    RCF: "bg-purple-50 text-purple-800 border border-purple-200/70",
     RF: "bg-violet-50 text-violet-800 border border-violet-200/70",
     Bench: "bg-slate-100 text-slate-600 border border-slate-200/70",
   };
@@ -135,7 +144,7 @@ export default function GameDetail() {
   const clearPlanSnapshot = useClearPlanSnapshot();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { teamName, battingStyle } = useTeamSettings();
+  const { teamName, battingStyle, activeFieldPositions } = useTeamSettings();
   // Two new dialogs introduced for the post-game photo override flow:
   // - replaceConfirmOpen: shown after a photo is parsed AND a saved lineup
   //   already exists, asking whether to keep the original as a plan snapshot.
@@ -1371,9 +1380,9 @@ export default function GameDetail() {
     // Bench column lists every benched player for the inning, comma-separated,
     // labeled "Bench (SIT)" so a coach pasting into Sheets can tell at a
     // glance which kids are sitting that inning.
-    const inningHeader = ["Inning", ...FIELD_POSITIONS, "Bench (SIT)"].join("\t");
+    const inningHeader = ["Inning", ...displayPositions, "Bench (SIT)"].join("\t");
     const inningRows = Array.from({ length: inningCount }, (_, i) => i + 1).map((inning) => {
-      const cells = FIELD_POSITIONS.map((pos) => {
+      const cells = displayPositions.map((pos) => {
         const e = data.find((x) => x.inning === inning && x.position === pos);
         return e ? e.playerName : "";
       });
@@ -1414,7 +1423,7 @@ export default function GameDetail() {
     // tally above. Player rows are sorted by name so the block lines up
     // with the tally block when read side-by-side.
     type PosRow = { playerName: string; counts: Record<string, number> };
-    const posCols = [...FIELD_POSITIONS, "Bench"] as readonly string[];
+    const posCols = [...displayPositions, "Bench"] as readonly string[];
     const posMap = new Map<number, PosRow>();
     const seenPI = new Set<string>();
     for (const e of data) {
@@ -1564,6 +1573,18 @@ export default function GameDetail() {
 
   const innings = game?.innings ?? 6;
   const displayLineup = previewLineup ?? editedLineup ?? lineup;
+  // Columns to render in the lineup grid (and any per-position iteration:
+  // copy-for-Sheets, batting-row defensive list, lock dropdown). Starts from
+  // the team's chosen active positions, then unions in any position that
+  // already appears in the lineup data — so a historical game saved when
+  // the team used CF still renders its CF column even if the team has
+  // since switched to LCF/RCF (and vice versa). Always sorted in canonical
+  // L→R order so the grid reads left-to-right consistently.
+  const displayPositions = useMemo<readonly string[]>(() => {
+    const present = new Set<string>(activeFieldPositions);
+    for (const e of displayLineup) if (e.position !== "Bench") present.add(e.position);
+    return POSITION_DISPLAY_ORDER.filter((p) => present.has(p));
+  }, [activeFieldPositions, displayLineup]);
   // Map (inning, position) -> entry, so cells know their entry id for swap.
   // Bench rows are NOT included here — bench is rendered as its own list.
   const cellByInningPos: Record<number, Record<string, typeof displayLineup[number]>> = {};
@@ -1774,7 +1795,7 @@ export default function GameDetail() {
   // covers the full game roster.
   //
   // Each row also includes `positions` — the distinct field positions the
-  // player plays in this game, in their natural FIELD_POSITIONS order — so
+  // player plays in this game, in their natural displayPositions order — so
   // the batting card can show coaches a quick "where they're playing" hint
   // next to the name without making them cross-reference the inning grid.
   const battingOrderRows = useMemo(() => {
@@ -1806,7 +1827,7 @@ export default function GameDetail() {
       playerId: r.playerId,
       playerName: r.playerName,
       order: r.order,
-      positions: FIELD_POSITIONS.filter((p) => r._posSet.has(p)),
+      positions: displayPositions.filter((p) => r._posSet.has(p)),
     }));
     return rows.sort((a, b) => {
       if (a.order != null && b.order != null) return a.order - b.order;
@@ -2207,7 +2228,7 @@ export default function GameDetail() {
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {selectedEntry && (
                 <span className="text-xs text-muted-foreground hidden sm:inline" data-testid="text-swap-hint">
-                  Moving <span className="font-medium text-foreground">{selectedEntry.playerName.split(" ")[0]}</span> — tap a cell in inning {selectedEntry.inning}
+                  Moving <span className="font-medium text-foreground">{formatPlayerNameShort(selectedEntry.playerName)}</span> — tap a cell in inning {selectedEntry.inning}
                   <button
                     type="button"
                     className="ml-2 inline-flex items-center text-muted-foreground hover:text-foreground"
@@ -2230,9 +2251,10 @@ export default function GameDetail() {
                   title={`Remove ${selectedEntry.playerName} from this lineup (e.g. injury)`}
                 >
                   <Trash2 className="h-4 w-4 mr-1.5" />
-                  Remove {selectedEntry.playerName.split(" ")[0]}
+                  Remove {formatPlayerNameShort(selectedEntry.playerName)}
                 </Button>
               )}
+              <SelectPositionsDialog />
               <Button
                 variant="outline"
                 size="sm"
@@ -2300,7 +2322,7 @@ export default function GameDetail() {
                   <thead>
                     <tr>
                       <th className="text-left py-2 pr-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-16">Inning</th>
-                      {FIELD_POSITIONS.map((pos) => (
+                      {displayPositions.map((pos) => (
                         <th key={pos} className="text-center py-2 px-1 w-20">
                           <span className="inline-block px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[11px] font-bold tracking-wide">
                             {pos}
@@ -2351,7 +2373,7 @@ export default function GameDetail() {
                               )}
                             </div>
                           </td>
-                          {FIELD_POSITIONS.map((pos) => {
+                          {displayPositions.map((pos) => {
                             const entry = cellByInningPos[inning]?.[pos];
                             return (
                               <td key={pos} className="py-1 px-1 text-center">
@@ -2428,7 +2450,7 @@ export default function GameDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {FIELD_POSITIONS.map((pos, posIdx) => {
+                    {displayPositions.map((pos, posIdx) => {
                       const rowBg = posIdx % 2 === 0 ? "bg-card" : "bg-muted/40";
                       return (
                         <tr key={pos} className={`${rowBg} transition-colors`}>
@@ -2503,7 +2525,7 @@ export default function GameDetail() {
                   <div
                     className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${positionColor(draggedEntry.position)} shadow-lg ring-2 ring-primary cursor-grabbing`}
                   >
-                    {draggedEntry.playerName.split(" ")[0]}
+                    {formatPlayerNameShort(draggedEntry.playerName)}
                   </div>
                 ) : null}
               </DragOverlay>
@@ -3362,7 +3384,7 @@ export default function GameDetail() {
                   <SelectValue placeholder="Pick a position" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[...FIELD_POSITIONS, "Bench"].map((pos) => (
+                  {[...displayPositions, "Bench"].map((pos) => (
                     <SelectItem key={pos} value={pos} data-testid={`option-lock-position-${pos}`}>
                       {pos}
                     </SelectItem>
@@ -3627,7 +3649,7 @@ function PlayerTile({
       {...listeners}
       {...attributes}
     >
-      {entry.playerName.split(" ")[0]}
+      {formatPlayerNameShort(entry.playerName)}
     </button>
   );
 }
