@@ -283,9 +283,19 @@ export default function GameDetail() {
     // Distance constraint lets a click pass through to the underlying button
     // (so tap-to-select still works) while a small movement triggers a drag.
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // Touch needs a hold delay so the page can still scroll vertically.
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    // Use the SAME distance-based activation on touch instead of a hold delay.
+    // The hold delay made the drag feel "broken" on iPad — a quick swipe to
+    // move a chip ended before 150 ms, so the click handler fired and the
+    // "add player" picker popped up instead of starting a drag. The tile is
+    // small enough that scrolling almost never starts on top of one, so the
+    // page can still scroll fine by touching anywhere off the chip.
+    useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
   );
+  // Tracks when the most recent drag ended. A few ms after a drop, browsers
+  // fire a synthetic click on whatever was under the pointer — that would
+  // re-open the "add player" picker right on top of the move you just made.
+  // We swallow clicks that arrive within this window.
+  const lastDragEndAtRef = useRef<number>(0);
 
   // Load locks for this game whenever the id changes.
   const refetchLocks = async (): Promise<Lock[]> => {
@@ -1369,6 +1379,9 @@ export default function GameDetail() {
 
   // Tap-to-select fallback (kept alongside drag-and-drop for accessibility / quick taps).
   const handleCellClick = (target: { entryId?: number; inning: number; position: string }) => {
+    // A drop just finished — ignore the synthetic click the browser fires
+    // afterward so the "add player" picker doesn't pop up over the move.
+    if (justFinishedDragging()) return;
     if (selectedEntryId == null) {
       if (target.entryId != null) {
         setSelectedEntryId(target.entryId);
@@ -1409,6 +1422,7 @@ export default function GameDetail() {
   const handleDragEnd = (e: DragEndEvent) => {
     setActiveDrag(null);
     setSelectedEntryId(null);
+    lastDragEndAtRef.current = Date.now();
     if (!e.over) return;
     const sourceId = String(e.active.id);
     if (!sourceId.startsWith("player-")) return;
@@ -1420,7 +1434,13 @@ export default function GameDetail() {
 
   const handleDragCancel = () => {
     setActiveDrag(null);
+    lastDragEndAtRef.current = Date.now();
   };
+
+  // Returns true if a drag finished within the last 300 ms. The synthetic
+  // click that browsers fire after a touch-drag ends would otherwise open
+  // the "add player" picker right on top of the slot you just dropped into.
+  const justFinishedDragging = () => Date.now() - lastDragEndAtRef.current < 300;
 
   // Shared TSV → clipboard helper used by both lineup and tally copy buttons.
   // Tries the modern Clipboard API first, then falls back to a hidden textarea
@@ -3808,7 +3828,7 @@ function PlayerTile({
       data-testid={testId}
       data-entry-id={entry.id}
       data-selected={isSelected ? "true" : "false"}
-      title={`${entry.playerName} — drag to move (or tap to select)`}
+      title={`${entry.playerName} — drag onto another player to swap, or onto an empty slot to move them there`}
       {...listeners}
       {...attributes}
     >
@@ -3875,7 +3895,7 @@ function FieldCell({
               : "inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap min-w-[2.25rem] border border-dashed border-muted-foreground/30 text-muted-foreground/60 hover:border-primary/50 hover:text-primary hover:bg-primary/5"
           }
           data-testid={`cell-${inning}-${position}-empty`}
-          title="Tap to add a player to this slot"
+          title="Drag a player here, or tap to pick one from the roster"
         >
           +
         </button>
