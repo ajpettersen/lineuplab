@@ -50,6 +50,7 @@ import {
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
+import { shortenTeamName } from "@/lib/team-name";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -557,8 +558,13 @@ export default function Games() {
           <Link href={`/games/${g.id}`}>
             <div className="flex-1 cursor-pointer group">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold group-hover:text-primary transition-colors">
-                  {g.type && g.type !== "game" ? g.opponent : `vs. ${g.opponent}`}
+                <span
+                  className="font-semibold group-hover:text-primary transition-colors"
+                  title={g.opponent ?? undefined}
+                >
+                  {g.type && g.type !== "game"
+                    ? (shortenTeamName(g.opponent) || g.opponent)
+                    : `vs. ${shortenTeamName(g.opponent) || g.opponent}`}
                 </span>
                 <TypeBadge type={(g.type ?? "game") as EventKind} />
                 <GameTypeBadge gameType={g.gameType as ("league" | "tournament" | null | undefined)} />

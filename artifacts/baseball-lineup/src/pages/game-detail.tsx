@@ -76,6 +76,7 @@ import { effectiveStatus } from "@/lib/game-status";
 import { PitchCountsCard } from "@/components/pitch-counts-card";
 import { SelectPositionsDialog } from "@/components/select-positions-dialog";
 import { formatPlayerNameShort } from "@/lib/player-name";
+import { shortenTeamName } from "@/lib/team-name";
 
 const STANDARD_FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 // Canonical L→R column order for the lineup grid. Includes LCF/RCF so a
@@ -1874,7 +1875,7 @@ export default function GameDetail() {
               <div className="flex items-center gap-3 flex-wrap mt-1">
                 <h1 className="page-title text-foreground text-2xl sm:text-3xl">
                   <span className="text-foreground/50">vs.</span>{" "}
-                  <span className="text-primary">{game.opponent}</span>
+                  <span className="text-primary" title={game.opponent}>{shortenTeamName(game.opponent) || game.opponent}</span>
                 </h1>
                 {(() => {
                   const eff = effectiveStatus(game);
@@ -2216,7 +2217,7 @@ export default function GameDetail() {
         <div className="print-only mb-3" data-testid="print-header">
           <div className="text-lg font-bold">{teamName || "Lineup"}</div>
           <div className="text-sm">
-            vs. {game.opponent} · {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")} · {innings} innings
+            vs. {shortenTeamName(game.opponent) || game.opponent} · {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")} · {innings} innings
           </div>
         </div>
       <Card>
@@ -3223,7 +3224,7 @@ export default function GameDetail() {
                       data-testid={`button-copy-game-${g.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">vs. {g.opponent}</span>
+                        <span className="text-sm font-medium" title={g.opponent}>vs. {shortenTeamName(g.opponent) || g.opponent}</span>
                         {(() => {
                           const eff = effectiveStatus(g);
                           if (eff === "completed")
