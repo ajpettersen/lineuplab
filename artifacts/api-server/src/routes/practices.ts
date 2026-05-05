@@ -168,6 +168,20 @@ router.patch("/practices/:id", async (req, res): Promise<void> => {
       description: b.description,
       drillType: b.drillType,
       focusAreas: b.focusAreas,
+      // Preserve AI-generated player groups when present. Stored as plain
+      // names; cap counts so a malformed payload can't bloat the JSONB.
+      ...(Array.isArray(b.groups) && b.groups.length > 0
+        ? {
+            groups: b.groups.slice(0, 6).map((g) => ({
+              label: String(g.label ?? "").trim().slice(0, 60),
+              playerNames: (Array.isArray(g.playerNames) ? g.playerNames : [])
+                .filter((n): n is string => typeof n === "string")
+                .map((n) => n.trim())
+                .filter((n) => n.length > 0)
+                .slice(0, 30),
+            })).filter((g) => g.label.length > 0 && g.playerNames.length > 0),
+          }
+        : {}),
     }));
     updates.blocks = blocks;
   }

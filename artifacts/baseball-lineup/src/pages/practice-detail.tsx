@@ -348,6 +348,11 @@ export default function PracticeDetailPage() {
       toast({ title: "Block needs a title", variant: "destructive" });
       return;
     }
+    // Preserve AI-generated groups on edit — the dialog doesn't expose
+    // them as editable fields, but we don't want a coach tweaking a
+    // block's title to silently wipe its station groupings.
+    const existing =
+      editingBlockIdx !== null ? localBlocks[editingBlockIdx] : null;
     const block: PracticeBlock = {
       id: editingBlockIdx === null ? makeBlockId() : localBlocks[editingBlockIdx]!.id,
       orderIndex: editingBlockIdx === null ? localBlocks.length : editingBlockIdx,
@@ -356,6 +361,9 @@ export default function PracticeDetailPage() {
       description: bDescription.trim(),
       drillType: bDrillType,
       focusAreas: bFocus,
+      ...(existing?.groups && existing.groups.length > 0
+        ? { groups: existing.groups }
+        : {}),
     };
     const next =
       editingBlockIdx === null
@@ -368,6 +376,11 @@ export default function PracticeDetailPage() {
   // ---- Generate-plan dialog (collects coach notes + reuses focus areas).
   const [genOpen, setGenOpen] = useState(false);
   const [genNotes, setGenNotes] = useState("");
+  // Coach-supplied "must include" drills, one per line. Sent as a string[]
+  // and the AI is told each entry MUST appear as its own block. Kept as
+  // free text in the input so the coach can type naturally; we split on
+  // newlines at submit time.
+  const [genRequiredDrills, setGenRequiredDrills] = useState("");
   const submitGenerate = () => {
     if (!practice) return;
     if ((practice.focusAreas ?? []).length === 0) {
@@ -378,6 +391,11 @@ export default function PracticeDetailPage() {
       });
       return;
     }
+    const requiredDrills = genRequiredDrills
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .slice(0, 10);
     generate.mutate(
       {
         id: practiceId,
@@ -385,6 +403,7 @@ export default function PracticeDetailPage() {
           focusAreas: practice.focusAreas ?? [],
           durationMinutes: practice.durationMinutes,
           coachNotes: genNotes.trim() || null,
+          ...(requiredDrills.length > 0 ? { requiredDrills } : {}),
         },
       },
       { onSuccess: () => setGenOpen(false) },
@@ -661,6 +680,7 @@ export default function PracticeDetailPage() {
               size="sm"
               onClick={() => {
                 setGenNotes("");
+                setGenRequiredDrills("");
                 setGenOpen(true);
               }}
               disabled={generate.isPending}
@@ -720,6 +740,32 @@ export default function PracticeDetailPage() {
                       <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
                         {b.description}
                       </p>
+                    )}
+                    {b.groups && b.groups.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                          Groups
+                        </div>
+                        <div className="grid gap-1.5 sm:grid-cols-2">
+                          {b.groups.map((g, gi) => (
+                            <div
+                              key={`${b.id}-grp-${gi}`}
+                              className="rounded border bg-muted/40 px-2 py-1.5"
+                              data-testid={`group-${idx}-${gi}`}
+                            >
+                              <div className="text-[11px] font-medium text-foreground">
+                                {g.label}
+                                <span className="ml-1 text-muted-foreground font-normal">
+                                  ({g.playerNames.length})
+                                </span>
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
+                                {g.playerNames.join(", ")}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-col items-center gap-0.5">
@@ -1099,6 +1145,20 @@ export default function PracticeDetailPage() {
               </div>
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="g-required">Must-include drills (optional)</Label>
+              <Textarea
+                id="g-required"
+                value={genRequiredDrills}
+                onChange={(e) => setGenRequiredDrills(e.target.value)}
+                rows={3}
+                placeholder={"One drill per line — each becomes its own block.\ne.g. 4-corners infield\nPickoff plays at 1st"}
+                data-testid="input-generate-required-drills"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Each line will appear as its own block in the plan.
+              </p>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="g-notes">Coach notes (optional)</Label>
               <Textarea
                 id="g-notes"
@@ -1109,6 +1169,14 @@ export default function PracticeDetailPage() {
                 data-testid="input-generate-notes"
               />
             </div>
+            {activePlayers.length > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                For infield/outfield/catching/pitching blocks, the AI may split players into groups by preferred position.
+                {Array.from(attDraft.values()).some((r) => r.attended !== null)
+                  ? " Today's attendance will limit groups to players marked present."
+                  : " Mark attendance below first if you want groups limited to who's actually here."}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setGenOpen(false)}>

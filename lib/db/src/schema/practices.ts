@@ -53,6 +53,15 @@ export type PracticeBlockJson = {
    * in 3 practices" — we look at attendance × block.focusAreas).
    */
   focusAreas: string[];
+  /**
+   * Optional player groupings for this block. The AI emits these for
+   * defensive blocks (infield/outfield/catching/pitching) so the coach
+   * sees who's working where without having to assign manually. Stored
+   * as plain player names (not IDs) so renaming/removing a player from
+   * the roster doesn't silently rewrite history. `undefined` for blocks
+   * the AI didn't group (warmups, hitting stations, conditioning, etc.).
+   */
+  groups?: { label: string; playerNames: string[] }[];
 };
 
 export const practicesTable = pgTable(

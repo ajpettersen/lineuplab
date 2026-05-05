@@ -46,6 +46,7 @@ pnpm generate # Orval codegen
 - **Broadcast Visual Language**: App-wide aesthetic inspired by sports broadcasts, using Oswald for display and Roboto Mono for numerals.
 - **Multi-tenancy**: Data isolation per coach (`Clerk userId`) with `assertPermission` middleware gating write routes.
 - **AI Integration**: Uses `gpt-5.2` for image/text roster imports, natural language lineup generation, and practice plan suggestions.
+- **Practice Plan AI**: `/api/practices/:id/generate-plan` accepts `requiredDrills?: string[]` (each guaranteed as its own block) and `coachNotes`. For blocks tagged with defensive focus areas (`infield | outfield | catching | pitching`), the AI may emit a `groups` array on the block — `{label, playerNames}[]` — splitting players by preferred position. When today's attendance has any rows marked, groups are limited to PRESENT players; otherwise the full active roster is used. Player names in groups are validated server-side against the roster, and groups round-trip through `PATCH /practices/:id`. See `routes/practice-plan-ai.ts` and `PracticeBlockJson.groups` in `lib/db/src/schema/practices.ts`.
 - **Tournament Batting Order**: When `game.gameType === "tournament"`, the lineup generator arranges the top 5 by OPS in a table-setter / cleanup pattern (slots 1-2 = top OBPs, 3 = best remaining OPS, 4-5 = top SLGs, 6+ = OPS desc). Players missing recorded stats use the team-mean OBP/SLG (treated as average). League mode still sorts by ascending PA to even out playing time. See `lib/lineup-generator.ts`.
 - **Offline Support**: Field Display page uses `localStorage` for caching and pending changes, with last-writer-wins conflict resolution.
 - **Master Admin Bypass**: `MASTER_ADMIN_USER_IDS` environment variable allows app owners to bypass team scoping and access an `/admin` page (lists all teams + drill-into each). Also enables a "view as this team" switch from admin.
@@ -84,6 +85,7 @@ pnpm generate # Orval codegen
 - I want a Settings → Defaults toggle to hide the Fairness Score (both the Dashboard card and the Rotation Report bar) for coaches who don't want the metric on screen.
 - I want a Settings → Defaults toggle to hide the "Make this lineup more equitable" suggestions popup on the game lineup view.
 - I want a small info tooltip next to the Fairness Score that explains how it's calculated (per-player bench-rate stddev across completed games, scored 100 − stddev × 200).
+- I want the practice planner AI to incorporate specific drills I name ("Must-include drills" textarea, one per line) and to group players by preferred position on defensive blocks when it makes sense.
 
 ## Gotchas
 

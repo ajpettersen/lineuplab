@@ -626,6 +626,11 @@ export interface UpdatePreferencesBody {
   showEquitySuggestions?: boolean;
 }
 
+export type PracticeBlockGroupsItem = {
+  label: string;
+  playerNames: string[];
+};
+
 /**
  * One time-block within a practice plan (warmup, drill, scrimmage, etc.)
  */
@@ -644,6 +649,8 @@ export interface PracticeBlock {
   /** One of warmup | drill | scrimmage | conditioning | meeting */
   drillType: string;
   focusAreas: string[];
+  /** Optional player groupings (defensive drills only — emitted by AI for infield/outfield/catching/pitching blocks). */
+  groups?: PracticeBlockGroupsItem[];
 }
 
 export interface Practice {
@@ -745,6 +752,11 @@ export interface GeneratePracticePlanBody {
    * @nullable
    */
   coachNotes?: string | null;
+  /**
+   * Specific drills the coach wants guaranteed in the plan. Each entry becomes its own block.
+   * @maxItems 10
+   */
+  requiredDrills?: string[];
 }
 
 export interface GeneratedPracticePlan {

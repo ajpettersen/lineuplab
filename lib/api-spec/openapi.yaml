@@ -1671,6 +1671,21 @@ components:
           type: array
           items:
             type: string
+        groups:
+          type: array
+          description: Optional player groupings (defensive drills only — emitted by AI for infield/outfield/catching/pitching blocks).
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+              playerNames:
+                type: array
+                items:
+                  type: string
+            required:
+              - label
+              - playerNames
       required:
         - id
         - orderIndex
@@ -1854,6 +1869,13 @@ components:
         coachNotes:
           type: ["string", "null"]
           description: Free-text guidance for the AI (e.g. "Sarah's first practice as catcher")
+        requiredDrills:
+          type: array
+          description: Specific drills the coach wants guaranteed in the plan. Each entry becomes its own block.
+          items:
+            type: string
+            maxLength: 200
+          maxItems: 10
       required:
         - focusAreas
         - durationMinutes

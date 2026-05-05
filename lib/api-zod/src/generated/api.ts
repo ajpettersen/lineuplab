@@ -1338,6 +1338,17 @@ export const ListPracticesResponseItem = zod
               "One of warmup | drill | scrimmage | conditioning | meeting",
             ),
           focusAreas: zod.array(zod.string()),
+          groups: zod
+            .array(
+              zod.object({
+                label: zod.string(),
+                playerNames: zod.array(zod.string()),
+              }),
+            )
+            .optional()
+            .describe(
+              "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+            ),
         })
         .describe(
           "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
@@ -1422,6 +1433,17 @@ export const GetPracticeResponse = zod
               "One of warmup | drill | scrimmage | conditioning | meeting",
             ),
           focusAreas: zod.array(zod.string()),
+          groups: zod
+            .array(
+              zod.object({
+                label: zod.string(),
+                playerNames: zod.array(zod.string()),
+              }),
+            )
+            .optional()
+            .describe(
+              "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+            ),
         })
         .describe(
           "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
@@ -1495,6 +1517,17 @@ export const UpdatePracticeBody = zod.object({
               "One of warmup | drill | scrimmage | conditioning | meeting",
             ),
           focusAreas: zod.array(zod.string()),
+          groups: zod
+            .array(
+              zod.object({
+                label: zod.string(),
+                playerNames: zod.array(zod.string()),
+              }),
+            )
+            .optional()
+            .describe(
+              "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+            ),
         })
         .describe(
           "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
@@ -1537,6 +1570,17 @@ export const UpdatePracticeResponse = zod.object({
             "One of warmup | drill | scrimmage | conditioning | meeting",
           ),
         focusAreas: zod.array(zod.string()),
+        groups: zod
+          .array(
+            zod.object({
+              label: zod.string(),
+              playerNames: zod.array(zod.string()),
+            }),
+          )
+          .optional()
+          .describe(
+            "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+          ),
       })
       .describe(
         "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
@@ -1597,6 +1641,10 @@ export const GeneratePracticePlanParams = zod.object({
 export const generatePracticePlanBodyDurationMinutesMin = 15;
 export const generatePracticePlanBodyDurationMinutesMax = 360;
 
+export const generatePracticePlanBodyRequiredDrillsItemMax = 200;
+
+export const generatePracticePlanBodyRequiredDrillsMax = 10;
+
 export const GeneratePracticePlanBody = zod.object({
   focusAreas: zod.array(zod.string()).min(1),
   durationMinutes: zod
@@ -1612,6 +1660,13 @@ export const GeneratePracticePlanBody = zod.object({
     .nullish()
     .describe(
       'Free-text guidance for the AI (e.g. \"Sarah\'s first practice as catcher\")',
+    ),
+  requiredDrills: zod
+    .array(zod.string().max(generatePracticePlanBodyRequiredDrillsItemMax))
+    .max(generatePracticePlanBodyRequiredDrillsMax)
+    .optional()
+    .describe(
+      "Specific drills the coach wants guaranteed in the plan. Each entry becomes its own block.",
     ),
 });
 
@@ -1643,6 +1698,17 @@ export const GeneratePracticePlanResponse = zod.object({
             "One of warmup | drill | scrimmage | conditioning | meeting",
           ),
         focusAreas: zod.array(zod.string()),
+        groups: zod
+          .array(
+            zod.object({
+              label: zod.string(),
+              playerNames: zod.array(zod.string()),
+            }),
+          )
+          .optional()
+          .describe(
+            "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+          ),
       })
       .describe(
         "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
