@@ -42,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import {
   Dialog,
   DialogContent,
@@ -156,6 +157,20 @@ export default function GameDetail() {
   const [viewPlanOpen, setViewPlanOpen] = useState(false);
 
   const [generateOpen, setGenerateOpen] = useState(false);
+  // Fairness dial value shown in the Generate Lineup dialog. Seeded from the
+  // saved `global_equity_weight` constraint when the dialog opens. Persisted
+  // back to that same constraint on Generate so the next game remembers it.
+  const [equityValue, setEquityValue] = useState<number>(50);
+  // Tracks whether the user has touched the slider since the dialog opened.
+  // Prevents a slow seed-fetch from clobbering an in-progress drag.
+  const equityTouchedRef = useRef(false);
+  // Monotonically-increasing token so a stale seed-fetch from an earlier dialog
+  // open can't apply its result after a newer open (or after the user moved the
+  // slider).
+  const equitySeedTokenRef = useRef(0);
+  // Disables the Generate button while we persist the dial + before the
+  // mutation flips `isPending`, closing the double-submit window.
+  const [generating, setGenerating] = useState(false);
   // Confirmation dialog shown when the coach has the "always lock pitchers
   // and catchers" preference on but hasn't placed P/C locks for every
   // inning. Holds the list of innings still missing locks so we can list
@@ -454,6 +469,35 @@ export default function GameDetail() {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
     setPreviewLineup(null);
     setGenerateOpen(true);
+    // Reset the "user touched the slider" flag and bump the seed token so any
+    // in-flight fetch from a prior open is ignored when it returns.
+    equityTouchedRef.current = false;
+    equitySeedTokenRef.current += 1;
+    const myToken = equitySeedTokenRef.current;
+    // Seed the fairness slider from the saved global constraint so the dialog
+    // reflects the coach's last choice. Errors are non-fatal — the slider just
+    // stays at its current value (defaulting to 50). Stale responses (newer
+    // open, or user has already moved the slider) are dropped.
+    void (async () => {
+      try {
+        const r = await fetch(`${BASE}/api/constraints`, { credentials: "same-origin" });
+        if (!r.ok) return;
+        const all: unknown = await r.json();
+        if (!Array.isArray(all)) return;
+        if (myToken !== equitySeedTokenRef.current) return;
+        if (equityTouchedRef.current) return;
+        const rows = (all as Array<{ type: string; value: number | null; active: boolean; createdAt: string }>)
+          .filter((c) => c.type === "global_equity_weight" && c.active && typeof c.value === "number")
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        if (rows.length > 0 && typeof rows[0].value === "number") {
+          setEquityValue(rows[0].value);
+        } else {
+          setEquityValue(50);
+        }
+      } catch {
+        // ignore — slider keeps prior value
+      }
+    })();
   };
 
   /**
@@ -872,7 +916,7 @@ export default function GameDetail() {
     }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (selectedPlayerIds.length === 0) {
       toast({ title: "Select at least one player", variant: "destructive" });
       return;
@@ -884,6 +928,63 @@ export default function GameDetail() {
       if (!ok) return;
       setEditedLineup(null);
       setSelectedEntryId(null);
+    }
+    // Persist the dialog's fairness value back to the global_equity_weight
+    // constraint before generating, so the server-side generator reads the
+    // up-to-date dial. Single-row invariant: delete any existing rows of this
+    // type, then post a fresh one. We surface a toast on persistence failure
+    // (so the coach knows the dial change didn't stick) but still proceed with
+    // generation using whatever the server already has.
+    setGenerating(true);
+    let persistOk = true;
+    try {
+      const v = Math.max(0, Math.min(100, Math.round(equityValue)));
+      const description =
+        v <= 25
+          ? `Generator favors best lineup (fairness ${v}/100)`
+          : v >= 75
+            ? `Generator favors equal playing time (fairness ${v}/100)`
+            : `Balanced lineup vs fairness (${v}/100)`;
+      const listResp = await fetch(`${BASE}/api/constraints`, { credentials: "same-origin" });
+      if (!listResp.ok) {
+        persistOk = false;
+      } else {
+        const all: unknown = await listResp.json();
+        if (Array.isArray(all)) {
+          const stale = (all as Array<{ id: number; type: string }>).filter(
+            (c) => c.type === "global_equity_weight",
+          );
+          const delResults = await Promise.all(
+            stale.map((c) =>
+              fetch(`${BASE}/api/constraints/${c.id}`, { method: "DELETE" }),
+            ),
+          );
+          if (delResults.some((r) => !r.ok)) persistOk = false;
+        } else {
+          persistOk = false;
+        }
+      }
+      const postResp = await fetch(`${BASE}/api/constraints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "global_equity_weight",
+          rule: "weight",
+          value: v,
+          description,
+          active: true,
+        }),
+      });
+      if (!postResp.ok) persistOk = false;
+    } catch {
+      persistOk = false;
+    }
+    if (!persistOk) {
+      toast({
+        title: "Couldn't save fairness setting",
+        description: "Generating with the previously saved value.",
+        variant: "destructive",
+      });
     }
     generateLineup.mutate(
       {
@@ -916,6 +1017,9 @@ export default function GameDetail() {
             description: msg,
             variant: "destructive",
           });
+        },
+        onSettled: () => {
+          setGenerating(false);
         },
       }
     );
@@ -1900,7 +2004,7 @@ export default function GameDetail() {
                         Mark Complete
                       </Button>
                     )}
-                    {game.status !== "cancelled" && game.innings > 1 && (
+                    {game.innings > 1 && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -2806,6 +2910,36 @@ export default function GameDetail() {
             <p className="text-sm text-muted-foreground">
               Select players available for this game. The lineup will rotate positions fairly.
             </p>
+            <div className="rounded-md border bg-muted/30 px-3 py-3 flex flex-col gap-2" data-testid="generate-fairness-section">
+              <div className="flex items-baseline justify-between">
+                <Label className="text-sm font-medium">Fairness Dial</Label>
+                <span
+                  className="text-base font-bold font-mono text-primary"
+                  data-testid="generate-fairness-value"
+                >
+                  {equityValue}
+                </span>
+              </div>
+              <Slider
+                value={[equityValue]}
+                min={0}
+                max={100}
+                step={5}
+                onValueChange={([v]) => {
+                  equityTouchedRef.current = true;
+                  setEquityValue(v);
+                }}
+                data-testid="generate-fairness-slider"
+              />
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span>Best lineup</span>
+                <span>Balanced</span>
+                <span>Most equitable</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Lower keeps stronger players in their preferred spots; higher rotates everyone evenly. We'll remember this as your default.
+              </p>
+            </div>
             {(game?.gameType === "league" || game?.gameType === "tournament") && (
               <div className={`rounded-md border px-3 py-2 text-xs ${
                 game.gameType === "tournament"
@@ -2876,9 +3010,9 @@ export default function GameDetail() {
                 {saveLineup.isPending ? "Saving..." : "Save This Lineup"}
               </Button>
             ) : (
-              <Button onClick={handleGenerate} disabled={generateLineup.isPending}>
+              <Button onClick={handleGenerate} disabled={generating || generateLineup.isPending}>
                 <Wand2 className="h-4 w-4 mr-1" />
-                {generateLineup.isPending ? "Generating..." : "Generate"}
+                {generating || generateLineup.isPending ? "Generating..." : "Generate"}
               </Button>
             )}
           </DialogFooter>
