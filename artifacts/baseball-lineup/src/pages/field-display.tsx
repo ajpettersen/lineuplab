@@ -1712,49 +1712,28 @@ export default function FieldDisplay() {
             >
               {battingOrder.map((r, idx) => {
                 const slotLabel = r.order != null ? r.order : "—";
-                // TODO: wire real lineup-progression state once at-bat
-                // tracking lands. For now we highlight the first row,
-                // matching the BroadcastBooth mockup exactly. The
-                // BroadcastBooth approval reviewed the visual treatment
-                // — any later "currently at bat" logic should reuse the
-                // same `isAtBat` styling below.
-                const isAtBat = idx === 0;
+                // No "currently at bat" highlight — there's no way to
+                // know real game state without a GameChanger-style
+                // integration, and a fake/stale indicator (we used to
+                // always highlight row 0) was worse than no indicator.
+                // When real at-bat tracking lands, reintroduce an
+                // `isAtBat` flag and gate gold styling + an AB pill on it.
                 return (
                   <li
                     key={r.playerId}
-                    className={`relative flex items-stretch h-12 sm:h-14 max-lg:landscape:h-auto max-lg:landscape:flex-1 max-lg:landscape:basis-0 max-lg:landscape:min-h-[2rem] lg:h-auto lg:flex-1 lg:basis-0 lg:min-h-[2rem] overflow-hidden border transition-all ${
-                      isAtBat
-                        ? "border-broadcast-gold bg-[#1a2a42] shadow-[0_2px_0_0_rgba(0,0,0,0.4)]"
-                        : idx % 2 === 0
-                          ? "border-transparent bg-slate-900/60"
-                          : "border-transparent bg-slate-900/30"
+                    className={`relative flex items-stretch h-12 sm:h-14 max-lg:landscape:h-auto max-lg:landscape:flex-1 max-lg:landscape:basis-0 max-lg:landscape:min-h-[2rem] lg:h-auto lg:flex-1 lg:basis-0 lg:min-h-[2rem] overflow-hidden border border-transparent transition-all ${
+                      idx % 2 === 0
+                        ? "bg-slate-900/60"
+                        : "bg-slate-900/30"
                     }`}
                     data-testid={`batter-row-${r.playerId}`}
-                    data-at-bat={isAtBat ? "true" : "false"}
                   >
-                    {isAtBat && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute inset-y-0 left-0 w-1 bg-broadcast-gold"
-                      />
-                    )}
-                    <span
-                      className={`shrink-0 w-10 sm:w-12 flex items-center justify-center font-display font-bold text-lg sm:text-xl tabular-nums ${
-                        isAtBat
-                          ? "bg-broadcast-gold text-black"
-                          : "bg-white/5 text-slate-400"
-                      }`}
-                    >
+                    <span className="shrink-0 w-10 sm:w-12 flex items-center justify-center font-display font-bold text-lg sm:text-xl tabular-nums bg-white/5 text-slate-400">
                       {slotLabel}
                     </span>
                     <span className="flex-1 min-w-0 flex items-center px-2 sm:px-3 text-sm sm:text-base font-bold leading-tight truncate text-white">
                       {r.playerName}
                     </span>
-                    {isAtBat && (
-                      <span className="shrink-0 px-2 sm:px-3 flex items-center justify-center bg-broadcast-gold/10 text-broadcast-gold text-[11px] sm:text-xs font-display font-bold tracking-widest">
-                        AB
-                      </span>
-                    )}
                   </li>
                 );
               })}
@@ -1792,9 +1771,7 @@ export default function FieldDisplay() {
        * underneath, so the coach can still hit Next Batter / Next Inning /
        * the dim toggle itself without disabling dim first. Smooth fade so it
        * doesn't snap at the eye when toggled. 40% opacity = clearly dimmer
-       * without becoming unreadable in any reasonable lighting; tested
-       * against the bright amber At Bat pill which is the highest-contrast
-       * element on screen.
+       * without becoming unreadable in any reasonable lighting.
        */}
       <div
         aria-hidden="true"
