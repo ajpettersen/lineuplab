@@ -354,6 +354,27 @@ export function CoachesCard() {
                       <div className="text-xs text-muted-foreground">
                         Joined {new Date(m.joinedAt).toLocaleDateString()}
                       </div>
+                      {/* Show Clerk user ID for the signed-in coach so
+                          they can paste it into MASTER_ADMIN_USER_IDS
+                          without digging through the Clerk dashboard. */}
+                      {isSelf && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(m.memberUserId);
+                            toast({
+                              title: "Copied",
+                              description: "Your Clerk user ID is on the clipboard.",
+                            });
+                          }}
+                          className="mt-1 inline-flex items-center gap-1 rounded border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                          data-testid="button-copy-self-user-id"
+                          title="Click to copy. Paste into the MASTER_ADMIN_USER_IDS secret to grant master-admin access."
+                        >
+                          <Copy className="h-2.5 w-2.5" />
+                          {m.memberUserId}
+                        </button>
+                      )}
                     </div>
                     {/* Owner row: locked badge. Non-owner row + caller
                         is owner: editable Select. Otherwise: badge only. */}
