@@ -46,6 +46,7 @@ pnpm generate # Orval codegen
 - **Broadcast Visual Language**: App-wide aesthetic inspired by sports broadcasts, using Oswald for display and Roboto Mono for numerals.
 - **Multi-tenancy**: Data isolation per coach (`Clerk userId`) with `assertPermission` middleware gating write routes.
 - **AI Integration**: Uses `gpt-5.2` for image/text roster imports, natural language lineup generation, and practice plan suggestions.
+- **Tournament Batting Order**: When `game.gameType === "tournament"`, the lineup generator arranges the top 5 by OPS in a table-setter / cleanup pattern (slots 1-2 = top OBPs, 3 = best remaining OPS, 4-5 = top SLGs, 6+ = OPS desc). Players missing recorded stats use the team-mean OBP/SLG (treated as average). League mode still sorts by ascending PA to even out playing time. See `lib/lineup-generator.ts`.
 - **Offline Support**: Field Display page uses `localStorage` for caching and pending changes, with last-writer-wins conflict resolution.
 - **Master Admin Bypass**: `MASTER_ADMIN_USER_IDS` environment variable allows app owners to bypass team scoping and access an `/admin` page (lists all teams + drill-into each). Also enables a "view as this team" switch from admin.
 - **Per-Team Coach Profile**: Each coach's `displayName` + `role` lives on `team_memberships` (the owner has a row too with `isOwner=true`). Names are prompted via a one-time modal on first load (`coach-profile-prompt.tsx`).

@@ -36,9 +36,19 @@ export interface LineupConstraints {
   playerSeasonPlateAppearances?: Map<number, number>;
   /**
    * Season on-base percentage per playerId. Only consulted when
-   * gameType === "tournament" — used to put high-OBP hitters at the top.
+   * gameType === "tournament" — feeds the table-setter / cleanup
+   * arrangement at the top of the order. Players missing from the map
+   * get the team-mean OBP so a kid with no recorded stats slots in the
+   * middle instead of being pushed to the bottom of the lineup.
    */
   playerSeasonOBP?: Map<number, number>;
+  /**
+   * Season slugging percentage per playerId. Pairs with `playerSeasonOBP`
+   * for the tournament-mode batting order: best SLG hitters get the
+   * cleanup spots so the table setters in front of them get driven in.
+   * Same fallback rule — missing players are treated as team average.
+   */
+  playerSeasonSLG?: Map<number, number>;
   /**
    * Team-wide batting style (from team_settings.batting_style):
    *  - "continuous" → every player on the roster gets a batting slot
@@ -401,12 +411,79 @@ export function generateFairLineup(
       return (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0);
     });
   } else if (constraints.gameType === "tournament") {
+    // Tournament batting order: table-setter / cleanup blend.
+    //
+    // Plain OBP-descending isn't quite what a coach wants — yes, the
+    // best on-base guy should bat early, but the most-valuable spot for
+    // raw power (SLG) is hitting BEHIND the table setters so they get
+    // driven in. So we do a two-stage arrangement:
+    //
+    //   Stage 1 — score every player on OPS (= OBP + SLG). Players
+    //             missing stats use the TEAM MEAN of each component so
+    //             a kid with no recorded at-bats slots into the middle
+    //             instead of getting buried at the bottom (per coach
+    //             preference: "treated as average").
+    //
+    //   Stage 2 — take the top 5 by OPS as the "core" of the order and
+    //             rearrange them in the classic pattern:
+    //               1  best OBP        (table setter)
+    //               2  2nd-best OBP    (table setter)
+    //               3  best remaining  (highest OPS — best overall hitter)
+    //               4  best SLG        (cleanup — drives in the runners)
+    //               5  2nd-best SLG    (protection)
+    //             Slots 6+ fall in pure OPS-descending order.
+    //
+    // Tiebreakers throughout: more field time → earlier slot, so a
+    // player who actually played gets bumped ahead of a similarly-rated
+    // player who sat the whole game.
     const obpMap = constraints.playerSeasonOBP ?? new Map<number, number>();
-    ordered = [...players].sort((a, b) => {
-      const obpDiff = (obpMap.get(b.id) ?? -1) - (obpMap.get(a.id) ?? -1);
-      if (obpDiff !== 0) return obpDiff;
-      return (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0);
+    const slgMap = constraints.playerSeasonSLG ?? new Map<number, number>();
+    const knownObps = [...obpMap.values()];
+    const knownSlgs = [...slgMap.values()];
+    const meanOBP = knownObps.length > 0
+      ? knownObps.reduce((a, b) => a + b, 0) / knownObps.length
+      : 0;
+    const meanSLG = knownSlgs.length > 0
+      ? knownSlgs.reduce((a, b) => a + b, 0) / knownSlgs.length
+      : 0;
+    type Scored = { player: Player; obp: number; slg: number; ops: number };
+    const scored: Scored[] = players.map((p) => {
+      const obp = obpMap.get(p.id) ?? meanOBP;
+      const slg = slgMap.get(p.id) ?? meanSLG;
+      return { player: p, obp, slg, ops: obp + slg };
     });
+    const fieldTime = (s: Scored) => totalInningsPlayed.get(s.player.id) ?? 0;
+    // Baseline: OPS desc, field time desc as tiebreaker.
+    scored.sort((a, b) => (b.ops - a.ops) || (fieldTime(b) - fieldTime(a)));
+    // Core arrangement on the top 5 (or however many we have).
+    const coreSize = Math.min(5, scored.length);
+    const core = scored.slice(0, coreSize);
+    const tail = scored.slice(coreSize);
+    const arranged: Scored[] = [];
+    const pickFrom = (pool: Scored[], scoreFn: (s: Scored) => number) => {
+      if (pool.length === 0) return undefined;
+      let bestIdx = 0;
+      for (let i = 1; i < pool.length; i++) {
+        const better =
+          scoreFn(pool[i]!) > scoreFn(pool[bestIdx]!) ||
+          (scoreFn(pool[i]!) === scoreFn(pool[bestIdx]!) && fieldTime(pool[i]!) > fieldTime(pool[bestIdx]!));
+        if (better) bestIdx = i;
+      }
+      return pool.splice(bestIdx, 1)[0];
+    };
+    // 1 & 2: best two OBPs from the core (table setters).
+    const t1 = pickFrom(core, (s) => s.obp); if (t1) arranged.push(t1);
+    const t2 = pickFrom(core, (s) => s.obp); if (t2) arranged.push(t2);
+    // 3: best remaining OPS (best overall hitter still left in the core).
+    const t3 = pickFrom(core, (s) => s.ops); if (t3) arranged.push(t3);
+    // 4 & 5: best two SLGs from what's left (cleanup + protection).
+    const t4 = pickFrom(core, (s) => s.slg); if (t4) arranged.push(t4);
+    const t5 = pickFrom(core, (s) => s.slg); if (t5) arranged.push(t5);
+    // Anything left in `core` (defensive — shouldn't trigger with size ≤5)
+    // and the tail fall through in OPS-descending order.
+    arranged.push(...core.sort((a, b) => (b.ops - a.ops) || (fieldTime(b) - fieldTime(a))));
+    arranged.push(...tail);
+    ordered = arranged.map((s) => s.player);
   } else {
     ordered = [...players].sort(
       (a, b) => (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0)

@@ -2960,7 +2960,7 @@ export default function GameDetail() {
                   : "border-blue-200 bg-blue-50 text-blue-900"
               }`}>
                 {game.gameType === "tournament"
-                  ? "Tournament mode — strongest players will start in their preferred positions and best bats lead off."
+                  ? "Tournament mode — strongest players start in their preferred positions; batting order uses the table-setter / cleanup pattern (top OBPs lead off, top SLG hits 4-5 to drive them in). Players without recorded stats are treated as team-average."
                   : "League mode — players with fewer plate appearances this season will bat earlier to even things out."}
               </div>
             )}

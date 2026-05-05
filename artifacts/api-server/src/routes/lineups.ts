@@ -142,16 +142,20 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   // regardless of row insertion order.
   const paMap = new Map<number, number>();
   const obpMap = new Map<number, number>();
-  const obpAbAnchor = new Map<number, number>(); // playerId → AB total backing the chosen OBP
+  const slgMap = new Map<number, number>();
+  // playerId → AB total backing the chosen OBP/SLG row. Both rate stats are
+  // anchored on the same row (highest-AB) so they describe the same sample
+  // — important now that the tournament arrangement reads OBP and SLG side
+  // by side to pick table setters vs cleanup hitters.
+  const rateAbAnchor = new Map<number, number>();
   for (const r of battingRows) {
     const pa = (r.ab ?? 0) + (r.bb ?? 0) + (r.hbp ?? 0) + (r.sac ?? 0);
     paMap.set(r.playerId, (paMap.get(r.playerId) ?? 0) + pa);
-    if (r.obp != null) {
-      const ab = r.ab ?? 0;
-      if (!obpAbAnchor.has(r.playerId) || ab > (obpAbAnchor.get(r.playerId) ?? -1)) {
-        obpMap.set(r.playerId, r.obp);
-        obpAbAnchor.set(r.playerId, ab);
-      }
+    const ab = r.ab ?? 0;
+    if ((r.obp != null || r.slg != null) && (!rateAbAnchor.has(r.playerId) || ab > (rateAbAnchor.get(r.playerId) ?? -1))) {
+      if (r.obp != null) obpMap.set(r.playerId, r.obp);
+      if (r.slg != null) slgMap.set(r.playerId, r.slg);
+      rateAbAnchor.set(r.playerId, ab);
     }
   }
 
@@ -182,6 +186,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       gameType: (game.gameType === "league" || game.gameType === "tournament") ? game.gameType : null,
       playerSeasonPlateAppearances: paMap,
       playerSeasonOBP: obpMap,
+      playerSeasonSLG: slgMap,
       battingStyle,
       fieldPositions: activeFieldPositions,
     },
