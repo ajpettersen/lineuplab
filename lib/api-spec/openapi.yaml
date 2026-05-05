@@ -728,6 +728,45 @@ paths:
         "502":
           description: AI service unavailable
 
+  /dashboard/tasks:
+    get:
+      operationId: listDashboardTasks
+      tags: [dashboard]
+      summary: Open-task list for the coach dashboard (scores not logged, pitch counts missing)
+      description: |
+        Derives a fresh list at read time from games + pitch_counts, filtered
+        against task_dismissals. Cap of 20 most recent. The list intentionally
+        omits dismissed tasks so the dashboard quiets down for accounts the
+        coach has triaged.
+      responses:
+        "200":
+          description: Open dashboard tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DashboardTask"
+
+  /dashboard/tasks/dismiss:
+    post:
+      operationId: dismissDashboardTask
+      tags: [dashboard]
+      summary: Permanently hide a (game, taskType) pair from the coach's task list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DismissDashboardTaskBody"
+      responses:
+        "204":
+          description: Dismissed (or already dismissed; idempotent)
+        "400":
+          description: Invalid request body
+        "404":
+          description: Game not found
+
   /preferences:
     get:
       operationId: getPreferences
@@ -1135,6 +1174,62 @@ components:
         - positionInnings
         - inningsPitched
 
+    DashboardTask:
+      type: object
+      description: An open coaching task surfaced on the dashboard.
+      properties:
+        id:
+          type: string
+          description: Stable composite key — `<gameId>:<taskType>`.
+        type:
+          type: string
+          enum: [score, pitch_counts]
+        gameId:
+          type: integer
+        gameDate:
+          type: string
+          format: date-time
+        opponent:
+          type: string
+        link:
+          type: string
+          description: Relative path the Open button should navigate to (already includes any deep-link hash).
+      required:
+        - id
+        - type
+        - gameId
+        - gameDate
+        - opponent
+        - link
+
+    DismissDashboardTaskBody:
+      type: object
+      properties:
+        gameId:
+          type: integer
+        taskType:
+          type: string
+          enum: [score, pitch_counts]
+      required:
+        - gameId
+        - taskType
+
+    RestTier:
+      type: object
+      description: One row of the rest-tier ladder (pitches → required days rest).
+      properties:
+        maxPitches:
+          type: integer
+          minimum: 0
+          description: Inclusive upper bound of pitch totals this tier covers.
+        daysRest:
+          type: integer
+          minimum: 0
+          description: Required calendar days of rest before pitching again.
+      required:
+        - maxPitches
+        - daysRest
+
     TeamSettings:
       type: object
       properties:
@@ -1150,12 +1245,19 @@ components:
           description: |
             Continuous = every player on the roster bats. Nine-man = only the
             top 9 batters get a slot in the order.
-        defaultPitchRuleset:
-          type: ["string", "null"]
-          description: Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.
-        defaultAgeGroup:
-          type: ["string", "null"]
-          description: Free-text team age group label (e.g. "10U", "11-12U").
+        defaultDailyPitchMax:
+          type: ["integer", "null"]
+          description: Default per-pitcher daily cap for new tournaments.
+        defaultTournamentPitchMax:
+          type: ["integer", "null"]
+          description: Default per-pitcher cap across an entire tournament weekend.
+        defaultRestTiers:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/RestTier"
+          description: Default rest-tier ladder applied to new tournaments.
         createdAt:
           type: string
           format: date-time
@@ -1184,10 +1286,16 @@ components:
         battingStyle:
           type: string
           enum: [continuous, nine_man]
-        defaultPitchRuleset:
-          type: ["string", "null"]
-        defaultAgeGroup:
-          type: ["string", "null"]
+        defaultDailyPitchMax:
+          type: ["integer", "null"]
+        defaultTournamentPitchMax:
+          type: ["integer", "null"]
+        defaultRestTiers:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/RestTier"
 
     UserPreferences:
       type: object
@@ -1247,12 +1355,19 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
-        pitchCountRuleset:
-          type: ["string", "null"]
-          description: Ruleset key (see pitch-rules catalog). Null = inherit team default.
         dailyPitchMax:
           type: ["integer", "null"]
-          description: Override daily pitch maximum. Null = use ruleset default.
+          description: Per-pitcher daily cap for this tournament. Null = inherit team default.
+        tournamentPitchMax:
+          type: ["integer", "null"]
+          description: Per-pitcher cap across the whole tournament. Null = inherit team default.
+        restTiers:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/RestTier"
+          description: Rest tiers for this tournament. Null = inherit team default.
         createdAt:
           type: string
           format: date-time
@@ -1294,17 +1409,23 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/PitcherAvailability"
-            effectiveRuleset:
-              type: string
-              description: Ruleset key actually applied (after fallback to team default)
             effectiveDailyMax:
-              type: integer
-              description: Daily pitch max actually applied (after override + ruleset fallback)
+              type: ["integer", "null"]
+              description: Resolved per-pitcher daily cap (tournament > team default > null).
+            effectiveTournamentMax:
+              type: ["integer", "null"]
+              description: Resolved per-pitcher tournament cap.
+            effectiveRestTiers:
+              type: array
+              items:
+                $ref: "#/components/schemas/RestTier"
+              description: Resolved rest tiers (empty array = no rest enforcement).
           required:
             - games
             - pitcherAvailability
-            - effectiveRuleset
             - effectiveDailyMax
+            - effectiveTournamentMax
+            - effectiveRestTiers
 
     CreateTournamentBody:
       type: object
@@ -1323,10 +1444,16 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
-        pitchCountRuleset:
-          type: ["string", "null"]
         dailyPitchMax:
           type: ["integer", "null"]
+        tournamentPitchMax:
+          type: ["integer", "null"]
+        restTiers:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/RestTier"
       required:
         - name
         - startDate
@@ -1349,10 +1476,16 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
-        pitchCountRuleset:
-          type: ["string", "null"]
         dailyPitchMax:
           type: ["integer", "null"]
+        tournamentPitchMax:
+          type: ["integer", "null"]
+        restTiers:
+          oneOf:
+            - type: "null"
+            - type: array
+              items:
+                $ref: "#/components/schemas/RestTier"
 
     PitchCount:
       type: object
@@ -1408,9 +1541,14 @@ components:
         pitchesToday:
           type: integer
         pitchesAvailableToday:
-          type: integer
+          type: ["integer", "null"]
+          description: |
+            Pitches the pitcher may still throw today under the resolved daily cap.
+            Null when no daily cap is configured (unlimited) — the UI should render
+            this as "—" / "no cap" rather than zero. Otherwise an integer >= 0.
         dailyMax:
-          type: integer
+          type: ["integer", "null"]
+          description: Resolved daily cap for this tournament. Null = no cap configured.
         restingUntil:
           oneOf:
             - type: "null"

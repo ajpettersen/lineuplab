@@ -1,10 +1,20 @@
-import { Link } from "wouter";
-import { useListGames, useGetSeasonStats, useGetPlayerStats } from "@workspace/api-client-react";
+import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListGames,
+  useGetSeasonStats,
+  useGetPlayerStats,
+  useListDashboardTasks,
+  useDismissDashboardTask,
+  getListDashboardTasksQueryKey,
+  type DashboardTask,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin } from "lucide-react";
+import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin, ClipboardList, X } from "lucide-react";
 import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
+import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -72,6 +82,8 @@ export default function Dashboard() {
   const mostBenchPlayer = playerStats
     .filter((p) => p.totalInnings > 0)
     .sort((a, b) => b.benchInnings / (b.totalInnings || 1) - a.benchInnings / (a.totalInnings || 1))[0];
+
+  const { data: tasks = [] } = useListDashboardTasks();
 
   return (
     <div className="flex flex-col gap-6">
@@ -172,6 +184,10 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Coaching tasks (only renders when the coach has open items, so a
+          fresh account stays clean). */}
+      {tasks.length > 0 && <TasksCard tasks={tasks} />}
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -303,5 +319,125 @@ export default function Dashboard() {
         )}
       </div>
     </div>
+  );
+}
+
+const TASK_LABEL: Record<DashboardTask["type"], string> = {
+  score: "Score not logged",
+  pitch_counts: "Pitch counts not logged",
+};
+
+/**
+ * Open coaching tasks list. Each row links to the relevant game (with a
+ * deep-link hash for pitch-count tasks) and offers an Ignore button that
+ * permanently hides the row from this dashboard.
+ *
+ * Optimistic remove: dismissing toggles the row out of the list before
+ * the server responds, so the card feels instant. The query refetches on
+ * success to reconcile the canonical state.
+ */
+function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
+
+  const dismiss = useDismissDashboardTask({
+    mutation: {
+      onMutate: async (vars) => {
+        await qc.cancelQueries({ queryKey: getListDashboardTasksQueryKey() });
+        const prev = qc.getQueryData<DashboardTask[]>(
+          getListDashboardTasksQueryKey(),
+        );
+        qc.setQueryData<DashboardTask[]>(
+          getListDashboardTasksQueryKey(),
+          (old) =>
+            (old ?? []).filter(
+              (t) =>
+                !(t.gameId === vars.data.gameId && t.type === vars.data.taskType),
+            ),
+        );
+        return { prev };
+      },
+      onError: (err, _vars, ctx) => {
+        if (ctx?.prev) {
+          qc.setQueryData(getListDashboardTasksQueryKey(), ctx.prev);
+        }
+        toast({
+          title: "Could not dismiss task",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+      onSettled: () => {
+        void qc.invalidateQueries({
+          queryKey: getListDashboardTasksQueryKey(),
+        });
+      },
+    },
+  });
+
+  return (
+    <Card data-testid="card-dashboard-tasks">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-primary" />
+          Tasks
+          <span className="text-xs font-normal text-muted-foreground">
+            ({tasks.length})
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {tasks.map((t) => (
+          <div
+            key={t.id}
+            className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/60 hover:border-border transition-colors"
+            data-testid={`row-task-${t.id}`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium truncate">
+                vs. {t.opponent}
+                <span className="text-xs text-muted-foreground font-normal ml-2">
+                  {format(new Date(t.gameDate), "MMM d, yyyy")}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {TASK_LABEL[t.type]}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8"
+                // Use navigate so the hash fragment (#pitch-counts-card) is
+                // preserved — wouter's <Link> drops the hash on `href`.
+                onClick={() => navigate(t.link)}
+                data-testid={`button-task-open-${t.id}`}
+              >
+                Open
+                <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() =>
+                  dismiss.mutate({
+                    data: { gameId: t.gameId, taskType: t.type },
+                  })
+                }
+                disabled={dismiss.isPending}
+                title="Hide this task permanently"
+                data-testid={`button-task-ignore-${t.id}`}
+              >
+                <X className="h-3.5 w-3.5 mr-1" />
+                Ignore
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }

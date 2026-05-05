@@ -20,20 +20,24 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Trophy, Wand2 } from "lucide-react";
+import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { CoachesCard } from "@/components/coaches-card";
-import { PITCH_RULESET_OPTIONS } from "@/lib/pitch-rulesets";
+import { RestTiersEditor } from "@/components/rest-tiers-editor";
+import type { RestTier } from "@/lib/pitch-rulesets";
 import { useSeedDemoMutation, DEMO_SEED_ENABLED } from "@/hooks/use-demo-seeder";
+import Constraints from "@/pages/constraints";
 
-const NO_DEFAULT = "__none";
+/**
+ * Convert "" / NaN inputs into null so the server stores "no value
+ * configured" instead of 0 (which would mean "no pitcher can throw").
+ */
+function parseOptionalInt(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 export default function Settings() {
   const { toast } = useToast();
@@ -79,16 +83,16 @@ export default function Settings() {
   const [battingStyle, setBattingStyle] = useState<"continuous" | "nine_man">(
     "continuous"
   );
-  const [defaultAgeGroup, setDefaultAgeGroup] = useState("");
-  const [defaultPitchRuleset, setDefaultPitchRuleset] = useState<string>(NO_DEFAULT);
+  // Free-form tournament defaults. Strings in form state so the coach
+  // can clear the field without us coercing to 0.
+  const [defaultDailyMax, setDefaultDailyMax] = useState<string>("");
+  const [defaultTournamentMax, setDefaultTournamentMax] = useState<string>("");
+  const [defaultRestTiers, setDefaultRestTiers] = useState<RestTier[] | null>(null);
   const [innings, setInnings] = useState(6);
   const [maxPos, setMaxPos] = useState(2);
   const [maxBench, setMaxBench] = useState(2);
   const [ensureAll, setEnsureAll] = useState(true);
   const [pitcherRotation, setPitcherRotation] = useState(false);
-  // When on, the per-game Generate Lineup flow blocks (with override) until
-  // the coach has set Pitcher and Catcher locks for every inning. Mirrors the
-  // `alwaysLockPitcherCatcher` column on `user_preferences`.
   const [alwaysLockPC, setAlwaysLockPC] = useState(false);
 
   useEffect(() => {
@@ -98,8 +102,19 @@ export default function Settings() {
       setBattingStyle(
         teamQuery.data.battingStyle === "nine_man" ? "nine_man" : "continuous"
       );
-      setDefaultAgeGroup(teamQuery.data.defaultAgeGroup ?? "");
-      setDefaultPitchRuleset(teamQuery.data.defaultPitchRuleset ?? NO_DEFAULT);
+      setDefaultDailyMax(
+        teamQuery.data.defaultDailyPitchMax != null
+          ? String(teamQuery.data.defaultDailyPitchMax)
+          : ""
+      );
+      setDefaultTournamentMax(
+        teamQuery.data.defaultTournamentPitchMax != null
+          ? String(teamQuery.data.defaultTournamentPitchMax)
+          : ""
+      );
+      setDefaultRestTiers(
+        (teamQuery.data.defaultRestTiers as RestTier[] | null | undefined) ?? null
+      );
     }
   }, [teamQuery.data]);
 
@@ -113,6 +128,19 @@ export default function Settings() {
       setAlwaysLockPC(prefsQuery.data.alwaysLockPitcherCatcher);
     }
   }, [prefsQuery.data]);
+
+  // Auto-scroll to the constraints section when arriving from the
+  // /constraints redirect (which appends the hash). Wouter doesn't do
+  // hash-scroll out of the box.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#constraints-section") return;
+    const el = document.getElementById("constraints-section");
+    if (el) {
+      // Defer one frame so the section has rendered.
+      requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth" }));
+    }
+  }, []);
 
   const teamLoading = teamQuery.isLoading;
   const prefsLoading = prefsQuery.isLoading;
@@ -132,9 +160,9 @@ export default function Settings() {
         teamName: name,
         teamShortName: short,
         battingStyle,
-        defaultAgeGroup: defaultAgeGroup.trim() || null,
-        defaultPitchRuleset:
-          defaultPitchRuleset === NO_DEFAULT ? null : defaultPitchRuleset,
+        defaultDailyPitchMax: parseOptionalInt(defaultDailyMax),
+        defaultTournamentPitchMax: parseOptionalInt(defaultTournamentMax),
+        defaultRestTiers,
       },
     });
   };
@@ -221,47 +249,57 @@ export default function Settings() {
             />
           </div>
 
-          <div className="rounded-lg border p-3 space-y-3">
+          <div className="rounded-lg border p-3 space-y-4">
             <div className="flex items-center gap-2">
               <Trophy className="h-4 w-4 text-purple-600" />
               <Label className="text-sm font-medium">Tournament defaults</Label>
             </div>
-            <p className="text-xs text-muted-foreground -mt-1">
-              Used when you create a new tournament — you can still override per tournament.
+            <p className="text-xs text-muted-foreground -mt-2">
+              Used to seed every new tournament — the coach can override per tournament. Leave blank for "no team default".
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="defaultAgeGroup" className="text-xs">Age group</Label>
+                <Label htmlFor="defaultDailyMax" className="text-xs">Pitches per day (max)</Label>
                 <Input
-                  id="defaultAgeGroup"
-                  value={defaultAgeGroup}
-                  onChange={(e) => setDefaultAgeGroup(e.target.value)}
-                  placeholder="e.g. 11-12U"
-                  maxLength={20}
+                  id="defaultDailyMax"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={500}
+                  value={defaultDailyMax}
+                  onChange={(e) => setDefaultDailyMax(e.target.value)}
+                  placeholder="e.g. 85"
                   disabled={teamLoading}
-                  data-testid="input-default-age-group"
+                  data-testid="input-default-daily-max"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="defaultPitchRuleset" className="text-xs">Pitch ruleset</Label>
-                <Select
-                  value={defaultPitchRuleset}
-                  onValueChange={setDefaultPitchRuleset}
+                <Label htmlFor="defaultTournamentMax" className="text-xs">Pitches per tournament (max)</Label>
+                <Input
+                  id="defaultTournamentMax"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={2000}
+                  value={defaultTournamentMax}
+                  onChange={(e) => setDefaultTournamentMax(e.target.value)}
+                  placeholder="e.g. 200"
                   disabled={teamLoading}
-                >
-                  <SelectTrigger id="defaultPitchRuleset" data-testid="select-default-pitch-ruleset">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_DEFAULT}>None (pick per tournament)</SelectItem>
-                    {PITCH_RULESET_OPTIONS.map((r) => (
-                      <SelectItem key={r.key} value={r.key}>
-                        {r.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  data-testid="input-default-tournament-max"
+                />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Rest tiers</Label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                After throwing X pitches in a single day, a pitcher must rest Y calendar days before pitching again.
+              </p>
+              <RestTiersEditor
+                value={defaultRestTiers}
+                onChange={setDefaultRestTiers}
+                disabled={teamLoading}
+                testIdPrefix="default-rest-tier"
+              />
             </div>
           </div>
 
@@ -414,6 +452,20 @@ export default function Settings() {
       </Card>
 
       {DEMO_SEED_ENABLED && <DemoDataCard />}
+
+      {/* Constraints — moved out of the sidebar and into Settings so all
+          team-wide rule configuration lives in one place. The /constraints
+          URL still works and redirects here. */}
+      <div id="constraints-section" className="scroll-mt-20 pt-2 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sliders className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-semibold tracking-tight">Constraints</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Lineup rules applied automatically whenever you generate a lineup.
+        </p>
+        <Constraints embedded />
+      </div>
     </div>
   );
 }

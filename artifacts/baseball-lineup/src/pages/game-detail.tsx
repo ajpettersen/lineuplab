@@ -2646,7 +2646,13 @@ export default function GameDetail() {
       )}
 
       {/* Pitch counts (always visible — works standalone or rolls into a tournament). */}
-      {game && <PitchCountsCard gameId={id} game={game} />}
+      {game && (
+        // id anchor lets the dashboard "pitch counts not logged" task
+        // deep-link straight to this card (#pitch-counts-card).
+        <div id="pitch-counts-card" className="scroll-mt-20">
+          <PitchCountsCard gameId={id} game={game} />
+        </div>
+      )}
 
       {/* "Always lock pitchers and catchers" prompt — fires when the coach
           enabled the preference in Settings and hits "Generate Lineup" while

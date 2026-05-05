@@ -21,6 +21,8 @@ import type {
   CreatePlayerBody,
   CreatePracticeBody,
   CreateTournamentBody,
+  DashboardTask,
+  DismissDashboardTaskBody,
   Game,
   GenerateLineupBody,
   GeneratePracticePlanBody,
@@ -2972,6 +2974,173 @@ export const useGeneratePracticePlan = <
   TContext
 > => {
   return useMutation(getGeneratePracticePlanMutationOptions(options));
+};
+
+/**
+ * Derives a fresh list at read time from games + pitch_counts, filtered
+against task_dismissals. Cap of 20 most recent. The list intentionally
+omits dismissed tasks so the dashboard quiets down for accounts the
+coach has triaged.
+
+ * @summary Open-task list for the coach dashboard (scores not logged, pitch counts missing)
+ */
+export const getListDashboardTasksUrl = () => {
+  return `/api/dashboard/tasks`;
+};
+
+export const listDashboardTasks = async (
+  options?: RequestInit,
+): Promise<DashboardTask[]> => {
+  return customFetch<DashboardTask[]>(getListDashboardTasksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDashboardTasksQueryKey = () => {
+  return [`/api/dashboard/tasks`] as const;
+};
+
+export const getListDashboardTasksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDashboardTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDashboardTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDashboardTasksQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDashboardTasks>>
+  > = ({ signal }) => listDashboardTasks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDashboardTasks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDashboardTasksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDashboardTasks>>
+>;
+export type ListDashboardTasksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Open-task list for the coach dashboard (scores not logged, pitch counts missing)
+ */
+
+export function useListDashboardTasks<
+  TData = Awaited<ReturnType<typeof listDashboardTasks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDashboardTasks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDashboardTasksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Permanently hide a (game, taskType) pair from the coach's task list
+ */
+export const getDismissDashboardTaskUrl = () => {
+  return `/api/dashboard/tasks/dismiss`;
+};
+
+export const dismissDashboardTask = async (
+  dismissDashboardTaskBody: DismissDashboardTaskBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDismissDashboardTaskUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dismissDashboardTaskBody),
+  });
+};
+
+export const getDismissDashboardTaskMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissDashboardTask>>,
+    TError,
+    { data: BodyType<DismissDashboardTaskBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissDashboardTask>>,
+  TError,
+  { data: BodyType<DismissDashboardTaskBody> },
+  TContext
+> => {
+  const mutationKey = ["dismissDashboardTask"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissDashboardTask>>,
+    { data: BodyType<DismissDashboardTaskBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return dismissDashboardTask(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissDashboardTaskMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissDashboardTask>>
+>;
+export type DismissDashboardTaskMutationBody =
+  BodyType<DismissDashboardTaskBody>;
+export type DismissDashboardTaskMutationError = ErrorType<void>;
+
+/**
+ * @summary Permanently hide a (game, taskType) pair from the coach's task list
+ */
+export const useDismissDashboardTask = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissDashboardTask>>,
+    TError,
+    { data: BodyType<DismissDashboardTaskBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissDashboardTask>>,
+  TError,
+  { data: BodyType<DismissDashboardTaskBody> },
+  TContext
+> => {
+  return useMutation(getDismissDashboardTaskMutationOptions(options));
 };
 
 /**

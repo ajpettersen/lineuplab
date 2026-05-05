@@ -8,8 +8,8 @@ import {
   playersTable,
   teamSettingsTable,
   computePitcherAvailability,
-  getRulesetOrDefault,
   type Tournament,
+  type RestTier,
 } from "@workspace/db";
 import {
   CreateTournamentBody,
@@ -36,7 +36,6 @@ router.get("/tournaments", async (req, res): Promise<void> => {
 
   const tournamentIds = tournaments.map((t) => t.id);
 
-  // Per-tournament rollup: game count + pitchers used + total pitches.
   const gameCountRows = await db
     .select({
       tournamentId: gamesTable.tournamentId,
@@ -102,8 +101,9 @@ router.post("/tournaments", async (req, res): Promise<void> => {
       endDate: new Date(d.endDate),
       location: d.location ?? null,
       notes: d.notes ?? null,
-      pitchCountRuleset: d.pitchCountRuleset ?? null,
       dailyPitchMax: d.dailyPitchMax ?? null,
+      tournamentPitchMax: d.tournamentPitchMax ?? null,
+      restTiers: (d.restTiers ?? null) as RestTier[] | null,
     })
     .returning();
   res.status(201).json(inserted);
@@ -130,17 +130,19 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Resolve effective ruleset: tournament override > team default > app default.
+  // Resolve effective rules: per-tournament value wins, falls back to
+  // team default, falls back to null/empty (no enforcement).
   const [settings] = await db
     .select()
     .from(teamSettingsTable)
     .where(eq(teamSettingsTable.userId, userId));
-  const rulesetKey =
-    tournament.pitchCountRuleset ?? settings?.defaultPitchRuleset ?? null;
-  const ruleset = getRulesetOrDefault(rulesetKey);
-  const effectiveDailyMax = tournament.dailyPitchMax ?? ruleset.dailyMax;
+  const effectiveDailyMax =
+    tournament.dailyPitchMax ?? settings?.defaultDailyPitchMax ?? null;
+  const effectiveTournamentMax =
+    tournament.tournamentPitchMax ?? settings?.defaultTournamentPitchMax ?? null;
+  const effectiveRestTiers: RestTier[] =
+    tournament.restTiers ?? settings?.defaultRestTiers ?? [];
 
-  // Games in this tournament.
   const games = await db
     .select()
     .from(gamesTable)
@@ -149,7 +151,6 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     )
     .orderBy(gamesTable.gameDate);
 
-  // Pitch counts for those games.
   const gameIds = games.map((g) => g.id);
   const counts =
     gameIds.length === 0
@@ -164,15 +165,11 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
             ),
           );
 
-  // All pitchers on the team — surface availability for everyone the
-  // coach might play, not just those with recorded outings, so the
-  // tournament view doubles as a "who can pitch tomorrow" reference.
   const pitchers = await db
     .select()
     .from(playersTable)
     .where(and(eq(playersTable.userId, userId), eq(playersTable.canPitch, true)));
 
-  // Index counts by player.
   const gameById = new Map(games.map((g) => [g.id, g]));
   const outingsByPlayer = new Map<
     number,
@@ -191,8 +188,8 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     const outings = outingsByPlayer.get(p.id) ?? [];
     const total = outings.reduce((s, o) => s + o.pitches, 0);
     const avail = computePitcherAvailability({
-      ruleset,
-      dailyMaxOverride: tournament.dailyPitchMax ?? null,
+      dailyMax: effectiveDailyMax,
+      restTiers: effectiveRestTiers.length > 0 ? effectiveRestTiers : null,
       outings,
       now,
     });
@@ -202,7 +199,13 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
       playerNumber: p.number,
       totalPitchesInTournament: total,
       pitchesToday: avail.pitchesToday,
-      pitchesAvailableToday: avail.pitchesAvailableToday,
+      // Coerce Infinity → null in the wire payload (JSON can't carry it,
+      // and `0` would lie — "no cap" must NOT read as "no pitches left").
+      // Clients render this as "—" when null.
+      pitchesAvailableToday:
+        avail.pitchesAvailableToday === Infinity
+          ? null
+          : avail.pitchesAvailableToday,
       dailyMax: avail.dailyMax,
       restingUntil: avail.restingUntil,
       outings,
@@ -213,8 +216,9 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     ...tournament,
     games,
     pitcherAvailability,
-    effectiveRuleset: ruleset.key,
     effectiveDailyMax,
+    effectiveTournamentMax,
+    effectiveRestTiers,
   });
 });
 
@@ -237,9 +241,10 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
   if (d.endDate !== undefined) updates.endDate = new Date(d.endDate);
   if (d.location !== undefined) updates.location = d.location;
   if (d.notes !== undefined) updates.notes = d.notes;
-  if (d.pitchCountRuleset !== undefined)
-    updates.pitchCountRuleset = d.pitchCountRuleset;
   if (d.dailyPitchMax !== undefined) updates.dailyPitchMax = d.dailyPitchMax;
+  if (d.tournamentPitchMax !== undefined)
+    updates.tournamentPitchMax = d.tournamentPitchMax;
+  if (d.restTiers !== undefined) updates.restTiers = d.restTiers;
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No fields provided" });
@@ -270,8 +275,6 @@ router.delete("/tournaments/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  // Detach games first (don't cascade-delete a coach's games when they
-  // delete a tournament container — the games are still meaningful).
   await db.transaction(async (tx) => {
     await tx
       .update(gamesTable)

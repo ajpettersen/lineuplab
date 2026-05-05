@@ -676,7 +676,7 @@ export default function Stats() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold">Season Stats</h1>
+        <h1 className="text-3xl font-bold">Rotation Report</h1>
         <p className="text-muted-foreground mt-1">Playing time, position fairness, and offensive stats</p>
       </div>
 

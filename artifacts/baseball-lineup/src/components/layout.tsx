@@ -7,7 +7,6 @@ import {
   BarChart2,
   Menu,
   Shield,
-  SlidersHorizontal,
   Settings as SettingsIcon,
   LogOut,
   Trophy,
@@ -33,14 +32,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   }, [teamName]);
 
+  // Sidebar order chosen by the coach: dashboard first, then schedule
+  // (the most-touched coaching surface), then the analysis view, then the
+  // people/teams views, then settings (now also home to the Constraints
+  // editor, so it doesn't get its own top-level nav slot anymore).
   const navItems = [
     { href: "/", label: "Dashboard", icon: Home },
-    { href: "/players", label: "Roster", icon: Users },
     { href: "/games", label: "Schedule", icon: CalendarDays },
+    { href: "/stats", label: "Rotation Report", icon: BarChart2 },
+    { href: "/players", label: "Roster", icon: Users },
     { href: "/tournaments", label: "Tournaments", icon: Trophy },
     { href: "/practices", label: "Practices", icon: Clipboard },
-    { href: "/stats", label: "Season Stats", icon: BarChart2 },
-    { href: "/constraints", label: "Constraints", icon: SlidersHorizontal },
     { href: "/settings", label: "Settings", icon: SettingsIcon },
   ];
 

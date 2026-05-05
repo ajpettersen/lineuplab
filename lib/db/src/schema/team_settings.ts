@@ -1,10 +1,13 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 /**
- * Per-coach team branding. One row per Clerk user. Drives the displayed team
- * name across the header, page title, and printed lineup cards.
+ * Per-coach team branding + tournament defaults. One row per Clerk user.
+ * Drives the displayed team name across the header, page title, and
+ * printed lineup cards. Tournament fields seed the per-tournament forms
+ * so a coach who runs the same age group all season doesn't have to
+ * re-type pitch limits each weekend.
  *
  * Created lazily the first time a user hits the /api/team-settings or
  * /api/preferences endpoints (or any flow that needs the team name).
@@ -23,28 +26,39 @@ export const teamSettingsTable = pgTable("team_settings", {
    */
   battingStyle: text("batting_style").notNull().default("continuous"),
   /**
-   * Default pitch-count ruleset key for new tournaments / per-game
-   * pitch tracking. Examples: "littleLeague_7_8", "littleLeague_9_10",
-   * "littleLeague_11_12", "littleLeague_13_16". See `pitch-rules.ts`
-   * for the catalog. Null = no default (UI will prompt on first use).
+   * Default per-day pitch maximum for new tournaments. Coach can still
+   * override per-tournament. Null = no team default; per-tournament
+   * value is required if the coach wants daily-cap warnings.
    */
-  defaultPitchRuleset: text("default_pitch_ruleset"),
+  defaultDailyPitchMax: integer("default_daily_pitch_max"),
   /**
-   * Free-text age group label (e.g. "10U", "11-12U", "14U travel").
-   * Surfaces on team settings + tournament defaults so a coach who
-   * coaches multiple ages doesn't have to re-pick rules each tournament.
+   * Default cap on total pitches across an entire tournament weekend
+   * (sum of every game). Useful for AAU/showcase formats that publish
+   * a weekend cap on top of the daily cap. Null = no team default.
    */
-  defaultAgeGroup: text("default_age_group"),
+  defaultTournamentPitchMax: integer("default_tournament_pitch_max"),
+  /**
+   * Default rest tiers. Each tier maps a single-day pitch total to the
+   * required calendar days of rest before the player can pitch again.
+   * Order ascending by `maxPitches`; the catch-all tier should set
+   * `maxPitches` to a very large number (e.g. 999) so any total over
+   * the highest published tier still maps to a rest count.
+   * Null = no team default.
+   */
+  defaultRestTiers: jsonb("default_rest_tiers").$type<RestTier[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type RestTier = { maxPitches: number; daysRest: number };
 
 export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pick({
   teamName: true,
   teamShortName: true,
   battingStyle: true,
-  defaultPitchRuleset: true,
-  defaultAgeGroup: true,
+  defaultDailyPitchMax: true,
+  defaultTournamentPitchMax: true,
+  defaultRestTiers: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

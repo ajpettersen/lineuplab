@@ -1,6 +1,7 @@
-import { pgTable, text, serial, timestamp, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import type { RestTier } from "./team_settings";
 
 /**
  * A coach-named container for a multi-game tournament weekend (e.g.
@@ -9,9 +10,11 @@ import { z } from "zod/v4";
  * totals across the weekend and show "pitches available today" given
  * what each player has thrown earlier in the same tournament.
  *
- * Pitch count rules are stored per-tournament so a coach can run e.g.
- * a USSSA tournament one weekend and a Little League tournament the
- * next without re-configuring.
+ * Pitch-count rules are stored as free-form fields per-tournament so a
+ * coach can transcribe whatever the tournament publishes (some run
+ * Little League rules, some publish their own caps and rest tiers).
+ * Each field falls back to the matching team-settings default when
+ * null — see `routes/tournaments.ts` for the resolution.
  */
 export const tournamentsTable = pgTable(
   "tournaments",
@@ -24,19 +27,21 @@ export const tournamentsTable = pgTable(
     location: text("location"),
     notes: text("notes"),
     /**
-     * Identifier for the bundled pitch-rule set to apply. See
-     * `pitch-rules.ts` for the catalog. Null = inherit team default.
-     * Examples: "littleLeague_7_8", "littleLeague_9_10",
-     * "littleLeague_11_12", "littleLeague_13_16".
-     */
-    pitchCountRuleset: text("pitch_count_ruleset"),
-    /**
-     * Override for the daily-pitch maximum from the ruleset. Useful
-     * when a specific tournament publishes a stricter local rule
-     * (e.g. "max 75 today regardless of age" for a marathon weekend).
-     * Null = use the ruleset's default daily max.
+     * Maximum pitches per pitcher per calendar day. Null = inherit
+     * the team default; if the team has no default either, daily-cap
+     * warnings are disabled (the UI still shows totals).
      */
     dailyPitchMax: integer("daily_pitch_max"),
+    /**
+     * Maximum pitches per pitcher across the entire tournament. Null =
+     * inherit team default; null on both = no tournament-wide cap.
+     */
+    tournamentPitchMax: integer("tournament_pitch_max"),
+    /**
+     * Rest tiers (pitches → days rest). Null = inherit team default;
+     * null on both = no rest enforcement.
+     */
+    restTiers: jsonb("rest_tiers").$type<RestTier[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("tournaments_user_id_idx").on(table.userId)],

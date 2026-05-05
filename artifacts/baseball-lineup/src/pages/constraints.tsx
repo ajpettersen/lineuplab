@@ -755,7 +755,12 @@ function AiRuleInput({ players, onAdd }: { players: { id: number; name: string }
 }
 
 // ---- Main page ----
-export default function Constraints() {
+//
+// Rendered both as a standalone page and embedded inside Settings. When
+// embedded, we skip the outer page header (Settings provides its own
+// section heading) and the wrapper max-width (Settings already sets the
+// column width).
+export default function Constraints({ embedded = false }: { embedded?: boolean } = {}) {
   const qc = useQueryClient();
   const { data: constraints = [] } = useConstraints();
   const { data: players = [] } = useListPlayers();
@@ -778,11 +783,13 @@ export default function Constraints() {
   const aiConstraints = constraints.filter((c) => CONSTRAINT_CATEGORY[c.type] === "ai");
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <h1 className="text-3xl font-bold">Lineup Constraints</h1>
-        <p className="text-muted-foreground mt-1">Rules applied automatically whenever you generate a lineup</p>
-      </div>
+    <div className={embedded ? "flex flex-col gap-6" : "flex flex-col gap-6 max-w-3xl"}>
+      {!embedded && (
+        <div>
+          <h1 className="text-3xl font-bold">Lineup Constraints</h1>
+          <p className="text-muted-foreground mt-1">Rules applied automatically whenever you generate a lineup</p>
+        </div>
+      )}
 
       {/* Fairness dial */}
       <FairnessSection constraints={constraints} onRefresh={refresh} />

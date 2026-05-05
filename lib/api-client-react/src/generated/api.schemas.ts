@@ -280,6 +280,57 @@ export interface PlayerStats {
   inningsPitched: number;
 }
 
+export type DashboardTaskType =
+  (typeof DashboardTaskType)[keyof typeof DashboardTaskType];
+
+export const DashboardTaskType = {
+  score: "score",
+  pitch_counts: "pitch_counts",
+} as const;
+
+/**
+ * An open coaching task surfaced on the dashboard.
+ */
+export interface DashboardTask {
+  /** Stable composite key — `<gameId>:<taskType>`. */
+  id: string;
+  type: DashboardTaskType;
+  gameId: number;
+  gameDate: string;
+  opponent: string;
+  /** Relative path the Open button should navigate to (already includes any deep-link hash). */
+  link: string;
+}
+
+export type DismissDashboardTaskBodyTaskType =
+  (typeof DismissDashboardTaskBodyTaskType)[keyof typeof DismissDashboardTaskBodyTaskType];
+
+export const DismissDashboardTaskBodyTaskType = {
+  score: "score",
+  pitch_counts: "pitch_counts",
+} as const;
+
+export interface DismissDashboardTaskBody {
+  gameId: number;
+  taskType: DismissDashboardTaskBodyTaskType;
+}
+
+/**
+ * One row of the rest-tier ladder (pitches → required days rest).
+ */
+export interface RestTier {
+  /**
+   * Inclusive upper bound of pitch totals this tier covers.
+   * @minimum 0
+   */
+  maxPitches: number;
+  /**
+   * Required calendar days of rest before pitching again.
+   * @minimum 0
+   */
+  daysRest: number;
+}
+
 /**
  * Continuous = every player on the roster bats. Nine-man = only the
 top 9 batters get a slot in the order.
@@ -302,15 +353,17 @@ top 9 batters get a slot in the order.
  */
   battingStyle: TeamSettingsBattingStyle;
   /**
-   * Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.
+   * Default per-pitcher daily cap for new tournaments.
    * @nullable
    */
-  defaultPitchRuleset?: string | null;
+  defaultDailyPitchMax?: number | null;
   /**
-   * Free-text team age group label (e.g. "10U", "11-12U").
+   * Default per-pitcher cap across an entire tournament weekend.
    * @nullable
    */
-  defaultAgeGroup?: string | null;
+  defaultTournamentPitchMax?: number | null;
+  /** Default rest-tier ladder applied to new tournaments. */
+  defaultRestTiers?: null | RestTier[];
   createdAt: string;
   updatedAt: string;
 }
@@ -336,9 +389,10 @@ export interface UpdateTeamSettingsBody {
   teamShortName?: string;
   battingStyle?: UpdateTeamSettingsBodyBattingStyle;
   /** @nullable */
-  defaultPitchRuleset?: string | null;
+  defaultDailyPitchMax?: number | null;
   /** @nullable */
-  defaultAgeGroup?: string | null;
+  defaultTournamentPitchMax?: number | null;
+  defaultRestTiers?: null | RestTier[];
 }
 
 export interface UserPreferences {
@@ -376,15 +430,17 @@ export interface Tournament {
   /** @nullable */
   notes?: string | null;
   /**
-   * Ruleset key (see pitch-rules catalog). Null = inherit team default.
-   * @nullable
-   */
-  pitchCountRuleset?: string | null;
-  /**
-   * Override daily pitch maximum. Null = use ruleset default.
+   * Per-pitcher daily cap for this tournament. Null = inherit team default.
    * @nullable
    */
   dailyPitchMax?: number | null;
+  /**
+   * Per-pitcher cap across the whole tournament. Null = inherit team default.
+   * @nullable
+   */
+  tournamentPitchMax?: number | null;
+  /** Rest tiers for this tournament. Null = inherit team default. */
+  restTiers?: null | RestTier[];
   createdAt: string;
 }
 
@@ -419,8 +475,19 @@ export interface PitcherAvailability {
   playerNumber?: number | null;
   totalPitchesInTournament: number;
   pitchesToday: number;
-  pitchesAvailableToday: number;
-  dailyMax: number;
+  /**
+   * Pitches the pitcher may still throw today under the resolved daily cap.
+Null when no daily cap is configured (unlimited) — the UI should render
+this as "—" / "no cap" rather than zero. Otherwise an integer >= 0.
+
+   * @nullable
+   */
+  pitchesAvailableToday: number | null;
+  /**
+   * Resolved daily cap for this tournament. Null = no cap configured.
+   * @nullable
+   */
+  dailyMax: number | null;
   restingUntil?: PitcherAvailabilityRestingUntil;
   outings: PitcherAvailabilityOutingsItem[];
 }
@@ -428,10 +495,18 @@ export interface PitcherAvailability {
 export type TournamentDetail = Tournament & {
   games: Game[];
   pitcherAvailability: PitcherAvailability[];
-  /** Ruleset key actually applied (after fallback to team default) */
-  effectiveRuleset: string;
-  /** Daily pitch max actually applied (after override + ruleset fallback) */
-  effectiveDailyMax: number;
+  /**
+   * Resolved per-pitcher daily cap (tournament > team default > null).
+   * @nullable
+   */
+  effectiveDailyMax: number | null;
+  /**
+   * Resolved per-pitcher tournament cap.
+   * @nullable
+   */
+  effectiveTournamentMax: number | null;
+  /** Resolved rest tiers (empty array = no rest enforcement). */
+  effectiveRestTiers: RestTier[];
 };
 
 export interface CreateTournamentBody {
@@ -447,9 +522,10 @@ export interface CreateTournamentBody {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
-  pitchCountRuleset?: string | null;
-  /** @nullable */
   dailyPitchMax?: number | null;
+  /** @nullable */
+  tournamentPitchMax?: number | null;
+  restTiers?: null | RestTier[];
 }
 
 export interface UpdateTournamentBody {
@@ -465,9 +541,10 @@ export interface UpdateTournamentBody {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
-  pitchCountRuleset?: string | null;
-  /** @nullable */
   dailyPitchMax?: number | null;
+  /** @nullable */
+  tournamentPitchMax?: number | null;
+  restTiers?: null | RestTier[];
 }
 
 export interface PitchCount {

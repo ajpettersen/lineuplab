@@ -25,7 +25,6 @@ import Practices from "@/pages/practices";
 import PracticeDetail from "@/pages/practice-detail";
 import FieldDisplay from "@/pages/field-display";
 import Stats from "@/pages/stats";
-import Constraints from "@/pages/constraints";
 import Settings from "@/pages/settings";
 import Join from "@/pages/join";
 import NotFound from "@/pages/not-found";
@@ -248,7 +247,10 @@ function ProtectedApp() {
                 <Route path="/practices/:id" component={PracticeDetail} />
                 <Route path="/practices" component={Practices} />
                 <Route path="/stats" component={Stats} />
-                <Route path="/constraints" component={Constraints} />
+                {/* Constraints lives inside Settings now — keep the old URL alive for bookmarks. */}
+                <Route path="/constraints">
+                  <Redirect to="/settings#constraints-section" />
+                </Route>
                 <Route path="/settings" component={Settings} />
                 <Route component={NotFound} />
               </Switch>

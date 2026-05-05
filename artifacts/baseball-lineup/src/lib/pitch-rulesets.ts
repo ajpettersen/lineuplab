@@ -1,42 +1,25 @@
 /**
- * Display catalog of pitch-count rulesets, mirrored from the server's
- * authoritative `lib/db/src/schema/pitch-rules.ts`. We can't import the
- * server module directly because `@workspace/db` eagerly opens a pg
- * connection at module load. The actual rule MATH lives server-side —
- * this is just the label/dailyMax pair the UI needs to render selects
- * and budget summaries.
+ * Free-form pitch-rule helpers for the UI. Mirrors the server-side
+ * `STANDARD_REST_TIERS` template — kept here as a static constant so
+ * the UI doesn't need a network round-trip to load Little League's
+ * standard tiers.
  *
- * Keep in sync with the server file. The set rarely changes (these are
- * Little League's standardized tiers).
+ * The actual availability math lives server-side in `pitch-rules.ts`;
+ * the UI only consumes resolved `{dailyMax, restTiers}` from the
+ * tournament detail endpoint.
  */
-export type PitchRulesetMeta = {
-  key: string;
-  label: string;
-  dailyMax: number;
-};
+export type RestTier = { maxPitches: number; daysRest: number };
 
-export const PITCH_RULESETS: Record<string, PitchRulesetMeta> = {
-  littleLeague_7_8: {
-    key: "littleLeague_7_8",
-    label: "Little League 7-8U (50/day)",
-    dailyMax: 50,
-  },
-  littleLeague_9_10: {
-    key: "littleLeague_9_10",
-    label: "Little League 9-10U (75/day)",
-    dailyMax: 75,
-  },
-  littleLeague_11_12: {
-    key: "littleLeague_11_12",
-    label: "Little League 11-12U (85/day)",
-    dailyMax: 85,
-  },
-  littleLeague_13_16: {
-    key: "littleLeague_13_16",
-    label: "Little League 13-16U (95/day)",
-    dailyMax: 95,
-  },
-};
-
-export const PITCH_RULESET_OPTIONS = Object.values(PITCH_RULESETS);
-export const DEFAULT_PITCH_RULESET = "littleLeague_11_12";
+/**
+ * Little League's published rest tiers. Used as the "Use standard
+ * rest tiers" template button in Settings + tournament edit dialogs.
+ * Note: the catch-all tier uses 999 instead of Infinity so the value
+ * survives JSON serialization.
+ */
+export const STANDARD_REST_TIERS: RestTier[] = [
+  { maxPitches: 20, daysRest: 0 },
+  { maxPitches: 35, daysRest: 1 },
+  { maxPitches: 50, daysRest: 2 },
+  { maxPitches: 65, daysRest: 3 },
+  { maxPitches: 999, daysRest: 4 },
+];

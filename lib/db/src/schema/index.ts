@@ -16,3 +16,4 @@ export * from "./pitch_counts";
 export * from "./pitch-rules";
 export * from "./practices";
 export * from "./practice_attendance";
+export * from "./task_dismissals";

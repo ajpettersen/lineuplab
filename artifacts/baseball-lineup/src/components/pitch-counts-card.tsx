@@ -210,8 +210,12 @@ export function PitchCountsCard({ gameId, game }: Props) {
               >
                 {tournamentQuery.data.name}
               </Link>
-              <span>·</span>
-              <span>Daily max {dailyMax}</span>
+              {dailyMax != null && (
+                <>
+                  <span>·</span>
+                  <span>Daily max {dailyMax}</span>
+                </>
+              )}
             </p>
           )}
           {tournamentId == null && (
@@ -255,7 +259,7 @@ export function PitchCountsCard({ gameId, game }: Props) {
                     <span>
                       Today: <span className={exceeded ? "text-red-600 font-semibold" : ""}>
                         {liveToday}
-                      </span>{dailyMax != null && <> / {dailyMax}</>}
+                      </span>{dailyMax != null ? <> / {dailyMax}</> : null}
                     </span>
                     <span>Tournament total: {avail.totalPitchesInTournament + (draftNum - (saved?.pitches ?? 0))}</span>
                   </div>

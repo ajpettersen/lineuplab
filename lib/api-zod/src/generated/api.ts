@@ -628,6 +628,10 @@ export const GetPlayerStatsResponse = zod.array(GetPlayerStatsResponseItem);
 /**
  * @summary Get the current coach's team branding (auto-creates defaults on first read)
  */
+export const getTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
+
+export const getTeamSettingsResponseDefaultRestTiersTwoItemDaysRestMin = 0;
+
 export const GetTeamSettingsResponse = zod.object({
   userId: zod.string(),
   teamName: zod.string(),
@@ -637,16 +641,40 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
     ),
-  defaultPitchRuleset: zod
-    .string()
+  defaultDailyPitchMax: zod
+    .number()
     .nullish()
-    .describe(
-      "Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.",
-    ),
-  defaultAgeGroup: zod
-    .string()
+    .describe("Default per-pitcher daily cap for new tournaments."),
+  defaultTournamentPitchMax: zod
+    .number()
     .nullish()
-    .describe('Free-text team age group label (e.g. \"10U\", \"11-12U\").'),
+    .describe("Default per-pitcher cap across an entire tournament weekend."),
+  defaultRestTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(getTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin)
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(getTeamSettingsResponseDefaultRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional()
+    .describe("Default rest-tier ladder applied to new tournaments."),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -657,6 +685,10 @@ export const GetTeamSettingsResponse = zod.object({
 export const updateTeamSettingsBodyTeamNameMax = 80;
 
 export const updateTeamSettingsBodyTeamShortNameMax = 20;
+
+export const updateTeamSettingsBodyDefaultRestTiersTwoItemMaxPitchesMin = 0;
+
+export const updateTeamSettingsBodyDefaultRestTiersTwoItemDaysRestMin = 0;
 
 export const UpdateTeamSettingsBody = zod.object({
   teamName: zod
@@ -670,9 +702,38 @@ export const UpdateTeamSettingsBody = zod.object({
     .max(updateTeamSettingsBodyTeamShortNameMax)
     .optional(),
   battingStyle: zod.enum(["continuous", "nine_man"]).optional(),
-  defaultPitchRuleset: zod.string().nullish(),
-  defaultAgeGroup: zod.string().nullish(),
+  defaultDailyPitchMax: zod.number().nullish(),
+  defaultTournamentPitchMax: zod.number().nullish(),
+  defaultRestTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(updateTeamSettingsBodyDefaultRestTiersTwoItemMaxPitchesMin)
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(updateTeamSettingsBodyDefaultRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional(),
 });
+
+export const updateTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
+
+export const updateTeamSettingsResponseDefaultRestTiersTwoItemDaysRestMin = 0;
 
 export const UpdateTeamSettingsResponse = zod.object({
   userId: zod.string(),
@@ -683,16 +744,42 @@ export const UpdateTeamSettingsResponse = zod.object({
     .describe(
       "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
     ),
-  defaultPitchRuleset: zod
-    .string()
+  defaultDailyPitchMax: zod
+    .number()
     .nullish()
-    .describe(
-      "Default pitch-count ruleset key for new tournaments. See pitch-rules.ts catalog.",
-    ),
-  defaultAgeGroup: zod
-    .string()
+    .describe("Default per-pitcher daily cap for new tournaments."),
+  defaultTournamentPitchMax: zod
+    .number()
     .nullish()
-    .describe('Free-text team age group label (e.g. \"10U\", \"11-12U\").'),
+    .describe("Default per-pitcher cap across an entire tournament weekend."),
+  defaultRestTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(
+                updateTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin,
+              )
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(updateTeamSettingsResponseDefaultRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional()
+    .describe("Default rest-tier ladder applied to new tournaments."),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -700,6 +787,10 @@ export const UpdateTeamSettingsResponse = zod.object({
 /**
  * @summary List the coach's tournaments (most recent first)
  */
+export const listTournamentsResponseOneRestTiersTwoItemMaxPitchesMin = 0;
+
+export const listTournamentsResponseOneRestTiersTwoItemDaysRestMin = 0;
+
 export const ListTournamentsResponseItem = zod
   .object({
     id: zod.number(),
@@ -708,16 +799,44 @@ export const ListTournamentsResponseItem = zod
     endDate: zod.coerce.date(),
     location: zod.string().nullish(),
     notes: zod.string().nullish(),
-    pitchCountRuleset: zod
-      .string()
-      .nullish()
-      .describe(
-        "Ruleset key (see pitch-rules catalog). Null = inherit team default.",
-      ),
     dailyPitchMax: zod
       .number()
       .nullish()
-      .describe("Override daily pitch maximum. Null = use ruleset default."),
+      .describe(
+        "Per-pitcher daily cap for this tournament. Null = inherit team default.",
+      ),
+    tournamentPitchMax: zod
+      .number()
+      .nullish()
+      .describe(
+        "Per-pitcher cap across the whole tournament. Null = inherit team default.",
+      ),
+    restTiers: zod
+      .union([
+        zod.null(),
+        zod.array(
+          zod
+            .object({
+              maxPitches: zod
+                .number()
+                .min(listTournamentsResponseOneRestTiersTwoItemMaxPitchesMin)
+                .describe(
+                  "Inclusive upper bound of pitch totals this tier covers.",
+                ),
+              daysRest: zod
+                .number()
+                .min(listTournamentsResponseOneRestTiersTwoItemDaysRestMin)
+                .describe(
+                  "Required calendar days of rest before pitching again.",
+                ),
+            })
+            .describe(
+              "One row of the rest-tier ladder (pitches → required days rest).",
+            ),
+        ),
+      ])
+      .optional()
+      .describe("Rest tiers for this tournament. Null = inherit team default."),
     createdAt: zod.coerce.date(),
   })
   .and(
@@ -740,14 +859,43 @@ export const ListTournamentsResponse = zod.array(ListTournamentsResponseItem);
  */
 export const createTournamentBodyNameMax = 120;
 
+export const createTournamentBodyRestTiersTwoItemMaxPitchesMin = 0;
+
+export const createTournamentBodyRestTiersTwoItemDaysRestMin = 0;
+
 export const CreateTournamentBody = zod.object({
   name: zod.string().min(1).max(createTournamentBodyNameMax),
   startDate: zod.coerce.date(),
   endDate: zod.coerce.date(),
   location: zod.string().nullish(),
   notes: zod.string().nullish(),
-  pitchCountRuleset: zod.string().nullish(),
   dailyPitchMax: zod.number().nullish(),
+  tournamentPitchMax: zod.number().nullish(),
+  restTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(createTournamentBodyRestTiersTwoItemMaxPitchesMin)
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(createTournamentBodyRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional(),
 });
 
 /**
@@ -757,6 +905,14 @@ export const GetTournamentParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const getTournamentResponseOneRestTiersTwoItemMaxPitchesMin = 0;
+
+export const getTournamentResponseOneRestTiersTwoItemDaysRestMin = 0;
+
+export const getTournamentResponseTwoEffectiveRestTiersItemMaxPitchesMin = 0;
+
+export const getTournamentResponseTwoEffectiveRestTiersItemDaysRestMin = 0;
+
 export const GetTournamentResponse = zod
   .object({
     id: zod.number(),
@@ -765,16 +921,44 @@ export const GetTournamentResponse = zod
     endDate: zod.coerce.date(),
     location: zod.string().nullish(),
     notes: zod.string().nullish(),
-    pitchCountRuleset: zod
-      .string()
-      .nullish()
-      .describe(
-        "Ruleset key (see pitch-rules catalog). Null = inherit team default.",
-      ),
     dailyPitchMax: zod
       .number()
       .nullish()
-      .describe("Override daily pitch maximum. Null = use ruleset default."),
+      .describe(
+        "Per-pitcher daily cap for this tournament. Null = inherit team default.",
+      ),
+    tournamentPitchMax: zod
+      .number()
+      .nullish()
+      .describe(
+        "Per-pitcher cap across the whole tournament. Null = inherit team default.",
+      ),
+    restTiers: zod
+      .union([
+        zod.null(),
+        zod.array(
+          zod
+            .object({
+              maxPitches: zod
+                .number()
+                .min(getTournamentResponseOneRestTiersTwoItemMaxPitchesMin)
+                .describe(
+                  "Inclusive upper bound of pitch totals this tier covers.",
+                ),
+              daysRest: zod
+                .number()
+                .min(getTournamentResponseOneRestTiersTwoItemDaysRestMin)
+                .describe(
+                  "Required calendar days of rest before pitching again.",
+                ),
+            })
+            .describe(
+              "One row of the rest-tier ladder (pitches → required days rest).",
+            ),
+        ),
+      ])
+      .optional()
+      .describe("Rest tiers for this tournament. Null = inherit team default."),
     createdAt: zod.coerce.date(),
   })
   .and(
@@ -845,8 +1029,18 @@ export const GetTournamentResponse = zod
             playerNumber: zod.number().nullish(),
             totalPitchesInTournament: zod.number(),
             pitchesToday: zod.number(),
-            pitchesAvailableToday: zod.number(),
-            dailyMax: zod.number(),
+            pitchesAvailableToday: zod
+              .number()
+              .nullable()
+              .describe(
+                'Pitches the pitcher may still throw today under the resolved daily cap.\nNull when no daily cap is configured (unlimited) — the UI should render\nthis as \"—\" \/ \"no cap\" rather than zero. Otherwise an integer >= 0.\n',
+              ),
+            dailyMax: zod
+              .number()
+              .nullable()
+              .describe(
+                "Resolved daily cap for this tournament. Null = no cap configured.",
+              ),
             restingUntil: zod
               .union([
                 zod.null(),
@@ -870,16 +1064,40 @@ export const GetTournamentResponse = zod
             "Per-player pitch totals + remaining-today availability for a tournament.",
           ),
       ),
-      effectiveRuleset: zod
-        .string()
-        .describe(
-          "Ruleset key actually applied (after fallback to team default)",
-        ),
       effectiveDailyMax: zod
         .number()
+        .nullable()
         .describe(
-          "Daily pitch max actually applied (after override + ruleset fallback)",
+          "Resolved per-pitcher daily cap (tournament > team default > null).",
         ),
+      effectiveTournamentMax: zod
+        .number()
+        .nullable()
+        .describe("Resolved per-pitcher tournament cap."),
+      effectiveRestTiers: zod
+        .array(
+          zod
+            .object({
+              maxPitches: zod
+                .number()
+                .min(
+                  getTournamentResponseTwoEffectiveRestTiersItemMaxPitchesMin,
+                )
+                .describe(
+                  "Inclusive upper bound of pitch totals this tier covers.",
+                ),
+              daysRest: zod
+                .number()
+                .min(getTournamentResponseTwoEffectiveRestTiersItemDaysRestMin)
+                .describe(
+                  "Required calendar days of rest before pitching again.",
+                ),
+            })
+            .describe(
+              "One row of the rest-tier ladder (pitches → required days rest).",
+            ),
+        )
+        .describe("Resolved rest tiers (empty array = no rest enforcement)."),
     }),
   );
 
@@ -892,15 +1110,48 @@ export const UpdateTournamentParams = zod.object({
 
 export const updateTournamentBodyNameMax = 120;
 
+export const updateTournamentBodyRestTiersTwoItemMaxPitchesMin = 0;
+
+export const updateTournamentBodyRestTiersTwoItemDaysRestMin = 0;
+
 export const UpdateTournamentBody = zod.object({
   name: zod.string().min(1).max(updateTournamentBodyNameMax).optional(),
   startDate: zod.coerce.date().optional(),
   endDate: zod.coerce.date().optional(),
   location: zod.string().nullish(),
   notes: zod.string().nullish(),
-  pitchCountRuleset: zod.string().nullish(),
   dailyPitchMax: zod.number().nullish(),
+  tournamentPitchMax: zod.number().nullish(),
+  restTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(updateTournamentBodyRestTiersTwoItemMaxPitchesMin)
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(updateTournamentBodyRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional(),
 });
+
+export const updateTournamentResponseRestTiersTwoItemMaxPitchesMin = 0;
+
+export const updateTournamentResponseRestTiersTwoItemDaysRestMin = 0;
 
 export const UpdateTournamentResponse = zod.object({
   id: zod.number(),
@@ -909,16 +1160,44 @@ export const UpdateTournamentResponse = zod.object({
   endDate: zod.coerce.date(),
   location: zod.string().nullish(),
   notes: zod.string().nullish(),
-  pitchCountRuleset: zod
-    .string()
-    .nullish()
-    .describe(
-      "Ruleset key (see pitch-rules catalog). Null = inherit team default.",
-    ),
   dailyPitchMax: zod
     .number()
     .nullish()
-    .describe("Override daily pitch maximum. Null = use ruleset default."),
+    .describe(
+      "Per-pitcher daily cap for this tournament. Null = inherit team default.",
+    ),
+  tournamentPitchMax: zod
+    .number()
+    .nullish()
+    .describe(
+      "Per-pitcher cap across the whole tournament. Null = inherit team default.",
+    ),
+  restTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(updateTournamentResponseRestTiersTwoItemMaxPitchesMin)
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(updateTournamentResponseRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional()
+    .describe("Rest tiers for this tournament. Null = inherit team default."),
   createdAt: zod.coerce.date(),
 });
 
@@ -1338,6 +1617,40 @@ export const GeneratePracticePlanResponse = zod.object({
   rationale: zod
     .string()
     .describe("One- or two-sentence summary of why the AI chose these drills"),
+});
+
+/**
+ * Derives a fresh list at read time from games + pitch_counts, filtered
+against task_dismissals. Cap of 20 most recent. The list intentionally
+omits dismissed tasks so the dashboard quiets down for accounts the
+coach has triaged.
+
+ * @summary Open-task list for the coach dashboard (scores not logged, pitch counts missing)
+ */
+export const ListDashboardTasksResponseItem = zod
+  .object({
+    id: zod.string().describe("Stable composite key — `<gameId>:<taskType>`."),
+    type: zod.enum(["score", "pitch_counts"]),
+    gameId: zod.number(),
+    gameDate: zod.coerce.date(),
+    opponent: zod.string(),
+    link: zod
+      .string()
+      .describe(
+        "Relative path the Open button should navigate to (already includes any deep-link hash).",
+      ),
+  })
+  .describe("An open coaching task surfaced on the dashboard.");
+export const ListDashboardTasksResponse = zod.array(
+  ListDashboardTasksResponseItem,
+);
+
+/**
+ * @summary Permanently hide a (game, taskType) pair from the coach's task list
+ */
+export const DismissDashboardTaskBody = zod.object({
+  gameId: zod.number(),
+  taskType: zod.enum(["score", "pitch_counts"]),
 });
 
 /**

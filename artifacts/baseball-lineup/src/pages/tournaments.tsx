@@ -4,12 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListTournaments,
   useCreateTournament,
+  useGetTeamSettings,
   getListTournamentsQueryKey,
 } from "@workspace/api-client-react";
-import {
-  PITCH_RULESET_OPTIONS,
-  DEFAULT_PITCH_RULESET,
-} from "@/lib/pitch-rulesets";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,25 +21,30 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Plus, Trophy, MapPin, CalendarDays, Users, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { RestTiersEditor } from "@/components/rest-tiers-editor";
+import type { RestTier } from "@/lib/pitch-rulesets";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function parseOptionalInt(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 export default function Tournaments() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: tournaments = [], isLoading } = useListTournaments();
+  // Pull team defaults so the dialog can show "Team default: 85" hints
+  // — coach inherits whenever they leave the per-tournament field blank.
+  const { data: teamSettings } = useGetTeamSettings();
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -50,7 +52,18 @@ export default function Tournaments() {
   const [endDate, setEndDate] = useState(todayISO());
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
-  const [ruleset, setRuleset] = useState<string>(DEFAULT_PITCH_RULESET);
+  const [dailyMax, setDailyMax] = useState<string>("");
+  const [tournamentMax, setTournamentMax] = useState<string>("");
+  const [restTiers, setRestTiers] = useState<RestTier[] | null>(null);
+
+  const reset = () => {
+    setName("");
+    setLocation("");
+    setNotes("");
+    setDailyMax("");
+    setTournamentMax("");
+    setRestTiers(null);
+  };
 
   const create = useCreateTournament({
     mutation: {
@@ -58,9 +71,7 @@ export default function Tournaments() {
         void qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
         toast({ title: "Tournament created" });
         setOpen(false);
-        setName("");
-        setLocation("");
-        setNotes("");
+        reset();
       },
       onError: (err) =>
         toast({
@@ -88,10 +99,15 @@ export default function Tournaments() {
         endDate,
         location: location.trim() || null,
         notes: notes.trim() || null,
-        pitchCountRuleset: ruleset || null,
+        dailyPitchMax: parseOptionalInt(dailyMax),
+        tournamentPitchMax: parseOptionalInt(tournamentMax),
+        restTiers,
       },
     });
   };
+
+  const teamDailyDefault = teamSettings?.defaultDailyPitchMax ?? null;
+  const teamTournamentDefault = teamSettings?.defaultTournamentPitchMax ?? null;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -105,18 +121,18 @@ export default function Tournaments() {
             Group multi-game weekends so the app rolls per-pitcher pitch counts and rest days across every game.
           </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
           <DialogTrigger asChild>
             <Button data-testid="button-new-tournament">
               <Plus className="h-4 w-4 mr-1.5" />
               New Tournament
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>New tournament</DialogTitle>
               <DialogDescription>
-                Pitch budgets and rest days will use the ruleset you pick here.
+                Pitch limits and rest tiers fall back to your team defaults if you leave them blank.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -163,21 +179,58 @@ export default function Tournaments() {
                   data-testid="input-tournament-location"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="t-ruleset">Pitch ruleset</Label>
-                <Select value={ruleset} onValueChange={setRuleset}>
-                  <SelectTrigger id="t-ruleset" data-testid="select-tournament-ruleset">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PITCH_RULESET_OPTIONS.map((r) => (
-                      <SelectItem key={r.key} value={r.key}>
-                        {r.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="t-daily-max" className="text-xs">Pitches / day</Label>
+                  <Input
+                    id="t-daily-max"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={500}
+                    value={dailyMax}
+                    onChange={(e) => setDailyMax(e.target.value)}
+                    placeholder={
+                      teamDailyDefault != null
+                        ? `Team default: ${teamDailyDefault}`
+                        : "Optional"
+                    }
+                    data-testid="input-tournament-daily-max"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="t-tournament-max" className="text-xs">Pitches / tournament</Label>
+                  <Input
+                    id="t-tournament-max"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={2000}
+                    value={tournamentMax}
+                    onChange={(e) => setTournamentMax(e.target.value)}
+                    placeholder={
+                      teamTournamentDefault != null
+                        ? `Team default: ${teamTournamentDefault}`
+                        : "Optional"
+                    }
+                    data-testid="input-tournament-total-max"
+                  />
+                </div>
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Rest tiers</Label>
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Leave empty to inherit your team default.
+                </p>
+                <RestTiersEditor
+                  value={restTiers}
+                  onChange={setRestTiers}
+                  testIdPrefix="new-tournament-rest-tier"
+                  placeholder="Inheriting team default — add rows here to override."
+                />
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="t-notes">Notes (optional)</Label>
                 <Textarea

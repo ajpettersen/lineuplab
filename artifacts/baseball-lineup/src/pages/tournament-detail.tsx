@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,28 +7,18 @@ import {
   useDeleteTournament,
   useListGames,
   useUpdateGame,
+  useGetTeamSettings,
   getGetTournamentQueryKey,
   getListTournamentsQueryKey,
   getListGamesQueryKey,
   getGetGameQueryKey,
   type TournamentDetail,
 } from "@workspace/api-client-react";
-import {
-  PITCH_RULESETS,
-  PITCH_RULESET_OPTIONS,
-} from "@/lib/pitch-rulesets";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +41,15 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { RestTiersEditor } from "@/components/rest-tiers-editor";
+import type { RestTier } from "@/lib/pitch-rulesets";
+
+function parseOptionalInt(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 export default function TournamentDetail() {
   const [, params] = useRoute("/tournaments/:id");
@@ -65,6 +64,7 @@ export default function TournamentDetail() {
     },
   });
   const { data: allGames = [] } = useListGames();
+  const { data: teamSettings } = useGetTeamSettings();
 
   const updateTournament = useUpdateTournament({
     mutation: {
@@ -137,9 +137,18 @@ export default function TournamentDetail() {
     );
   }
 
-  const rulesetLabel =
-    PITCH_RULESETS[tournament.effectiveRuleset]?.label ??
-    tournament.effectiveRuleset;
+  const dailyLabel =
+    tournament.effectiveDailyMax != null
+      ? `daily max ${tournament.effectiveDailyMax}`
+      : "no daily max";
+  const tournamentLabel =
+    tournament.effectiveTournamentMax != null
+      ? `tournament max ${tournament.effectiveTournamentMax}`
+      : null;
+  const restTiersLabel =
+    (tournament.effectiveRestTiers ?? []).length === 0
+      ? "no rest rules"
+      : `${(tournament.effectiveRestTiers ?? []).length} rest tiers`;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -169,7 +178,8 @@ export default function TournamentDetail() {
                 </span>
               )}
               <Badge variant="outline" className="text-xs">
-                {rulesetLabel} · daily max {tournament.effectiveDailyMax}
+                {dailyLabel}
+                {tournamentLabel ? ` · ${tournamentLabel}` : ""} · {restTiersLabel}
               </Badge>
             </div>
             {tournament.notes && (
@@ -230,7 +240,11 @@ export default function TournamentDetail() {
                     .slice()
                     .sort((a, b) => b.totalPitchesInTournament - a.totalPitchesInTournament)
                     .map((p) => {
-                      const exceeded = p.pitchesToday > p.dailyMax;
+                      // dailyMax may be null (no cap configured) — in that
+                      // case "exceeded" is meaningless and we render the
+                      // total as just "Today: N".
+                      const exceeded =
+                        p.dailyMax != null && p.pitchesToday > p.dailyMax;
                       const resting = p.restingUntil;
                       return (
                         <tr
@@ -254,15 +268,23 @@ export default function TournamentDetail() {
                             </div>
                           </td>
                           <td className={`text-right py-2 px-2 tabular-nums ${exceeded ? "text-red-600 font-semibold" : ""}`}>
-                            {p.pitchesToday} / {p.dailyMax}
+                            {p.pitchesToday}
+                            {p.dailyMax != null ? ` / ${p.dailyMax}` : ""}
                           </td>
                           <td className="text-right py-2 px-2 tabular-nums">
-                            <span className={p.pitchesAvailableToday === 0 ? "text-muted-foreground" : "font-semibold text-emerald-700"}>
-                              {p.pitchesAvailableToday}
-                            </span>
+                            {p.pitchesAvailableToday == null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <span className={p.pitchesAvailableToday === 0 ? "text-muted-foreground" : "font-semibold text-emerald-700"}>
+                                {p.pitchesAvailableToday}
+                              </span>
+                            )}
                           </td>
                           <td className="text-right py-2 px-2 tabular-nums">
                             {p.totalPitchesInTournament}
+                            {tournament.effectiveTournamentMax != null
+                              ? ` / ${tournament.effectiveTournamentMax}`
+                              : ""}
                           </td>
                           <td className="py-2 pl-3">
                             {resting ? (
@@ -273,6 +295,10 @@ export default function TournamentDetail() {
                               <Badge variant="destructive" className="text-xs">
                                 <AlertCircle className="h-3 w-3 mr-1" />
                                 Over max
+                              </Badge>
+                            ) : p.pitchesAvailableToday == null ? (
+                              <Badge variant="outline" className="text-xs">
+                                No cap
                               </Badge>
                             ) : p.pitchesAvailableToday > 0 ? (
                               <Badge variant="outline" className="text-xs border-emerald-300 bg-emerald-50 text-emerald-900">
@@ -361,6 +387,8 @@ export default function TournamentDetail() {
         open={editOpen}
         onOpenChange={setEditOpen}
         tournament={tournament}
+        teamDailyDefault={teamSettings?.defaultDailyPitchMax ?? null}
+        teamTournamentDefault={teamSettings?.defaultTournamentPitchMax ?? null}
         onSubmit={(data) => updateTournament.mutate({ id: tournamentId, data })}
         isPending={updateTournament.isPending}
       />
@@ -444,19 +472,24 @@ function EditTournamentDialog({
   open,
   onOpenChange,
   tournament,
+  teamDailyDefault,
+  teamTournamentDefault,
   onSubmit,
   isPending,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   tournament: TournamentDetail;
+  teamDailyDefault: number | null;
+  teamTournamentDefault: number | null;
   onSubmit: (data: {
     name?: string;
     startDate?: string;
     endDate?: string;
     location?: string | null;
-    pitchCountRuleset?: string | null;
     dailyPitchMax?: number | null;
+    tournamentPitchMax?: number | null;
+    restTiers?: RestTier[] | null;
   }) => void;
   isPending: boolean;
 }) {
@@ -468,30 +501,54 @@ function EditTournamentDialog({
     new Date(tournament.endDate).toISOString().slice(0, 10),
   );
   const [location, setLocation] = useState(tournament.location ?? "");
-  const [ruleset, setRuleset] = useState<string>(
-    tournament.pitchCountRuleset ?? "__inherit",
-  );
   const [dailyMax, setDailyMax] = useState<string>(
     tournament.dailyPitchMax != null ? String(tournament.dailyPitchMax) : "",
   );
+  const [tournamentMax, setTournamentMax] = useState<string>(
+    tournament.tournamentPitchMax != null ? String(tournament.tournamentPitchMax) : "",
+  );
+  const [restTiers, setRestTiers] = useState<RestTier[] | null>(
+    (tournament.restTiers as RestTier[] | null | undefined) ?? null,
+  );
+
+  // Re-seed local form state when the tournament prop changes — happens
+  // after a successful save invalidates the query and refetches.
+  useEffect(() => {
+    setName(tournament.name);
+    setStartDate(new Date(tournament.startDate).toISOString().slice(0, 10));
+    setEndDate(new Date(tournament.endDate).toISOString().slice(0, 10));
+    setLocation(tournament.location ?? "");
+    setDailyMax(
+      tournament.dailyPitchMax != null ? String(tournament.dailyPitchMax) : "",
+    );
+    setTournamentMax(
+      tournament.tournamentPitchMax != null
+        ? String(tournament.tournamentPitchMax)
+        : "",
+    );
+    setRestTiers((tournament.restTiers as RestTier[] | null | undefined) ?? null);
+  }, [tournament]);
 
   const submit = () => {
-    const dm = dailyMax.trim();
     onSubmit({
       name: name.trim(),
       startDate,
       endDate,
       location: location.trim() || null,
-      pitchCountRuleset: ruleset === "__inherit" ? null : ruleset,
-      dailyPitchMax: dm === "" ? null : Number(dm),
+      dailyPitchMax: parseOptionalInt(dailyMax),
+      tournamentPitchMax: parseOptionalInt(tournamentMax),
+      restTiers,
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit tournament</DialogTitle>
+          <DialogDescription>
+            Leave a pitch field blank to inherit your team default.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -535,32 +592,54 @@ function EditTournamentDialog({
               onChange={(e) => setLocation(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="e-ruleset">Pitch ruleset</Label>
-            <Select value={ruleset} onValueChange={setRuleset}>
-              <SelectTrigger id="e-ruleset">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__inherit">Use team default</SelectItem>
-                {PITCH_RULESET_OPTIONS.map((r) => (
-                  <SelectItem key={r.key} value={r.key}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="e-daily-max" className="text-xs">Pitches / day</Label>
+              <Input
+                id="e-daily-max"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={500}
+                value={dailyMax}
+                onChange={(e) => setDailyMax(e.target.value)}
+                placeholder={
+                  teamDailyDefault != null
+                    ? `Team default: ${teamDailyDefault}`
+                    : "Optional"
+                }
+                data-testid="input-edit-tournament-daily-max"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="e-tournament-max" className="text-xs">Pitches / tournament</Label>
+              <Input
+                id="e-tournament-max"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={2000}
+                value={tournamentMax}
+                onChange={(e) => setTournamentMax(e.target.value)}
+                placeholder={
+                  teamTournamentDefault != null
+                    ? `Team default: ${teamTournamentDefault}`
+                    : "Optional"
+                }
+                data-testid="input-edit-tournament-total-max"
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="e-dailymax">Daily max override (optional)</Label>
-            <Input
-              id="e-dailymax"
-              type="number"
-              min={0}
-              max={500}
-              value={dailyMax}
-              onChange={(e) => setDailyMax(e.target.value)}
-              placeholder="Use ruleset default"
+            <Label className="text-xs">Rest tiers</Label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Leave empty to inherit your team default.
+            </p>
+            <RestTiersEditor
+              value={restTiers}
+              onChange={setRestTiers}
+              testIdPrefix="edit-tournament-rest-tier"
+              placeholder="Inheriting team default — add rows here to override."
             />
           </div>
         </div>
