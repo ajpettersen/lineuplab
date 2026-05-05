@@ -13,6 +13,8 @@ import {
   LogOut,
   Trophy,
   Clipboard,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
@@ -50,39 +52,66 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const displayTeamName = teamName || "Loading…";
 
-  // Hover-to-scrub scrolling for the desktop top bar. As the mouse
-  // moves horizontally across the bar, scrollLeft is mapped linearly
-  // from 0 (mouse at left edge) → maxScroll (mouse at right edge), so
-  // the user can reveal every overflowed item just by sweeping their
-  // mouse across the bar. Vertical wheel also still scrolls horizontally
-  // as a fallback for users who prefer the wheel.
+  // Always-visible chevron arrows on the left/right edges of the top
+  // bar that auto-scroll the cluster while hovered. State tracks
+  // whether scrolling is currently possible in each direction so the
+  // arrows can hide themselves when there's nothing left to reveal.
   const rightClusterRef = useRef<HTMLDivElement | null>(null);
+  const scrollDirRef = useRef<-1 | 0 | 1>(0);
+  const rafRef = useRef<number | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollAffordance = () => {
+    const el = rightClusterRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 1);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  };
+
+  const stopAutoScroll = () => {
+    scrollDirRef.current = 0;
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  };
+
+  const startAutoScroll = (dir: -1 | 1) => {
+    scrollDirRef.current = dir;
+    if (rafRef.current != null) return;
+    const tick = () => {
+      const el = rightClusterRef.current;
+      const d = scrollDirRef.current;
+      if (!el || d === 0) {
+        rafRef.current = null;
+        return;
+      }
+      el.scrollLeft += d * 8;
+      updateScrollAffordance();
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
   useEffect(() => {
     const el = rightClusterRef.current;
     if (!el) return;
-    const onMouseMove = (e: MouseEvent) => {
-      const max = el.scrollWidth - el.clientWidth;
-      if (max <= 0) return;
-      const rect = el.getBoundingClientRect();
-      const ratio = Math.min(
-        1,
-        Math.max(0, (e.clientX - rect.left) / rect.width),
-      );
-      el.scrollLeft = ratio * max;
-    };
-    const onWheel = (e: WheelEvent) => {
-      if (el.scrollWidth <= el.clientWidth) return;
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    };
-    el.addEventListener("mousemove", onMouseMove);
-    el.addEventListener("wheel", onWheel, { passive: false });
+    updateScrollAffordance();
+    const onScroll = () => updateScrollAffordance();
+    const onResize = () => updateScrollAffordance();
+    el.addEventListener("scroll", onScroll);
+    window.addEventListener("resize", onResize);
+    // Re-measure once the team context / nav items finish loading and
+    // potentially change the cluster's content width.
+    const t = setTimeout(updateScrollAffordance, 250);
     return () => {
-      el.removeEventListener("mousemove", onMouseMove);
-      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      clearTimeout(t);
+      stopAutoScroll();
     };
-  }, []);
+  }, [isMasterAdmin, isReadOnly, displayIdentity]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -238,14 +267,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="md:hidden ml-auto">
           <TeamSwitcher />
         </div>
-        {/* Desktop right cluster: takes remaining width, justifies items
-            to the right, and scrolls horizontally when content overflows
-            so the sign-out button is always reachable on narrow desktops. */}
+        {/* Desktop right cluster: takes remaining width and scrolls
+            horizontally when content overflows. Chevron arrow overlays
+            (rendered after the scroll container) auto-scroll the bar
+            while hovered, so the sign-out button and any clipped nav
+            items are always reachable on narrow desktops. */}
+        <div className="hidden md:block relative flex-1 min-w-0">
         <div
           ref={rightClusterRef}
-          className="hidden md:flex flex-1 min-w-0 overflow-x-auto items-center gap-4 justify-end [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-white/30 [&::-webkit-scrollbar-thumb]:rounded-full"
+          className="flex overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-white/30 [&::-webkit-scrollbar-thumb]:rounded-full"
           data-testid="header-right-cluster"
         >
+        <div className="flex items-center gap-4 ml-auto">
           {isReadOnly && (
             <div
               className="shrink-0 inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-100"
@@ -308,6 +341,45 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <LogOut className="h-4 w-4" />
             Sign out
           </Button>
+        </div>
+        </div>
+        {/* Chevron arrow overlays — auto-scroll the cluster while
+            hovered. They render only when there's actual overflow in
+            that direction so they don't appear on wide desktops. */}
+        {canScrollLeft && (
+          <button
+            type="button"
+            aria-label="Scroll navigation left"
+            data-testid="button-nav-scroll-left"
+            onMouseEnter={() => startAutoScroll(-1)}
+            onMouseLeave={stopAutoScroll}
+            onClick={() => {
+              const el = rightClusterRef.current;
+              if (!el) return;
+              el.scrollBy({ left: -200, behavior: "smooth" });
+            }}
+            className="absolute left-0 top-0 bottom-0 z-10 flex items-center justify-center w-8 cursor-pointer text-primary-foreground bg-gradient-to-r from-[hsl(220_85%_18%)] via-[hsl(220_85%_18%)]/85 to-transparent hover:from-[hsl(220_85%_22%)]"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+        )}
+        {canScrollRight && (
+          <button
+            type="button"
+            aria-label="Scroll navigation right"
+            data-testid="button-nav-scroll-right"
+            onMouseEnter={() => startAutoScroll(1)}
+            onMouseLeave={stopAutoScroll}
+            onClick={() => {
+              const el = rightClusterRef.current;
+              if (!el) return;
+              el.scrollBy({ left: 200, behavior: "smooth" });
+            }}
+            className="absolute right-0 top-0 bottom-0 z-10 flex items-center justify-center w-8 cursor-pointer text-primary-foreground bg-gradient-to-l from-[hsl(220_85%_18%)] via-[hsl(220_85%_18%)]/85 to-transparent hover:from-[hsl(220_85%_22%)]"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        )}
         </div>
       </header>
       <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
