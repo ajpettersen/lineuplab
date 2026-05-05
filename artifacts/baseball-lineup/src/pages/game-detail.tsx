@@ -1869,8 +1869,9 @@ export default function GameDetail() {
       {/* Game Header */}
       <Card>
         <CardContent className="p-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
               <div className="eyebrow text-primary/70">Game</div>
               <div className="flex items-center gap-3 flex-wrap mt-1">
                 <h1 className="page-title text-foreground text-2xl sm:text-3xl">
@@ -1921,11 +1922,13 @@ export default function GameDetail() {
                 );
               })()}
             </div>
-            <div className="flex flex-col items-stretch sm:items-end gap-2">
-              {/* Status-changing actions: Mark Complete + Game Ended Early */}
+              {/* Status-changing actions sit INLINE with the title on
+                  the same top row (right-aligned). They're conceptually
+                  about the game itself, so they belong with the title;
+                  lineup-management lives on its own row below. */}
               {(game.status === "upcoming" ||
                 (game.status !== "cancelled" && game.innings > 1)) && (
-                <div className="flex gap-2 flex-wrap sm:justify-end">
+                <div className="flex gap-2 flex-wrap shrink-0 sm:justify-end">
                   {game.status === "upcoming" && (
                     <Button variant="outline" onClick={() => setCompleteOpen(true)}>
                       <Trophy className="h-4 w-4 mr-2" />
@@ -1947,9 +1950,11 @@ export default function GameDetail() {
                   )}
                 </div>
               )}
-              {/* Lineup-management actions on the row below */}
-              {game.status !== "cancelled" && (
-                <div className="flex gap-2 flex-wrap sm:justify-end">
+            </div>
+            {/* Lineup-management actions on their own row spanning the
+                full width below the title block. */}
+            {game.status !== "cancelled" && (
+              <div className="flex gap-2 flex-wrap justify-end">
                   {/* "View Original Plan" is read-only — leave it on
                       for view-tier coaches so they can still see how
                       the lineup was originally drawn up. */}
@@ -2007,7 +2012,6 @@ export default function GameDetail() {
                   )}
                 </div>
               )}
-            </div>
           </div>
         </CardContent>
       </Card>

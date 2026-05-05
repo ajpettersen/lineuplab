@@ -6,17 +6,15 @@
  * Strategy:
  *   1. Drop any " - " / " – " / " — " coach/sub-team suffix
  *      ("Minnetonka - Pettersen" → "Minnetonka").
- *   2. Strip leading modifier tokens (color words like "Blue" or
- *      level codes like "10AA", "12U") so prefixes like
- *      "10AA Blue Minnetonka" collapse to "Minnetonka".
- *   3. Strip trailing modifier tokens the same way so suffixes like
- *      "Edina Green 10AA" collapse to "Edina".
- *   4. If the strip would empty the name, fall back to the original
- *      input untouched (per user request — better to show too much
- *      than nothing).
+ *   2. Find the longest contiguous run of NON-modifier tokens — that
+ *      run is the city / mascot. Modifier tokens are color words
+ *      ("Blue", "Gold") and youth level codes ("10AA", "12U", "U10").
+ *   3. If no non-modifier tokens exist (e.g. the input was literally
+ *      "10AA Blue"), fall back to the original input untouched —
+ *      better to show too much than to show "Blue" as the team name.
  *
- * Compound city names ("Lakeville South") survive because the strip
- * stops at the first non-modifier token from each side.
+ * Compound city names ("Lakeville South") survive because we look for
+ * the longest CONTIGUOUS run of non-modifier tokens.
  *
  * Used everywhere a team or opponent name is displayed: Field Display,
  * Dashboard, Games list, Game Detail header / print / copy-from
@@ -48,28 +46,37 @@ export function shortenTeamName(name: string | null | undefined): string {
   const original = name.trim();
   if (!original) return "";
 
-  // 1. Drop coach/sub-team suffix after a dash separator.
-  //    Match en-dash, em-dash, and ascii hyphen surrounded by spaces.
+  // 1. Drop coach/sub-team suffix after a dash separator. Match en-dash,
+  //    em-dash, and ascii hyphen surrounded by spaces.
   const dashSplit = original.split(/\s+[-–—]\s+/);
-  let working = dashSplit[0].trim();
-  if (!working) working = original;
+  const working = dashSplit[0].trim() || original;
 
   const tokens = working.split(/\s+/);
-  if (tokens.length <= 1) return working;
-
-  // 2. Strip leading modifiers.
-  let start = 0;
-  while (start < tokens.length - 1 && isModifier(tokens[start])) {
-    start += 1;
+  if (tokens.length <= 1) {
+    // Single token — only return it if it isn't itself a modifier
+    // (e.g. "Blue" alone shouldn't be displayed as a team name).
+    return isModifier(tokens[0]) ? original : working;
   }
 
-  // 3. Strip trailing modifiers.
-  let end = tokens.length;
-  while (end > start + 1 && isModifier(tokens[end - 1])) {
-    end -= 1;
+  // 2. Find the longest contiguous run of non-modifier tokens.
+  let bestStart = -1;
+  let bestLen = 0;
+  let runStart = -1;
+  for (let i = 0; i <= tokens.length; i += 1) {
+    const isMod = i < tokens.length ? isModifier(tokens[i]) : true;
+    if (!isMod && runStart === -1) {
+      runStart = i;
+    } else if (isMod && runStart !== -1) {
+      const len = i - runStart;
+      if (len > bestLen) {
+        bestLen = len;
+        bestStart = runStart;
+      }
+      runStart = -1;
+    }
   }
 
-  const shortened = tokens.slice(start, end).join(" ").trim();
-  // 4. Never collapse to empty — fall back to the original input.
-  return shortened || original;
+  // 3. No non-modifier tokens found → fall back to the original.
+  if (bestStart === -1) return original;
+  return tokens.slice(bestStart, bestStart + bestLen).join(" ");
 }
