@@ -589,7 +589,6 @@ ${body.data.message}`;
 // indicator in the UI).
 router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
-  const activeFieldPositions = await loadActiveFieldPositions(userId);
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -617,7 +616,6 @@ router.get("/games/:id/ai-pins", async (req, res): Promise<void> => {
 // Clear all remembered AI pins for a game ("Reset AI memory" button).
 router.delete("/games/:id/ai-pins", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
-  const activeFieldPositions = await loadActiveFieldPositions(userId);
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });

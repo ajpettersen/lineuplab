@@ -2283,6 +2283,11 @@ export default function GameDetail() {
               </Button>
             </div>
           )}
+          {displayLineup.length === 0 && (
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <SelectPositionsDialog />
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {lineupLoading ? (
