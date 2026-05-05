@@ -47,7 +47,9 @@ pnpm generate # Orval codegen
 - **Multi-tenancy**: Data isolation per coach (`Clerk userId`) with `assertPermission` middleware gating write routes.
 - **AI Integration**: Uses `gpt-5.2` for image/text roster imports, natural language lineup generation, and practice plan suggestions.
 - **Offline Support**: Field Display page uses `localStorage` for caching and pending changes, with last-writer-wins conflict resolution.
-- **Master Admin Bypass**: `MASTER_ADMIN_USER_IDS` environment variable allows app owners to bypass team scoping and access an `/admin` page.
+- **Master Admin Bypass**: `MASTER_ADMIN_USER_IDS` environment variable allows app owners to bypass team scoping and access an `/admin` page (lists all teams + drill-into each). Also enables a "view as this team" switch from admin.
+- **Per-Team Coach Profile**: Each coach's `displayName` + `role` lives on `team_memberships` (the owner has a row too with `isOwner=true`). Names are prompted via a one-time modal on first load (`coach-profile-prompt.tsx`).
+- **Permission Tiers**: `team_memberships.permission` is `full | partial | view`. Server enforces with `assertPermission(level)` middleware (see `lib/permissions.ts`); web hides write controls via `usePermission()`. Owner row is locked to `full`.
 
 ## Product
 
