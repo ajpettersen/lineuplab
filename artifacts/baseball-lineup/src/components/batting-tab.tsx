@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, Plus, Wand2, Trash2 } from "lucide-react";
+import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
 
@@ -61,6 +61,12 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
   const [nukeOpen, setNukeOpen] = useState(false);
   const [nukeConfirm, setNukeConfirm] = useState("");
   const [nuking, setNuking] = useState(false);
+  // Column sort. `null` key = default name order. Clicking a column
+  // cycles desc → asc → off so the coach can quickly find leaders or
+  // trailers in any stat. Players with no value sort to the bottom
+  // regardless of direction so they don't crowd out real data.
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const statsMap = Object.fromEntries(battingStats.map((b) => [b.playerId, b]));
 
@@ -192,6 +198,54 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     return (s.ab ?? 0) + (s.bb ?? 0) + (s.hbp ?? 0) + (s.sac ?? 0);
   };
 
+  /**
+   * Extract the comparable value for a sort column. PA is derived from
+   * the row; rates / counts come straight off the stats record. Returns
+   * null when the player has no stat row (or the field isn't populated)
+   * so they can be parked at the bottom regardless of direction.
+   */
+  const sortValue = (p: { id: number }, key: string): number | null => {
+    const s = statsMap[p.id];
+    if (!s) return null;
+    if (key === "pa") return computePA(s);
+    const v = (s as unknown as Record<string, number | null | undefined>)[key];
+    return v == null ? null : v;
+  };
+
+  const sortedPlayers = (() => {
+    if (!sortKey) return players;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...players].sort((a, b) => {
+      const va = sortValue(a, sortKey);
+      const vb = sortValue(b, sortKey);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // nulls always to the bottom
+      if (vb == null) return -1;
+      if (va === vb) return a.name.localeCompare(b.name);
+      return (va - vb) * dir;
+    });
+  })();
+
+  const toggleSort = (key: string) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir("desc");
+      return;
+    }
+    if (sortDir === "desc") {
+      setSortDir("asc");
+      return;
+    }
+    setSortKey(null); // third click clears
+  };
+
+  const SortIcon = ({ k }: { k: string }) => {
+    if (sortKey !== k) return <ArrowUpDown className="h-3 w-3 inline-block ml-0.5 opacity-30" />;
+    return sortDir === "desc"
+      ? <ArrowDown className="h-3 w-3 inline-block ml-0.5 text-primary" />
+      : <ArrowUp className="h-3 w-3 inline-block ml-0.5 text-primary" />;
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -298,17 +352,23 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                   {COLS.map((c) => (
                     <th
                       key={c.statKey}
-                      className="text-center px-2 font-medium text-muted-foreground"
-                      title={c.derived === "pa" ? "Plate Appearances = AB + BB + HBP + SAC" : undefined}
+                      className="text-center px-2 font-medium text-muted-foreground select-none cursor-pointer hover:text-foreground"
+                      title={
+                        c.derived === "pa"
+                          ? "Plate Appearances = AB + BB + HBP + SAC. Click to sort."
+                          : "Click to sort"
+                      }
+                      onClick={() => toggleSort(c.statKey)}
                     >
                       {c.label}
+                      <SortIcon k={c.statKey} />
                     </th>
                   ))}
                   <th className="px-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {players.map((p) => {
+                {sortedPlayers.map((p) => {
                   const s = statsMap[p.id];
                   if (editId === p.id) {
                     const livePA = computePA(editData);
