@@ -63,6 +63,16 @@ export const teamSettingsTable = pgTable("team_settings", {
    * aren't nagged. Pairs with the GameChanger box-score import feature.
    */
   usesGameChanger: boolean("uses_gamechanger").notNull().default(false),
+  /**
+   * Per-team UI theme overrides. Stored as space-separated HSL strings
+   * (`"H S% L%"` — e.g. `"220 85% 22%"`) so they can drop straight into
+   * the existing `hsl(var(--primary))` CSS variables without any
+   * conversion. Null = use the app default. The frontend only injects
+   * `--primary` and `--accent` (everything else stays on the brand
+   * scheme); foregrounds are kept fixed so contrast doesn't break.
+   */
+  primaryColor: text("primary_color"),
+  secondaryColor: text("secondary_color"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -78,6 +88,8 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   defaultRestTiers: true,
   activeFieldPositions: true,
   usesGameChanger: true,
+  primaryColor: true,
+  secondaryColor: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

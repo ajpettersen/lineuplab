@@ -748,6 +748,18 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
     ),
+  primaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      'Per-team UI primary color override. HSL string of the form\n`\"H S% L%\"` (e.g. `\"220 85% 22%\"`) so it drops into\n`hsl(var(--primary))` directly. Null = use the app default.\n',
+    ),
+  secondaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -825,6 +837,18 @@ export const UpdateTeamSettingsBody = zod.object({
     .max(updateTeamSettingsBodyActiveFieldPositionsMax)
     .optional(),
   usesGameChanger: zod.boolean().optional(),
+  primaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      'HSL string `\"H S% L%\"`. Pass null to clear back to app default.',
+    ),
+  secondaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      'HSL string `\"H S% L%\"`. Pass null to clear back to app default.',
+    ),
 });
 
 export const updateTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
@@ -886,6 +910,18 @@ export const UpdateTeamSettingsResponse = zod.object({
     .boolean()
     .describe(
       'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
+    ),
+  primaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      'Per-team UI primary color override. HSL string of the form\n`\"H S% L%\"` (e.g. `\"220 85% 22%\"`) so it drops into\n`hsl(var(--primary))` directly. Null = use the app default.\n',
+    ),
+  secondaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
     ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

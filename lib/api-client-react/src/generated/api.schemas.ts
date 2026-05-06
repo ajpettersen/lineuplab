@@ -387,6 +387,21 @@ imported" task for every past game whose box score hasn't been
 uploaded yet. Off by default.
  */
   usesGameChanger: boolean;
+  /**
+   * Per-team UI primary color override. HSL string of the form
+`"H S% L%"` (e.g. `"220 85% 22%"`) so it drops into
+`hsl(var(--primary))` directly. Null = use the app default.
+
+   * @nullable
+   */
+  primaryColor?: string | null;
+  /**
+   * Per-team UI secondary/accent color override. Same format as
+primaryColor.
+
+   * @nullable
+   */
+  secondaryColor?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -439,6 +454,16 @@ export interface UpdateTeamSettingsBody {
    */
   activeFieldPositions?: UpdateTeamSettingsBodyActiveFieldPositionsItem[];
   usesGameChanger?: boolean;
+  /**
+   * HSL string `"H S% L%"`. Pass null to clear back to app default.
+   * @nullable
+   */
+  primaryColor?: string | null;
+  /**
+   * HSL string `"H S% L%"`. Pass null to clear back to app default.
+   * @nullable
+   */
+  secondaryColor?: string | null;
 }
 
 export interface UserPreferences {

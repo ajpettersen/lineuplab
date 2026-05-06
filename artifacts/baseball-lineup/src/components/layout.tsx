@@ -23,6 +23,8 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TeamSwitcher } from "@/components/team-switcher";
 import { CoachProfilePrompt } from "@/components/coach-profile-prompt";
+import { TeamNamePrompt } from "@/components/team-name-prompt";
+import { TeamThemeApplier } from "@/components/team-theme-applier";
 import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
 import { useAdminMe } from "@/hooks/use-admin";
@@ -400,6 +402,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* First-time onboarding modal — auto-opens once per (user, team)
           when the coach hasn't filled in their per-team displayName yet. */}
       <CoachProfilePrompt />
+      {/* Force the head coach to pick a real team name on first sign-in
+          (the seed value is "My Team" / "Team"). */}
+      <TeamNamePrompt />
+      {/* Inject per-team primary/secondary CSS variables on the html
+          element so the brand follows the active team. */}
+      <TeamThemeApplier />
     </div>
   );
 }

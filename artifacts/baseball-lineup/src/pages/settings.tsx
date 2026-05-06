@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { CoachesCard } from "@/components/coaches-card";
+import { TeamColorsCard } from "@/components/team-colors-card";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { useSeedDemoMutation, DEMO_SEED_ENABLED } from "@/hooks/use-demo-seeder";
@@ -337,6 +338,8 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      <TeamColorsCard />
 
       <Card data-testid="card-defaults">
         <CardHeader>

@@ -61,6 +61,18 @@ const UpdateBody = z
     defaultRestTiers: z.array(RestTierZ).nullish(),
     activeFieldPositions: ActiveFieldPositionsZ.optional(),
     usesGameChanger: z.boolean().optional(),
+    // HSL string `"H S% L%"` (e.g. `"220 85% 22%"`). Permissive shape
+    // — three space-separated tokens, the last two ending in `%`.
+    primaryColor: z
+      .string()
+      .trim()
+      .regex(/^\d{1,3}\s+\d{1,3}%\s+\d{1,3}%$/, "Color must be in HSL form 'H S% L%'")
+      .nullish(),
+    secondaryColor: z
+      .string()
+      .trim()
+      .regex(/^\d{1,3}\s+\d{1,3}%\s+\d{1,3}%$/, "Color must be in HSL form 'H S% L%'")
+      .nullish(),
   })
   .refine(
     (v) =>
@@ -71,7 +83,9 @@ const UpdateBody = z
       v.defaultTournamentPitchMax !== undefined ||
       v.defaultRestTiers !== undefined ||
       v.activeFieldPositions !== undefined ||
-      v.usesGameChanger !== undefined,
+      v.usesGameChanger !== undefined ||
+      v.primaryColor !== undefined ||
+      v.secondaryColor !== undefined,
     { message: "Provide at least one field to update" }
   );
 
@@ -119,6 +133,9 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     defaultTournamentPitchMax?: number | null;
     defaultRestTiers?: RestTier[] | null;
     activeFieldPositions?: string[];
+    usesGameChanger?: boolean;
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
     updatedAt: ReturnType<typeof sql>;
   } = { updatedAt: sql`now()` };
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
@@ -132,6 +149,12 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     patch.defaultRestTiers = parsed.data.defaultRestTiers ?? null;
   if (parsed.data.activeFieldPositions !== undefined)
     patch.activeFieldPositions = [...parsed.data.activeFieldPositions];
+  if (parsed.data.usesGameChanger !== undefined)
+    patch.usesGameChanger = parsed.data.usesGameChanger;
+  if (parsed.data.primaryColor !== undefined)
+    patch.primaryColor = parsed.data.primaryColor ?? null;
+  if (parsed.data.secondaryColor !== undefined)
+    patch.secondaryColor = parsed.data.secondaryColor ?? null;
   const [updated] = await db
     .update(teamSettingsTable)
     .set(patch)
