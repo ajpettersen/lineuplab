@@ -53,20 +53,18 @@ router.use("/admin", requireMasterAdmin);
  * profile snippet for the owner.
  */
 router.get("/admin/teams", async (_req, res): Promise<void> => {
-  // Distinct owners — every team has at least the owner-row (or had
-  // assistants before the schema migration), so pull from team_memberships.
-  // Add owners that exist only in team_settings as a fallback.
+  // Distinct owners — only users who actually OWN a team (have an
+  // `isOwner = true` row in team_memberships). A coach who joined
+  // someone else's team has a team_settings row seeded for them on
+  // first sign-in, but they should not show up as their own team in
+  // the admin list — so we deliberately do NOT fall back to
+  // team_settings here.
   const ownersFromMemberships = await db
     .selectDistinct({ ownerUserId: teamMembershipsTable.ownerUserId })
-    .from(teamMembershipsTable);
-  const ownersFromSettings = await db
-    .select({ userId: teamSettingsTable.userId })
-    .from(teamSettingsTable);
+    .from(teamMembershipsTable)
+    .where(eq(teamMembershipsTable.isOwner, true));
   const owners = Array.from(
-    new Set([
-      ...ownersFromMemberships.map((r) => r.ownerUserId),
-      ...ownersFromSettings.map((r) => r.userId),
-    ]),
+    new Set(ownersFromMemberships.map((r) => r.ownerUserId)),
   );
 
   if (owners.length === 0) {
