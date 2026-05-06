@@ -174,7 +174,7 @@ router.post(
       })
       .join("\n");
 
-    const systemPrompt = `You are a baseball box-score extractor. The user has uploaded ${files.length} image(s) from a scorebook (commonly GameChanger or a paper book). Extract:
+    const systemPrompt = `You are a baseball box-score extractor. The user has uploaded ONE image from a scorebook (commonly GameChanger or a paper book). Extract ONLY what is visible in this single image — other pages are handled separately. Extract:
 
 1. BATTING line per player who batted: AB, R (runs), H (hits), 2B, 3B, HR, RBI, BB, K (or SO), HBP, SAC, SB.
 2. PITCHING line per pitcher who threw: total pitch count for the outing. If only "IP" or "P" (pitches) is shown, use whatever pitch total is visible. If no pitch count is shown, OMIT the pitcher (do not guess).
@@ -199,49 +199,10 @@ Return RAW JSON only, no markdown, no explanation:
 
 Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentScore if the final score isn't shown.`;
 
-    const imageContent = files.map((f) => ({
-      type: "image_url" as const,
-      image_url: {
-        url: `data:${f.mimetype || "image/png"};base64,${f.buffer.toString("base64")}`,
-      },
-    }));
-
-    let raw = "[]";
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        max_completion_tokens: 6000,
-        messages: [
-          {
-            role: "user",
-            content: [{ type: "text", text: systemPrompt }, ...imageContent],
-          },
-        ],
-      });
-      raw = response.choices[0]?.message?.content ?? "{}";
-    } catch (err) {
-      req.log.error({ err }, "Box-score extraction failed");
-      res.status(502).json({ error: "AI extraction failed" });
-      return;
-    }
-
-    const cleaned = raw
-      .replace(/```json\n?/g, "")
-      .replace(/```\n?/g, "")
-      .trim();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      res
-        .status(422)
-        .json({ error: "AI returned a non-JSON response", raw });
-      return;
-    }
-
-    // Defensively shape-check + drop hallucinated playerIds.
     const rosterIds = new Set(players.map((p) => p.id));
-    const obj = (parsed ?? {}) as Record<string, unknown>;
+
+    const numOrNull = (v: unknown) =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : null;
 
     function sanitizeBatting(arr: unknown) {
       if (!Array.isArray(arr)) return [];
@@ -267,14 +228,123 @@ Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentSco
         );
     }
 
-    const numOrNull = (v: unknown) =>
-      typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : null;
+    // Run one extraction per image IN PARALLEL. GameChanger box scores
+    // are usually paginated (one screenshot for batting, one for
+    // pitching, etc.) so each image contains independent data and
+    // splitting them up is both faster and more accurate — the model
+    // doesn't have to juggle 4 layouts in one prompt. With
+    // `reasoning_effort: "minimal"` (OCR is transcription, not
+    // reasoning) latency drops further.
+    async function extractOne(f: Express.Multer.File): Promise<{
+      batting: z.infer<typeof ExtractedBattingLine>[];
+      pitching: z.infer<typeof ExtractedPitchingLine>[];
+      ourScore: number | null;
+      opponentScore: number | null;
+    }> {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 3000,
+        reasoning_effort: "minimal",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: systemPrompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${f.mimetype || "image/png"};base64,${f.buffer.toString("base64")}`,
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const raw = response.choices[0]?.message?.content ?? "{}";
+      const cleaned = raw
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        return { batting: [], pitching: [], ourScore: null, opponentScore: null };
+      }
+      const obj = (parsed ?? {}) as Record<string, unknown>;
+      return {
+        batting: sanitizeBatting(obj.batting),
+        pitching: sanitizePitching(obj.pitching),
+        ourScore: numOrNull(obj.ourScore),
+        opponentScore: numOrNull(obj.opponentScore),
+      };
+    }
+
+    let perImage: Awaited<ReturnType<typeof extractOne>>[];
+    try {
+      perImage = await Promise.all(files.map((f) => extractOne(f)));
+    } catch (err) {
+      req.log.error({ err }, "Box-score extraction failed");
+      res.status(502).json({ error: "AI extraction failed" });
+      return;
+    }
+
+    // Merge across images. Two screenshots can overlap (e.g. coach
+    // scrolled mid-screenshot) so we DEDUPE by playerId rather than
+    // concat. On collision we keep the row whose stat columns sum
+    // higher — a more-complete extraction beats a partial one. This
+    // is safer than summing, which would double-count overlaps.
+    const battingByPlayer = new Map<number, z.infer<typeof ExtractedBattingLine>>();
+    const battingTotal = (b: z.infer<typeof ExtractedBattingLine>) =>
+      b.ab + b.hits + b.doubles + b.triples + b.hr + b.rbi + b.bb + b.k + b.hbp + b.sac + b.sb + b.runs;
+    for (const result of perImage) {
+      for (const line of result.batting) {
+        const prev = battingByPlayer.get(line.playerId);
+        if (!prev || battingTotal(line) > battingTotal(prev)) {
+          battingByPlayer.set(line.playerId, line);
+        }
+      }
+    }
+
+    // Pitching: same idea, prefer the row with the higher pitch count
+    // (the page that actually showed the full outing).
+    const pitchingByPlayer = new Map<number, z.infer<typeof ExtractedPitchingLine>>();
+    for (const result of perImage) {
+      for (const line of result.pitching) {
+        const prev = pitchingByPlayer.get(line.playerId);
+        if (!prev || line.pitches > prev.pitches) {
+          pitchingByPlayer.set(line.playerId, line);
+        }
+      }
+    }
+
+    // Final score: take the first image where BOTH sides are present.
+    // Many pages don't show the score at all; we don't want a partial
+    // pair from one page to overwrite a complete pair from another.
+    let ourScore: number | null = null;
+    let opponentScore: number | null = null;
+    for (const result of perImage) {
+      if (result.ourScore != null && result.opponentScore != null) {
+        ourScore = result.ourScore;
+        opponentScore = result.opponentScore;
+        break;
+      }
+    }
+    // Fallback: if no image had both, accept whatever single side(s)
+    // any image surfaced.
+    if (ourScore == null) {
+      ourScore = perImage.find((r) => r.ourScore != null)?.ourScore ?? null;
+    }
+    if (opponentScore == null) {
+      opponentScore =
+        perImage.find((r) => r.opponentScore != null)?.opponentScore ?? null;
+    }
 
     res.json({
-      batting: sanitizeBatting(obj.batting),
-      pitching: sanitizePitching(obj.pitching),
-      ourScore: numOrNull(obj.ourScore),
-      opponentScore: numOrNull(obj.opponentScore),
+      batting: Array.from(battingByPlayer.values()),
+      pitching: Array.from(pitchingByPlayer.values()),
+      ourScore,
+      opponentScore,
     });
   },
 );
