@@ -80,7 +80,7 @@ import { SelectPositionsDialog } from "@/components/select-positions-dialog";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
 import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
-import { shortenTeamName } from "@/lib/team-name";
+import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 
 const STANDARD_FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 // Canonical L→R column order for the lineup grid. Includes LCF/RCF so a
@@ -2008,7 +2008,7 @@ export default function GameDetail() {
                 <h1 className="page-title text-foreground text-2xl sm:text-3xl">
                   <span className="text-foreground" title={teamName || undefined}>{teamName || "Team"}</span>{" "}
                   <span className="text-foreground/50">vs.</span>{" "}
-                  <span className="text-primary" title={game.opponent}>{shortenTeamName(game.opponent) || game.opponent}</span>
+                  <span className="text-primary" title={game.opponent}>{formatOpponentForMatchup(game.opponent, teamName) || game.opponent}</span>
                 </h1>
                 {(() => {
                   const eff = effectiveStatus(game);
@@ -2360,7 +2360,7 @@ export default function GameDetail() {
         <div className="print-only mb-3" data-testid="print-header">
           <div className="text-lg font-bold">{teamName || "Lineup"}</div>
           <div className="text-sm">
-            vs. {shortenTeamName(game.opponent) || game.opponent} · {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")} · {innings} innings
+            vs. {formatOpponentForMatchup(game.opponent, teamName) || game.opponent} · {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")} · {innings} innings
           </div>
         </div>
       <Card>
@@ -3408,7 +3408,7 @@ export default function GameDetail() {
                       data-testid={`button-copy-game-${g.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium" title={g.opponent}>vs. {shortenTeamName(g.opponent) || g.opponent}</span>
+                        <span className="text-sm font-medium" title={g.opponent}>vs. {formatOpponentForMatchup(g.opponent, teamName) || g.opponent}</span>
                         {(() => {
                           const eff = effectiveStatus(g);
                           if (eff === "completed")

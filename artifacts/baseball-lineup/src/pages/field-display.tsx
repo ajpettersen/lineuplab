@@ -28,7 +28,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import { shortenTeamName } from "@/lib/team-name";
+import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1327,7 +1327,7 @@ export default function FieldDisplay() {
                *  to the city. Falls back to the raw stored value if the
                *  shortener returns empty (matches Schedule list behavior). */}
               <span className="text-broadcast-gold truncate" title={game?.opponent ?? undefined}>
-                {shortenTeamName(game?.opponent) || game?.opponent || ""}
+                {formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || ""}
               </span>
             </div>
           </div>
@@ -1469,7 +1469,7 @@ export default function FieldDisplay() {
               }
               ariaLabel="Opponent score"
               testId="score-stepper-opp"
-              label={shortenTeamName(game?.opponent) || game?.opponent || "Them"}
+              label={formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || "Them"}
             />
           </div>
           <Button

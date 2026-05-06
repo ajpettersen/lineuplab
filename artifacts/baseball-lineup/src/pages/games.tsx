@@ -55,7 +55,7 @@ import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
-import { shortenTeamName } from "@/lib/team-name";
+import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -602,8 +602,8 @@ export default function Games() {
                   title={g.opponent ?? undefined}
                 >
                   {g.type && g.type !== "game"
-                    ? (shortenTeamName(g.opponent) || g.opponent)
-                    : `${shortenTeamName(teamName) || teamName || "Team"} vs. ${shortenTeamName(g.opponent) || g.opponent}`}
+                    ? (formatOpponentForMatchup(g.opponent, teamName) || g.opponent)
+                    : `${shortenTeamName(teamName) || teamName || "Team"} vs. ${formatOpponentForMatchup(g.opponent, teamName) || g.opponent}`}
                 </span>
                 <TypeBadge type={(g.type ?? "game") as EventKind} />
                 <GameTypeBadge gameType={g.gameType as ("league" | "tournament" | null | undefined)} />
