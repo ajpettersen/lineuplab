@@ -77,6 +77,8 @@ import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus } from "@/lib/game-status";
 import { PitchCountsCard } from "@/components/pitch-counts-card";
 import { SelectPositionsDialog } from "@/components/select-positions-dialog";
+import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
+import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { shortenTeamName } from "@/lib/team-name";
 
@@ -221,6 +223,7 @@ export default function GameDetail() {
   // Click-to-swap selection: the entry id of the player picked first.
   const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
+  const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   // "Game ended early" flow — coach picks the last inning that was actually
   // played (e.g. 10-run rule) and the server trims the game length plus any
   // saved lineup data past that inning.
@@ -2020,6 +2023,17 @@ export default function GameDetail() {
                 {(game.status === "upcoming" ||
                   (game.status !== "cancelled" && game.innings > 1)) && (
                   <div className="ml-auto flex gap-2 flex-wrap justify-end">
+                    {can("partial") && game.status !== ("cancelled" as typeof game.status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBoxScoreOpen(true)}
+                        data-testid="button-import-box-score"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {game.boxScoreImportedAt ? "Re-import box score" : "Import box score"}
+                      </Button>
+                    )}
                     {game.status === "upcoming" && (
                       <Button variant="outline" size="sm" onClick={() => setCompleteOpen(true)}>
                         <Trophy className="h-4 w-4 mr-2" />
@@ -3774,6 +3788,15 @@ export default function GameDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {boxScoreOpen && (
+        <BoxScoreImportDialog
+          gameId={game.id}
+          players={players ?? []}
+          open={boxScoreOpen}
+          onOpenChange={setBoxScoreOpen}
+        />
+      )}
     </div>
   );
 }

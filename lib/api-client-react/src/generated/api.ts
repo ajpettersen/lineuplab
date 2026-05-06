@@ -17,12 +17,15 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  BoxScoreState,
   CreateGameBody,
   CreatePlayerBody,
   CreatePracticeBody,
   CreateTournamentBody,
   DashboardTask,
   DismissDashboardTaskBody,
+  ExtractBoxScoreBody,
+  ExtractedBoxScore,
   Game,
   GenerateLineupBody,
   GeneratePracticePlanBody,
@@ -37,6 +40,8 @@ import type {
   PracticeDetail,
   PracticeSummary,
   ReplaceAttendanceBody,
+  SaveBoxScoreBody,
+  SaveBoxScoreResponse,
   SaveLineupBody,
   SeasonStats,
   TeamSettings,
@@ -2372,6 +2377,357 @@ export const useDeleteGamePitchCount = <
   TContext
 > => {
   return useMutation(getDeleteGamePitchCountMutationOptions(options));
+};
+
+/**
+ * Returns the per-(game, player) batting lines and pitch counts saved from any prior box-score import, plus the game's stored final score and the import timestamp. Use to show the import dialog's "Already imported on …" banner and pre-fill the editable preview when a coach re-opens an already-imported game.
+ * @summary Get the saved batting + pitching lines for a game
+ */
+export const getGetBoxScoreUrl = (id: number) => {
+  return `/api/games/${id}/box-score`;
+};
+
+export const getBoxScore = async (
+  id: number,
+  options?: RequestInit,
+): Promise<BoxScoreState> => {
+  return customFetch<BoxScoreState>(getGetBoxScoreUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBoxScoreQueryKey = (id: number) => {
+  return [`/api/games/${id}/box-score`] as const;
+};
+
+export const getGetBoxScoreQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBoxScore>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBoxScore>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBoxScoreQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBoxScore>>> = ({
+    signal,
+  }) => getBoxScore(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBoxScore>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBoxScoreQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBoxScore>>
+>;
+export type GetBoxScoreQueryError = ErrorType<void>;
+
+/**
+ * @summary Get the saved batting + pitching lines for a game
+ */
+
+export function useGetBoxScore<
+  TData = Awaited<ReturnType<typeof getBoxScore>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBoxScore>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBoxScoreQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Replaces all per-game batting lines for this game with the supplied rows, upserts pitch counts (one row per pitcher), updates the game's final score, and stamps the import timestamp. Re-posting the same game wipes the prior batting lines first so totals never double-count.
+ * @summary Commit edited box-score lines for a game (idempotent per game)
+ */
+export const getSaveBoxScoreUrl = (id: number) => {
+  return `/api/games/${id}/box-score`;
+};
+
+export const saveBoxScore = async (
+  id: number,
+  saveBoxScoreBody: SaveBoxScoreBody,
+  options?: RequestInit,
+): Promise<SaveBoxScoreResponse> => {
+  return customFetch<SaveBoxScoreResponse>(getSaveBoxScoreUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(saveBoxScoreBody),
+  });
+};
+
+export const getSaveBoxScoreMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveBoxScore>>,
+    TError,
+    { id: number; data: BodyType<SaveBoxScoreBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveBoxScore>>,
+  TError,
+  { id: number; data: BodyType<SaveBoxScoreBody> },
+  TContext
+> => {
+  const mutationKey = ["saveBoxScore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveBoxScore>>,
+    { id: number; data: BodyType<SaveBoxScoreBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return saveBoxScore(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveBoxScoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveBoxScore>>
+>;
+export type SaveBoxScoreMutationBody = BodyType<SaveBoxScoreBody>;
+export type SaveBoxScoreMutationError = ErrorType<void>;
+
+/**
+ * @summary Commit edited box-score lines for a game (idempotent per game)
+ */
+export const useSaveBoxScore = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveBoxScore>>,
+    TError,
+    { id: number; data: BodyType<SaveBoxScoreBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveBoxScore>>,
+  TError,
+  { id: number; data: BodyType<SaveBoxScoreBody> },
+  TContext
+> => {
+  return useMutation(getSaveBoxScoreMutationOptions(options));
+};
+
+/**
+ * Removes all per-game batting lines and clears the import timestamp. Pitch counts and the stored final score are intentionally left intact so the coach decides what to revert.
+ * @summary Clear the box-score import for a game
+ */
+export const getDeleteBoxScoreUrl = (id: number) => {
+  return `/api/games/${id}/box-score`;
+};
+
+export const deleteBoxScore = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteBoxScoreUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteBoxScoreMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteBoxScore>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteBoxScore>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteBoxScore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteBoxScore>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteBoxScore(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteBoxScoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteBoxScore>>
+>;
+
+export type DeleteBoxScoreMutationError = ErrorType<void>;
+
+/**
+ * @summary Clear the box-score import for a game
+ */
+export const useDeleteBoxScore = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteBoxScore>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteBoxScore>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteBoxScoreMutationOptions(options));
+};
+
+/**
+ * Accepts 1–4 phone screenshots or PDFs of a box score (GameChanger or any scorebook). The AI matches names to the team's roster and returns a preview payload (batting lines, pitching lines, final score). Does NOT write to the database — the coach edits the preview and then POSTs `/box-score` to commit.
+ * @summary Extract batting + pitching lines from box-score images via AI
+ */
+export const getExtractBoxScoreUrl = (id: number) => {
+  return `/api/games/${id}/box-score/extract`;
+};
+
+export const extractBoxScore = async (
+  id: number,
+  extractBoxScoreBody: ExtractBoxScoreBody,
+  options?: RequestInit,
+): Promise<ExtractedBoxScore> => {
+  const formData = new FormData();
+  extractBoxScoreBody.files.forEach((value) => formData.append(`files`, value));
+
+  return customFetch<ExtractedBoxScore>(getExtractBoxScoreUrl(id), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getExtractBoxScoreMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractBoxScore>>,
+    TError,
+    { id: number; data: BodyType<ExtractBoxScoreBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractBoxScore>>,
+  TError,
+  { id: number; data: BodyType<ExtractBoxScoreBody> },
+  TContext
+> => {
+  const mutationKey = ["extractBoxScore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractBoxScore>>,
+    { id: number; data: BodyType<ExtractBoxScoreBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return extractBoxScore(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractBoxScoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractBoxScore>>
+>;
+export type ExtractBoxScoreMutationBody = BodyType<ExtractBoxScoreBody>;
+export type ExtractBoxScoreMutationError = ErrorType<void>;
+
+/**
+ * @summary Extract batting + pitching lines from box-score images via AI
+ */
+export const useExtractBoxScore = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractBoxScore>>,
+    TError,
+    { id: number; data: BodyType<ExtractBoxScoreBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractBoxScore>>,
+  TError,
+  { id: number; data: BodyType<ExtractBoxScoreBody> },
+  TContext
+> => {
+  return useMutation(getExtractBoxScoreMutationOptions(options));
 };
 
 /**

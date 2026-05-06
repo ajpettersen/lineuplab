@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, battingStatsTable, teamSettingsTable } from "@workspace/db";
+import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, teamSettingsTable } from "@workspace/db";
+import { getBattingTotalsForPlayers } from "../lib/batting-totals";
 import {
   GetGameLineupParams,
   GenerateLineupParams,
@@ -128,35 +129,20 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   // PA = AB + BB + HBP + SAC (close enough — sacrifice flies aren't tracked
   // separately in our schema).
   const ownedPlayerIds = players.map((p) => p.id);
-  const battingRows = ownedPlayerIds.length > 0
-    ? await db
-        .select()
-        .from(battingStatsTable)
-        .where(inArray(battingStatsTable.playerId, ownedPlayerIds))
-    : [];
-  // The schema allows multiple batting_stats rows per player (one per
-  // seasonLabel). Sum PAs across all of them so the league-mode "rebalance"
-  // is based on the player's full tracked history, and pick OBP from the row
-  // with the most at-bats so we don't let a tiny-sample season dominate the
-  // tournament-mode lead-off ordering. This makes the result deterministic
-  // regardless of row insertion order.
+  // Unioned season totals — one row per player combining the manual
+  // batting_stats baseline with summed game_batting_lines (which
+  // come from box-score imports). Rates are already recomputed from
+  // the unioned counts so we don't need the legacy "highest-AB row
+  // wins" anchoring.
+  const totalsMap = await getBattingTotalsForPlayers(userId, ownedPlayerIds);
   const paMap = new Map<number, number>();
   const obpMap = new Map<number, number>();
   const slgMap = new Map<number, number>();
-  // playerId → AB total backing the chosen OBP/SLG row. Both rate stats are
-  // anchored on the same row (highest-AB) so they describe the same sample
-  // — important now that the tournament arrangement reads OBP and SLG side
-  // by side to pick table setters vs cleanup hitters.
-  const rateAbAnchor = new Map<number, number>();
-  for (const r of battingRows) {
-    const pa = (r.ab ?? 0) + (r.bb ?? 0) + (r.hbp ?? 0) + (r.sac ?? 0);
-    paMap.set(r.playerId, (paMap.get(r.playerId) ?? 0) + pa);
-    const ab = r.ab ?? 0;
-    if ((r.obp != null || r.slg != null) && (!rateAbAnchor.has(r.playerId) || ab > (rateAbAnchor.get(r.playerId) ?? -1))) {
-      if (r.obp != null) obpMap.set(r.playerId, r.obp);
-      if (r.slg != null) slgMap.set(r.playerId, r.slg);
-      rateAbAnchor.set(r.playerId, ab);
-    }
+  for (const [playerId, t] of totalsMap) {
+    const pa = t.ab + t.bb + t.hbp + t.sac;
+    if (pa > 0) paMap.set(playerId, pa);
+    if (t.obp != null) obpMap.set(playerId, t.obp);
+    if (t.slg != null) slgMap.set(playerId, t.slg);
   }
 
   // Team-wide batting style (continuous = everyone bats; nine_man = only the

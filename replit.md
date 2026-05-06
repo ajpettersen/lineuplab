@@ -52,6 +52,7 @@ pnpm generate # Orval codegen
 - **Master Admin Bypass**: `MASTER_ADMIN_USER_IDS` environment variable allows app owners to bypass team scoping and access an `/admin` page (lists all teams + drill-into each). Also enables a "view as this team" switch from admin.
 - **Per-Team Coach Profile**: Each coach's `displayName` + `role` lives on `team_memberships` (the owner has a row too with `isOwner=true`). Names are prompted via a one-time modal on first load (`coach-profile-prompt.tsx`).
 - **Permission Tiers**: `team_memberships.permission` is `full | partial | view`. Server enforces with `assertPermission(level)` middleware (see `lib/permissions.ts`); web hides write controls via `usePermission()`. Owner row is locked to `full`.
+- **Box Score Import**: GameChanger-style import. Coach uploads 1-4 phone screenshots; gpt-5.2 multi-image extracts batting + pitching + final score. Per-game rows live in `game_batting_lines` (PK `(gameId, playerId)`) so re-import is idempotent — `POST /games/:id/box-score` replaces all lines for the game in a transaction, upserts pitch counts, sets score + status=completed + `boxScoreImportedAt`. Season totals come from `getBattingTotalsForPlayers()` (`api-server/src/lib/batting-totals.ts`) which unions manual `batting_stats` counts with summed `game_batting_lines` and recomputes rates; consumed by GET `/batting` and the lineup generator (no double-counting). DELETE clears lines + counts + flag (preserves `ourScore` so coach can keep manual edits).
 
 ## Product
 
@@ -86,6 +87,7 @@ pnpm generate # Orval codegen
 - I want a Settings → Defaults toggle to hide the "Make this lineup more equitable" suggestions popup on the game lineup view.
 - I want a small info tooltip next to the Fairness Score that explains how it's calculated (per-player bench-rate stddev across completed games, scored 100 − stddev × 200).
 - I want the practice planner AI to incorporate specific drills I name ("Must-include drills" textarea, one per line) and to group players by preferred position on defensive blocks when it makes sense.
+- I want to import GameChanger box scores by uploading 1-4 phone screenshots; the AI should extract per-player batting and pitching lines plus the final score, with an editable preview before saving, and re-importing should replace (not duplicate) the prior import.
 
 ## Gotchas
 

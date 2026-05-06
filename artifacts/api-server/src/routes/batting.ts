@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
+import { getBattingTotals } from "../lib/batting-totals";
 
 const router: IRouter = Router();
 router.use("/batting", gateWrites("partial"));
@@ -40,38 +41,41 @@ function computeRates(row: { ab: number; hits: number; doubles: number; triples:
 
 router.get("/batting", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
-  // No userId column on battingStats — tenant isolation comes from the
-  // innerJoin to players + WHERE players.userId = req.userId.
-  const rows = await db
-    .select({
-      id: battingStatsTable.id,
-      playerId: battingStatsTable.playerId,
-      playerName: playersTable.name,
-      playerNumber: playersTable.number,
-      seasonLabel: battingStatsTable.seasonLabel,
-      ab: battingStatsTable.ab,
-      hits: battingStatsTable.hits,
-      doubles: battingStatsTable.doubles,
-      triples: battingStatsTable.triples,
-      hr: battingStatsTable.hr,
-      rbi: battingStatsTable.rbi,
-      bb: battingStatsTable.bb,
-      k: battingStatsTable.k,
-      hbp: battingStatsTable.hbp,
-      sac: battingStatsTable.sac,
-      sb: battingStatsTable.sb,
-      avg: battingStatsTable.avg,
-      obp: battingStatsTable.obp,
-      slg: battingStatsTable.slg,
-      ops: battingStatsTable.ops,
-      sourceNote: battingStatsTable.sourceNote,
-      updatedAt: battingStatsTable.updatedAt,
-    })
-    .from(battingStatsTable)
-    .innerJoin(playersTable, eq(battingStatsTable.playerId, playersTable.id))
-    .where(eq(playersTable.userId, userId))
-    .orderBy(battingStatsTable.playerId);
-  res.json(rows);
+  // Returns the unioned per-player totals (manual `batting_stats` row
+  // counts + summed `game_batting_lines`), with rates recomputed from
+  // the unioned counts. Idempotent w.r.t. box-score imports.
+  const rows = await getBattingTotals(userId);
+  // Map to the legacy response shape the UI expects (playerId-keyed
+  // row with avg/obp/slg/ops + counts). `seasonLabel` is preserved
+  // for backwards compat — pinned to "Current" since the unified
+  // view doesn't currently distinguish seasons.
+  res.json(
+    rows.map((r) => ({
+      playerId: r.playerId,
+      playerName: r.playerName,
+      playerNumber: r.playerNumber,
+      seasonLabel: "Current",
+      ab: r.ab,
+      hits: r.hits,
+      doubles: r.doubles,
+      triples: r.triples,
+      hr: r.hr,
+      rbi: r.rbi,
+      bb: r.bb,
+      k: r.k,
+      hbp: r.hbp,
+      sac: r.sac,
+      sb: r.sb,
+      runs: r.runs,
+      avg: r.avg,
+      obp: r.obp,
+      slg: r.slg,
+      ops: r.ops,
+      gamesRecorded: r.gamesRecorded,
+      hasPerGameLines: r.hasPerGameLines,
+      updatedAt: r.updatedAt,
+    })),
+  );
 });
 
 router.put("/batting/:playerId", async (req, res): Promise<void> => {

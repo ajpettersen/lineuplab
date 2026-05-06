@@ -573,6 +573,115 @@ paths:
         "404":
           description: Not found
 
+  /games/{id}/box-score:
+    get:
+      operationId: getBoxScore
+      tags: [games]
+      summary: Get the saved batting + pitching lines for a game
+      description: Returns the per-(game, player) batting lines and pitch counts saved from any prior box-score import, plus the game's stored final score and the import timestamp. Use to show the import dialog's "Already imported on …" banner and pre-fill the editable preview when a coach re-opens an already-imported game.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Box score state for the game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoxScoreState"
+        "404":
+          description: Game not found
+    post:
+      operationId: saveBoxScore
+      tags: [games]
+      summary: Commit edited box-score lines for a game (idempotent per game)
+      description: Replaces all per-game batting lines for this game with the supplied rows, upserts pitch counts (one row per pitcher), updates the game's final score, and stamps the import timestamp. Re-posting the same game wipes the prior batting lines first so totals never double-count.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveBoxScoreBody"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveBoxScoreResponse"
+        "400":
+          description: Invalid payload
+        "404":
+          description: Game not found
+    delete:
+      operationId: deleteBoxScore
+      tags: [games]
+      summary: Clear the box-score import for a game
+      description: Removes all per-game batting lines and clears the import timestamp. Pitch counts and the stored final score are intentionally left intact so the coach decides what to revert.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          description: Game not found
+
+  /games/{id}/box-score/extract:
+    post:
+      operationId: extractBoxScore
+      tags: [games]
+      summary: Extract batting + pitching lines from box-score images via AI
+      description: Accepts 1–4 phone screenshots or PDFs of a box score (GameChanger or any scorebook). The AI matches names to the team's roster and returns a preview payload (batting lines, pitching lines, final score). Does NOT write to the database — the coach edits the preview and then POSTs `/box-score` to commit.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  description: 1–4 image (PNG/JPEG/WebP) or PDF files, ≤6 MB each
+                  items:
+                    type: string
+                    format: binary
+              required:
+                - files
+      responses:
+        "200":
+          description: Extracted preview (not yet saved)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedBoxScore"
+        "400":
+          description: No files uploaded or roster is empty
+        "404":
+          description: Game not found
+        "422":
+          description: AI returned malformed response
+        "502":
+          description: AI extraction failed
+
   /practices:
     get:
       operationId: listPractices
@@ -942,6 +1051,10 @@ components:
               items:
                 $ref: "#/components/schemas/PlanSnapshotEntry"
           description: Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)
+        boxScoreImportedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an "Already imported on …" banner when set.
         createdAt:
           type: string
           format: date-time
@@ -1893,3 +2006,210 @@ components:
       required:
         - blocks
         - rationale
+
+    BattingLine:
+      type: object
+      description: One per-game batting line. Stored as a row in `game_batting_lines`; rolls up into the per-player season totals.
+      properties:
+        playerId:
+          type: integer
+        playerName:
+          type: ["string", "null"]
+          description: Roster name at extraction time (helps the UI render before fetching players)
+        ab:
+          type: integer
+        hits:
+          type: integer
+        doubles:
+          type: integer
+        triples:
+          type: integer
+        hr:
+          type: integer
+        rbi:
+          type: integer
+        bb:
+          type: integer
+        k:
+          type: integer
+        hbp:
+          type: integer
+        sac:
+          type: integer
+        sb:
+          type: integer
+        runs:
+          type: integer
+      required:
+        - playerId
+        - ab
+        - hits
+        - doubles
+        - triples
+        - hr
+        - rbi
+        - bb
+        - k
+        - hbp
+        - sac
+        - sb
+        - runs
+
+    PitchingLine:
+      type: object
+      description: One pitcher's outing for this game. Persists into `pitch_counts` with a unique (game, player) row.
+      properties:
+        playerId:
+          type: integer
+        playerName:
+          type: ["string", "null"]
+        pitches:
+          type: integer
+          minimum: 0
+        notes:
+          type: ["string", "null"]
+      required:
+        - playerId
+        - pitches
+
+    ExtractedBoxScore:
+      type: object
+      description: Preview payload returned by the AI extractor. The coach edits this in the UI before committing.
+      properties:
+        batting:
+          type: array
+          items:
+            $ref: "#/components/schemas/BattingLine"
+        pitching:
+          type: array
+          items:
+            $ref: "#/components/schemas/PitchingLine"
+        ourScore:
+          type: ["integer", "null"]
+        opponentScore:
+          type: ["integer", "null"]
+      required:
+        - batting
+        - pitching
+
+    SaveBoxScoreBody:
+      type: object
+      properties:
+        batting:
+          type: array
+          items:
+            $ref: "#/components/schemas/BattingLine"
+        pitching:
+          type: array
+          items:
+            $ref: "#/components/schemas/PitchingLine"
+        ourScore:
+          type: ["integer", "null"]
+        opponentScore:
+          type: ["integer", "null"]
+        markCompleted:
+          type: boolean
+          default: true
+          description: When true (default) flips the game's status to "completed" — importing a box score implies the game is over.
+
+    SaveBoxScoreResponse:
+      type: object
+      properties:
+        gameId:
+          type: integer
+        importedAt:
+          type: string
+          format: date-time
+        battingLinesSaved:
+          type: integer
+        pitchingLinesSaved:
+          type: integer
+        ourScore:
+          type: ["integer", "null"]
+        opponentScore:
+          type: ["integer", "null"]
+      required:
+        - gameId
+        - importedAt
+        - battingLinesSaved
+        - pitchingLinesSaved
+
+    BoxScoreState:
+      type: object
+      description: "Saved state of a game's box-score import. `importedAt: null` means no import has happened yet."
+      properties:
+        gameId:
+          type: integer
+        importedAt:
+          type: ["string", "null"]
+          format: date-time
+        ourScore:
+          type: ["integer", "null"]
+        opponentScore:
+          type: ["integer", "null"]
+        batting:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              gameId:
+                type: integer
+              playerId:
+                type: integer
+              ab:
+                type: integer
+              hits:
+                type: integer
+              doubles:
+                type: integer
+              triples:
+                type: integer
+              hr:
+                type: integer
+              rbi:
+                type: integer
+              bb:
+                type: integer
+              k:
+                type: integer
+              hbp:
+                type: integer
+              sac:
+                type: integer
+              sb:
+                type: integer
+              runs:
+                type: integer
+              sourceNote:
+                type: ["string", "null"]
+              updatedAt:
+                type: string
+                format: date-time
+            required:
+              - id
+              - gameId
+              - playerId
+              - ab
+              - hits
+              - doubles
+              - triples
+              - hr
+              - rbi
+              - bb
+              - k
+              - hbp
+              - sac
+              - sb
+              - runs
+              - updatedAt
+        pitching:
+          type: array
+          items:
+            $ref: "#/components/schemas/PitchCount"
+      required:
+        - gameId
+        - importedAt
+        - batting
+        - pitching

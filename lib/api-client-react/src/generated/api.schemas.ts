@@ -125,6 +125,11 @@ export interface Game {
   notes?: string | null;
   /** Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken) */
   planSnapshot?: null | PlanSnapshotEntry[];
+  /**
+   * Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an "Already imported on …" banner when set.
+   * @nullable
+   */
+  boxScoreImportedAt?: string | null;
   createdAt: string;
 }
 
@@ -764,3 +769,115 @@ export interface GeneratedPracticePlan {
   /** One- or two-sentence summary of why the AI chose these drills */
   rationale: string;
 }
+
+/**
+ * One per-game batting line. Stored as a row in `game_batting_lines`; rolls up into the per-player season totals.
+ */
+export interface BattingLine {
+  playerId: number;
+  /**
+   * Roster name at extraction time (helps the UI render before fetching players)
+   * @nullable
+   */
+  playerName?: string | null;
+  ab: number;
+  hits: number;
+  doubles: number;
+  triples: number;
+  hr: number;
+  rbi: number;
+  bb: number;
+  k: number;
+  hbp: number;
+  sac: number;
+  sb: number;
+  runs: number;
+}
+
+/**
+ * One pitcher's outing for this game. Persists into `pitch_counts` with a unique (game, player) row.
+ */
+export interface PitchingLine {
+  playerId: number;
+  /** @nullable */
+  playerName?: string | null;
+  /** @minimum 0 */
+  pitches: number;
+  /** @nullable */
+  notes?: string | null;
+}
+
+/**
+ * Preview payload returned by the AI extractor. The coach edits this in the UI before committing.
+ */
+export interface ExtractedBoxScore {
+  batting: BattingLine[];
+  pitching: PitchingLine[];
+  /** @nullable */
+  ourScore?: number | null;
+  /** @nullable */
+  opponentScore?: number | null;
+}
+
+export interface SaveBoxScoreBody {
+  batting?: BattingLine[];
+  pitching?: PitchingLine[];
+  /** @nullable */
+  ourScore?: number | null;
+  /** @nullable */
+  opponentScore?: number | null;
+  /** When true (default) flips the game's status to "completed" — importing a box score implies the game is over. */
+  markCompleted?: boolean;
+}
+
+export interface SaveBoxScoreResponse {
+  gameId: number;
+  importedAt: string;
+  battingLinesSaved: number;
+  pitchingLinesSaved: number;
+  /** @nullable */
+  ourScore?: number | null;
+  /** @nullable */
+  opponentScore?: number | null;
+}
+
+export type BoxScoreStateBattingItem = {
+  id: number;
+  gameId: number;
+  playerId: number;
+  ab: number;
+  hits: number;
+  doubles: number;
+  triples: number;
+  hr: number;
+  rbi: number;
+  bb: number;
+  k: number;
+  hbp: number;
+  sac: number;
+  sb: number;
+  runs: number;
+  /** @nullable */
+  sourceNote?: string | null;
+  updatedAt: string;
+};
+
+/**
+ * Saved state of a game's box-score import. `importedAt: null` means no import has happened yet.
+ */
+export interface BoxScoreState {
+  gameId: number;
+  /** @nullable */
+  importedAt: string | null;
+  /** @nullable */
+  ourScore?: number | null;
+  /** @nullable */
+  opponentScore?: number | null;
+  batting: BoxScoreStateBattingItem[];
+  pitching: PitchCount[];
+}
+
+export type ExtractBoxScoreBody = {
+  /** 1–4 image (PNG/JPEG/WebP) or PDF files, ≤6 MB each */
+  files: Blob[];
+};

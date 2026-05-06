@@ -50,6 +50,14 @@ export const gamesTable = pgTable(
     // Snapshot of the planned lineup (taken when the coach chose "Keep both"
     // before overriding with a post-game photo). Null = no snapshot.
     planSnapshot: jsonb("plan_snapshot").$type<PlanSnapshotEntry[]>(),
+    // Set when a coach uploads a GameChanger / scorebook box score and
+    // commits the extracted batting + pitching lines. Drives the
+    // "Already imported — re-import will replace" banner on the import
+    // dialog and is the single source of truth for whether per-game
+    // batting lines exist for this game (the actual rows live in
+    // `game_batting_lines`; this column lets the UI avoid an extra
+    // count(*) round-trip on the game-detail page).
+    boxScoreImportedAt: timestamp("box_score_imported_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("games_user_id_idx").on(table.userId)],

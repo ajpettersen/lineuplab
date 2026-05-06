@@ -168,6 +168,12 @@ export const ListGamesResponseItem = zod.object({
     .describe(
       "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
     ),
+  boxScoreImportedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an \"Already imported on …\" banner when set.',
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListGamesResponse = zod.array(ListGamesResponseItem);
@@ -254,6 +260,12 @@ export const GetGameResponse = zod.object({
     .optional()
     .describe(
       "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
+  boxScoreImportedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an \"Already imported on …\" banner when set.',
     ),
   createdAt: zod.coerce.date(),
 });
@@ -349,6 +361,12 @@ export const UpdateGameResponse = zod.object({
     .describe(
       "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
     ),
+  boxScoreImportedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an \"Already imported on …\" banner when set.',
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -421,6 +439,12 @@ export const SnapshotPlanResponse = zod.object({
     .describe(
       "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
     ),
+  boxScoreImportedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an \"Already imported on …\" banner when set.',
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -484,6 +508,12 @@ export const ClearPlanSnapshotResponse = zod.object({
     .optional()
     .describe(
       "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
+    ),
+  boxScoreImportedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an \"Already imported on …\" banner when set.',
     ),
   createdAt: zod.coerce.date(),
 });
@@ -1052,6 +1082,12 @@ export const GetTournamentResponse = zod
             .describe(
               "Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken)",
             ),
+          boxScoreImportedAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              'Timestamp of the most recent box-score import. Null if no box score has been imported. The UI shows an \"Already imported on …\" banner when set.',
+            ),
           createdAt: zod.coerce.date(),
         }),
       ),
@@ -1300,6 +1336,207 @@ export const DeleteGamePitchCountParams = zod.object({
   gameId: zod.coerce.number(),
   playerId: zod.coerce.number(),
 });
+
+/**
+ * Returns the per-(game, player) batting lines and pitch counts saved from any prior box-score import, plus the game's stored final score and the import timestamp. Use to show the import dialog's "Already imported on …" banner and pre-fill the editable preview when a coach re-opens an already-imported game.
+ * @summary Get the saved batting + pitching lines for a game
+ */
+export const GetBoxScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const getBoxScoreResponsePitchingItemPitchesMin = 0;
+
+export const GetBoxScoreResponse = zod
+  .object({
+    gameId: zod.number(),
+    importedAt: zod.coerce.date().nullable(),
+    ourScore: zod.number().nullish(),
+    opponentScore: zod.number().nullish(),
+    batting: zod.array(
+      zod.object({
+        id: zod.number(),
+        gameId: zod.number(),
+        playerId: zod.number(),
+        ab: zod.number(),
+        hits: zod.number(),
+        doubles: zod.number(),
+        triples: zod.number(),
+        hr: zod.number(),
+        rbi: zod.number(),
+        bb: zod.number(),
+        k: zod.number(),
+        hbp: zod.number(),
+        sac: zod.number(),
+        sb: zod.number(),
+        runs: zod.number(),
+        sourceNote: zod.string().nullish(),
+        updatedAt: zod.coerce.date(),
+      }),
+    ),
+    pitching: zod.array(
+      zod.object({
+        id: zod.number(),
+        gameId: zod.number(),
+        playerId: zod.number(),
+        pitches: zod.number().min(getBoxScoreResponsePitchingItemPitchesMin),
+        notes: zod.string().nullish(),
+        recordedAt: zod.coerce.date(),
+      }),
+    ),
+  })
+  .describe(
+    "Saved state of a game's box-score import. `importedAt: null` means no import has happened yet.",
+  );
+
+/**
+ * Replaces all per-game batting lines for this game with the supplied rows, upserts pitch counts (one row per pitcher), updates the game's final score, and stamps the import timestamp. Re-posting the same game wipes the prior batting lines first so totals never double-count.
+ * @summary Commit edited box-score lines for a game (idempotent per game)
+ */
+export const SaveBoxScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const saveBoxScoreBodyPitchingItemPitchesMin = 0;
+
+export const saveBoxScoreBodyMarkCompletedDefault = true;
+
+export const SaveBoxScoreBody = zod.object({
+  batting: zod
+    .array(
+      zod
+        .object({
+          playerId: zod.number(),
+          playerName: zod
+            .string()
+            .nullish()
+            .describe(
+              "Roster name at extraction time (helps the UI render before fetching players)",
+            ),
+          ab: zod.number(),
+          hits: zod.number(),
+          doubles: zod.number(),
+          triples: zod.number(),
+          hr: zod.number(),
+          rbi: zod.number(),
+          bb: zod.number(),
+          k: zod.number(),
+          hbp: zod.number(),
+          sac: zod.number(),
+          sb: zod.number(),
+          runs: zod.number(),
+        })
+        .describe(
+          "One per-game batting line. Stored as a row in `game_batting_lines`; rolls up into the per-player season totals.",
+        ),
+    )
+    .optional(),
+  pitching: zod
+    .array(
+      zod
+        .object({
+          playerId: zod.number(),
+          playerName: zod.string().nullish(),
+          pitches: zod.number().min(saveBoxScoreBodyPitchingItemPitchesMin),
+          notes: zod.string().nullish(),
+        })
+        .describe(
+          "One pitcher's outing for this game. Persists into `pitch_counts` with a unique (game, player) row.",
+        ),
+    )
+    .optional(),
+  ourScore: zod.number().nullish(),
+  opponentScore: zod.number().nullish(),
+  markCompleted: zod
+    .boolean()
+    .default(saveBoxScoreBodyMarkCompletedDefault)
+    .describe(
+      'When true (default) flips the game\'s status to \"completed\" — importing a box score implies the game is over.',
+    ),
+});
+
+export const SaveBoxScoreResponse = zod.object({
+  gameId: zod.number(),
+  importedAt: zod.coerce.date(),
+  battingLinesSaved: zod.number(),
+  pitchingLinesSaved: zod.number(),
+  ourScore: zod.number().nullish(),
+  opponentScore: zod.number().nullish(),
+});
+
+/**
+ * Removes all per-game batting lines and clears the import timestamp. Pitch counts and the stored final score are intentionally left intact so the coach decides what to revert.
+ * @summary Clear the box-score import for a game
+ */
+export const DeleteBoxScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * Accepts 1–4 phone screenshots or PDFs of a box score (GameChanger or any scorebook). The AI matches names to the team's roster and returns a preview payload (batting lines, pitching lines, final score). Does NOT write to the database — the coach edits the preview and then POSTs `/box-score` to commit.
+ * @summary Extract batting + pitching lines from box-score images via AI
+ */
+export const ExtractBoxScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ExtractBoxScoreBody = zod.object({
+  files: zod
+    .array(zod.instanceof(File))
+    .describe("1–4 image (PNG\/JPEG\/WebP) or PDF files, ≤6 MB each"),
+});
+
+export const extractBoxScoreResponsePitchingItemPitchesMin = 0;
+
+export const ExtractBoxScoreResponse = zod
+  .object({
+    batting: zod.array(
+      zod
+        .object({
+          playerId: zod.number(),
+          playerName: zod
+            .string()
+            .nullish()
+            .describe(
+              "Roster name at extraction time (helps the UI render before fetching players)",
+            ),
+          ab: zod.number(),
+          hits: zod.number(),
+          doubles: zod.number(),
+          triples: zod.number(),
+          hr: zod.number(),
+          rbi: zod.number(),
+          bb: zod.number(),
+          k: zod.number(),
+          hbp: zod.number(),
+          sac: zod.number(),
+          sb: zod.number(),
+          runs: zod.number(),
+        })
+        .describe(
+          "One per-game batting line. Stored as a row in `game_batting_lines`; rolls up into the per-player season totals.",
+        ),
+    ),
+    pitching: zod.array(
+      zod
+        .object({
+          playerId: zod.number(),
+          playerName: zod.string().nullish(),
+          pitches: zod
+            .number()
+            .min(extractBoxScoreResponsePitchingItemPitchesMin),
+          notes: zod.string().nullish(),
+        })
+        .describe(
+          "One pitcher's outing for this game. Persists into `pitch_counts` with a unique (game, player) row.",
+        ),
+    ),
+    ourScore: zod.number().nullish(),
+    opponentScore: zod.number().nullish(),
+  })
+  .describe(
+    "Preview payload returned by the AI extractor. The coach edits this in the UI before committing.",
+  );
 
 /**
  * @summary List practice plans (most recent first), with attendance roll-ups
