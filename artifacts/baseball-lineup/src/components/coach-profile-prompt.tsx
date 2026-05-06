@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamContext, useUpdateCoachProfile } from "@/hooks/use-team-context";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 
 /**
  * First-touch onboarding modal. Auto-opens once per session per team
@@ -34,11 +35,19 @@ import { useTeamContext, useUpdateCoachProfile } from "@/hooks/use-team-context"
  */
 export function CoachProfilePrompt() {
   const { data: ctx } = useTeamContext();
+  const settings = useTeamSettings();
   const update = useUpdateCoachProfile();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState("");
+
+  // Suppress the prompt entirely once the head coach has finished
+  // the /welcome onboarding wizard — that flow already collects the
+  // display name + role, so re-prompting later (e.g. if a coach
+  // clears their name in Settings) crosses into nag territory.
+  // Ongoing edits belong in the Coaches card, not a forced modal.
+  const onboardingDone = !!settings.onboardingCompletedAt;
 
   // Open once per (team, user) when profile is incomplete. Tracking
   // the active owner in the dependency list also re-opens the dialog
@@ -46,7 +55,7 @@ export function CoachProfilePrompt() {
   // a name yet.
   useEffect(() => {
     if (!ctx) return;
-    if (ctx.currentUser.profileComplete) {
+    if (ctx.currentUser.profileComplete || onboardingDone) {
       setOpen(false);
       return;
     }
@@ -55,7 +64,7 @@ export function CoachProfilePrompt() {
     // profile" pattern even though there's no edit affordance yet.
     setDisplayName(ctx.currentUser.displayName ?? "");
     setRole(ctx.currentUser.role ?? "");
-  }, [ctx?.activeOwnerUserId, ctx?.currentUser.profileComplete, ctx]);
+  }, [ctx?.activeOwnerUserId, ctx?.currentUser.profileComplete, ctx, onboardingDone]);
 
   const trimmedName = displayName.trim();
   const canSave = trimmedName.length >= 2 && trimmedName.length <= 40;

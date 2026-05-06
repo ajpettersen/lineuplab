@@ -44,8 +44,17 @@ export function TeamNamePrompt() {
   const [teamName, setTeamName] = useState("");
   const [shortName, setShortName] = useState("");
 
+  // Once the head coach finishes the /welcome onboarding wizard
+  // (which already collects team name + short name), this prompt
+  // should never re-fire — even if they later edit the name back
+  // to "My Team" in Settings, that's their choice. Suppressing on
+  // `onboardingCompletedAt` keeps the prompt to its original
+  // "first signup" purpose; ongoing edits live in Settings.
+  const onboardingDone = !!data?.onboardingCompletedAt;
+
   const needsName =
     !!data &&
+    !onboardingDone &&
     (data.teamName === DEFAULT_TEAM_NAME ||
       data.teamShortName === DEFAULT_TEAM_SHORT ||
       !data.teamName.trim() ||

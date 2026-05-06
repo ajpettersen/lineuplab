@@ -23,6 +23,7 @@ export function useTeamSettings() {
     battingStyle,
     activeFieldPositions,
     usesTournaments,
+    onboardingCompletedAt: query.data?.onboardingCompletedAt ?? null,
     isLoading: query.isLoading,
     isError: query.isError,
     raw: query,
