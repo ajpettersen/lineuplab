@@ -25,6 +25,7 @@ import Practices from "@/pages/practices";
 import PracticeDetail from "@/pages/practice-detail";
 import FieldDisplay from "@/pages/field-display";
 import Stats from "@/pages/stats";
+import SeasonStats from "@/pages/season-stats";
 import Settings from "@/pages/settings";
 import Admin from "@/pages/admin";
 import AdminTeamDetail from "@/pages/admin-team-detail";
@@ -249,6 +250,7 @@ function ProtectedApp() {
                 <Route path="/practices/:id" component={PracticeDetail} />
                 <Route path="/practices" component={Practices} />
                 <Route path="/stats" component={Stats} />
+                <Route path="/season-stats" component={SeasonStats} />
                 {/* Constraints lives inside Settings now — keep the old URL alive for bookmarks. */}
                 <Route path="/constraints">
                   <Redirect to="/settings#constraints-section" />

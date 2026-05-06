@@ -36,7 +36,7 @@ pnpm generate # Orval codegen
 - **Frontend Source**: `src/`
 - **Backend Source**: `api-server/src/`
 - **Database Schema**: `api-server/src/db/schema.ts`
-- **API Contracts**: `api-server/src/routes/` (generated client in `src/lib/api-client/`)
+- **API Contracts**: `api-server/src/routes/` (generated client in `src/lib/api-client/`). Note: `/api/batting` and `/api/pitching` are hand-rolled (not in OpenAPI) — call with plain `fetch`.
 - **Theme/Styling**: `src/index.css`, `tailwind.config.js`
 - **Components**: `src/components/`
 - **Utilities**: `src/lib/`
@@ -53,6 +53,7 @@ pnpm generate # Orval codegen
 - **Per-Team Coach Profile**: Each coach's `displayName` + `role` lives on `team_memberships` (the owner has a row too with `isOwner=true`). Names are prompted via a one-time modal on first load (`coach-profile-prompt.tsx`).
 - **Permission Tiers**: `team_memberships.permission` is `full | partial | view`. Server enforces with `assertPermission(level)` middleware (see `lib/permissions.ts`); web hides write controls via `usePermission()`. Owner row is locked to `full`.
 - **Roster Names**: `players.firstName` + `players.lastName` are required on writes; `players.name` is the derived "First Last" display string kept in sync server-side. The bulk-import schema accepts either (`name` is split on the last whitespace as a fallback). Box-score AI matching expands the roster prompt to include the "F. Lastname" alias so GameChanger screenshots line up reliably. Legacy single-token rows are tolerated with empty lastName until a coach edits them. See `lib/db/src/schema/players.ts`, `routes/players.ts`, and `src/lib/player-name.ts`.
+- **Stats Navigation**: Two top-bar items — **Rotation Report** (`/stats`, fielding-time + import-history tabs) and **Season Stats** (`/season-stats`, batting + pitching tabs). The shared `<BattingTab>` lives in `src/components/batting-tab.tsx` so the Season Stats page can compose it alongside `<PitchingTab>`. Pitching aggregates come from `GET /api/pitching` (`routes/pitching.ts`) which rolls up `pitch_counts` per pitcher (totalPitches, outings, avg/max per outing, last outing date) joined with `games.gameDate`.
 - **Box Score Import**: GameChanger-style import. Coach uploads 1-4 phone screenshots; gpt-5.2 multi-image extracts batting + pitching + final score. Per-game rows live in `game_batting_lines` (PK `(gameId, playerId)`) so re-import is idempotent — `POST /games/:id/box-score` replaces all lines for the game in a transaction, upserts pitch counts, sets score + status=completed + `boxScoreImportedAt`. Season totals come from `getBattingTotalsForPlayers()` (`api-server/src/lib/batting-totals.ts`) which unions manual `batting_stats` counts with summed `game_batting_lines` and recomputes rates; consumed by GET `/batting` and the lineup generator (no double-counting). DELETE clears lines + counts + flag (preserves `ourScore` so coach can keep manual edits).
 
 ## Product
