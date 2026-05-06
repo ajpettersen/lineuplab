@@ -4,8 +4,10 @@ import {
   Home,
   Users,
   CalendarDays,
+  CalendarRange,
   BarChart2,
   Activity,
+  ChevronDown,
   Menu,
   Shield,
   ShieldCheck,
@@ -20,6 +22,12 @@ import {
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TeamSwitcher } from "@/components/team-switcher";
 import { CoachProfilePrompt } from "@/components/coach-profile-prompt";
@@ -134,14 +142,28 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // (the most-touched coaching surface), then the analysis view, then the
   // people/teams views, then settings (now also home to the Constraints
   // editor, so it doesn't get its own top-level nav slot anymore).
-  const navItems = [
+  // Schedule, Tournaments, and Practices share the "calendar entry"
+  // metaphor, so they're collapsed under one Events parent — a
+  // dropdown on desktop and an indented section in the mobile sheet.
+  type NavLeaf = { href: string; label: string; icon: typeof Home };
+  type NavGroup = { label: string; icon: typeof Home; children: NavLeaf[] };
+  type NavItem = NavLeaf | NavGroup;
+  const isGroup = (n: NavItem): n is NavGroup => "children" in n;
+
+  const navItems: NavItem[] = [
     { href: "/", label: "Dashboard", icon: Home },
-    { href: "/games", label: "Schedule", icon: CalendarDays },
+    {
+      label: "Events",
+      icon: CalendarRange,
+      children: [
+        { href: "/games", label: "Schedule", icon: CalendarDays },
+        { href: "/tournaments", label: "Tournaments", icon: Trophy },
+        { href: "/practices", label: "Practices", icon: Clipboard },
+      ],
+    },
     { href: "/stats", label: "Rotation Report", icon: BarChart2 },
     { href: "/season-stats", label: "Season Stats", icon: Activity },
     { href: "/players", label: "Roster", icon: Users },
-    { href: "/tournaments", label: "Tournaments", icon: Trophy },
-    { href: "/practices", label: "Practices", icon: Clipboard },
     { href: "/settings", label: "Settings", icon: SettingsIcon },
     // Master-admin-only: tucked at the end so it doesn't visually
     // dominate for users who'll never see it.
@@ -149,6 +171,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       ? [{ href: "/admin", label: "Admin", icon: ShieldCheck }]
       : []),
   ];
+
+  const isHrefActive = (href: string) =>
+    location === href || (location.startsWith(href) && href !== "/");
 
   const handleSignOut = () => {
     void signOut();
@@ -200,9 +225,41 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <nav className="grid gap-1 p-4">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive =
-                  location === item.href ||
-                  (location.startsWith(item.href) && item.href !== "/");
+                if (isGroup(item)) {
+                  // Render the group label as a non-interactive section
+                  // header, then each child link indented underneath.
+                  return (
+                    <div key={item.label} className="mt-2 first:mt-0">
+                      <div className="flex items-center gap-3 px-3 py-1.5 text-xs font-broadcast uppercase tracking-[0.16em] text-sidebar-foreground/45">
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </div>
+                      <div className="ml-2 border-l border-sidebar-border/60 pl-2">
+                        {item.children.map((child) => {
+                          const ChildIcon = child.icon;
+                          const isActive = isHrefActive(child.href);
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              data-testid={`link-nav-mobile-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
+                              onClick={() => setMobileNavOpen(false)}
+                              className={`flex items-center gap-3 rounded-md px-3 py-2 font-broadcast uppercase tracking-[0.12em] text-sm transition-all ${
+                                isActive
+                                  ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-[3px] border-accent shadow-inner"
+                                  : "text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground border-l-[3px] border-transparent"
+                              }`}
+                            >
+                              <ChildIcon className="h-5 w-5" />
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+                const isActive = isHrefActive(item.href);
                 return (
                   <Link
                     key={item.href}
@@ -305,9 +362,54 @@ export function Layout({ children }: { children: React.ReactNode }) {
               scroller. The active underline span tracks the new padding. */}
           <nav className="flex items-center gap-0.5 shrink-0">
             {navItems.map((item) => {
-              const isActive =
-                location === item.href ||
-                (location.startsWith(item.href) && item.href !== "/");
+              if (isGroup(item)) {
+                // Active when the current route matches any child.
+                const isActive = item.children.some((c) =>
+                  isHrefActive(c.href),
+                );
+                return (
+                  <DropdownMenu key={item.label}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        data-testid={`button-nav-${item.label.toLowerCase()}`}
+                        className={`relative shrink-0 inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
+                          isActive
+                            ? "text-primary-foreground bg-white/10"
+                            : "text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/5"
+                        }`}
+                      >
+                        {item.label}
+                        <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+                        {isActive && (
+                          <span className="absolute -bottom-[7px] left-2.5 right-2.5 h-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-broadcast-gold)]" />
+                        )}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="min-w-[180px]">
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const childActive = isHrefActive(child.href);
+                        return (
+                          <DropdownMenuItem key={child.href} asChild>
+                            <Link
+                              href={child.href}
+                              data-testid={`link-nav-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
+                              className={`flex items-center gap-2 font-broadcast uppercase tracking-[0.1em] text-[13px] cursor-pointer ${
+                                childActive ? "bg-accent/15 text-foreground" : ""
+                              }`}
+                            >
+                              <ChildIcon className="h-4 w-4" />
+                              {child.label}
+                            </Link>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
+              const isActive = isHrefActive(item.href);
               return (
                 <Link
                   key={item.href}
