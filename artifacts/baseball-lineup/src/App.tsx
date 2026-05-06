@@ -30,7 +30,11 @@ import Settings from "@/pages/settings";
 import Admin from "@/pages/admin";
 import AdminTeamDetail from "@/pages/admin-team-detail";
 import Join from "@/pages/join";
+import Landing from "@/pages/landing";
+import Onboarding from "@/pages/onboarding";
 import NotFound from "@/pages/not-found";
+import { useGetTeamSettings } from "@workspace/api-client-react";
+import { useTeamContext } from "@/hooks/use-team-context";
 
 const queryClient = new QueryClient();
 
@@ -224,11 +228,42 @@ function StashAndRedirectToSignIn() {
   return <Redirect to="/sign-in" />;
 }
 
+/**
+ * First-run gate: head coaches who haven't completed the onboarding
+ * wizard get redirected to /welcome from any other route. We only
+ * gate the head coach (`isOwner`) — assistant coaches who join via an
+ * invite shouldn't see the wizard, and master admins visiting another
+ * team in support mode also shouldn't.
+ */
+function OnboardingGate({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const { data: ctx } = useTeamContext();
+  const { data: settings } = useGetTeamSettings();
+  const onWelcome = location === "/welcome";
+  const onJoin = location.startsWith("/join/");
+  const onDisplay = location.includes("/display");
+  // Wait for both queries to resolve before deciding — otherwise we'd
+  // briefly redirect users whose onboarding is already complete.
+  if (!ctx || !settings) return <>{children}</>;
+  const needsOnboarding =
+    ctx.isOwner && !ctx.currentUser.isMasterAdmin && !settings.onboardingCompletedAt;
+  if (needsOnboarding && !onWelcome && !onJoin && !onDisplay) {
+    return <Redirect to="/welcome" />;
+  }
+  // If they finished the wizard but somehow land back on /welcome,
+  // bounce them home so the route isn't a permanent dead-end.
+  if (!needsOnboarding && onWelcome) {
+    return <Redirect to="/" />;
+  }
+  return <>{children}</>;
+}
+
 function ProtectedApp() {
   return (
     <>
       <Show when="signed-in">
         <PendingInviteRedirect />
+        <OnboardingGate>
         <Switch>
           {/*
            * Dugout / fence-iPad display renders OUTSIDE the app shell so the
@@ -236,6 +271,9 @@ function ProtectedApp() {
            * sign-in (it's wrapped by the surrounding Show).
            */}
           <Route path="/games/:id/display" component={FieldDisplay} />
+          {/* Onboarding wizard renders WITHOUT the app shell (its own
+              focused layout) until the head coach completes setup. */}
+          <Route path="/welcome" component={Onboarding} />
           <Route>
             <Layout>
               <Switch>
@@ -267,9 +305,16 @@ function ProtectedApp() {
             </Layout>
           </Route>
         </Switch>
+        </OnboardingGate>
       </Show>
       <Show when="signed-out">
-        <StashAndRedirectToSignIn />
+        <Switch>
+          {/* Public marketing landing — only for the bare home route. Any
+              other path stashes its destination and redirects to /sign-in
+              so we can return there after auth (esp. /join/:token). */}
+          <Route path="/" component={Landing} />
+          <Route component={StashAndRedirectToSignIn} />
+        </Switch>
       </Show>
     </>
   );

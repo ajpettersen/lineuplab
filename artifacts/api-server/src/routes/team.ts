@@ -220,6 +220,8 @@ router.get("/team/invites", async (req, res): Promise<void> => {
       id: r.id,
       token: r.token,
       label: r.label,
+      invitedEmail: r.invitedEmail,
+      sentEmailAt: r.sentEmailAt,
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,
       revokedAt: r.revokedAt,
@@ -231,6 +233,9 @@ router.get("/team/invites", async (req, res): Promise<void> => {
 
 const CreateInviteBody = z.object({
   label: z.string().trim().max(60).optional(),
+  // Optional email the invite is intended for. Stored for future
+  // email-delivery; today the coach still copies the link manually.
+  email: z.string().trim().email("Enter a valid email").max(120).optional(),
 });
 
 router.post("/team/invites", assertPermission("full"), async (req, res): Promise<void> => {
@@ -247,6 +252,7 @@ router.post("/team/invites", assertPermission("full"), async (req, res): Promise
       ownerUserId,
       token: generateToken(),
       label: parsed.data.label?.trim() || null,
+      invitedEmail: parsed.data.email?.toLowerCase() || null,
       expiresAt,
     })
     .returning();
@@ -254,6 +260,8 @@ router.post("/team/invites", assertPermission("full"), async (req, res): Promise
     id: row!.id,
     token: row!.token,
     label: row!.label,
+    invitedEmail: row!.invitedEmail,
+    sentEmailAt: row!.sentEmailAt,
     createdAt: row!.createdAt,
     expiresAt: row!.expiresAt,
     revokedAt: row!.revokedAt,

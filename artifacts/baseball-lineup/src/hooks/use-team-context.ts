@@ -93,11 +93,18 @@ export interface TeamInvite {
   id: number;
   token: string;
   label: string | null;
+  invitedEmail: string | null;
+  sentEmailAt: string | null;
   createdAt: string;
   expiresAt: string;
   revokedAt: string | null;
   acceptedAt: string | null;
   acceptedByUserId: string | null;
+}
+
+export interface CreateInviteInput {
+  label?: string;
+  email?: string;
 }
 
 export interface TeamMember {
@@ -134,12 +141,18 @@ export function useTeamMembers(enabled = true) {
 export function useCreateInvite() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (label?: string) =>
-      fetchJson<TeamInvite>(`${BASE}/api/team/invites`, {
+    mutationFn: (input?: string | CreateInviteInput) => {
+      // Back-compat: existing callsites pass a bare label string.
+      const body =
+        typeof input === "string" || input === undefined
+          ? { label: input }
+          : input;
+      return fetchJson<TeamInvite>(`${BASE}/api/team/invites`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      }),
+        body: JSON.stringify(body),
+      });
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: teamInvitesQueryKey });
     },

@@ -414,6 +414,19 @@ paths:
         "400":
           description: Invalid input
 
+  /team-settings/complete-onboarding:
+    post:
+      operationId: completeOnboarding
+      tags: [teamSettings]
+      summary: Mark the first-run onboarding wizard as completed for the current coach
+      responses:
+        "200":
+          description: Updated team settings (with onboardingCompletedAt set)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamSettings"
+
   /tournaments:
     get:
       operationId: listTournaments
@@ -1412,6 +1425,14 @@ components:
           description: |
             Per-team UI secondary/accent color override. Same format as
             primaryColor.
+        onboardingCompletedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: |
+            Timestamp when the head coach finished the first-run
+            onboarding wizard. Null = wizard not yet completed; the
+            web client redirects head coaches to /welcome until this
+            is set.
         createdAt:
           type: string
           format: date-time

@@ -760,6 +760,12 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
     ),
+  onboardingCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the head coach finished the first-run\nonboarding wizard. Null = wizard not yet completed; the\nweb client redirects head coaches to \/welcome until this\nis set.\n",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -922,6 +928,97 @@ export const UpdateTeamSettingsResponse = zod.object({
     .nullish()
     .describe(
       "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
+    ),
+  onboardingCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the head coach finished the first-run\nonboarding wizard. Null = wizard not yet completed; the\nweb client redirects head coaches to \/welcome until this\nis set.\n",
+    ),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Mark the first-run onboarding wizard as completed for the current coach
+ */
+export const completeOnboardingResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
+
+export const completeOnboardingResponseDefaultRestTiersTwoItemDaysRestMin = 0;
+
+export const CompleteOnboardingResponse = zod.object({
+  userId: zod.string(),
+  teamName: zod.string(),
+  teamShortName: zod.string(),
+  battingStyle: zod
+    .enum(["continuous", "nine_man"])
+    .describe(
+      "Continuous = every player on the roster bats. Nine-man = only the\ntop 9 batters get a slot in the order.\n",
+    ),
+  defaultDailyPitchMax: zod
+    .number()
+    .nullish()
+    .describe("Default per-pitcher daily cap for new tournaments."),
+  defaultTournamentPitchMax: zod
+    .number()
+    .nullish()
+    .describe("Default per-pitcher cap across an entire tournament weekend."),
+  defaultRestTiers: zod
+    .union([
+      zod.null(),
+      zod.array(
+        zod
+          .object({
+            maxPitches: zod
+              .number()
+              .min(
+                completeOnboardingResponseDefaultRestTiersTwoItemMaxPitchesMin,
+              )
+              .describe(
+                "Inclusive upper bound of pitch totals this tier covers.",
+              ),
+            daysRest: zod
+              .number()
+              .min(completeOnboardingResponseDefaultRestTiersTwoItemDaysRestMin)
+              .describe(
+                "Required calendar days of rest before pitching again.",
+              ),
+          })
+          .describe(
+            "One row of the rest-tier ladder (pitches → required days rest).",
+          ),
+      ),
+    ])
+    .optional()
+    .describe("Default rest-tier ladder applied to new tournaments."),
+  activeFieldPositions: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      'Defensive positions this team uses each inning. Standard 9 is\n[\"P\",\"C\",\"1B\",\"2B\",\"3B\",\"SS\",\"LF\",\"CF\",\"RF\"]. A 10-player field\nswaps CF for LCF + RCF.\n',
+    ),
+  usesGameChanger: zod
+    .boolean()
+    .describe(
+      'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
+    ),
+  primaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      'Per-team UI primary color override. HSL string of the form\n`\"H S% L%\"` (e.g. `\"220 85% 22%\"`) so it drops into\n`hsl(var(--primary))` directly. Null = use the app default.\n',
+    ),
+  secondaryColor: zod
+    .string()
+    .nullish()
+    .describe(
+      "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
+    ),
+  onboardingCompletedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the head coach finished the first-run\nonboarding wizard. Null = wizard not yet completed; the\nweb client redirects head coaches to \/welcome until this\nis set.\n",
     ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

@@ -73,6 +73,13 @@ export const teamSettingsTable = pgTable("team_settings", {
    */
   primaryColor: text("primary_color"),
   secondaryColor: text("secondary_color"),
+  /**
+   * When the head coach finished the first-run onboarding wizard
+   * (welcome, name, team identity, colors, roster, invites, tour).
+   * Null = wizard not done yet → next sign-in redirects to /welcome.
+   * Set once when the coach clicks "Finish" on the last step.
+   */
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

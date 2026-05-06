@@ -24,6 +24,20 @@ export const teamInvitesTable = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     token: text("token").notNull(),
     label: text("label"),
+    /**
+     * Optional email the invite was created for. We don't actually send
+     * the email yet — coach copies the join link manually — but storing
+     * it lets us (a) show "Invite sent to sam@…" in the UI, (b) wire up
+     * a future email-sending job without another schema change, and (c)
+     * dedupe pending invites by email.
+     */
+    invitedEmail: text("invited_email"),
+    /**
+     * When the platform actually delivered the invite email. Null until
+     * a future email worker stamps it. Coaches today see "Link copied"
+     * even when this is null.
+     */
+    sentEmailAt: timestamp("sent_email_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),

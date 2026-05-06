@@ -163,4 +163,24 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
   res.json(updated);
 });
 
+/**
+ * Mark the first-run onboarding wizard as completed for the current
+ * coach. Idempotent — re-calling just refreshes `updatedAt`. Used by
+ * the wizard's final "Take me to the dashboard" button so we don't
+ * redirect the coach back to /welcome on the next sign-in.
+ */
+router.post("/team-settings/complete-onboarding", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  await getOrCreateForUser(userId);
+  const [updated] = await db
+    .update(teamSettingsTable)
+    .set({
+      onboardingCompletedAt: sql`now()`,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(teamSettingsTable.userId, userId))
+    .returning();
+  res.json(updated);
+});
+
 export default router;

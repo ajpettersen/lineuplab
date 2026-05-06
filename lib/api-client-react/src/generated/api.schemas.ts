@@ -402,6 +402,15 @@ primaryColor.
    * @nullable
    */
   secondaryColor?: string | null;
+  /**
+   * Timestamp when the head coach finished the first-run
+onboarding wizard. Null = wizard not yet completed; the
+web client redirects head coaches to /welcome until this
+is set.
+
+   * @nullable
+   */
+  onboardingCompletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
