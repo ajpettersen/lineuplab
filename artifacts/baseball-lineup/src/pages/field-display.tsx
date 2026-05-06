@@ -349,16 +349,23 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
 
   return (
     <div
-      className="flex flex-col items-stretch select-none min-w-[3.25rem] sm:min-w-[4.25rem] lg:min-w-[5rem]"
+      // Uniform vertical rhythm: a single `gap-1` between the four
+      // stacked elements (label → up-chevron → number → down-chevron)
+      // so the column reads as evenly-spaced rows instead of a dense
+      // top with a heavy number block dangling underneath. `justify-
+      // center` centers the column within whatever flex height the
+      // header lands on, keeping the labels visually in line with the
+      // INNING caption + the team-vs-opponent title on the left rather
+      // than stuck against the very top edge.
+      className="flex flex-col items-stretch justify-center gap-1 select-none min-w-[3.25rem] sm:min-w-[4.25rem] lg:min-w-[5rem]"
       data-testid={testId}
     >
       {label && (
         <span
-          // Bold, wide-tracked caps marking which column is "Us" vs
-          // "Them" so kids glancing at the dugout iPad don't confuse
-          // them. Sized to stay legible from 6+ feet away (the dugout
-          // fence) without overpowering the score number itself.
-          className="text-xs sm:text-sm uppercase font-display font-semibold tracking-widest text-slate-400 text-center leading-tight pb-0.5"
+          // Sized to match the INNING caption in the center chip so
+          // the three captions across the header (left title baseline,
+          // INNING, score labels) read as siblings.
+          className="text-[10px] sm:text-[11px] uppercase font-display font-semibold tracking-[0.2em] text-slate-400 text-center leading-none"
           aria-hidden="true"
         >
           {label}
@@ -367,11 +374,11 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
       <button
         type="button"
         onClick={inc}
-        className="flex h-6 sm:h-7 lg:h-8 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-broadcast-gold active:text-broadcast-gold transition-colors"
+        className="flex h-5 sm:h-6 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-broadcast-gold active:text-broadcast-gold transition-colors"
         aria-label={`Increase ${ariaLabel}`}
         data-testid={`${testId}-up`}
       >
-        <ChevronUp className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden="true" />
+        <ChevronUp className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
       </button>
       <div
         role="spinbutton"
@@ -385,18 +392,18 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
         onPointerCancel={() => {
           startYRef.current = null;
         }}
-        className="text-4xl sm:text-5xl lg:text-6xl font-bold tabular-nums text-broadcast-gold font-['Roboto_Mono'] px-2 py-1 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-broadcast-gold/60 leading-none"
+        className="text-3xl sm:text-4xl lg:text-5xl font-bold tabular-nums text-broadcast-gold font-['Roboto_Mono'] px-2 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-broadcast-gold/60 leading-none"
       >
         {value}
       </div>
       <button
         type="button"
         onClick={dec}
-        className="flex h-6 sm:h-7 lg:h-8 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
+        className="flex h-5 sm:h-6 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-rose-300 active:text-rose-300 transition-colors"
         aria-label={`Decrease ${ariaLabel}`}
         data-testid={`${testId}-down`}
       >
-        <ChevronDown className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden="true" />
+        <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
       </button>
     </div>
   );
@@ -1439,7 +1446,7 @@ export default function FieldDisplay() {
             *    "Them" placeholder. Long names truncate inside the
             *    stepper column with a tooltip showing the full text.
             * See ScoreStepper docblock for gesture details. */}
-          <div className="flex items-end gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <ScoreStepper
               value={ourScore}
               onChange={(next) =>
@@ -1449,10 +1456,10 @@ export default function FieldDisplay() {
               testId="score-stepper-ours"
               label={teamShortName || teamName || "Us"}
             />
-            {/* Bottom-aligned dash, sized to the new larger score
-              * numbers so it sits between them visually instead of
-              * shrinking into the gap. */}
-            <span className="text-4xl sm:text-5xl lg:text-6xl font-bold tabular-nums text-slate-700 pb-1 leading-none font-['Roboto_Mono']">
+            {/* Center-aligned dash so it sits at the same y as the
+              * score numbers (which are now centered within their
+              * column by the stepper's justify-center). */}
+            <span className="text-3xl sm:text-4xl lg:text-5xl font-bold tabular-nums text-slate-700 leading-none font-['Roboto_Mono']">
               –
             </span>
             <ScoreStepper
