@@ -53,16 +53,29 @@ import {
   Eye,
   Pencil,
   Upload,
+  Check,
 } from "lucide-react";
 
-// Display label + suggested role title for each permission tier. The
-// suggested role is just a default that we drop into the role field on
-// the coach-profile prompt; it's free-form and the coach can edit it.
+// ACCESS LEVEL labels — what a coach is *allowed* to do. These are
+// intentionally separate from the free-form `role` title (e.g. "Head
+// Coach", "Pitching Coach", "Stat Mom") so a team can have e.g. an
+// "Assistant Coach" role with full access, or a "GameChanger Parent"
+// role with upload-only access. Title and access are independent.
 const PERMISSION_LABEL: Record<PermissionTier, string> = {
-  full: "Head Coach (full access)",
-  partial: "Assistant Coach (edit lineups & games)",
-  upload: "GameChanger (box-score upload only)",
+  full: "Full access",
+  partial: "Edit lineups & games",
+  upload: "Box scores only",
   view: "Read-only",
+};
+
+// Suggested role TITLE for each access tier — used as a placeholder in
+// the role input so first-time coaches get a hint, but they can type
+// anything. Titles are display-only; access is enforced separately.
+const ROLE_PLACEHOLDER: Record<PermissionTier, string> = {
+  full: "e.g. Head Coach",
+  partial: "e.g. Assistant Coach",
+  upload: "e.g. GameChanger Parent",
+  view: "e.g. Team Parent",
 };
 
 function PermissionBadge({ tier }: { tier: PermissionTier }) {
@@ -233,6 +246,55 @@ export function CoachesCard() {
     );
   };
 
+  // Inline-edit state for a coach's displayName + role title. Only one
+  // row can be in edit mode at a time. Anyone can edit their own; the
+  // head coach (or master admin) can edit any teammate's profile.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState("");
+
+  const startEdit = (m: { id: number; displayName: string | null; memberName: string | null; role: string | null }) => {
+    setEditingId(m.id);
+    setEditName(m.displayName ?? m.memberName ?? "");
+    setEditRole(m.role ?? "");
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+    setEditRole("");
+  };
+  const saveEdit = (memberUserId: string) => {
+    const name = editName.trim();
+    const role = editRole.trim();
+    if (name.length < 2) {
+      toast({
+        title: "Name too short",
+        description: "Use at least 2 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateMember.mutate(
+      {
+        memberUserId,
+        displayName: name,
+        role: role.length > 0 ? role : null,
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Coach updated" });
+          cancelEdit();
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't update coach",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
   // Active (pending) invites first, then history (accepted/revoked/expired).
   const invites = invitesQuery.data ?? [];
   const pending = invites.filter(
@@ -333,61 +395,104 @@ export function CoachesCard() {
                 // for this team) → Clerk full name → email → generic.
                 const primaryLabel =
                   m.displayName ?? m.memberName ?? m.memberEmail ?? "Coach";
-                // The owner row's permission is locked to 'full' on the
-                // server side; show "Head Coach" in the role slot if
-                // they didn't pick their own role label.
-                const roleLabel =
-                  m.role ?? (m.isOwner ? "Head Coach" : null);
+                // Role title — pure display, NOT coupled to permission
+                // tier. If a coach hasn't picked one, fall back to a
+                // generic "Head Coach" only for the owner row so the
+                // very first list isn't blank.
+                const roleLabel = m.role ?? (m.isOwner ? "Head Coach" : null);
+                // Anyone can edit themselves; the head coach (or
+                // master admin) can edit any teammate's profile.
+                const canEditProfile = isSelf || canManageCoaches;
+                const isEditing = editingId === m.id;
                 return (
                   <li
                     key={m.id}
-                    className="flex items-center gap-3 px-3 py-2"
+                    className="flex items-start gap-3 px-3 py-2"
                     data-testid={`row-coach-${m.memberUserId}`}
                   >
                     {m.isOwner ? (
-                      <Crown className="h-4 w-4 text-amber-500 shrink-0" />
+                      <Crown className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                     ) : (
-                      <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <Mail className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">
-                        {primaryLabel}
-                        {isSelf && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            (you)
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {roleLabel && <span>{roleLabel}</span>}
-                        {roleLabel && m.memberEmail && (
-                          <span className="mx-1">·</span>
-                        )}
-                        {m.memberEmail && <span>{m.memberEmail}</span>}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Joined {new Date(m.joinedAt).toLocaleDateString()}
-                      </div>
-                      {/* Show Clerk user ID for the signed-in coach so
-                          they can paste it into MASTER_ADMIN_USER_IDS
-                          without digging through the Clerk dashboard. */}
-                      {isSelf && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(m.memberUserId);
-                            toast({
-                              title: "Copied",
-                              description: "Your Clerk user ID is on the clipboard.",
-                            });
-                          }}
-                          className="mt-1 inline-flex items-center gap-1 rounded border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                          data-testid="button-copy-self-user-id"
-                          title="Click to copy. Paste into the MASTER_ADMIN_USER_IDS secret to grant master-admin access."
-                        >
-                          <Copy className="h-2.5 w-2.5" />
-                          {m.memberUserId}
-                        </button>
+                      {isEditing ? (
+                        <div className="space-y-1.5">
+                          <Input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Display name"
+                            maxLength={40}
+                            className="h-8 text-sm"
+                            data-testid={`input-edit-name-${m.memberUserId}`}
+                          />
+                          <Input
+                            value={editRole}
+                            onChange={(e) => setEditRole(e.target.value)}
+                            placeholder={ROLE_PLACEHOLDER[m.permission]}
+                            maxLength={40}
+                            className="h-8 text-sm"
+                            data-testid={`input-edit-role-${m.memberUserId}`}
+                          />
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              onClick={() => saveEdit(m.memberUserId)}
+                              disabled={updateMember.isPending}
+                              className="h-7 px-2 gap-1"
+                              data-testid={`button-save-coach-${m.memberUserId}`}
+                            >
+                              {updateMember.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Check className="h-3 w-3" />
+                              )}
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={cancelEdit}
+                              disabled={updateMember.isPending}
+                              className="h-7 px-2"
+                              data-testid={`button-cancel-coach-${m.memberUserId}`}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-sm font-medium truncate flex items-center gap-1">
+                            <span className="truncate">{primaryLabel}</span>
+                            {isSelf && (
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                (you)
+                              </span>
+                            )}
+                            {canEditProfile && (
+                              <button
+                                type="button"
+                                onClick={() => startEdit(m)}
+                                className="ml-1 inline-flex items-center text-muted-foreground hover:text-foreground shrink-0"
+                                title="Edit name and role"
+                                data-testid={`button-edit-coach-${m.memberUserId}`}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {roleLabel && <span>{roleLabel}</span>}
+                            {roleLabel && m.memberEmail && (
+                              <span className="mx-1">·</span>
+                            )}
+                            {m.memberEmail && <span>{m.memberEmail}</span>}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Joined {new Date(m.joinedAt).toLocaleDateString()}
+                          </div>
+                        </>
                       )}
                     </div>
                     {/* Owner row: locked badge. Non-owner row + caller
@@ -403,10 +508,10 @@ export function CoachesCard() {
                             v as PermissionTier,
                           )
                         }
-                        disabled={updateMember.isPending}
+                        disabled={updateMember.isPending || isEditing}
                       >
                         <SelectTrigger
-                          className="h-8 w-[180px] text-xs"
+                          className="h-8 w-[180px] text-xs shrink-0"
                           data-testid={`select-permission-${m.memberUserId}`}
                         >
                           <SelectValue />
@@ -473,21 +578,27 @@ export function CoachesCard() {
               })}
             </ul>
           )}
-          {/* Permission tier explainer — only useful when there's
-              more than one coach + caller can actually edit tiers. */}
+          {/* Access level explainer — only useful when there's more
+              than one coach + caller can actually edit tiers. Names
+              are now editable inline so the title and access level
+              are decoupled (a coach titled "Assistant Coach" can
+              still have full access, etc.). */}
           {canManageCoaches && members.length > 1 && (
             <p
               className="text-xs text-muted-foreground"
               data-testid="text-permission-help"
             >
+              Access level controls what a coach can do; the title
+              next to their name is just a display label.
+              <br />
               <Crown className="inline h-3 w-3 mr-1" />
-              Head Coach = everything ·
+              Full = everything ·
               <Pencil className="inline h-3 w-3 mx-1" />
-              Assistant = lineups / games / practices ·
+              Edit lineups & games ·
               <Upload className="inline h-3 w-3 mx-1" />
-              GameChanger = box-score upload only ·
+              Box scores only ·
               <Eye className="inline h-3 w-3 mx-1" />
-              Read-only = no edits
+              Read-only
             </p>
           )}
           {!canManageCoaches && tier !== "full" && (
@@ -498,6 +609,42 @@ export function CoachesCard() {
               Only the head coach can change access levels or invite new
               coaches. Ask them if you need a different tier.
             </p>
+          )}
+          {/* User ID — moved out of the main coach row so it doesn't
+              clutter the list. Useful for one-off setup tasks (paste
+              into MASTER_ADMIN_USER_IDS, share with support, etc.) so
+              we keep it accessible behind a disclosure. */}
+          {ctx?.userId && (
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground">
+                Show your account ID
+              </summary>
+              <div className="mt-2 flex items-center gap-2">
+                <code
+                  className="flex-1 truncate rounded border border-dashed border-muted-foreground/30 px-2 py-1 font-mono text-[11px]"
+                  data-testid="text-self-user-id"
+                >
+                  {ctx.userId}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 gap-1"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(ctx.userId);
+                    toast({
+                      title: "Copied",
+                      description: "Your account ID is on the clipboard.",
+                    });
+                  }}
+                  data-testid="button-copy-self-user-id"
+                  title="Paste into the MASTER_ADMIN_USER_IDS secret to grant master-admin access."
+                >
+                  <Copy className="h-3 w-3" />
+                  Copy
+                </Button>
+              </div>
+            </details>
           )}
         </div>
 

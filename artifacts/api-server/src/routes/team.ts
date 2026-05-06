@@ -346,7 +346,7 @@ router.get("/team/members", async (req, res): Promise<void> => {
 const UpdateMemberBody = z.object({
   displayName: z.string().trim().min(2).max(40).nullable().optional(),
   role: z.string().trim().max(40).nullable().optional(),
-  permission: z.enum(["full", "partial", "view"]).optional(),
+  permission: z.enum(["full", "partial", "upload", "view"]).optional(),
 });
 
 /**
