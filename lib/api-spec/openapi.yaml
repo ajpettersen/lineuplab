@@ -1414,6 +1414,13 @@ components:
             When true, the dashboard nags the coach with a "Box score not
             imported" task for every past game whose box score hasn't been
             uploaded yet. Off by default.
+        usesTournaments:
+          type: boolean
+          description: |
+            When true (the default), the Events nav exposes Tournaments
+            and the game-type picker offers Tournament. When false the
+            tournament feature is hidden from new/edit forms and the
+            top nav. Existing tournament games still render correctly.
         primaryColor:
           type: ["string", "null"]
           description: |
@@ -1480,6 +1487,8 @@ components:
             type: string
             enum: [P, C, "1B", "2B", "3B", SS, LF, LCF, CF, RCF, RF]
         usesGameChanger:
+          type: boolean
+        usesTournaments:
           type: boolean
         primaryColor:
           type: ["string", "null"]

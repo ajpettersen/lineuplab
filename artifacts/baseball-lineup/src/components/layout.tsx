@@ -39,7 +39,7 @@ import { useAdminMe } from "@/hooks/use-admin";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { teamName } = useTeamSettings();
+  const { teamName, usesTournaments } = useTeamSettings();
   const { signOut } = useClerk();
   const { user } = useUser();
   const { data: ctx } = useTeamContext();
@@ -157,7 +157,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       icon: CalendarRange,
       children: [
         { href: "/games", label: "Schedule", icon: CalendarDays },
-        { href: "/tournaments", label: "Tournaments", icon: Trophy },
+        // Tournaments hidden when the team has flipped off the
+        // tournament feature flag in Settings → Defaults. Existing
+        // tournament games still render correctly elsewhere; this
+        // just removes the dedicated tournaments page from nav.
+        ...(usesTournaments
+          ? [{ href: "/tournaments", label: "Tournaments", icon: Trophy }]
+          : []),
         { href: "/practices", label: "Practices", icon: Clipboard },
       ],
     },

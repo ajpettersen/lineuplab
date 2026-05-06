@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 
 export default function NewGame() {
   const [, navigate] = useLocation();
@@ -19,6 +20,7 @@ export default function NewGame() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const prefsQuery = useGetPreferences();
+  const { usesTournaments } = useTeamSettings();
   const [opponent, setOpponent] = useState("");
   const [gameDate, setGameDate] = useState("");
   const [location, setLocation] = useState("");
@@ -137,7 +139,12 @@ export default function NewGame() {
                 {([
                   { v: "none" as const, label: "Unspecified", hint: "Use my fairness setting" },
                   { v: "league" as const, label: "League", hint: "Even out plate appearances" },
-                  { v: "tournament" as const, label: "Tournament", hint: "Most competitive" },
+                  // Tournament option only shown when the team's
+                  // tournament feature flag is on (Settings →
+                  // Defaults → "We play tournaments").
+                  ...(usesTournaments
+                    ? [{ v: "tournament" as const, label: "Tournament", hint: "Most competitive" }]
+                    : []),
                 ]).map((opt) => (
                   <button
                     key={opt.v}

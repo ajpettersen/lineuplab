@@ -387,6 +387,12 @@ imported" task for every past game whose box score hasn't been
 uploaded yet. Off by default.
  */
   usesGameChanger: boolean;
+  /** When true (the default), the Events nav exposes Tournaments
+and the game-type picker offers Tournament. When false the
+tournament feature is hidden from new/edit forms and the
+top nav. Existing tournament games still render correctly.
+ */
+  usesTournaments?: boolean;
   /**
    * Per-team UI primary color override. HSL string of the form
 `"H S% L%"` (e.g. `"220 85% 22%"`) so it drops into
@@ -463,6 +469,7 @@ export interface UpdateTeamSettingsBody {
    */
   activeFieldPositions?: UpdateTeamSettingsBodyActiveFieldPositionsItem[];
   usesGameChanger?: boolean;
+  usesTournaments?: boolean;
   /**
    * HSL string `"H S% L%"`. Pass null to clear back to app default.
    * @nullable

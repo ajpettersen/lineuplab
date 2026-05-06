@@ -105,6 +105,7 @@ export default function Settings() {
   const [showFairness, setShowFairness] = useState(true);
   const [showEquityTips, setShowEquityTips] = useState(true);
   const [usesGameChanger, setUsesGameChanger] = useState(false);
+  const [usesTournaments, setUsesTournaments] = useState(true);
 
   useEffect(() => {
     if (teamQuery.data) {
@@ -127,6 +128,7 @@ export default function Settings() {
         (teamQuery.data.defaultRestTiers as RestTier[] | null | undefined) ?? null
       );
       setUsesGameChanger(teamQuery.data.usesGameChanger ?? false);
+      setUsesTournaments(teamQuery.data.usesTournaments ?? true);
     }
   }, [teamQuery.data]);
 
@@ -470,6 +472,30 @@ export default function Settings() {
               onCheckedChange={setShowFairness}
               disabled={prefsLoading}
               data-testid="switch-show-fairness"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5 pr-3">
+              <Label htmlFor="usesTournaments" className="text-sm font-medium">
+                We play tournaments
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Show the Tournaments page in the Events menu and the
+                Tournament option in the game-type picker. Turn off if
+                your team only plays a regular league schedule —
+                existing tournament games stay intact either way.
+              </p>
+            </div>
+            <Switch
+              id="usesTournaments"
+              checked={usesTournaments}
+              onCheckedChange={(v) => {
+                setUsesTournaments(v);
+                updateTeam.mutate({ data: { usesTournaments: v } });
+              }}
+              disabled={teamLoading || !canEditTeam}
+              data-testid="switch-uses-tournaments"
             />
           </div>
 

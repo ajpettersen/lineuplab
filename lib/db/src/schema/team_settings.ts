@@ -64,6 +64,20 @@ export const teamSettingsTable = pgTable("team_settings", {
    */
   usesGameChanger: boolean("uses_gamechanger").notNull().default(false),
   /**
+   * Master switch for tournament features. When false the
+   * "Tournaments" entry is hidden from the Events nav, and the
+   * Tournament option is removed from the game-type picker on the
+   * new-game and edit-game forms — i.e. a coach who only runs a
+   * weekly league never has to look at the tournament UI.
+   *
+   * Defaults to true so existing teams keep the feature visible;
+   * coaches turn it off from Settings → Defaults. Existing games
+   * already saved with `gameType="tournament"` still render their
+   * tournament-specific badges and lineup behavior — this flag
+   * only gates discoverability of the feature, not historical data.
+   */
+  usesTournaments: boolean("uses_tournaments").notNull().default(true),
+  /**
    * Per-team UI theme overrides. Stored as space-separated HSL strings
    * (`"H S% L%"` — e.g. `"220 85% 22%"`) so they can drop straight into
    * the existing `hsl(var(--primary))` CSS variables without any
@@ -95,6 +109,7 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   defaultRestTiers: true,
   activeFieldPositions: true,
   usesGameChanger: true,
+  usesTournaments: true,
   primaryColor: true,
   secondaryColor: true,
 });

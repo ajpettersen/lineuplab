@@ -748,6 +748,12 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
     ),
+  usesTournaments: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true (the default), the Events nav exposes Tournaments\nand the game-type picker offers Tournament. When false the\ntournament feature is hidden from new\/edit forms and the\ntop nav. Existing tournament games still render correctly.\n",
+    ),
   primaryColor: zod
     .string()
     .nullish()
@@ -843,6 +849,7 @@ export const UpdateTeamSettingsBody = zod.object({
     .max(updateTeamSettingsBodyActiveFieldPositionsMax)
     .optional(),
   usesGameChanger: zod.boolean().optional(),
+  usesTournaments: zod.boolean().optional(),
   primaryColor: zod
     .string()
     .nullish()
@@ -916,6 +923,12 @@ export const UpdateTeamSettingsResponse = zod.object({
     .boolean()
     .describe(
       'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
+    ),
+  usesTournaments: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true (the default), the Events nav exposes Tournaments\nand the game-type picker offers Tournament. When false the\ntournament feature is hidden from new\/edit forms and the\ntop nav. Existing tournament games still render correctly.\n",
     ),
   primaryColor: zod
     .string()
@@ -1001,6 +1014,12 @@ export const CompleteOnboardingResponse = zod.object({
     .boolean()
     .describe(
       'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
+    ),
+  usesTournaments: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true (the default), the Events nav exposes Tournaments\nand the game-type picker offers Tournament. When false the\ntournament feature is hidden from new\/edit forms and the\ntop nav. Existing tournament games still render correctly.\n",
     ),
   primaryColor: zod
     .string()

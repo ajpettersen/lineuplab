@@ -381,6 +381,7 @@ function EditGameDialog({
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+  const { usesTournaments } = useTeamSettings();
   const [opponent, setOpponent] = useState(game.opponent);
   const [gameDate, setGameDate] = useState(() => {
     // Convert to datetime-local format
@@ -457,7 +458,13 @@ function EditGameDialog({
               {([
                 { v: "none" as const, label: "Unspecified" },
                 { v: "league" as const, label: "League" },
-                { v: "tournament" as const, label: "Tournament" },
+                // Tournament option hidden when the team's tournament
+                // feature flag is off (Settings → Defaults → "We play
+                // tournaments"). Existing tournament games keep their
+                // gameType in the DB regardless.
+                ...(usesTournaments
+                  ? [{ v: "tournament" as const, label: "Tournament" }]
+                  : []),
               ]).map((opt) => (
                 <button
                   key={opt.v}

@@ -11,11 +11,18 @@ export function useTeamSettings() {
   const stored = query.data?.activeFieldPositions;
   const activeFieldPositions: readonly string[] =
     Array.isArray(stored) && stored.length > 0 ? stored : DEFAULT_FIELD_POSITIONS;
+  // Tournament feature flag — defaults true so any team that hasn't
+  // explicitly turned it off in Settings keeps the existing behavior
+  // (Tournaments visible in the Events nav, Tournament option in the
+  // game-type picker). While the query is loading we also assume true
+  // so the nav doesn't flash an item in/out on every page load.
+  const usesTournaments: boolean = query.data?.usesTournaments ?? true;
   return {
     teamName: query.data?.teamName ?? "",
     teamShortName: query.data?.teamShortName ?? "",
     battingStyle,
     activeFieldPositions,
+    usesTournaments,
     isLoading: query.isLoading,
     isError: query.isError,
     raw: query,

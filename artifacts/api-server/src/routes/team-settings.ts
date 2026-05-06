@@ -61,6 +61,7 @@ const UpdateBody = z
     defaultRestTiers: z.array(RestTierZ).nullish(),
     activeFieldPositions: ActiveFieldPositionsZ.optional(),
     usesGameChanger: z.boolean().optional(),
+    usesTournaments: z.boolean().optional(),
     // HSL string `"H S% L%"` (e.g. `"220 85% 22%"`). Permissive shape
     // — three space-separated tokens, the last two ending in `%`.
     primaryColor: z
@@ -84,6 +85,7 @@ const UpdateBody = z
       v.defaultRestTiers !== undefined ||
       v.activeFieldPositions !== undefined ||
       v.usesGameChanger !== undefined ||
+      v.usesTournaments !== undefined ||
       v.primaryColor !== undefined ||
       v.secondaryColor !== undefined,
     { message: "Provide at least one field to update" }
@@ -134,6 +136,7 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     defaultRestTiers?: RestTier[] | null;
     activeFieldPositions?: string[];
     usesGameChanger?: boolean;
+    usesTournaments?: boolean;
     primaryColor?: string | null;
     secondaryColor?: string | null;
     updatedAt: ReturnType<typeof sql>;
@@ -151,6 +154,8 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     patch.activeFieldPositions = [...parsed.data.activeFieldPositions];
   if (parsed.data.usesGameChanger !== undefined)
     patch.usesGameChanger = parsed.data.usesGameChanger;
+  if (parsed.data.usesTournaments !== undefined)
+    patch.usesTournaments = parsed.data.usesTournaments;
   if (parsed.data.primaryColor !== undefined)
     patch.primaryColor = parsed.data.primaryColor ?? null;
   if (parsed.data.secondaryColor !== undefined)
