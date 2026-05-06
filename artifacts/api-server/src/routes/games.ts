@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, gt, sql, desc } from "drizzle-orm";
+import { and, eq, gt, isNull, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -116,7 +116,7 @@ router.get("/games", async (req, res): Promise<void> => {
   const games = await db
     .select()
     .from(gamesTable)
-    .where(eq(gamesTable.userId, userId))
+    .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)))
     .orderBy(gamesTable.gameDate);
   res.json(games);
 });
@@ -138,7 +138,7 @@ router.get("/games/with-lineups", async (req, res): Promise<void> => {
     })
     .from(gamesTable)
     .innerJoin(lineupEntriesTable, eq(lineupEntriesTable.gameId, gamesTable.id))
-    .where(eq(gamesTable.userId, userId))
+    .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)))
     .groupBy(gamesTable.id)
     .orderBy(desc(gamesTable.gameDate));
   res.json(rows);
@@ -346,7 +346,13 @@ router.get("/games/:id", async (req, res): Promise<void> => {
   const [game] = await db
     .select()
     .from(gamesTable)
-    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)));
+    .where(
+      and(
+        eq(gamesTable.id, params.data.id),
+        eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
+      ),
+    );
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
@@ -396,13 +402,25 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
     const [existing] = await tx
       .select()
       .from(gamesTable)
-      .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)));
+      .where(
+        and(
+          eq(gamesTable.id, params.data.id),
+          eq(gamesTable.userId, userId),
+          isNull(gamesTable.deletedAt),
+        ),
+      );
     if (!existing) return null;
 
     const [updated] = await tx
       .update(gamesTable)
       .set(updates)
-      .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
+      .where(
+        and(
+          eq(gamesTable.id, params.data.id),
+          eq(gamesTable.userId, userId),
+          isNull(gamesTable.deletedAt),
+        ),
+      )
       .returning();
     if (!updated) return null;
 
@@ -456,7 +474,13 @@ router.post("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
   const [game] = await db
     .select()
     .from(gamesTable)
-    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)));
+    .where(
+      and(
+        eq(gamesTable.id, params.data.id),
+        eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
+      ),
+    );
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
@@ -515,6 +539,10 @@ router.delete("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
   res.json(updated);
 });
 
+// Soft delete — sets `deletedAt` so the coach can hit Undo from the
+// toast. Cascaded children (lineup_entries, locks, pitch_counts,
+// game_batting_lines, ai_pinned_assignments) stay intact and reappear
+// on restore. 204 response shape preserved for backwards compat.
 router.delete("/games/:id", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = DeleteGameParams.safeParse(req.params);
@@ -523,14 +551,44 @@ router.delete("/games/:id", async (req, res): Promise<void> => {
     return;
   }
   const [game] = await db
-    .delete(gamesTable)
-    .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
+    .update(gamesTable)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(gamesTable.id, params.data.id),
+        eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
+      ),
+    )
     .returning();
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
   }
   res.sendStatus(204);
+});
+
+// Restore — clears `deletedAt`. Looks up without the deletedAt filter
+// so we can find the row we just trashed.
+router.post("/games/:id/restore", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const params = DeleteGameParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [game] = await db
+    .update(gamesTable)
+    .set({ deletedAt: null })
+    .where(
+      and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)),
+    )
+    .returning();
+  if (!game) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  res.json(game);
 });
 
 export default router;

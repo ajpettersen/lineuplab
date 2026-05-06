@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   battingStatsTable,
@@ -132,7 +132,9 @@ export async function getBattingTotals(userId: string): Promise<BattingTotalsRow
         number: playersTable.number,
       })
       .from(playersTable)
-      .where(eq(playersTable.userId, userId)),
+      .where(
+        and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+      ),
   ]);
 
   const playerMeta = new Map(allPlayers.map((p) => [p.id, p]));
@@ -393,6 +395,12 @@ export async function filterToOwnedActivePlayerIds(
   const rows = await db
     .select({ id: playersTable.id })
     .from(playersTable)
-    .where(and(eq(playersTable.userId, userId), inArray(playersTable.id, playerIds)));
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        inArray(playersTable.id, playerIds),
+        isNull(playersTable.deletedAt),
+      ),
+    );
   return new Set(rows.map((r) => r.id));
 }

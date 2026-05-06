@@ -43,6 +43,9 @@ export const tournamentsTable = pgTable(
      */
     restTiers: jsonb("rest_tiers").$type<RestTier[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Soft-delete timestamp. Null = visible. Reads filter
+    // `deletedAt IS NULL`; the restore endpoint clears it.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [index("tournaments_user_id_idx").on(table.userId)],
 );

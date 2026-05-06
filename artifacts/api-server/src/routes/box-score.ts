@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -155,7 +155,9 @@ router.post(
     const players = await db
       .select()
       .from(playersTable)
-      .where(eq(playersTable.userId, userId));
+      .where(
+        and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+      );
 
     if (players.length === 0) {
       res
@@ -466,12 +468,117 @@ router.delete("/games/:id/box-score", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Game not found" });
     return;
   }
+  // Snapshot BEFORE wiping so the client can offer Undo. We capture
+  // batting lines + this game's pitch counts + the import flag and
+  // both scores. Final score is left in place on the game row, but
+  // we still snapshot it in case the coach wants restore to make the
+  // game look exactly like it did pre-delete.
+  const [linesSnapshot, pitchSnapshot] = await Promise.all([
+    getBattingLinesForGame(userId, id),
+    db
+      .select()
+      .from(pitchCountsTable)
+      .where(
+        and(
+          eq(pitchCountsTable.userId, userId),
+          eq(pitchCountsTable.gameId, id),
+        ),
+      ),
+  ]);
   await deleteBattingLinesForGame(userId, id);
   await db
     .update(gamesTable)
     .set({ boxScoreImportedAt: null })
     .where(eq(gamesTable.id, id));
-  res.status(204).end();
+  res.json({
+    gameId: id,
+    importedAt: game.boxScoreImportedAt
+      ? game.boxScoreImportedAt.toISOString()
+      : null,
+    ourScore: game.ourScore,
+    opponentScore: game.opponentScore,
+    lines: linesSnapshot,
+    pitchCounts: pitchSnapshot.map((p) => ({
+      playerId: p.playerId,
+      pitches: p.pitches,
+      notes: p.notes,
+    })),
+  });
 });
+
+const RestoreBoxScoreSchema = z.object({
+  importedAt: z.string().datetime().nullable().optional(),
+  ourScore: z.number().int().nullable().optional(),
+  opponentScore: z.number().int().nullable().optional(),
+  lines: z.array(ExtractedBattingLine.partial({ playerName: true })),
+  pitchCounts: z.array(
+    z.object({
+      playerId: z.number().int(),
+      pitches: z.number().int().min(0),
+      notes: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+router.post(
+  "/games/:id/box-score/restore",
+  async (req, res): Promise<void> => {
+    const userId = req.ownerUserId!;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: "Invalid game id" });
+      return;
+    }
+    const game = await getOwnedGame(userId, id);
+    if (!game) {
+      res.status(404).json({ error: "Game not found" });
+      return;
+    }
+    const parsed = RestoreBoxScoreSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid snapshot", details: parsed.error.flatten() });
+      return;
+    }
+    const allPlayerIds = Array.from(
+      new Set([
+        ...parsed.data.lines.map((l) => l.playerId),
+        ...parsed.data.pitchCounts.map((p) => p.playerId),
+      ]),
+    );
+    const owned = await filterToOwnedActivePlayerIds(userId, allPlayerIds);
+    const safeLines = parsed.data.lines.filter((l) => owned.has(l.playerId));
+    const safePitches = parsed.data.pitchCounts.filter((p) => owned.has(p.playerId));
+    const importedAt = parsed.data.importedAt
+      ? new Date(parsed.data.importedAt)
+      : new Date();
+    await db.transaction(async (tx) => {
+      await replaceBattingLinesForGameTx(tx, userId, id, safeLines, "Restored from undo");
+      for (const p of safePitches) {
+        await tx
+          .insert(pitchCountsTable)
+          .values({
+            userId,
+            gameId: id,
+            playerId: p.playerId,
+            pitches: p.pitches,
+            notes: p.notes ?? null,
+          })
+          .onConflictDoUpdate({
+            target: [pitchCountsTable.gameId, pitchCountsTable.playerId],
+            set: {
+              pitches: p.pitches,
+              notes: p.notes ?? null,
+              recordedAt: importedAt,
+            },
+          });
+      }
+      const upd: Record<string, unknown> = { boxScoreImportedAt: importedAt };
+      if (parsed.data.ourScore !== undefined) upd.ourScore = parsed.data.ourScore;
+      if (parsed.data.opponentScore !== undefined) upd.opponentScore = parsed.data.opponentScore;
+      await tx.update(gamesTable).set(upd).where(eq(gamesTable.id, id));
+    });
+    res.json({ gameId: id, restoredLines: safeLines.length, restoredPitchers: safePitches.length });
+  },
+);
 
 export default router;

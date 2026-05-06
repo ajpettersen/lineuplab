@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, teamSettingsTable } from "@workspace/db";
 import { getBattingTotalsForPlayers } from "../lib/batting-totals";
 import {
@@ -89,7 +89,13 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   const players = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.userId, userId), inArray(playersTable.id, ownedIds)));
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+        inArray(playersTable.id, ownedIds),
+      ),
+    );
 
   if (players.length === 0) {
     res.status(400).json({ error: "No valid players found" });

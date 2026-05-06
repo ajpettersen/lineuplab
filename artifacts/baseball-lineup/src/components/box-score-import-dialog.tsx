@@ -35,6 +35,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { showUndoToast, postJson } from "@/lib/undo-toast";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 import { Upload, Trash2, X, Plus, Sparkles, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 
@@ -332,7 +335,16 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
   const onRemoveImport = async () => {
     if (!confirm("Remove this game's imported box score? Pitch counts and the final score are kept.")) return;
     try {
-      await remove.mutateAsync({ id: gameId });
+      // The DELETE endpoint returns the snapshot (lines + pitch
+      // counts + scores + import flag) so we can hand it back to
+      // the matching /restore endpoint if the coach taps Undo.
+      // Bypass the generated mutation here because it ignores the
+      // body — we need to capture the snapshot ourselves.
+      const resp = await fetch(`${BASE}/api/games/${gameId}/box-score`, {
+        method: "DELETE",
+      });
+      if (!resp.ok) throw new Error(`${resp.status}`);
+      const snapshot = await resp.json();
       await Promise.all([
         qc.invalidateQueries({ queryKey: getGetBoxScoreQueryKey(gameId) }),
         qc.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) }),
@@ -341,7 +353,25 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
         qc.invalidateQueries({ queryKey: getGetGamePitchCountsQueryKey(gameId) }),
         qc.invalidateQueries({ queryKey: ["/api/batting"] }),
       ]);
-      toast({ title: "Box score removed" });
+      showUndoToast(toast, {
+        title: "Box score removed",
+        onUndo: async () => {
+          try {
+            await postJson(`/api/games/${gameId}/box-score/restore`, snapshot);
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: getGetBoxScoreQueryKey(gameId) }),
+              qc.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) }),
+              qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() }),
+              qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() }),
+              qc.invalidateQueries({ queryKey: getGetGamePitchCountsQueryKey(gameId) }),
+              qc.invalidateQueries({ queryKey: ["/api/batting"] }),
+            ]);
+            toast({ title: "Box score restored" });
+          } catch {
+            toast({ title: "Couldn't undo", variant: "destructive" });
+          }
+        },
+      });
       onOpenChange(false);
     } catch (err) {
       toast({

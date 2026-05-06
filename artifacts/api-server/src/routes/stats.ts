@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, gamesTable, playersTable, lineupEntriesTable, historicalFieldingTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -37,7 +37,10 @@ function posGroupInnings(hist: {
 
 router.get("/stats/season", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
-  const allRows = await db.select().from(gamesTable).where(eq(gamesTable.userId, userId));
+  const allRows = await db
+    .select()
+    .from(gamesTable)
+    .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)));
   // Only actual games count toward "Total Games" — practices and other events are excluded.
   const games = allRows.filter((g) => g.type === "game");
   const totalGames = games.length;
@@ -67,7 +70,13 @@ router.get("/stats/season", async (req, res): Promise<void> => {
   const players = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        eq(playersTable.active, true),
+        isNull(playersTable.deletedAt),
+      ),
+    );
   let fairnessScore = 100;
   if (players.length > 1 && completedGames > 0) {
     const benchByPlayer: number[] = players.map((p) => {
@@ -86,7 +95,12 @@ router.get("/stats/season", async (req, res): Promise<void> => {
 
 router.get("/stats/players", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
-  const players = await db.select().from(playersTable).where(eq(playersTable.userId, userId));
+  const players = await db
+    .select()
+    .from(playersTable)
+    .where(
+      and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+    );
   if (players.length === 0) {
     res.json([]);
     return;
@@ -101,7 +115,7 @@ router.get("/stats/players", async (req, res): Promise<void> => {
   const userGames = await db
     .select({ id: gamesTable.id, innings: gamesTable.innings, status: gamesTable.status, type: gamesTable.type })
     .from(gamesTable)
-    .where(eq(gamesTable.userId, userId));
+    .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)));
   const completedGameIds = userGames
     .filter((g) => g.type === "game" && g.status === "completed")
     .map((g) => g.id);

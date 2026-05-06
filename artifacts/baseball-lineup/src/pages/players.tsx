@@ -7,6 +7,7 @@ import {
   getListPlayersQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -868,12 +869,24 @@ export default function Players() {
 
   const handleDelete = () => {
     if (!deleteId) return;
+    const idToDelete = deleteId;
     deletePlayer.mutate(
-      { id: deleteId },
+      { id: idToDelete },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
-          toast({ title: "Player removed" });
+          showUndoToast(toast, {
+            title: "Player removed",
+            onUndo: async () => {
+              try {
+                await restoreEntity("players", idToDelete);
+                qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
+                toast({ title: "Player restored" });
+              } catch {
+                toast({ title: "Couldn't undo", variant: "destructive" });
+              }
+            },
+          });
           setDeleteId(null);
         },
         onError: () => toast({ title: "Failed to delete player", variant: "destructive" }),

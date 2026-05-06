@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
 import multer from "multer";
 import { db, battingStatsTable, playersTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
@@ -122,6 +122,110 @@ router.delete("/batting/:playerId", async (req, res): Promise<void> => {
   res.status(204).send();
 });
 
+// ---------------------------------------------------------------------------
+// Bulk nuke + restore for the manual `batting_stats` rows. Used by the
+// "Delete all manual stats" flow on Season Stats. Box-score-derived
+// `game_batting_lines` are NOT touched — those remain authoritative
+// for per-game data and roll up via getBattingTotals.
+// ---------------------------------------------------------------------------
+
+const ClearAllSchema = z.object({ confirm: z.literal("DELETE") });
+
+router.post("/batting/clear-all", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const parsed = ClearAllSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Confirmation required: send { confirm: \"DELETE\" }" });
+    return;
+  }
+  // Snapshot every manual row this coach owns BEFORE wiping. We join
+  // through `players` to constrain to this tenant — `batting_stats`
+  // doesn't have its own `userId` column.
+  const snapshot = await db
+    .select({ row: battingStatsTable })
+    .from(battingStatsTable)
+    .innerJoin(playersTable, eq(playersTable.id, battingStatsTable.playerId))
+    .where(eq(playersTable.userId, userId));
+  const snapshotRows = snapshot.map((s) => s.row);
+  if (snapshotRows.length === 0) {
+    res.json({ deletedCount: 0, snapshot: [] });
+    return;
+  }
+  const playerIds = snapshotRows.map((r) => r.playerId);
+  await db
+    .delete(battingStatsTable)
+    .where(inArray(battingStatsTable.playerId, playerIds));
+  res.json({ deletedCount: snapshotRows.length, snapshot: snapshotRows });
+});
+
+const RestoreSchema = z.object({
+  rows: z.array(
+    z.object({
+      playerId: z.number().int(),
+      seasonLabel: z.string().default("Current"),
+      ab: z.number().int().min(0).default(0),
+      hits: z.number().int().min(0).default(0),
+      doubles: z.number().int().min(0).default(0),
+      triples: z.number().int().min(0).default(0),
+      hr: z.number().int().min(0).default(0),
+      rbi: z.number().int().min(0).default(0),
+      bb: z.number().int().min(0).default(0),
+      k: z.number().int().min(0).default(0),
+      hbp: z.number().int().min(0).default(0),
+      sac: z.number().int().min(0).default(0),
+      sb: z.number().int().min(0).default(0),
+      sourceNote: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+router.post("/batting/restore", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const parsed = RestoreSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid snapshot", details: parsed.error.flatten() });
+    return;
+  }
+  if (parsed.data.rows.length === 0) {
+    res.json({ restored: 0 });
+    return;
+  }
+  // Reconfirm every snapshot row is still an owned player. A snapshot
+  // produced from clear-all minutes ago could reference a player who
+  // has since been deleted — silently drop those rather than 4xx.
+  const requestedIds = Array.from(
+    new Set(parsed.data.rows.map((r) => r.playerId)),
+  );
+  const ownedRows = await db
+    .select({ id: playersTable.id })
+    .from(playersTable)
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+        inArray(playersTable.id, requestedIds),
+      ),
+    );
+  const ownedSet = new Set(ownedRows.map((r) => r.id));
+  const safeRows = parsed.data.rows.filter((r) => ownedSet.has(r.playerId));
+  let restored = 0;
+  // upsert per row — clearAll wiped them so insert path is the common
+  // case, but accept overwrite in case the coach added new manual
+  // stats between clear and restore (last writer wins on restore).
+  for (const r of safeRows) {
+    const rates = computeRates(r);
+    await db
+      .insert(battingStatsTable)
+      .values({ ...r, ...rates, sourceNote: r.sourceNote ?? null })
+      .onConflictDoUpdate({
+        target: battingStatsTable.playerId,
+        set: { ...r, ...rates, sourceNote: r.sourceNote ?? null, updatedAt: new Date() },
+      });
+    restored += 1;
+  }
+  res.json({ restored });
+});
+
 router.post("/batting/extract", upload.single("file"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
@@ -129,7 +233,13 @@ router.post("/batting/extract", upload.single("file"), async (req, res): Promise
   const players = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        eq(playersTable.active, true),
+        isNull(playersTable.deletedAt),
+      ),
+    );
   const playerList = players.map((p) => `${p.id}: ${p.name}${p.number != null ? ` (#${p.number})` : ""}`).join("\n");
 
   const base64 = req.file.buffer.toString("base64");

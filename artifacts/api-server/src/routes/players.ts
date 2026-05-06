@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import multer from "multer";
 import { z } from "zod";
 import { db, playersTable } from "@workspace/db";
@@ -169,7 +169,9 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
     const existing = await tx
       .select()
       .from(playersTable)
-      .where(eq(playersTable.userId, userId));
+      .where(
+        and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+      );
     type ExistingPlayer = (typeof existing)[number];
     // Match against existing roster by case-insensitive full display name +
     // optional jersey number. We key on the joined "first last" rather than
@@ -283,7 +285,9 @@ router.get("/players", async (req, res): Promise<void> => {
   const players = await db
     .select()
     .from(playersTable)
-    .where(eq(playersTable.userId, userId))
+    .where(
+      and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+    )
     .orderBy(playersTable.name);
   res.json(players);
 });
@@ -333,7 +337,13 @@ router.get("/players/:id", async (req, res): Promise<void> => {
   const [player] = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)));
+    .where(
+      and(
+        eq(playersTable.id, params.data.id),
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+      ),
+    );
   if (!player) {
     res.status(404).json({ error: "Player not found" });
     return;
@@ -377,7 +387,13 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   const [existing] = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)));
+    .where(
+      and(
+        eq(playersTable.id, params.data.id),
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+      ),
+    );
   if (!existing) {
     res.status(404).json({ error: "Player not found" });
     return;
@@ -397,6 +413,11 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   res.json(player);
 });
 
+// Soft delete — sets `deletedAt` so the trashed player can be restored
+// from the toast Undo button. Reads filter `deletedAt IS NULL` (see
+// ownership helpers + read sites) so the player vanishes from the UI
+// immediately. The 204 response shape is preserved for backwards
+// compat with existing clients.
 router.delete("/players/:id", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = DeletePlayerParams.safeParse(req.params);
@@ -405,14 +426,46 @@ router.delete("/players/:id", async (req, res): Promise<void> => {
     return;
   }
   const [player] = await db
-    .delete(playersTable)
-    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)))
+    .update(playersTable)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(playersTable.id, params.data.id),
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+      ),
+    )
     .returning();
   if (!player) {
     res.status(404).json({ error: "Player not found" });
     return;
   }
   res.sendStatus(204);
+});
+
+// Restore — clears `deletedAt`. Backs the toast Undo button. Looks up
+// the row WITHOUT the deletedAt-IS-NULL filter (otherwise we couldn't
+// find the row we just trashed). 404s for unknown ids and for rows
+// that aren't currently soft-deleted (no-op, return the live row).
+router.post("/players/:id/restore", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const params = DeletePlayerParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [player] = await db
+    .update(playersTable)
+    .set({ deletedAt: null })
+    .where(
+      and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)),
+    )
+    .returning();
+  if (!player) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+  res.json(player);
 });
 
 export default router;

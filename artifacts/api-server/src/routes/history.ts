@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, historicalFieldingTable, playersTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -50,7 +50,7 @@ router.get("/history/fielding", async (req, res): Promise<void> => {
     })
     .from(historicalFieldingTable)
     .innerJoin(playersTable, eq(historicalFieldingTable.playerId, playersTable.id))
-    .where(eq(playersTable.userId, userId))
+    .where(and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)))
     .orderBy(historicalFieldingTable.createdAt);
   res.json(rows);
 });
@@ -68,7 +68,9 @@ router.post("/history/fielding", async (req, res): Promise<void> => {
   const allPlayers = await db
     .select()
     .from(playersTable)
-    .where(eq(playersTable.userId, userId));
+    .where(
+      and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+    );
   const ownedIds = new Set(allPlayers.map((p) => p.id));
 
   const inserted = [];
@@ -125,7 +127,9 @@ router.delete("/history/fielding/:label", async (req, res): Promise<void> => {
   const owned = await db
     .select({ id: playersTable.id })
     .from(playersTable)
-    .where(eq(playersTable.userId, userId));
+    .where(
+      and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+    );
   const ownedIds = owned.map((r) => r.id);
   if (ownedIds.length === 0) {
     res.status(204).send();

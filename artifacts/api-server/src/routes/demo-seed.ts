@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   db,
   playersTable,
@@ -143,14 +143,21 @@ async function isSeedable(ownerUserId: string): Promise<boolean> {
   const [existingPlayer] = await db
     .select({ id: playersTable.id })
     .from(playersTable)
-    .where(eq(playersTable.userId, ownerUserId))
+    .where(
+      and(
+        eq(playersTable.userId, ownerUserId),
+        isNull(playersTable.deletedAt),
+      ),
+    )
     .limit(1);
   if (existingPlayer) return false;
 
   const [existingGame] = await db
     .select({ id: gamesTable.id })
     .from(gamesTable)
-    .where(eq(gamesTable.userId, ownerUserId))
+    .where(
+      and(eq(gamesTable.userId, ownerUserId), isNull(gamesTable.deletedAt)),
+    )
     .limit(1);
   if (existingGame) return false;
 

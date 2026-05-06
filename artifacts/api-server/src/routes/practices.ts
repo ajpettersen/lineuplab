@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   practicesTable,
@@ -35,7 +35,11 @@ async function getOwnedPractice(
     .select()
     .from(practicesTable)
     .where(
-      and(eq(practicesTable.id, practiceId), eq(practicesTable.userId, userId)),
+      and(
+        eq(practicesTable.id, practiceId),
+        eq(practicesTable.userId, userId),
+        isNull(practicesTable.deletedAt),
+      ),
     );
   return row ?? null;
 }
@@ -45,7 +49,9 @@ router.get("/practices", async (req, res): Promise<void> => {
   const practices = await db
     .select()
     .from(practicesTable)
-    .where(eq(practicesTable.userId, userId))
+    .where(
+      and(eq(practicesTable.userId, userId), isNull(practicesTable.deletedAt)),
+    )
     .orderBy(desc(practicesTable.date));
 
   if (practices.length === 0) {
@@ -202,6 +208,8 @@ router.patch("/practices/:id", async (req, res): Promise<void> => {
   res.json(updated);
 });
 
+// Soft delete — see games.ts / players.ts. Practice attendance rows
+// stay intact and reappear on restore.
 router.delete("/practices/:id", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = DeletePracticeParams.safeParse(req.params);
@@ -210,9 +218,14 @@ router.delete("/practices/:id", async (req, res): Promise<void> => {
     return;
   }
   const result = await db
-    .delete(practicesTable)
+    .update(practicesTable)
+    .set({ deletedAt: new Date() })
     .where(
-      and(eq(practicesTable.id, params.data.id), eq(practicesTable.userId, userId)),
+      and(
+        eq(practicesTable.id, params.data.id),
+        eq(practicesTable.userId, userId),
+        isNull(practicesTable.deletedAt),
+      ),
     )
     .returning({ id: practicesTable.id });
   if (result.length === 0) {
@@ -220,6 +233,32 @@ router.delete("/practices/:id", async (req, res): Promise<void> => {
     return;
   }
   res.status(204).end();
+});
+
+// Restore — clears `deletedAt`. Looks up without the soft-delete
+// filter so we can find the row we just trashed.
+router.post("/practices/:id/restore", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const params = DeletePracticeParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [practice] = await db
+    .update(practicesTable)
+    .set({ deletedAt: null })
+    .where(
+      and(
+        eq(practicesTable.id, params.data.id),
+        eq(practicesTable.userId, userId),
+      ),
+    )
+    .returning();
+  if (!practice) {
+    res.status(404).json({ error: "Practice not found" });
+    return;
+  }
+  res.json(practice);
 });
 
 router.put("/practices/:id/attendance", async (req, res): Promise<void> => {

@@ -59,6 +59,7 @@ import {
   X,
 } from "lucide-react";
 import { format } from "date-fns";
+import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
 
 function makeBlockId(): string {
@@ -145,9 +146,21 @@ export default function PracticeDetailPage() {
 
   const del = useDeletePractice({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (_data, vars) => {
         void qc.invalidateQueries({ queryKey: getListPracticesQueryKey() });
-        toast({ title: "Practice deleted" });
+        const idToRestore = vars?.id ?? practiceId;
+        showUndoToast(toast, {
+          title: "Practice deleted",
+          onUndo: async () => {
+            try {
+              await restoreEntity("practices", idToRestore);
+              void qc.invalidateQueries({ queryKey: getListPracticesQueryKey() });
+              toast({ title: "Practice restored" });
+            } catch {
+              toast({ title: "Couldn't undo", variant: "destructive" });
+            }
+          },
+        });
         window.history.back();
       },
     },

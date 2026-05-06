@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, pitchCountsTable, playersTable, gamesTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -38,7 +38,13 @@ router.get("/pitching", async (req, res): Promise<void> => {
       ),
     )
     .leftJoin(gamesTable, eq(gamesTable.id, pitchCountsTable.gameId))
-    .where(and(eq(playersTable.userId, userId), eq(playersTable.canPitch, true)))
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        eq(playersTable.canPitch, true),
+        isNull(playersTable.deletedAt),
+      ),
+    )
     .groupBy(playersTable.id, playersTable.name, playersTable.number)
     .orderBy(sql`coalesce(sum(${pitchCountsTable.pitches}), 0) desc`);
 

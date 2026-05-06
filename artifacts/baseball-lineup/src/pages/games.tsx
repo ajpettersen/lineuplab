@@ -48,6 +48,7 @@ import {
   Tv,
 } from "lucide-react";
 import { format } from "date-fns";
+import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
@@ -538,12 +539,24 @@ export default function Games() {
 
   const handleDelete = () => {
     if (!deleteId) return;
+    const idToDelete = deleteId;
     deleteGame.mutate(
-      { id: deleteId },
+      { id: idToDelete },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
-          toast({ title: "Game removed" });
+          showUndoToast(toast, {
+            title: "Game removed",
+            onUndo: async () => {
+              try {
+                await restoreEntity("games", idToDelete);
+                qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+                toast({ title: "Game restored" });
+              } catch {
+                toast({ title: "Couldn't undo", variant: "destructive" });
+              }
+            },
+          });
           setDeleteId(null);
         },
         onError: () => toast({ title: "Failed to delete game", variant: "destructive" }),

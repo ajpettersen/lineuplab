@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -156,7 +156,9 @@ router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
   const allPlayers = await db
     .select()
     .from(playersTable)
-    .where(eq(playersTable.userId, userId));
+    .where(
+      and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+    );
   const activePlayers = allPlayers.filter((p) => p.active);
   if (activePlayers.length === 0) {
     res.status(400).json({ error: "No active players on the roster" });

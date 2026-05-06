@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
+import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import {
   useGetTournament,
   useUpdateTournament,
@@ -81,9 +82,21 @@ export default function TournamentDetail() {
 
   const deleteTournament = useDeleteTournament({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (_data, vars) => {
         void qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
-        toast({ title: "Tournament deleted" });
+        const idToRestore = vars?.id ?? tournamentId;
+        showUndoToast(toast, {
+          title: "Tournament deleted",
+          onUndo: async () => {
+            try {
+              await restoreEntity("tournaments", idToRestore);
+              void qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
+              toast({ title: "Tournament restored" });
+            } catch {
+              toast({ title: "Couldn't undo", variant: "destructive" });
+            }
+          },
+        });
         window.history.back();
       },
     },

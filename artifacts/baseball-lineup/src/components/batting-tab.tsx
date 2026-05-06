@@ -10,8 +10,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Upload, Plus, Trash2, Wand2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Upload, Plus, Wand2, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { showUndoToast, postJson } from "@/lib/undo-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -52,6 +55,12 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
   const [uploading, setUploading] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedRow[] | null>(null);
   const [saving, setSaving] = useState(false);
+  // Bulk-nuke flow: gates the destructive POST behind a typed
+  // confirmation so a misclick can't wipe a season's worth of
+  // hand-entered stats. The undo toast carries the snapshot for ~10s.
+  const [nukeOpen, setNukeOpen] = useState(false);
+  const [nukeConfirm, setNukeConfirm] = useState("");
+  const [nuking, setNuking] = useState(false);
 
   const statsMap = Object.fromEntries(battingStats.map((b) => [b.playerId, b]));
 
@@ -80,10 +89,37 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     }
   };
 
-  const deleteStats = async (playerId: number) => {
-    await fetch(`${BASE}/api/batting/${playerId}`, { method: "DELETE" });
-    qc.invalidateQueries({ queryKey: ["batting-stats"] });
-    toast({ title: "Stats removed" });
+  const clearAllManualStats = async () => {
+    setNuking(true);
+    try {
+      const resp = (await postJson("/api/batting/clear-all", {
+        confirm: "DELETE",
+      })) as { deletedCount: number; snapshot: unknown[] };
+      qc.invalidateQueries({ queryKey: ["batting-stats"] });
+      setNukeOpen(false);
+      setNukeConfirm("");
+      if (resp.deletedCount === 0) {
+        toast({ title: "No manual stats to delete" });
+        return;
+      }
+      showUndoToast(toast, {
+        title: `Cleared ${resp.deletedCount} manual stat row${resp.deletedCount === 1 ? "" : "s"}`,
+        description: "Box-score-derived stats are untouched.",
+        onUndo: async () => {
+          try {
+            await postJson("/api/batting/restore", { rows: resp.snapshot });
+            qc.invalidateQueries({ queryKey: ["batting-stats"] });
+            toast({ title: "Manual stats restored" });
+          } catch {
+            toast({ title: "Couldn't undo", variant: "destructive" });
+          }
+        },
+      });
+    } catch {
+      toast({ title: "Failed to clear stats", variant: "destructive" });
+    } finally {
+      setNuking(false);
+    }
   };
 
   const handleFileUpload = async (file: File) => {
@@ -162,9 +198,22 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
         <div>
           <p className="text-sm text-muted-foreground">Track offensive stats for lineup optimization. High OBP players can be prioritized for important games.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
-          <Wand2 className="h-4 w-4 mr-1" /> Extract from Screenshot
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
+            <Wand2 className="h-4 w-4 mr-1" /> Extract from Screenshot
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => {
+              setNukeConfirm("");
+              setNukeOpen(true);
+            }}
+          >
+            <Trash2 className="h-4 w-4 mr-1" /> Delete all manual stats
+          </Button>
+        </div>
       </div>
 
       {/* Extracted preview */}
@@ -353,11 +402,6 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => startEdit(p.id)}>
                             <Plus className="h-3 w-3 mr-0.5" />{s ? "Edit" : "Add"}
                           </Button>
-                          {s && (
-                            <Button size="sm" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => deleteStats(p.id)}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -391,6 +435,47 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUploadOpen(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete-all confirmation */}
+      <Dialog open={nukeOpen} onOpenChange={(open) => { setNukeOpen(open); if (!open) setNukeConfirm(""); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete all manual batting stats?</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2 text-sm">
+            <p>
+              This wipes every hand-entered batting row across your roster.
+              Per-game stats imported from box scores are <strong>not</strong> touched.
+            </p>
+            <p className="text-muted-foreground">
+              You can undo this from the toast for a few seconds.
+            </p>
+            <div>
+              <Label htmlFor="nuke-confirm" className="text-xs">
+                Type <span className="font-mono font-semibold">DELETE</span> to confirm
+              </Label>
+              <Input
+                id="nuke-confirm"
+                autoFocus
+                value={nukeConfirm}
+                onChange={(e) => setNukeConfirm(e.target.value)}
+                placeholder="DELETE"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNukeOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={nukeConfirm !== "DELETE" || nuking}
+              onClick={clearAllManualStats}
+            >
+              {nuking ? "Deleting…" : "Delete all"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

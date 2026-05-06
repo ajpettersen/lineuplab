@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
 import { db, lineupConstraintsTable, playersTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
@@ -109,7 +109,13 @@ router.post("/constraints/parse", async (req, res): Promise<void> => {
   const players = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.userId, userId), eq(playersTable.active, true)));
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        eq(playersTable.active, true),
+        isNull(playersTable.deletedAt),
+      ),
+    );
   const playerList = players.map((p) => `${p.id}: ${p.name}`).join("\n");
   // Include the optional LCF/RCF; coaches running a 10-player field may
   // express constraints against those slots.

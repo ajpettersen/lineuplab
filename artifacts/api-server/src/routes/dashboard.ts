@@ -55,6 +55,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
     .where(
       and(
         eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
         eq(gamesTable.type, "game"),
         lt(gamesTable.gameDate, now),
       ),
@@ -194,6 +195,7 @@ router.post("/dashboard/tasks/dismiss", async (req, res): Promise<void> => {
       and(
         eq(gamesTable.id, parsed.data.gameId),
         eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
       ),
     );
   if (!game) {

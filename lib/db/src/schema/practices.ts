@@ -94,6 +94,9 @@ export const practicesTable = pgTable(
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Soft-delete timestamp; see games.ts / players.ts for the
+    // pattern. Reads filter `deletedAt IS NULL`, restore clears it.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     index("practices_user_id_idx").on(table.userId),

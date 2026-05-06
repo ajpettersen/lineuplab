@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   db,
   pitchCountsTable,
@@ -29,7 +29,13 @@ async function ensureGameOwned(
   const [game] = await db
     .select({ id: gamesTable.id })
     .from(gamesTable)
-    .where(and(eq(gamesTable.id, gameId), eq(gamesTable.userId, userId)));
+    .where(
+      and(
+        eq(gamesTable.id, gameId),
+        eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
+      ),
+    );
   return game?.id ?? null;
 }
 
@@ -82,6 +88,7 @@ router.post("/games/:id/pitch-counts", async (req, res): Promise<void> => {
       and(
         eq(playersTable.id, parsed.data.playerId),
         eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
       ),
     );
   if (!player) {

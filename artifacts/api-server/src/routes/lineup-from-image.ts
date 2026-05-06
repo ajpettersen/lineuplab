@@ -1,5 +1,5 @@
 import { Router, type IRouter, json as expressJson } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, playersTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -211,7 +211,9 @@ router.post("/games/:id/lineup/from-image", imageJsonParser, async (req, res): P
   const allPlayers = await db
     .select()
     .from(playersTable)
-    .where(eq(playersTable.userId, userId));
+    .where(
+      and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+    );
   const activePlayers = allPlayers.filter((p) => p.active);
   if (activePlayers.length === 0) {
     res.status(400).json({ error: "No active players on the roster" });

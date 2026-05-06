@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   db,
   practicesTable,
@@ -333,6 +333,7 @@ router.post(
         and(
           eq(practicesTable.id, params.data.id),
           eq(practicesTable.userId, userId),
+          isNull(practicesTable.deletedAt),
         ),
       );
     if (!practice) {
@@ -358,7 +359,12 @@ router.post(
     // small reads against independent tables and we always need them before
     // calling OpenAI.
     const [allPlayers, attendanceRows, recentPracticeRows] = await Promise.all([
-      db.select().from(playersTable).where(eq(playersTable.userId, userId)),
+      db
+        .select()
+        .from(playersTable)
+        .where(
+          and(eq(playersTable.userId, userId), isNull(playersTable.deletedAt)),
+        ),
       db
         .select({
           playerId: practiceAttendanceTable.playerId,
@@ -388,6 +394,7 @@ router.post(
         .where(
           and(
             eq(practicesTable.userId, userId),
+            isNull(practicesTable.deletedAt),
             ne(practicesTable.id, params.data.id),
             sql`jsonb_array_length(${practicesTable.blocks}) > 0`,
           ),

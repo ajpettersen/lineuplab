@@ -59,6 +59,10 @@ export const gamesTable = pgTable(
     // count(*) round-trip on the game-detail page).
     boxScoreImportedAt: timestamp("box_score_imported_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Soft-delete timestamp. Null = visible. Set by the trash action
+    // so the coach can hit Undo on the toast. All read queries scope
+    // to `deletedAt IS NULL`; the restore endpoint clears it.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [index("games_user_id_idx").on(table.userId)],
 );

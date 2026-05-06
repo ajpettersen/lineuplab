@@ -22,6 +22,13 @@ export const playersTable = pgTable(
     active: boolean("active").notNull().default(true),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Soft-delete timestamp. Null = active. Set when a coach trashes
+    // the player so the action can be undone (toast Undo button on
+    // the client). All read queries filter `deletedAt IS NULL`; the
+    // restore endpoint clears the timestamp. Cleanup of long-deleted
+    // rows is intentionally not automated yet — a coach may want to
+    // recover a player from earlier in the season.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [index("players_user_id_idx").on(table.userId)],
 );

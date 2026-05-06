@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   tournamentsTable,
@@ -28,7 +28,12 @@ router.get("/tournaments", async (req, res): Promise<void> => {
   const tournaments = await db
     .select()
     .from(tournamentsTable)
-    .where(eq(tournamentsTable.userId, userId))
+    .where(
+      and(
+        eq(tournamentsTable.userId, userId),
+        isNull(tournamentsTable.deletedAt),
+      ),
+    )
     .orderBy(desc(tournamentsTable.startDate));
 
   if (tournaments.length === 0) {
@@ -47,6 +52,7 @@ router.get("/tournaments", async (req, res): Promise<void> => {
     .where(
       and(
         eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
         inArray(gamesTable.tournamentId, tournamentIds),
       ),
     )
@@ -63,6 +69,7 @@ router.get("/tournaments", async (req, res): Promise<void> => {
     .where(
       and(
         eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
         inArray(gamesTable.tournamentId, tournamentIds),
       ),
     )
@@ -125,6 +132,7 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
       and(
         eq(tournamentsTable.id, params.data.id),
         eq(tournamentsTable.userId, userId),
+        isNull(tournamentsTable.deletedAt),
       ),
     );
   if (!tournament) {
@@ -149,7 +157,11 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     .select()
     .from(gamesTable)
     .where(
-      and(eq(gamesTable.userId, userId), eq(gamesTable.tournamentId, tournament.id)),
+      and(
+        eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
+        eq(gamesTable.tournamentId, tournament.id),
+      ),
     )
     .orderBy(gamesTable.gameDate);
 
@@ -170,7 +182,13 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
   const pitchers = await db
     .select()
     .from(playersTable)
-    .where(and(eq(playersTable.userId, userId), eq(playersTable.canPitch, true)));
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        eq(playersTable.canPitch, true),
+        isNull(playersTable.deletedAt),
+      ),
+    );
 
   const gameById = new Map(games.map((g) => [g.id, g]));
   const outingsByPlayer = new Map<
@@ -270,6 +288,12 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
   res.json(updated as Tournament);
 });
 
+// Soft delete — sets `deletedAt`. Unlike the previous hard delete, we
+// LEAVE `games.tournamentId` pointing at the tournament so a restore
+// brings the linkage back automatically. The read sites that surface
+// tournament-linked games already filter `deletedAt IS NULL` on the
+// tournament side, so the linked games don't render as part of a
+// trashed tournament.
 router.delete("/tournaments/:id", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = DeleteTournamentParams.safeParse(req.params);
@@ -277,23 +301,48 @@ router.delete("/tournaments/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  await db.transaction(async (tx) => {
-    await tx
-      .update(gamesTable)
-      .set({ tournamentId: null })
-      .where(
-        and(eq(gamesTable.userId, userId), eq(gamesTable.tournamentId, params.data.id)),
-      );
-    await tx
-      .delete(tournamentsTable)
-      .where(
-        and(
-          eq(tournamentsTable.id, params.data.id),
-          eq(tournamentsTable.userId, userId),
-        ),
-      );
-  });
+  const [tournament] = await db
+    .update(tournamentsTable)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(tournamentsTable.id, params.data.id),
+        eq(tournamentsTable.userId, userId),
+        isNull(tournamentsTable.deletedAt),
+      ),
+    )
+    .returning();
+  if (!tournament) {
+    res.status(404).json({ error: "Tournament not found" });
+    return;
+  }
   res.status(204).end();
+});
+
+// Restore — clears `deletedAt`. The original tournament linkage on
+// games is preserved through the soft-delete cycle.
+router.post("/tournaments/:id/restore", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const params = DeleteTournamentParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [tournament] = await db
+    .update(tournamentsTable)
+    .set({ deletedAt: null })
+    .where(
+      and(
+        eq(tournamentsTable.id, params.data.id),
+        eq(tournamentsTable.userId, userId),
+      ),
+    )
+    .returning();
+  if (!tournament) {
+    res.status(404).json({ error: "Tournament not found" });
+    return;
+  }
+  res.json(tournament);
 });
 
 export default router;
