@@ -48,7 +48,8 @@ export default function PlayerDetail() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [number, setNumber] = useState("");
   const [preferred, setPreferred] = useState<string[]>([]);
   const [canPitch, setCanPitch] = useState(false);
@@ -56,7 +57,8 @@ export default function PlayerDetail() {
 
   const startEdit = () => {
     if (!player) return;
-    setName(player.name);
+    setFirstName(player.firstName ?? "");
+    setLastName(player.lastName ?? "");
     setNumber(player.number != null ? String(player.number) : "");
     setPreferred(player.preferredPositions);
     setCanPitch(player.canPitch);
@@ -71,11 +73,22 @@ export default function PlayerDetail() {
   };
 
   const handleSave = () => {
+    const f = firstName.trim();
+    const l = lastName.trim();
+    if (!f) {
+      toast({ title: "First name is required", variant: "destructive" });
+      return;
+    }
+    if (!l) {
+      toast({ title: "Last name is required", variant: "destructive" });
+      return;
+    }
     updatePlayer.mutate(
       {
         id,
         data: {
-          name: name.trim(),
+          firstName: f,
+          lastName: l,
           number: number ? parseInt(number) : null,
           // eligiblePositions is server-derived from canPitch; we send the
           // current full list (server overwrites it) just to satisfy the
@@ -149,11 +162,20 @@ export default function PlayerDetail() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             {editing ? (
-              <div className="flex gap-3">
+              <div className="flex gap-2 flex-wrap">
                 <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="text-xl font-bold h-9 w-48"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="First"
+                  className="text-xl font-bold h-9 w-36"
+                  data-testid="input-edit-first-name"
+                />
+                <Input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Last"
+                  className="text-xl font-bold h-9 w-40"
+                  data-testid="input-edit-last-name"
                 />
                 <Input
                   value={number}

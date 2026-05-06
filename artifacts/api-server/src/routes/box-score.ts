@@ -161,12 +161,13 @@ router.post(
     }
 
     const rosterText = players
-      .map(
-        (p) =>
-          `${p.id}: ${p.name}${p.number != null ? ` (#${p.number})` : ""}${
-            p.canPitch ? " [P]" : ""
-          }`,
-      )
+      .map((p) => {
+        const initial = p.firstName?.[0]?.toUpperCase() ?? "";
+        const aka = p.lastName ? ` (also "${initial}. ${p.lastName}")` : "";
+        return `${p.id}: ${p.name}${p.number != null ? ` (#${p.number})` : ""}${
+          p.canPitch ? " [P]" : ""
+        }${aka}`;
+      })
       .join("\n");
 
     const systemPrompt = `You are a baseball box-score extractor. The user has uploaded ${files.length} image(s) from a scorebook (commonly GameChanger or a paper book). Extract:
@@ -175,7 +176,7 @@ router.post(
 2. PITCHING line per pitcher who threw: total pitch count for the outing. If only "IP" or "P" (pitches) is shown, use whatever pitch total is visible. If no pitch count is shown, OMIT the pitcher (do not guess).
 3. FINAL SCORE: our team's runs vs the opponent. The OUR side is identified by which roster players appear in the lineup. The OPPONENT side is the other team. If the score is not visible, set both to null.
 
-Match every player to the ROSTER below by name (handle "Last, First" and "First Last" forms; ignore numbers if name disagrees). Use the roster's playerId. If a name on the box score does not match any roster entry, OMIT that line — do NOT invent a playerId.
+Match every player to the ROSTER below by name. GameChanger commonly displays each batter as "F. Lastname" (first initial + full last name) — match those by lastName + first-letter-of-firstName. Also handle "Last, First" and "First Last" forms; ignore jersey numbers if the name disagrees. Use the roster's playerId. If a name on the box score does not match any roster entry, OMIT that line — do NOT invent a playerId.
 
 ROSTER (id: name [P]=pitcher):
 ${rosterText}

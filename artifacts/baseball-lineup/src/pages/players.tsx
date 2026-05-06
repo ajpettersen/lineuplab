@@ -141,7 +141,13 @@ function ImportRosterDialog({
         const body = await resp.json().catch(() => ({}));
         throw new Error(body.error ?? "Extraction failed");
       }
-      const { extracted: rows } = (await resp.json()) as { extracted: Omit<ExtractedPlayer, "include">[] };
+      const { extracted: rows } = (await resp.json()) as {
+        extracted: (Omit<ExtractedPlayer, "include" | "name"> & {
+          name?: string;
+          firstName?: string;
+          lastName?: string;
+        })[];
+      };
       if (!rows || rows.length === 0) {
         toast({ title: "No players found in input", variant: "destructive" });
         setExtracting(false);
@@ -149,7 +155,12 @@ function ImportRosterDialog({
       }
       setExtracted(
         rows.map((r) => {
-          const name = r.name ?? "";
+          // Prefer the new firstName/lastName fields from the AI extractor,
+          // fall back to the old single-string `name` for older payloads.
+          const name =
+            r.firstName || r.lastName
+              ? [r.firstName?.trim(), r.lastName?.trim()].filter(Boolean).join(" ")
+              : (r.name ?? "");
           const number = r.number ?? null;
           const dup = isDuplicate(name, number);
           // The extractor used to return `eligiblePositions`; the new prompt
@@ -533,7 +544,8 @@ function AddPlayerDialog({
   const qc = useQueryClient();
   const createPlayer = useCreatePlayer();
   const { toast } = useToast();
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [number, setNumber] = useState("");
   const [preferred, setPreferred] = useState<string[]>([]);
   const [canPitch, setCanPitch] = useState(false);
@@ -545,14 +557,21 @@ function AddPlayerDialog({
   };
 
   const handleSubmit = () => {
-    if (!name.trim()) {
-      toast({ title: "Name is required", variant: "destructive" });
+    const f = firstName.trim();
+    const l = lastName.trim();
+    if (!f) {
+      toast({ title: "First name is required", variant: "destructive" });
+      return;
+    }
+    if (!l) {
+      toast({ title: "Last name is required", variant: "destructive" });
       return;
     }
     createPlayer.mutate(
       {
         data: {
-          name: name.trim(),
+          firstName: f,
+          lastName: l,
           number: number ? parseInt(number) : null,
           // eligiblePositions is server-derived from canPitch — we send the
           // full list so the generated zod schema is satisfied; server overwrites it.
@@ -567,7 +586,8 @@ function AddPlayerDialog({
           qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
           toast({ title: "Player added" });
           onClose();
-          setName("");
+          setFirstName("");
+          setLastName("");
           setNumber("");
           setPreferred([]);
           setCanPitch(false);
@@ -584,25 +604,39 @@ function AddPlayerDialog({
           <DialogTitle>Add Player</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4 py-2">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Name</Label>
+              <Label>First name</Label>
               <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="First Last"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="Parker"
+                data-testid="input-first-name"
               />
             </div>
             <div className="flex flex-col gap-1.5">
+              <Label>Last name</Label>
+              <Input
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Handahl"
+                data-testid="input-last-name"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 w-20">
               <Label>Jersey #</Label>
               <Input
                 value={number}
                 onChange={(e) => setNumber(e.target.value)}
-                placeholder="Optional"
+                placeholder="—"
                 type="number"
               />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Both first and last names are required so box score imports can
+            match GameChanger&apos;s &quot;F. Lastname&quot; format.
+          </p>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <Label>Preferred Positions</Label>

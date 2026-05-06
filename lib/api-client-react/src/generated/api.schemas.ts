@@ -11,7 +11,11 @@ export interface HealthStatus {
 
 export interface Player {
   id: number;
+  /** Display name "First Last", server-derived from firstName + lastName. */
   name: string;
+  firstName: string;
+  /** May be empty for legacy single-token roster rows; new writes require it. */
+  lastName: string;
   /** @nullable */
   number?: number | null;
   /** List of positions this player can play */
@@ -27,7 +31,8 @@ export interface Player {
 }
 
 export interface CreatePlayerBody {
-  name: string;
+  firstName: string;
+  lastName: string;
   /** @nullable */
   number?: number | null;
   eligiblePositions: string[];
@@ -39,7 +44,8 @@ export interface CreatePlayerBody {
 }
 
 export interface UpdatePlayerBody {
-  name?: string;
+  firstName: string;
+  lastName: string;
   /** @nullable */
   number?: number | null;
   eligiblePositions?: string[];

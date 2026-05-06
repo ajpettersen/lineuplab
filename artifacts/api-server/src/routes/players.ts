@@ -42,28 +42,59 @@ const ExtractTextBodySchema = z.object({
   text: z.string().min(1).max(10000),
 });
 
-const BulkPlayerSchema = z.object({
-  name: z.string().trim().min(1),
-  number: z.number().int().min(0).max(999).nullable().optional(),
-  // Accept any string array; we filter to known positions below so one bad code
-  // from the AI doesn't reject the whole batch.
-  eligiblePositions: z.array(z.string()).default([]),
-  preferredPositions: z.array(z.string()).default([]),
-  canPitch: z.boolean().default(false),
-  notes: z.string().nullable().optional(),
-});
+// Bulk import accepts firstName/lastName from the new AI extractor and also
+// falls back to a single `name` field for backward compatibility with older
+// clients (and for the rare roster source that doesn't separate the two —
+// the helper splits it on the last whitespace).
+const BulkPlayerSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    firstName: z.string().trim().optional(),
+    lastName: z.string().trim().optional(),
+    number: z.number().int().min(0).max(999).nullable().optional(),
+    // Accept any string array; we filter to known positions below so one bad code
+    // from the AI doesn't reject the whole batch.
+    eligiblePositions: z.array(z.string()).default([]),
+    preferredPositions: z.array(z.string()).default([]),
+    canPitch: z.boolean().default(false),
+    notes: z.string().nullable().optional(),
+  })
+  .transform((p) => {
+    let firstName = (p.firstName ?? "").trim();
+    let lastName = (p.lastName ?? "").trim();
+    if (!firstName && !lastName && p.name) {
+      const tokens = p.name.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length === 1) {
+        firstName = tokens[0]!;
+      } else if (tokens.length > 1) {
+        firstName = tokens.slice(0, -1).join(" ");
+        lastName = tokens[tokens.length - 1]!;
+      }
+    }
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+    return { ...p, firstName, lastName, name: fullName };
+  })
+  .refine((p) => p.firstName.length > 0, {
+    message: "Each player needs a first name",
+  });
 const BulkBodySchema = z.object({ players: z.array(BulkPlayerSchema).min(1).max(100) });
 const KNOWN_POSITIONS = new Set<string>(ALL_POSITIONS);
 
 const EXTRACT_INSTRUCTIONS = `You are extracting a youth baseball roster.
 Return a JSON array ONLY (no markdown, no explanation). For each player return:
 {
-  "name": string,                 // full name as written, trimmed
+  "firstName": string,            // given name, trimmed (REQUIRED, never empty)
+  "lastName": string,             // family name, trimmed ("" only if the source truly has no last name)
   "number": number | null,        // jersey number if visible, else null
   "preferredPositions": string[], // positions the roster lists for them, from ${ALL_POSITIONS.join(", ")}
   "canPitch": boolean,            // true if "P" appears in their positions or roster says pitcher
   "notes": string | null          // anything notable (left-handed, captain, etc.) or null
 }
+Name handling:
+- If the source shows "Parker Handahl", emit firstName="Parker", lastName="Handahl".
+- If the source shows "P. Handahl" (initial + surname), emit firstName="P", lastName="Handahl".
+- If the source shows only "Brody" with no surname, emit firstName="Brody", lastName="".
+- For multi-word first names like "Mary Beth Smith", treat the LAST token as the lastName.
 Position normalization rules:
 - "Pitcher" -> "P", "Catcher" -> "C"
 - "First base"/"1st" -> "1B", "Second"/"2nd" -> "2B", "Third"/"3rd" -> "3B"
@@ -140,15 +171,24 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
       .from(playersTable)
       .where(eq(playersTable.userId, userId));
     type ExistingPlayer = (typeof existing)[number];
+    // Match against existing roster by case-insensitive full display name +
+    // optional jersey number. We key on the joined "first last" rather than
+    // the structured columns so legacy rows (where only `name` was set, e.g.
+    // "Brody" with empty firstName/lastName) still de-dupe correctly when
+    // re-imported with the new structured payload.
+    const keyOf = (firstName: string, lastName: string, name: string, number: number | null | undefined) => {
+      const display = [firstName.trim(), lastName.trim()].filter(Boolean).join(" ").trim() || name.trim();
+      return `${display.toLowerCase()}|${number ?? ""}`;
+    };
     const existingByKey = new Map<string, ExistingPlayer>(
-      existing.map((e) => [`${e.name.trim().toLowerCase()}|${e.number ?? ""}`, e]),
+      existing.map((e) => [keyOf(e.firstName, e.lastName, e.name, e.number), e]),
     );
 
     const insertRows: typeof playersTable.$inferInsert[] = [];
     const updatedRows: ExistingPlayer[] = [];
     const seenKeysInBatch = new Set<string>();
     for (const p of parsed.data.players) {
-      const key = `${p.name.trim().toLowerCase()}|${p.number ?? ""}`;
+      const key = keyOf(p.firstName, p.lastName, p.name, p.number);
       if (seenKeysInBatch.has(key)) continue; // dedupe within the batch itself
       seenKeysInBatch.add(key);
 
@@ -215,6 +255,8 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
       insertRows.push({
         userId,
         name: p.name,
+        firstName: p.firstName,
+        lastName: p.lastName,
         number: p.number ?? null,
         eligiblePositions: deriveEligible(p.canPitch),
         preferredPositions: incomingPositions,
@@ -254,11 +296,20 @@ router.post("/players", async (req, res): Promise<void> => {
     return;
   }
   const data = parsed.data;
+  const firstName = data.firstName.trim();
+  const lastName = data.lastName.trim();
+  if (!firstName) {
+    res.status(400).json({ error: "First name is required" });
+    return;
+  }
+  const fullName = [firstName, lastName].filter(Boolean).join(" ");
   const [player] = await db
     .insert(playersTable)
     .values({
       userId,
-      name: data.name,
+      name: fullName,
+      firstName,
+      lastName,
       number: data.number ?? null,
       // eligiblePositions is now server-derived from canPitch; client values
       // are accepted by the schema for back-compat but always overridden.
@@ -304,7 +355,17 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   }
   const updates: Record<string, unknown> = {};
   const d = parsed.data;
-  if (d.name !== undefined) updates.name = d.name;
+  if (d.firstName !== undefined || d.lastName !== undefined) {
+    const firstName = (d.firstName ?? "").trim();
+    const lastName = (d.lastName ?? "").trim();
+    if (!firstName) {
+      res.status(400).json({ error: "First name is required" });
+      return;
+    }
+    updates.firstName = firstName;
+    updates.lastName = lastName;
+    updates.name = [firstName, lastName].filter(Boolean).join(" ");
+  }
   if (d.number !== undefined) updates.number = d.number;
   if (d.preferredPositions !== undefined) updates.preferredPositions = d.preferredPositions;
   if (d.canPitch !== undefined) updates.canPitch = d.canPitch;

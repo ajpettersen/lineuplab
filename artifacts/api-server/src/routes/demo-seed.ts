@@ -197,15 +197,22 @@ router.post("/demo/seed", async (req, res) => {
     return;
   }
 
-  const playerRows: InsertPlayer[] = DEMO_PLAYERS.map((p) => ({
-    name: p.name,
-    number: p.number,
-    eligiblePositions: deriveEligible(p.canPitch),
-    preferredPositions: p.preferredPositions,
-    canPitch: p.canPitch,
-    active: true,
-    notes: p.notes ?? null,
-  }));
+  const playerRows: InsertPlayer[] = DEMO_PLAYERS.map((p) => {
+    const tokens = p.name.trim().split(/\s+/).filter(Boolean);
+    const firstName = tokens.length > 1 ? tokens.slice(0, -1).join(" ") : (tokens[0] ?? "");
+    const lastName = tokens.length > 1 ? tokens[tokens.length - 1]! : "";
+    return {
+      name: p.name,
+      firstName,
+      lastName,
+      number: p.number,
+      eligiblePositions: deriveEligible(p.canPitch),
+      preferredPositions: p.preferredPositions,
+      canPitch: p.canPitch,
+      active: true,
+      notes: p.notes ?? null,
+    };
+  });
 
   const gameRows: InsertGame[] = buildDemoGames();
 

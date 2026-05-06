@@ -20,7 +20,17 @@ export const HealthCheckResponse = zod.object({
  */
 export const ListPlayersResponseItem = zod.object({
   id: zod.number(),
-  name: zod.string(),
+  name: zod
+    .string()
+    .describe(
+      'Display name \"First Last\", server-derived from firstName + lastName.',
+    ),
+  firstName: zod.string(),
+  lastName: zod
+    .string()
+    .describe(
+      "May be empty for legacy single-token roster rows; new writes require it.",
+    ),
   number: zod.number().nullish(),
   eligiblePositions: zod
     .array(zod.string())
@@ -39,7 +49,8 @@ export const ListPlayersResponse = zod.array(ListPlayersResponseItem);
  * @summary Create a new player
  */
 export const CreatePlayerBody = zod.object({
-  name: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
   number: zod.number().nullish(),
   eligiblePositions: zod.array(zod.string()),
   preferredPositions: zod.array(zod.string()),
@@ -57,7 +68,17 @@ export const GetPlayerParams = zod.object({
 
 export const GetPlayerResponse = zod.object({
   id: zod.number(),
-  name: zod.string(),
+  name: zod
+    .string()
+    .describe(
+      'Display name \"First Last\", server-derived from firstName + lastName.',
+    ),
+  firstName: zod.string(),
+  lastName: zod
+    .string()
+    .describe(
+      "May be empty for legacy single-token roster rows; new writes require it.",
+    ),
   number: zod.number().nullish(),
   eligiblePositions: zod
     .array(zod.string())
@@ -79,7 +100,8 @@ export const UpdatePlayerParams = zod.object({
 });
 
 export const UpdatePlayerBody = zod.object({
-  name: zod.string().optional(),
+  firstName: zod.string(),
+  lastName: zod.string(),
   number: zod.number().nullish(),
   eligiblePositions: zod.array(zod.string()).optional(),
   preferredPositions: zod.array(zod.string()).optional(),
@@ -90,7 +112,17 @@ export const UpdatePlayerBody = zod.object({
 
 export const UpdatePlayerResponse = zod.object({
   id: zod.number(),
-  name: zod.string(),
+  name: zod
+    .string()
+    .describe(
+      'Display name \"First Last\", server-derived from firstName + lastName.',
+    ),
+  firstName: zod.string(),
+  lastName: zod
+    .string()
+    .describe(
+      "May be empty for legacy single-token roster rows; new writes require it.",
+    ),
   number: zod.number().nullish(),
   eligiblePositions: zod
     .array(zod.string())

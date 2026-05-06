@@ -925,6 +925,12 @@ components:
           type: integer
         name:
           type: string
+          description: Display name "First Last", server-derived from firstName + lastName.
+        firstName:
+          type: string
+        lastName:
+          type: string
+          description: May be empty for legacy single-token roster rows; new writes require it.
         number:
           type: ["integer", "null"]
         eligiblePositions:
@@ -950,6 +956,8 @@ components:
       required:
         - id
         - name
+        - firstName
+        - lastName
         - eligiblePositions
         - preferredPositions
         - canPitch
@@ -959,7 +967,9 @@ components:
     CreatePlayerBody:
       type: object
       properties:
-        name:
+        firstName:
+          type: string
+        lastName:
           type: string
         number:
           type: ["integer", "null"]
@@ -978,7 +988,8 @@ components:
         notes:
           type: ["string", "null"]
       required:
-        - name
+        - firstName
+        - lastName
         - eligiblePositions
         - preferredPositions
         - canPitch
@@ -986,7 +997,9 @@ components:
     UpdatePlayerBody:
       type: object
       properties:
-        name:
+        firstName:
+          type: string
+        lastName:
           type: string
         number:
           type: ["integer", "null"]
@@ -1004,6 +1017,9 @@ components:
           type: boolean
         notes:
           type: ["string", "null"]
+      required:
+        - firstName
+        - lastName
 
     Game:
       type: object

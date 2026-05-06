@@ -7,7 +7,14 @@ export const playersTable = pgTable(
   {
     id: serial("id").primaryKey(),
     userId: text("user_id").notNull(),
+    // `name` is kept as the canonical "First Last" display string and is
+    // re-derived on every write from firstName + lastName. Existing reads
+    // across the app (lineup grids, stats pages, AI prompts) continue to
+    // use it. New writes MUST set both firstName and lastName so the box
+    // score importer can fuzzy-match GameChanger's "F. Lastname" format.
     name: text("name").notNull(),
+    firstName: text("first_name").notNull().default(""),
+    lastName: text("last_name").notNull().default(""),
     number: integer("number"),
     eligiblePositions: text("eligible_positions").array().notNull().default([]),
     preferredPositions: text("preferred_positions").array().notNull().default([]),
