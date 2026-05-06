@@ -3,8 +3,10 @@ import { Link } from "wouter";
 import {
   useListGames,
   useDeleteGame,
+  useListPlayers,
   getListGamesQueryKey,
 } from "@workspace/api-client-react";
+import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,7 @@ import {
   Check,
   AlertCircle,
   Tv,
+  FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
@@ -75,6 +78,7 @@ type Game = {
   ourScore: number | null;
   opponentScore: number | null;
   notes: string | null;
+  boxScoreImportedAt?: string | null;
 };
 
 function GameTypeBadge({ gameType }: { gameType?: "league" | "tournament" | null }) {
@@ -512,12 +516,14 @@ function EditGameDialog({
 // ── Main page ───────────────────────────────────────────────────
 export default function Games() {
   const { data: games = [], isLoading } = useListGames();
+  const { data: players = [] } = useListPlayers();
   const { teamName } = useTeamSettings();
   const deleteGame = useDeleteGame();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [editGame, setEditGame] = useState<Game | null>(null);
+  const [boxScoreGameId, setBoxScoreGameId] = useState<number | null>(null);
   const [showIcal, setShowIcal] = useState(false);
   const [filter, setFilter] = useState<"all" | "game" | "practice" | "other">("all");
 
@@ -569,7 +575,15 @@ export default function Games() {
   // teamName is passed in explicitly (not closed over) because Vite's
   // react-refresh transform hoists inline arrow components to module
   // scope, breaking closure references.
-  const GameCard = ({ g, teamName }: { g: typeof games[0]; teamName: string }) => (
+  const GameCard = ({
+    g,
+    teamName,
+    onViewBoxScore,
+  }: {
+    g: typeof games[0];
+    teamName: string;
+    onViewBoxScore: (id: number) => void;
+  }) => (
     <Card className="border-border hover:border-primary/30 transition-colors">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
@@ -640,6 +654,21 @@ export default function Games() {
                 data-testid={`button-game-display-${g.id}`}
               >
                 <Tv className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {g.boxScoreImportedAt && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-green-700 hover:text-green-800"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onViewBoxScore(g.id);
+                }}
+                title="Box score submitted — click to view or edit"
+                data-testid={`button-view-box-score-${g.id}`}
+              >
+                <FileText className="h-3.5 w-3.5" />
               </Button>
             )}
             <Button
@@ -763,7 +792,7 @@ export default function Games() {
           {upcoming.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Upcoming</h2>
-              {upcoming.map((g) => <GameCard key={g.id} g={g} teamName={teamName} />)}
+              {upcoming.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
             </div>
           )}
           {past.length > 0 && (
@@ -771,7 +800,7 @@ export default function Games() {
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 {filter === "game" ? "Past Games" : "Past"}
               </h2>
-              {past.map((g) => <GameCard key={g.id} g={g} teamName={teamName} />)}
+              {past.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
             </div>
           )}
         </>
@@ -813,6 +842,15 @@ export default function Games() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {boxScoreGameId != null && (
+        <BoxScoreImportDialog
+          gameId={boxScoreGameId}
+          players={players}
+          open={boxScoreGameId != null}
+          onOpenChange={(o) => !o && setBoxScoreGameId(null)}
+        />
+      )}
     </div>
   );
 }
