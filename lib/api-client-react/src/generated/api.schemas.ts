@@ -297,6 +297,7 @@ export type DashboardTaskType =
 export const DashboardTaskType = {
   score: "score",
   pitch_counts: "pitch_counts",
+  box_score: "box_score",
 } as const;
 
 /**
@@ -319,6 +320,7 @@ export type DismissDashboardTaskBodyTaskType =
 export const DismissDashboardTaskBodyTaskType = {
   score: "score",
   pitch_counts: "pitch_counts",
+  box_score: "box_score",
 } as const;
 
 export interface DismissDashboardTaskBody {
@@ -380,6 +382,11 @@ top 9 batters get a slot in the order.
 swaps CF for LCF + RCF.
  */
   activeFieldPositions?: string[];
+  /** When true, the dashboard nags the coach with a "Box score not
+imported" task for every past game whose box score hasn't been
+uploaded yet. Off by default.
+ */
+  usesGameChanger: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -431,6 +438,7 @@ export interface UpdateTeamSettingsBody {
    * @maxItems 10
    */
   activeFieldPositions?: UpdateTeamSettingsBodyActiveFieldPositionsItem[];
+  usesGameChanger?: boolean;
 }
 
 export interface UserPreferences {

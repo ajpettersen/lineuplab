@@ -1,6 +1,11 @@
 import { useTeamContext, type PermissionTier } from "./use-team-context";
 
-const RANK: Record<PermissionTier, number> = { view: 0, partial: 1, full: 2 };
+const RANK: Record<PermissionTier, number> = {
+  view: 0,
+  upload: 1,
+  partial: 2,
+  full: 3,
+};
 
 export interface PermissionState {
   /** Caller's tier on the active team. Defaults to 'view' while loading. */

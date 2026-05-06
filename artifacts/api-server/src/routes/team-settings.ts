@@ -60,6 +60,7 @@ const UpdateBody = z
     defaultTournamentPitchMax: z.number().int().min(0).max(2000).nullish(),
     defaultRestTiers: z.array(RestTierZ).nullish(),
     activeFieldPositions: ActiveFieldPositionsZ.optional(),
+    usesGameChanger: z.boolean().optional(),
   })
   .refine(
     (v) =>
@@ -69,7 +70,8 @@ const UpdateBody = z
       v.defaultDailyPitchMax !== undefined ||
       v.defaultTournamentPitchMax !== undefined ||
       v.defaultRestTiers !== undefined ||
-      v.activeFieldPositions !== undefined,
+      v.activeFieldPositions !== undefined ||
+      v.usesGameChanger !== undefined,
     { message: "Provide at least one field to update" }
   );
 

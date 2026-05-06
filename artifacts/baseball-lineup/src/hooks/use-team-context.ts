@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-export type PermissionTier = "full" | "partial" | "view";
+export type PermissionTier = "full" | "partial" | "upload" | "view";
 
 export interface TeamSummary {
   ownerUserId: string;

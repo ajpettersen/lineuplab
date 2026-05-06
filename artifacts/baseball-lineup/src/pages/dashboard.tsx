@@ -422,6 +422,7 @@ export default function Dashboard() {
 const TASK_LABEL: Record<DashboardTask["type"], string> = {
   score: "Score not logged",
   pitch_counts: "Pitch counts not logged",
+  box_score: "Box score not imported",
 };
 
 /**

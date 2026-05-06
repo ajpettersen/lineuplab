@@ -743,6 +743,11 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       'Defensive positions this team uses each inning. Standard 9 is\n[\"P\",\"C\",\"1B\",\"2B\",\"3B\",\"SS\",\"LF\",\"CF\",\"RF\"]. A 10-player field\nswaps CF for LCF + RCF.\n',
     ),
+  usesGameChanger: zod
+    .boolean()
+    .describe(
+      'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -819,6 +824,7 @@ export const UpdateTeamSettingsBody = zod.object({
     .min(updateTeamSettingsBodyActiveFieldPositionsMin)
     .max(updateTeamSettingsBodyActiveFieldPositionsMax)
     .optional(),
+  usesGameChanger: zod.boolean().optional(),
 });
 
 export const updateTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
@@ -875,6 +881,11 @@ export const UpdateTeamSettingsResponse = zod.object({
     .optional()
     .describe(
       'Defensive positions this team uses each inning. Standard 9 is\n[\"P\",\"C\",\"1B\",\"2B\",\"3B\",\"SS\",\"LF\",\"CF\",\"RF\"]. A 10-player field\nswaps CF for LCF + RCF.\n',
+    ),
+  usesGameChanger: zod
+    .boolean()
+    .describe(
+      'When true, the dashboard nags the coach with a \"Box score not\nimported\" task for every past game whose box score hasn\'t been\nuploaded yet. Off by default.\n',
     ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1999,7 +2010,7 @@ coach has triaged.
 export const ListDashboardTasksResponseItem = zod
   .object({
     id: zod.string().describe("Stable composite key — `<gameId>:<taskType>`."),
-    type: zod.enum(["score", "pitch_counts"]),
+    type: zod.enum(["score", "pitch_counts", "box_score"]),
     gameId: zod.number(),
     gameDate: zod.coerce.date(),
     opponent: zod.string(),
@@ -2019,7 +2030,7 @@ export const ListDashboardTasksResponse = zod.array(
  */
 export const DismissDashboardTaskBody = zod.object({
   gameId: zod.number(),
-  taskType: zod.enum(["score", "pitch_counts"]),
+  taskType: zod.enum(["score", "pitch_counts", "box_score"]),
 });
 
 /**

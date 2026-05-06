@@ -6,6 +6,7 @@ import {
   gamesTable,
   pitchCountsTable,
   taskDismissalsTable,
+  teamSettingsTable,
 } from "@workspace/db";
 import { DismissDashboardTaskBody } from "@workspace/api-zod";
 
@@ -25,6 +26,10 @@ const MAX_TASKS = 20;
  *   - "pitch_counts": a tournament-linked game in the past with zero
  *     pitch_counts rows. We don't nag for non-tournament games because
  *     pitch counts are optional unless they roll up across a tournament.
+ *   - "box_score": a past, non-cancelled game with no GameChanger box
+ *     score imported (`boxScoreImportedAt IS NULL`). Only surfaced when
+ *     the team has flipped `team_settings.usesGameChanger=true` so
+ *     coaches who don't use GameChanger aren't nagged.
  *
  * Sorted by gameDate DESC and capped at MAX_TASKS so the card stays
  * scannable even after a long season.
@@ -44,6 +49,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
       ourScore: gamesTable.ourScore,
       opponentScore: gamesTable.opponentScore,
       tournamentId: gamesTable.tournamentId,
+      boxScoreImportedAt: gamesTable.boxScoreImportedAt,
     })
     .from(gamesTable)
     .where(
@@ -79,6 +85,14 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
     .groupBy(pitchCountsTable.gameId);
   const pitchCountByGame = new Map(pitchRows.map((r) => [r.gameId, r.n]));
 
+  // Whether this team has opted-in to GameChanger box-score reminders.
+  // Lazy team_settings rows mean missing row = false (default).
+  const [settings] = await db
+    .select({ usesGameChanger: teamSettingsTable.usesGameChanger })
+    .from(teamSettingsTable)
+    .where(eq(teamSettingsTable.userId, userId));
+  const usesGameChanger = settings?.usesGameChanger ?? false;
+
   // Existing dismissals — keyed by `${gameId}:${taskType}` for cheap lookup.
   const dismissed = await db
     .select({
@@ -96,7 +110,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
 
   type Task = {
     id: string;
-    type: "score" | "pitch_counts";
+    type: "score" | "pitch_counts" | "box_score";
     gameId: number;
     gameDate: string;
     opponent: string;
@@ -120,6 +134,23 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
           gameDate: g.gameDate.toISOString(),
           opponent: g.opponent,
           link: `/games/${g.id}`,
+        });
+      }
+    }
+
+    // Box-score task: only surface when the team has GameChanger
+    // import enabled. Use boxScoreImportedAt as the canonical "this
+    // game has been imported" flag — DELETE box-score clears it.
+    if (usesGameChanger && g.boxScoreImportedAt == null) {
+      const key = `${g.id}:box_score`;
+      if (!dismissedSet.has(key)) {
+        tasks.push({
+          id: key,
+          type: "box_score",
+          gameId: g.id,
+          gameDate: g.gameDate.toISOString(),
+          opponent: g.opponent,
+          link: `/games/${g.id}#box-score-card`,
         });
       }
     }

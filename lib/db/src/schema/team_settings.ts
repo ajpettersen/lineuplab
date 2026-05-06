@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -56,6 +56,13 @@ export const teamSettingsTable = pgTable("team_settings", {
    * list. LCF/RCF are categorized as Outfield in tally aggregations.
    */
   activeFieldPositions: text("active_field_positions").array().notNull().default(["P","C","1B","2B","3B","SS","LF","CF","RF"]),
+  /**
+   * When true, the dashboard surfaces a "Box score not imported" task
+   * for every past game whose `boxScoreImportedAt` is null (and not
+   * dismissed). Off by default so coaches who don't use GameChanger
+   * aren't nagged. Pairs with the GameChanger box-score import feature.
+   */
+  usesGameChanger: boolean("uses_gamechanger").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -70,6 +77,7 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   defaultTournamentPitchMax: true,
   defaultRestTiers: true,
   activeFieldPositions: true,
+  usesGameChanger: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

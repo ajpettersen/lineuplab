@@ -52,11 +52,16 @@ import {
   Crown,
   Eye,
   Pencil,
+  Upload,
 } from "lucide-react";
 
+// Display label + suggested role title for each permission tier. The
+// suggested role is just a default that we drop into the role field on
+// the coach-profile prompt; it's free-form and the coach can edit it.
 const PERMISSION_LABEL: Record<PermissionTier, string> = {
-  full: "Full access",
-  partial: "Edit lineups & games",
+  full: "Head Coach (full access)",
+  partial: "Assistant Coach (edit lineups & games)",
+  upload: "GameChanger (box-score upload only)",
   view: "Read-only",
 };
 
@@ -66,8 +71,17 @@ function PermissionBadge({ tier }: { tier: PermissionTier }) {
       ? "text-blue-700 bg-blue-50 border-blue-200"
       : tier === "partial"
         ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-        : "text-muted-foreground bg-muted border-border";
-  const Icon = tier === "full" ? Crown : tier === "partial" ? Pencil : Eye;
+        : tier === "upload"
+          ? "text-violet-700 bg-violet-50 border-violet-200"
+          : "text-muted-foreground bg-muted border-border";
+  const Icon =
+    tier === "full"
+      ? Crown
+      : tier === "partial"
+        ? Pencil
+        : tier === "upload"
+          ? Upload
+          : Eye;
   return (
     <span
       className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${cls}`}
@@ -404,6 +418,9 @@ export function CoachesCard() {
                           <SelectItem value="partial">
                             {PERMISSION_LABEL.partial}
                           </SelectItem>
+                          <SelectItem value="upload">
+                            {PERMISSION_LABEL.upload}
+                          </SelectItem>
                           <SelectItem value="view">
                             {PERMISSION_LABEL.view}
                           </SelectItem>
@@ -464,9 +481,11 @@ export function CoachesCard() {
               data-testid="text-permission-help"
             >
               <Crown className="inline h-3 w-3 mr-1" />
-              Full = everything ·
+              Head Coach = everything ·
               <Pencil className="inline h-3 w-3 mx-1" />
-              Edit = lineups / games / practices ·
+              Assistant = lineups / games / practices ·
+              <Upload className="inline h-3 w-3 mx-1" />
+              GameChanger = box-score upload only ·
               <Eye className="inline h-3 w-3 mx-1" />
               Read-only = no edits
             </p>

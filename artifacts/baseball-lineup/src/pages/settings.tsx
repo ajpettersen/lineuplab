@@ -103,6 +103,7 @@ export default function Settings() {
   const [alwaysLockPC, setAlwaysLockPC] = useState(false);
   const [showFairness, setShowFairness] = useState(true);
   const [showEquityTips, setShowEquityTips] = useState(true);
+  const [usesGameChanger, setUsesGameChanger] = useState(false);
 
   useEffect(() => {
     if (teamQuery.data) {
@@ -124,6 +125,7 @@ export default function Settings() {
       setDefaultRestTiers(
         (teamQuery.data.defaultRestTiers as RestTier[] | null | undefined) ?? null
       );
+      setUsesGameChanger(teamQuery.data.usesGameChanger ?? false);
     }
   }, [teamQuery.data]);
 
@@ -174,6 +176,7 @@ export default function Settings() {
         defaultDailyPitchMax: parseOptionalInt(defaultDailyMax),
         defaultTournamentPitchMax: parseOptionalInt(defaultTournamentMax),
         defaultRestTiers,
+        usesGameChanger,
       },
     });
   };
@@ -464,6 +467,33 @@ export default function Settings() {
               onCheckedChange={setShowFairness}
               disabled={prefsLoading}
               data-testid="switch-show-fairness"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5 pr-3">
+              <Label htmlFor="usesGameChanger" className="text-sm font-medium">
+                We use GameChanger
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Show a "Box score not imported" reminder on the dashboard
+                for every past game whose GameChanger box score hasn't
+                been uploaded yet. Each reminder can be dismissed
+                individually.
+              </p>
+            </div>
+            <Switch
+              id="usesGameChanger"
+              checked={usesGameChanger}
+              onCheckedChange={(v) => {
+                setUsesGameChanger(v);
+                // Persist ONLY this field so we don't clobber unsaved
+                // edits the coach has typed into the Team Branding card
+                // above (the PATCH route accepts partial updates).
+                updateTeam.mutate({ data: { usesGameChanger: v } });
+              }}
+              disabled={teamLoading || !canEditTeam}
+              data-testid="switch-uses-gamechanger"
             />
           </div>
 

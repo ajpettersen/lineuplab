@@ -1312,7 +1312,7 @@ components:
           description: Stable composite key — `<gameId>:<taskType>`.
         type:
           type: string
-          enum: [score, pitch_counts]
+          enum: [score, pitch_counts, box_score]
         gameId:
           type: integer
         gameDate:
@@ -1338,7 +1338,7 @@ components:
           type: integer
         taskType:
           type: string
-          enum: [score, pitch_counts]
+          enum: [score, pitch_counts, box_score]
       required:
         - gameId
         - taskType
@@ -1395,6 +1395,12 @@ components:
             Defensive positions this team uses each inning. Standard 9 is
             ["P","C","1B","2B","3B","SS","LF","CF","RF"]. A 10-player field
             swaps CF for LCF + RCF.
+        usesGameChanger:
+          type: boolean
+          description: |
+            When true, the dashboard nags the coach with a "Box score not
+            imported" task for every past game whose box score hasn't been
+            uploaded yet. Off by default.
         createdAt:
           type: string
           format: date-time
@@ -1406,6 +1412,7 @@ components:
         - teamName
         - teamShortName
         - battingStyle
+        - usesGameChanger
         - createdAt
         - updatedAt
 
@@ -1440,6 +1447,8 @@ components:
           items:
             type: string
             enum: [P, C, "1B", "2B", "3B", SS, LF, LCF, CF, RCF, RF]
+        usesGameChanger:
+          type: boolean
 
     UserPreferences:
       type: object

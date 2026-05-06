@@ -32,7 +32,11 @@ import {
  * fix typos without ever double-counting.
  */
 const router: IRouter = Router();
-router.use("/games", gateWrites("partial"));
+// Box-score upload is the one write that the dedicated 'upload' tier
+// is allowed to perform — it's specifically for a stat-keeper / parent
+// who runs GameChanger but should NOT be able to edit lineups, roster,
+// or settings. partial + full outrank upload so they pass too.
+router.use("/games", gateWrites("upload"));
 
 // 6 MB per file × up to 4 files = 24 MB cap. We accept multi-file
 // uploads because GameChanger's mobile box score is paginated —
