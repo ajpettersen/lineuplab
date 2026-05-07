@@ -89,8 +89,11 @@ export default function Admin() {
   const allTeams = teamsQuery.data ?? [];
   const users = usersQuery.data ?? [];
 
-  const isEmptyTeam = (t: { playerCount: number; gameCount: number }) =>
-    t.playerCount === 0 && t.gameCount === 0;
+  // "Empty" = orphaned (no coaches/members on the team). A team with
+  // 0 members can't be administered by anyone, so we hide it from the
+  // default view regardless of leftover players/games. Toggle "Show
+  // empty teams" to surface them for cleanup.
+  const isEmptyTeam = (t: { memberCount: number }) => t.memberCount === 0;
   const teams = showEmpty ? allTeams : allTeams.filter((t) => !isEmptyTeam(t));
   const hiddenCount = allTeams.length - teams.length;
 
@@ -264,7 +267,7 @@ export default function Admin() {
             <CardDescription>
               Sorted by most recently active.
               {hiddenCount > 0 && !showEmpty && (
-                <> Hiding {hiddenCount} empty team{hiddenCount === 1 ? "" : "s"} (no roster, no games).</>
+                <> Hiding {hiddenCount} orphaned team{hiddenCount === 1 ? "" : "s"} (no coaches).</>
               )}
             </CardDescription>
           </div>
