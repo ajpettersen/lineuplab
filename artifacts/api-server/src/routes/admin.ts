@@ -47,6 +47,49 @@ async function fetchClerkLite(userId: string): Promise<ClerkLite> {
   }
 }
 
+/**
+ * Batched Clerk profile lookup. Returns a Map keyed by userId so the
+ * caller can do `map.get(id) ?? { email:null, name:null }` instead of
+ * issuing one HTTP request per row. Clerk's `getUserList` accepts up
+ * to 500 ids per call but we chunk at 100 to stay well under any
+ * future tightening and keep individual responses small. Unknown ids
+ * (deleted Clerk accounts) silently fall through — the caller's
+ * default kicks in.
+ */
+async function fetchClerkLiteMany(
+  userIds: readonly string[],
+): Promise<Map<string, ClerkLite>> {
+  const out = new Map<string, ClerkLite>();
+  const unique = Array.from(new Set(userIds));
+  if (unique.length === 0) return out;
+  const CHUNK = 100;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK);
+    try {
+      const resp = await clerkClient.users.getUserList({
+        userId: chunk,
+        limit: chunk.length,
+      });
+      const data = Array.isArray(resp) ? resp : resp.data;
+      for (const u of data) {
+        const email =
+          u.primaryEmailAddress?.emailAddress ??
+          u.emailAddresses[0]?.emailAddress ??
+          null;
+        const name =
+          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+          u.username ||
+          null;
+        out.set(u.id, { email, name });
+      }
+    } catch {
+      // Whole chunk failed (rate limit, network) — leave entries
+      // unset and let callers fall back to {email:null,name:null}.
+    }
+  }
+  return out;
+}
+
 // Everything below requires master admin.
 router.use("/admin", requireMasterAdmin);
 
@@ -147,24 +190,23 @@ router.get("/admin/teams", async (_req, res): Promise<void> => {
     playerCountRows.map((r) => [r.userId, Number(r.playerCount)] as const),
   );
 
-  const enriched = await Promise.all(
-    owners.map(async (oid) => {
-      const settings = settingsMap.get(oid);
-      const lite = await fetchClerkLite(oid);
-      const stats = gameStatsMap.get(oid);
-      return {
-        ownerUserId: oid,
-        ownerEmail: lite.email,
-        ownerName: lite.name,
-        teamName: settings?.teamName ?? DEFAULT_TEAM_NAME,
-        teamShortName: settings?.teamShortName ?? DEFAULT_TEAM_SHORT_NAME,
-        memberCount: memberCountMap.get(oid) ?? 0,
-        gameCount: stats ? Number(stats.gameCount) : 0,
-        playerCount: playerCountMap.get(oid) ?? 0,
-        lastActivityAt: stats?.lastActivityAt ?? null,
-      };
-    }),
-  );
+  const clerkMap = await fetchClerkLiteMany(owners);
+  const enriched = owners.map((oid) => {
+    const settings = settingsMap.get(oid);
+    const lite = clerkMap.get(oid) ?? { email: null, name: null };
+    const stats = gameStatsMap.get(oid);
+    return {
+      ownerUserId: oid,
+      ownerEmail: lite.email,
+      ownerName: lite.name,
+      teamName: settings?.teamName ?? DEFAULT_TEAM_NAME,
+      teamShortName: settings?.teamShortName ?? DEFAULT_TEAM_SHORT_NAME,
+      memberCount: memberCountMap.get(oid) ?? 0,
+      gameCount: stats ? Number(stats.gameCount) : 0,
+      playerCount: playerCountMap.get(oid) ?? 0,
+      lastActivityAt: stats?.lastActivityAt ?? null,
+    };
+  });
 
   // Sort by activity desc — most active teams first.
   enriched.sort((a, b) => {
@@ -198,21 +240,25 @@ router.get("/admin/teams/:ownerUserId", async (req, res): Promise<void> => {
     .where(eq(teamMembershipsTable.ownerUserId, ownerUserId))
     .orderBy(desc(teamMembershipsTable.isOwner), desc(teamMembershipsTable.joinedAt));
 
-  const members = await Promise.all(
-    memberRows.map(async (m) => {
-      const lite = await fetchClerkLite(m.memberUserId);
-      return {
-        memberUserId: m.memberUserId,
-        memberEmail: m.memberEmail ?? lite.email,
-        memberName: lite.name,
-        displayName: m.displayName,
-        role: m.role,
-        permission: m.permission,
-        isOwner: m.isOwner,
-        joinedAt: m.joinedAt,
-      };
-    }),
-  );
+  // Single batched Clerk lookup for everyone we'll render: owner +
+  // all members. Falls back to {null,null} per id if Clerk is down.
+  const memberClerkMap = await fetchClerkLiteMany([
+    ownerUserId,
+    ...memberRows.map((m) => m.memberUserId),
+  ]);
+  const members = memberRows.map((m) => {
+    const lite = memberClerkMap.get(m.memberUserId) ?? { email: null, name: null };
+    return {
+      memberUserId: m.memberUserId,
+      memberEmail: m.memberEmail ?? lite.email,
+      memberName: lite.name,
+      displayName: m.displayName,
+      role: m.role,
+      permission: m.permission,
+      isOwner: m.isOwner,
+      joinedAt: m.joinedAt,
+    };
+  });
 
   const recentGames = await db
     .select({
@@ -226,7 +272,8 @@ router.get("/admin/teams/:ownerUserId", async (req, res): Promise<void> => {
     .orderBy(desc(gamesTable.gameDate))
     .limit(20);
 
-  const ownerLite = await fetchClerkLite(ownerUserId);
+  const ownerLite =
+    memberClerkMap.get(ownerUserId) ?? { email: null, name: null };
 
   res.json({
     ownerUserId,
@@ -345,11 +392,13 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
     }
   }
 
-  const users = await Promise.all(
-    Array.from(byUser.values()).map(async (u) => {
-      const lite = await fetchClerkLite(u.userId);
-      const lastSeen = lastSeenMap.get(u.userId) ?? null;
-      return {
+  const usersClerkMap = await fetchClerkLiteMany(
+    Array.from(byUser.keys()),
+  );
+  const users = Array.from(byUser.values()).map((u) => {
+    const lite = usersClerkMap.get(u.userId) ?? { email: null, name: null };
+    const lastSeen = lastSeenMap.get(u.userId) ?? null;
+    return {
         userId: u.userId,
         email: lite.email,
         name: lite.name,
@@ -362,9 +411,8 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
         minutesActive24h: m24Map.get(u.userId) ?? 0,
         minutesActive7d: m7Map.get(u.userId) ?? 0,
         minutesActive30d: m30Map.get(u.userId) ?? 0,
-      };
-    }),
-  );
+    };
+  });
 
   // Sort by most-recently-active first; users without any activity
   // sink to the bottom and there sort by name/email for predictable
@@ -470,24 +518,23 @@ router.get("/admin/ai-usage", async (_req, res): Promise<void> => {
     }
   }
 
-  const perTeam = await Promise.all(
-    Array.from(byTeam.values()).map(async (b) => {
-      const lite = await fetchClerkLite(b.ownerUserId);
-      const settings = settingsMap.get(b.ownerUserId);
-      return {
-        ownerUserId: b.ownerUserId,
-        teamName: settings?.teamName ?? DEFAULT_TEAM_NAME,
-        teamShortName: settings?.teamShortName ?? DEFAULT_TEAM_SHORT_NAME,
-        ownerName: lite.name,
-        ownerEmail: lite.email,
-        last24h: b.last24h,
-        last7d: b.last7d,
-        last30d: b.last30d,
-        lastCallAt: b.lastCallAt ? b.lastCallAt.toISOString() : null,
-        featureCounts: b.featureCounts,
-      };
-    }),
-  );
+  const aiClerkMap = await fetchClerkLiteMany(ownerIds);
+  const perTeam = Array.from(byTeam.values()).map((b) => {
+    const lite = aiClerkMap.get(b.ownerUserId) ?? { email: null, name: null };
+    const settings = settingsMap.get(b.ownerUserId);
+    return {
+      ownerUserId: b.ownerUserId,
+      teamName: settings?.teamName ?? DEFAULT_TEAM_NAME,
+      teamShortName: settings?.teamShortName ?? DEFAULT_TEAM_SHORT_NAME,
+      ownerName: lite.name,
+      ownerEmail: lite.email,
+      last24h: b.last24h,
+      last7d: b.last7d,
+      last30d: b.last30d,
+      lastCallAt: b.lastCallAt ? b.lastCallAt.toISOString() : null,
+      featureCounts: b.featureCounts,
+    };
+  });
 
   perTeam.sort((a, b) => {
     if (b.last24h !== a.last24h) return b.last24h - a.last24h;
