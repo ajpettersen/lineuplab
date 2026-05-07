@@ -52,6 +52,23 @@ const isGroup = (n: NavItem): n is NavGroup => "children" in n;
  * trigger toggles `open`), and `modal={false}` keeps sibling nav
  * items hoverable while the menu is open.
  */
+/**
+ * Cross-dropdown coordination event. Any nav item dispatches this on
+ * mouseenter with its own label (or `null` for a leaf link); every
+ * `NavGroupDropdown` listens, and any dropdown whose label doesn't
+ * match snaps shut immediately. This bypasses the 140 ms close grace
+ * period when the user is clearly heading to a different top-level
+ * item — fixes the "Stats dropdown lingers when I hover Admin" bug.
+ */
+const NAV_DROPDOWN_HOVER_EVENT = "nav-dropdown-hover";
+function dispatchNavHover(label: string | null) {
+  window.dispatchEvent(
+    new CustomEvent<string | null>(NAV_DROPDOWN_HOVER_EVENT, {
+      detail: label,
+    }),
+  );
+}
+
 function NavGroupDropdown({
   group,
   isActive,
@@ -74,6 +91,19 @@ function NavGroupDropdown({
     closeTimer.current = window.setTimeout(() => setOpen(false), 140);
   };
   useEffect(() => () => cancelClose(), []);
+  // Listen for "another nav item is being hovered" and close
+  // immediately if the hovered label isn't ours.
+  useEffect(() => {
+    const onHover = (e: Event) => {
+      const detail = (e as CustomEvent<string | null>).detail;
+      if (detail !== group.label) {
+        cancelClose();
+        setOpen(false);
+      }
+    };
+    window.addEventListener(NAV_DROPDOWN_HOVER_EVENT, onHover);
+    return () => window.removeEventListener(NAV_DROPDOWN_HOVER_EVENT, onHover);
+  }, [group.label]);
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger asChild>
@@ -82,6 +112,7 @@ function NavGroupDropdown({
           data-testid={`button-nav-${group.label.toLowerCase()}`}
           onMouseEnter={() => {
             cancelClose();
+            dispatchNavHover(group.label);
             setOpen(true);
           }}
           onMouseLeave={scheduleClose}
@@ -524,6 +555,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   data-testid={`link-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  onMouseEnter={() => dispatchNavHover(null)}
                   className={`relative shrink-0 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
                     isActive
                       ? "text-primary-foreground bg-white/10"
