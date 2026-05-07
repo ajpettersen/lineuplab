@@ -104,7 +104,7 @@ function NavGroupDropdown({
       <DropdownMenuContent
         align="start"
         sideOffset={4}
-        className="min-w-[180px]"
+        className="min-w-0 w-auto"
         onMouseEnter={cancelClose}
         onMouseLeave={scheduleClose}
       >
@@ -112,10 +112,21 @@ function NavGroupDropdown({
           const ChildIcon = child.icon;
           const childActive = isHrefActive(child.href);
           return (
-            <DropdownMenuItem key={child.href} asChild>
+            <DropdownMenuItem
+              key={child.href}
+              asChild
+              onSelect={() => {
+                cancelClose();
+                setOpen(false);
+              }}
+            >
               <Link
                 href={child.href}
                 data-testid={`link-nav-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
+                onClick={() => {
+                  cancelClose();
+                  setOpen(false);
+                }}
                 className={`flex items-center gap-2 font-broadcast uppercase tracking-[0.1em] text-[13px] cursor-pointer ${
                   childActive ? "bg-accent/15 text-foreground" : ""
                 }`}
