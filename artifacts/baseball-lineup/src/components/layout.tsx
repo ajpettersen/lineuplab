@@ -38,6 +38,99 @@ import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
 import { useAdminMe } from "@/hooks/use-admin";
 
+type NavLeaf = { href: string; label: string; icon: typeof Home };
+type NavGroup = { label: string; icon: typeof Home; children: NavLeaf[] };
+type NavItem = NavLeaf | NavGroup;
+const isGroup = (n: NavItem): n is NavGroup => "children" in n;
+
+/**
+ * Hover-open desktop nav dropdown. Wraps Radix `DropdownMenu` with
+ * mouse-enter/leave handlers and a small (140 ms) close grace period
+ * so the user can travel from the trigger button to the menu content
+ * without it snapping shut. Click still works as a fallback (Radix
+ * trigger toggles `open`), and `modal={false}` keeps sibling nav
+ * items hoverable while the menu is open.
+ */
+function NavGroupDropdown({
+  group,
+  isActive,
+  isHrefActive,
+}: {
+  group: NavGroup;
+  isActive: boolean;
+  isHrefActive: (href: string) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 140);
+  };
+  useEffect(() => () => cancelClose(), []);
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          data-testid={`button-nav-${group.label.toLowerCase()}`}
+          onMouseEnter={() => {
+            cancelClose();
+            setOpen(true);
+          }}
+          onMouseLeave={scheduleClose}
+          onFocus={() => {
+            cancelClose();
+            setOpen(true);
+          }}
+          className={`relative shrink-0 inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
+            isActive
+              ? "text-primary-foreground bg-white/10"
+              : "text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/5"
+          }`}
+        >
+          {group.label}
+          <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+          {isActive && (
+            <span className="absolute -bottom-[7px] left-2.5 right-2.5 h-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-broadcast-gold)]" />
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={4}
+        className="min-w-[180px]"
+        onMouseEnter={cancelClose}
+        onMouseLeave={scheduleClose}
+      >
+        {group.children.map((child) => {
+          const ChildIcon = child.icon;
+          const childActive = isHrefActive(child.href);
+          return (
+            <DropdownMenuItem key={child.href} asChild>
+              <Link
+                href={child.href}
+                data-testid={`link-nav-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
+                className={`flex items-center gap-2 font-broadcast uppercase tracking-[0.1em] text-[13px] cursor-pointer ${
+                  childActive ? "bg-accent/15 text-foreground" : ""
+                }`}
+              >
+                <ChildIcon className="h-4 w-4" />
+                {child.label}
+              </Link>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { teamName, usesTournaments } = useTeamSettings();
@@ -143,13 +236,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // (the most-touched coaching surface), then the analysis view, then the
   // people/teams views, then settings (now also home to the Constraints
   // editor, so it doesn't get its own top-level nav slot anymore).
-  // Schedule, Tournaments, and Practices share the "calendar entry"
-  // metaphor, so they're collapsed under one Events parent — a
-  // dropdown on desktop and an indented section in the mobile sheet.
-  type NavLeaf = { href: string; label: string; icon: typeof Home };
-  type NavGroup = { label: string; icon: typeof Home; children: NavLeaf[] };
-  type NavItem = NavLeaf | NavGroup;
-  const isGroup = (n: NavItem): n is NavGroup => "children" in n;
+  // Schedule/Tournaments/Practices share the "calendar entry" metaphor
+  // so they're collapsed under an Events parent. Rotation Report +
+  // Season Stats share the "analysis" metaphor so they're collapsed
+  // under a Statistics parent. Both render as hover-open dropdowns on
+  // desktop and indented sections in the mobile sheet.
 
   const navItems: NavItem[] = [
     { href: "/", label: "Dashboard", icon: Home },
@@ -168,8 +259,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/practices", label: "Practices", icon: Clipboard },
       ],
     },
-    { href: "/stats", label: "Rotation Report", icon: BarChart2 },
-    { href: "/season-stats", label: "Season Stats", icon: Activity },
+    {
+      label: "Statistics",
+      icon: BarChart2,
+      children: [
+        { href: "/stats", label: "Rotation Report", icon: BarChart2 },
+        { href: "/season-stats", label: "Season Stats", icon: Activity },
+      ],
+    },
     { href: "/players", label: "Roster", icon: Users },
     { href: "/settings", label: "Settings", icon: SettingsIcon },
     // Master-admin-only: tucked at the end so it doesn't visually
@@ -375,45 +472,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   isHrefActive(c.href),
                 );
                 return (
-                  <DropdownMenu key={item.label}>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        data-testid={`button-nav-${item.label.toLowerCase()}`}
-                        className={`relative shrink-0 inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
-                          isActive
-                            ? "text-primary-foreground bg-white/10"
-                            : "text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/5"
-                        }`}
-                      >
-                        {item.label}
-                        <ChevronDown className="h-3.5 w-3.5 opacity-80" />
-                        {isActive && (
-                          <span className="absolute -bottom-[7px] left-2.5 right-2.5 h-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-broadcast-gold)]" />
-                        )}
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="min-w-[180px]">
-                      {item.children.map((child) => {
-                        const ChildIcon = child.icon;
-                        const childActive = isHrefActive(child.href);
-                        return (
-                          <DropdownMenuItem key={child.href} asChild>
-                            <Link
-                              href={child.href}
-                              data-testid={`link-nav-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
-                              className={`flex items-center gap-2 font-broadcast uppercase tracking-[0.1em] text-[13px] cursor-pointer ${
-                                childActive ? "bg-accent/15 text-foreground" : ""
-                              }`}
-                            >
-                              <ChildIcon className="h-4 w-4" />
-                              {child.label}
-                            </Link>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <NavGroupDropdown
+                    key={item.label}
+                    group={item}
+                    isActive={isActive}
+                    isHrefActive={isHrefActive}
+                  />
                 );
               }
               const isActive = isHrefActive(item.href);
