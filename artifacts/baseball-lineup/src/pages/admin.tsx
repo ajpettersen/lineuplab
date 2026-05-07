@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import {
   Card,
@@ -7,6 +8,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -45,6 +48,7 @@ export default function Admin() {
   const isAdmin = !!meQuery.data?.isMasterAdmin;
   const teamsQuery = useAdminTeams(isAdmin);
   const usersQuery = useAdminUsers(isAdmin);
+  const [showEmpty, setShowEmpty] = useState(false);
 
   if (meQuery.isLoading) {
     return (
@@ -68,8 +72,13 @@ export default function Admin() {
     );
   }
 
-  const teams = teamsQuery.data ?? [];
+  const allTeams = teamsQuery.data ?? [];
   const users = usersQuery.data ?? [];
+
+  const isEmptyTeam = (t: { playerCount: number; gameCount: number }) =>
+    t.playerCount === 0 && t.gameCount === 0;
+  const teams = showEmpty ? allTeams : allTeams.filter((t) => !isEmptyTeam(t));
+  const hiddenCount = allTeams.length - teams.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -87,18 +96,47 @@ export default function Admin() {
       </div>
 
       <Card data-testid="card-admin-teams">
-        <CardHeader>
-          <CardTitle>Teams ({teams.length})</CardTitle>
-          <CardDescription>
-            Sorted by most recently active.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+          <div className="space-y-1.5">
+            <CardTitle>
+              Teams ({teams.length}
+              {hiddenCount > 0 && !showEmpty && (
+                <span className="text-muted-foreground font-normal text-sm">
+                  {" "}of {allTeams.length}
+                </span>
+              )}
+              )
+            </CardTitle>
+            <CardDescription>
+              Sorted by most recently active.
+              {hiddenCount > 0 && !showEmpty && (
+                <> Hiding {hiddenCount} empty team{hiddenCount === 1 ? "" : "s"} (no roster, no games).</>
+              )}
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 pt-1">
+            <Checkbox
+              id="admin-show-empty"
+              checked={showEmpty}
+              onCheckedChange={(v) => setShowEmpty(v === true)}
+              data-testid="checkbox-admin-show-empty"
+            />
+            <Label
+              htmlFor="admin-show-empty"
+              className="text-sm font-normal cursor-pointer"
+            >
+              Show empty teams
+            </Label>
+          </div>
         </CardHeader>
         <CardContent>
           {teamsQuery.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading teams…</div>
           ) : teams.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              No teams in the database yet.
+              {allTeams.length === 0
+                ? "No teams in the database yet."
+                : "All teams are empty — check \"Show empty teams\" to see them."}
             </div>
           ) : (
             <Table>
