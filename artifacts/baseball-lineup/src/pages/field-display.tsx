@@ -197,6 +197,22 @@ const pendingSaveKey = (gameId: number) => `fd-pending-save-v1:${gameId}`;
 const pendingGamePatchKey = (gameId: number) =>
   `fd-pending-game-patch-v1:${gameId}`;
 
+/**
+ * Human-friendly "saved Xs/Xm/Xh ago" formatter for the connection badge.
+ * Kept simple and dependency-free — date-fns is already in the bundle but
+ * formatDistanceToNow's "less than a minute" / "about an hour" wording
+ * reads awkward at a glance from the dugout. Coaches need a number, fast.
+ */
+function formatSavedAgo(ts: number, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - ts) / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
 /** localStorage with try/catch so private mode / quota errors don't crash. */
 function loadJSON<T>(key: string): T | undefined {
   try {
@@ -209,6 +225,16 @@ function loadJSON<T>(key: string): T | undefined {
   }
 }
 
+// Module-level quota-error listener. Set by the FieldDisplay component
+// on mount so we can surface a one-time toast when localStorage refuses
+// a write (private mode, full disk, iPad capped). Module scope means we
+// don't have to thread a callback through every saveJSON caller, and the
+// listener is naturally torn down on unmount.
+let quotaErrorListener: (() => void) | null = null;
+function setQuotaErrorListener(fn: (() => void) | null): void {
+  quotaErrorListener = fn;
+}
+
 function saveJSON(key: string, value: unknown): void {
   try {
     if (typeof localStorage === "undefined") return;
@@ -217,10 +243,22 @@ function saveJSON(key: string, value: unknown): void {
     // SyncStatusChip update its counter immediately. Cheap; only a
     // handful of localStorage keys to scan.
     if (isPendingWriteKey(key)) bumpOfflineQueueCount();
-  } catch {
-    // Quota exceeded / private mode — silently degrade. The in-memory
-    // React Query cache and the pendingLineupRef still work for this
-    // session; we just can't survive a refresh.
+  } catch (err) {
+    // Quota exceeded / private mode — surface a one-time warning so the
+    // coach knows offline edits won't survive a refresh, then degrade
+    // silently. The in-memory React Query cache + pendingLineupRef still
+    // work for this session.
+    if (
+      quotaErrorListener &&
+      err instanceof Error &&
+      /quota|exceeded|storage/i.test(`${err.name} ${err.message}`)
+    ) {
+      try {
+        quotaErrorListener();
+      } catch {
+        // never let the listener throw past us
+      }
+    }
   }
 }
 
@@ -639,6 +677,18 @@ export default function FieldDisplay() {
     () => loadJSON(pendingGamePatchKey(id)) != null,
   );
   const hasUnsyncedChanges = hasUnsyncedLineup || hasUnsyncedScore;
+  // Wall-clock timestamp of the last server save (lineup or game patch).
+  // Drives the "Saved 30s ago" subtext under the Live badge so coaches
+  // have a concrete number, not just "Live". Null until the first save
+  // or successful initial fetch this session.
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  // Forces re-render every 15s so the relative "Xm ago" display ticks
+  // forward without us refetching anything.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setNowTick((n) => n + 1), 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Polling interval: 5s feels live without hammering the API. The query is
   // also re-fetched on window focus (default react-query behavior) so a
@@ -767,6 +817,62 @@ export default function FieldDisplay() {
     flushGameSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online]);
+
+  // BACKUP DRAIN TIMER. The browser's `online` event is unreliable on
+  // flaky cell connections — the radio can recover without firing it,
+  // and React Query's onlineManager has the same blind spot. While we
+  // believe we're online and still have pending writes, retry every
+  // 30s. Cheap (no-op when pending refs are null) and gives us a
+  // belt-and-suspenders recovery path for "we're back on WiFi but the
+  // browser never noticed" scenarios at the field.
+  useEffect(() => {
+    if (!online || !hasUnsyncedChanges) return;
+    const t = window.setInterval(() => {
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        flushSave();
+        flushGameSave();
+      }
+    }, 30_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, hasUnsyncedChanges]);
+
+  // "Backlog drained" toast. When the queue clears AFTER having had at
+  // least one pending write, give the coach an explicit confirmation
+  // so they know it's safe to put the iPad down. Uses a ref so we
+  // don't toast on the initial render (when hasUnsyncedChanges is
+  // already false).
+  const wasUnsyncedRef = useRef(false);
+  useEffect(() => {
+    if (hasUnsyncedChanges) {
+      wasUnsyncedRef.current = true;
+      return;
+    }
+    if (wasUnsyncedRef.current && online) {
+      wasUnsyncedRef.current = false;
+      toast({ title: "All changes saved", duration: 2500 });
+    }
+  }, [hasUnsyncedChanges, online, toast]);
+
+  // Subscribe to the module-level quota-error listener so we can warn
+  // the coach exactly once if localStorage refuses a write (private
+  // mode, full disk). After the warning, we degrade silently — the
+  // session keeps working, just won't survive a refresh.
+  const quotaWarnedRef = useRef(false);
+  useEffect(() => {
+    setQuotaErrorListener(() => {
+      if (quotaWarnedRef.current) return;
+      quotaWarnedRef.current = true;
+      toast({
+        title: "Device storage is full",
+        description:
+          "Edits will keep working this session, but won't survive a refresh until storage is cleared.",
+        variant: "destructive",
+        duration: 8000,
+      });
+    });
+    return () => setQuotaErrorListener(null);
+  }, [toast]);
 
   // Coach-controlled "what inning is on the screen right now". Defaults to 1
   // and is bumped manually with the arrows so the display doesn't change
@@ -1024,6 +1130,7 @@ export default function FieldDisplay() {
             clearKey(pendingSaveKey(id));
             setHasUnsyncedLineup(false);
           }
+          setLastSavedAt(Date.now());
           qc.invalidateQueries({ queryKey });
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
@@ -1110,6 +1217,7 @@ export default function FieldDisplay() {
             clearKey(pendingGamePatchKey(id));
             setHasUnsyncedScore(false);
           }
+          setLastSavedAt(Date.now());
           qc.invalidateQueries({ queryKey });
         } catch {
           if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -1419,7 +1527,15 @@ export default function FieldDisplay() {
                   }`}
                   aria-hidden="true"
                 />
-                <span>{justUpdated ? "Just updated" : "Live"}</span>
+                <span>
+                  {hasUnsyncedChanges
+                    ? "Syncing…"
+                    : justUpdated
+                      ? "Just updated"
+                      : lastSavedAt != null
+                        ? `Saved ${formatSavedAgo(lastSavedAt, Date.now())}`
+                        : "Live"}
+                </span>
               </>
             )}
           </div>

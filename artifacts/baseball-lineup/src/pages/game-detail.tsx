@@ -2356,12 +2356,30 @@ export default function GameDetail() {
       )}
 
       <section id="printable-lineup">
-        {/* Print-only header: gives the printout team/opponent/date context. */}
-        <div className="print-only mb-3" data-testid="print-header">
-          <div className="text-lg font-bold">{teamName || "Lineup"}</div>
-          <div className="text-sm">
-            vs. {formatOpponentForMatchup(game.opponent, teamName) || game.opponent} · {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")} · {innings} innings
+        {/* Print-only header: gives the printout team/opponent/date
+            context. Hidden on screen via the global `.print-only`
+            rule; styled in @media print as a big Oswald title with
+            an underline rule for a "scoreboard sheet" feel. */}
+        <div className="print-only print-header" data-testid="print-header">
+          <div className="print-title">
+            {teamName || "Lineup"}
+            <span style={{ fontWeight: 400 }}> vs. </span>
+            {formatOpponentForMatchup(game.opponent, teamName) || game.opponent}
           </div>
+          <div className="print-subtitle">
+            {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")}
+            {" · "}
+            {innings} innings
+            {game.gameType === "tournament" && " · Tournament"}
+            {game.gameType === "league" && " · League"}
+            {game.status === "completed" &&
+              typeof game.ourScore === "number" &&
+              typeof game.opponentScore === "number" &&
+              ` · Final ${game.ourScore}–${game.opponentScore}`}
+          </div>
+          {game.location && (
+            <div className="print-meta">{game.location}</div>
+          )}
         </div>
       <Card>
         <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
@@ -2700,7 +2718,6 @@ export default function GameDetail() {
           )}
         </CardContent>
       </Card>
-      </section>
 
       {/* Batting order — drag-and-drop sortable list. The numbered chip on
            the left is the slot, the grip handle on the right is the drag
@@ -2868,6 +2885,13 @@ export default function GameDetail() {
           </CardContent>
         </Card>
       )}
+
+      {/* Print-only footer — timestamp + tool credit so coaches can
+          tell stale printouts apart at the field. */}
+      <div className="print-only print-footer" data-testid="print-footer">
+        Printed {format(new Date(), "MMM d, yyyy · h:mm a")} · {teamName || "Lineup Lab"}
+      </div>
+      </section>
 
       {/* Pitch counts (always visible — works standalone or rolls into a tournament). */}
       {game && (

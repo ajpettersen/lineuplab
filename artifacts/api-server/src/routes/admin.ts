@@ -8,6 +8,7 @@ import {
   playersTable,
   gamesTable,
   aiUsageLogTable,
+  aiAssistantQuestionsTable,
   coachActivityPingsTable,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
@@ -546,6 +547,77 @@ router.get("/admin/ai-usage", async (_req, res): Promise<void> => {
     budgetPerDay: AI_DAILY_TEAM_BUDGET,
     totals: { last24h: total24h, last7d: total7d, last30d: total30d },
     perTeam,
+  });
+});
+
+/**
+ * GET /api/admin/ai-questions — recent AI Assistant prompts across all
+ * teams. Newest first, capped at `limit` rows (default 100, max 500)
+ * so the admin page can render a single feed without paging logic.
+ * Joined with team_settings for the team name and Clerk for the
+ * asking-coach's name + email; both joins are best-effort (defaults if
+ * a row is missing). Master-admin-only via the router-wide gate below.
+ */
+router.get("/admin/ai-questions", async (req, res): Promise<void> => {
+  const limitRaw = Number(req.query.limit ?? 100);
+  const limit = Math.min(500, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 100));
+
+  const rows = await db
+    .select({
+      id: aiAssistantQuestionsTable.id,
+      ownerUserId: aiAssistantQuestionsTable.ownerUserId,
+      askedByUserId: aiAssistantQuestionsTable.askedByUserId,
+      gameId: aiAssistantQuestionsTable.gameId,
+      question: aiAssistantQuestionsTable.question,
+      intent: aiAssistantQuestionsTable.intent,
+      responsePreview: aiAssistantQuestionsTable.responsePreview,
+      createdAt: aiAssistantQuestionsTable.createdAt,
+    })
+    .from(aiAssistantQuestionsTable)
+    .orderBy(desc(aiAssistantQuestionsTable.createdAt))
+    .limit(limit);
+
+  // Enrich with team name + asker profile. We dedupe ids before issuing
+  // the lookups so a busy team's 50 rows still cost one Clerk batch +
+  // one settings query.
+  const ownerIds = Array.from(new Set(rows.map((r) => r.ownerUserId)));
+  const askerIds = Array.from(new Set(rows.map((r) => r.askedByUserId)));
+  const allUserIds = Array.from(new Set([...ownerIds, ...askerIds]));
+
+  const settingsMap = new Map<string, { teamName: string }>();
+  if (ownerIds.length > 0) {
+    const settingsRows = await db
+      .select({ userId: teamSettingsTable.userId, teamName: teamSettingsTable.teamName })
+      .from(teamSettingsTable)
+      .where(inArray(teamSettingsTable.userId, ownerIds));
+    for (const s of settingsRows) {
+      settingsMap.set(s.userId, { teamName: s.teamName ?? DEFAULT_TEAM_NAME });
+    }
+  }
+
+  const clerkMap = await fetchClerkLiteMany(allUserIds);
+
+  res.json({
+    questions: rows.map((r) => {
+      const askerLite = clerkMap.get(r.askedByUserId) ?? { email: null, name: null };
+      const ownerLite = clerkMap.get(r.ownerUserId) ?? { email: null, name: null };
+      const settings = settingsMap.get(r.ownerUserId);
+      return {
+        id: r.id,
+        ownerUserId: r.ownerUserId,
+        askedByUserId: r.askedByUserId,
+        gameId: r.gameId,
+        question: r.question,
+        intent: r.intent,
+        responsePreview: r.responsePreview,
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+        teamName: settings?.teamName ?? DEFAULT_TEAM_NAME,
+        askerName: askerLite.name,
+        askerEmail: askerLite.email,
+        ownerName: ownerLite.name,
+        ownerEmail: ownerLite.email,
+      };
+    }),
   });
 });
 

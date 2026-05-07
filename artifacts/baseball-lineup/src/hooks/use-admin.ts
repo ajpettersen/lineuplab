@@ -156,3 +156,34 @@ export function useAdminUsers(enabled: boolean) {
     retry: false,
   });
 }
+
+export interface AdminAiQuestionRow {
+  id: number;
+  ownerUserId: string;
+  askedByUserId: string;
+  gameId: number | null;
+  question: string;
+  intent: string;
+  responsePreview: string | null;
+  createdAt: string;
+  teamName: string;
+  askerName: string | null;
+  askerEmail: string | null;
+  ownerName: string | null;
+  ownerEmail: string | null;
+}
+
+export interface AdminAiQuestions {
+  questions: AdminAiQuestionRow[];
+}
+
+export function useAdminAiQuestions(enabled: boolean) {
+  return useQuery<AdminAiQuestions>({
+    queryKey: ["admin", "ai-questions"],
+    queryFn: () =>
+      fetchJson<AdminAiQuestions>(`${BASE}/api/admin/ai-questions?limit=100`),
+    enabled,
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+}

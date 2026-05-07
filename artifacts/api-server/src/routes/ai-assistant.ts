@@ -10,6 +10,7 @@ import {
   lineupLocksTable,
   aiPinnedAssignmentsTable,
   teamSettingsTable,
+  aiAssistantQuestionsTable,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { chargeAiCall } from "../lib/ai-usage";
@@ -237,6 +238,30 @@ ${body.data.message}`;
   const charge = await chargeAiCall(req, "ai-assistant");
   if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
 
+  // Question logging (admin visibility). Awaits but never throws — a
+  // logging failure must not break the assistant response. The intent
+  // and responsePreview are filled in below once the model classifies
+  // the message; we record one row per request, AFTER the OpenAI call
+  // resolves, so the preview reflects the actual answer text. Question
+  // text is captured up front so we always log it even on AI errors.
+  const recordQuestion = async (
+    intent: string,
+    responsePreview: string | null,
+  ): Promise<void> => {
+    try {
+      await db.insert(aiAssistantQuestionsTable).values({
+        ownerUserId: userId,
+        askedByUserId: req.userId ?? userId,
+        gameId: params.data.id,
+        question: body.data.message,
+        intent,
+        responsePreview: responsePreview ? responsePreview.slice(0, 280) : null,
+      });
+    } catch (err) {
+      req.log.warn({ err }, "Failed to log AI assistant question");
+    }
+  };
+
   let aiResponse: AiResponse | null = null;
   try {
     const completion = await openai.chat.completions.create({
@@ -253,14 +278,21 @@ ${body.data.message}`;
     aiResponse = parseAiJson(raw);
   } catch (err) {
     req.log.error({ err }, "AI assistant call failed");
+    await recordQuestion("error", "AI service unavailable");
     res.status(502).json({ error: "AI service unavailable" });
     return;
   }
 
   if (!aiResponse) {
+    await recordQuestion("error", "Could not parse AI response");
     res.status(502).json({ error: "Could not parse AI response" });
     return;
   }
+
+  await recordQuestion(
+    aiResponse.intent,
+    aiResponse.answer ?? aiResponse.explanation ?? null,
+  );
 
   if (aiResponse.intent === "answer") {
     const text = aiResponse.answer?.trim() || "I'm not sure how to answer that.";
