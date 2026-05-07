@@ -20,6 +20,7 @@ import { shadcn } from "@clerk/themes";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout";
+import { OnlineResumer } from "@/components/online-resumer";
 import Dashboard from "@/pages/dashboard";
 import Players from "@/pages/players";
 import PlayerDetail from "@/pages/player-detail";
@@ -384,6 +385,7 @@ function ClerkProviderWithRoutes() {
         }}
       >
         <ClerkQueryClientCacheInvalidator />
+        <OnlineResumer />
         <TooltipProvider>
           <Switch>
             <Route path="/sign-in/*?" component={SignInPage} />

@@ -30,6 +30,7 @@ import {
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { useToast } from "@/hooks/use-toast";
+import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -211,6 +212,10 @@ function saveJSON(key: string, value: unknown): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(key, JSON.stringify(value));
+    // If this write touched a pending-write key, let the global
+    // SyncStatusChip update its counter immediately. Cheap; only a
+    // handful of localStorage keys to scan.
+    if (isPendingWriteKey(key)) bumpOfflineQueueCount();
   } catch {
     // Quota exceeded / private mode — silently degrade. The in-memory
     // React Query cache and the pendingLineupRef still work for this
@@ -222,6 +227,7 @@ function clearKey(key: string): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(key);
+    if (isPendingWriteKey(key)) bumpOfflineQueueCount();
   } catch {
     // ignored
   }
