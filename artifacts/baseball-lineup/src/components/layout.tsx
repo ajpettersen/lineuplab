@@ -290,17 +290,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems: NavItem[] = [
     { href: "/", label: "Dashboard", icon: Home },
-    // Team grouping: Roster + Settings collapsed under one header to
-    // shrink the top-level item count from 6 → 4 (plus Admin for
-    // master-admins). Both pages are squarely "team config" so they
-    // share a parent metaphor.
+    // Team grouping: Roster + Arm Watch collapsed under one header.
+    // Settings used to be tucked in here too but coaches kept missing
+    // it inside the dropdown — promoted back to its own top-level tab
+    // (see below) so it's one click from anywhere.
     {
       label: "Team",
       icon: Users,
       children: [
         { href: "/players", label: "Roster", icon: Users },
         { href: "/arm-watch", label: "Arm Watch", icon: Shield },
-        { href: "/settings", label: "Settings", icon: SettingsIcon },
       ],
     },
     {
@@ -326,6 +325,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/season-stats", label: "Season Stats", icon: Activity },
       ],
     },
+    // Settings as its own top-level tab — was previously a child of
+    // the Team dropdown but coaches reported losing it inside the
+    // menu. The persistent scroll-with-chevrons treatment on the
+    // top-bar nav handles overflow if the tab strip wraps on narrow
+    // laptops, so promoting it back to top-level is safe.
+    { href: "/settings", label: "Settings", icon: SettingsIcon },
     // Master-admin-only: tucked at the end so it doesn't visually
     // dominate for users who'll never see it.
     ...(isMasterAdmin
