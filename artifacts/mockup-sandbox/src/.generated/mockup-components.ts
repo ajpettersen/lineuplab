@@ -3,6 +3,9 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/field-display-redesign/BroadcastBooth.tsx": () => import("../components/mockups/field-display-redesign/BroadcastBooth.tsx"),
   "./components/mockups/field-display-redesign/HeritageScorecard.tsx": () => import("../components/mockups/field-display-redesign/HeritageScorecard.tsx"),
+  "./components/mockups/field-display-redesign/PortraitDeck.tsx": () => import("../components/mockups/field-display-redesign/PortraitDeck.tsx"),
+  "./components/mockups/field-display-redesign/PortraitDrawer.tsx": () => import("../components/mockups/field-display-redesign/PortraitDrawer.tsx"),
+  "./components/mockups/field-display-redesign/PortraitTabs.tsx": () => import("../components/mockups/field-display-redesign/PortraitTabs.tsx"),
   "./components/mockups/field-display-redesign/PremiumCoachApp.tsx": () => import("../components/mockups/field-display-redesign/PremiumCoachApp.tsx"),
   "./components/mockups/top-bar/Current.tsx": () => import("../components/mockups/top-bar/Current.tsx"),
   "./components/mockups/top-bar/MediumBundle.tsx": () => import("../components/mockups/top-bar/MediumBundle.tsx"),
