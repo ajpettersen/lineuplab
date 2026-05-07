@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, gte, inArray, isNull, max } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, gte, inArray, isNull, max } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
 import {
   db,
@@ -8,6 +8,7 @@ import {
   playersTable,
   gamesTable,
   aiUsageLogTable,
+  coachActivityPingsTable,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
 } from "@workspace/db";
@@ -240,7 +241,10 @@ router.get("/admin/teams/:ownerUserId", async (req, res): Promise<void> => {
 
 /**
  * GET /api/admin/users — every distinct Clerk user that appears as
- * either an owner or a member, with the teams they belong to.
+ * either an owner or a member, with the teams they belong to. Also
+ * decorated with activity rollups from coach_activity_pings (1-min
+ * heartbeat granularity, written by the web client while a tab is
+ * open).
  */
 router.get("/admin/users", async (_req, res): Promise<void> => {
   const allRows = await db
@@ -253,6 +257,56 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
       permission: teamMembershipsTable.permission,
     })
     .from(teamMembershipsTable);
+
+  // Activity rollups — one query per window (last24h / 7d / 30d) plus
+  // a single MAX query for last-seen. At expected scale (a few dozen
+  // coaches × ~60 pings/hour while open) the table stays small enough
+  // that the indexed (member_user_id, bucket_minute) PK keeps these
+  // GROUP BYs cheap. Each bucket_minute counted = 1 active minute.
+  const now = Date.now();
+  const since24h = new Date(now - 24 * 60 * 60 * 1000);
+  const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+  const [m24Rows, m7Rows, m30Rows, lastSeenRows] = await Promise.all([
+    db
+      .select({
+        userId: coachActivityPingsTable.memberUserId,
+        n: countDistinct(coachActivityPingsTable.bucketMinute),
+      })
+      .from(coachActivityPingsTable)
+      .where(gte(coachActivityPingsTable.bucketMinute, since24h))
+      .groupBy(coachActivityPingsTable.memberUserId),
+    db
+      .select({
+        userId: coachActivityPingsTable.memberUserId,
+        n: countDistinct(coachActivityPingsTable.bucketMinute),
+      })
+      .from(coachActivityPingsTable)
+      .where(gte(coachActivityPingsTable.bucketMinute, since7d))
+      .groupBy(coachActivityPingsTable.memberUserId),
+    db
+      .select({
+        userId: coachActivityPingsTable.memberUserId,
+        n: countDistinct(coachActivityPingsTable.bucketMinute),
+      })
+      .from(coachActivityPingsTable)
+      .where(gte(coachActivityPingsTable.bucketMinute, since30d))
+      .groupBy(coachActivityPingsTable.memberUserId),
+    db
+      .select({
+        userId: coachActivityPingsTable.memberUserId,
+        lastSeenAt: max(coachActivityPingsTable.bucketMinute),
+      })
+      .from(coachActivityPingsTable)
+      .groupBy(coachActivityPingsTable.memberUserId),
+  ]);
+  const m24Map = new Map(m24Rows.map((r) => [r.userId, Number(r.n)] as const));
+  const m7Map = new Map(m7Rows.map((r) => [r.userId, Number(r.n)] as const));
+  const m30Map = new Map(m30Rows.map((r) => [r.userId, Number(r.n)] as const));
+  const lastSeenMap = new Map(
+    lastSeenRows.map((r) => [r.userId, r.lastSeenAt] as const),
+  );
 
   // Group by user.
   const byUser = new Map<
@@ -281,20 +335,44 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
     });
   }
 
+  // Surface users that have activity pings but no team_memberships
+  // row (rare — would only happen if someone pinged before the
+  // ensureOwnerMembership upsert ran). Empty teams list, but they
+  // still get last-seen + minutes so they aren't invisible.
+  for (const userId of lastSeenMap.keys()) {
+    if (!byUser.has(userId)) {
+      byUser.set(userId, { userId, teams: [] });
+    }
+  }
+
   const users = await Promise.all(
     Array.from(byUser.values()).map(async (u) => {
       const lite = await fetchClerkLite(u.userId);
+      const lastSeen = lastSeenMap.get(u.userId) ?? null;
       return {
         userId: u.userId,
         email: lite.email,
         name: lite.name,
         teams: u.teams,
+        lastSeenAt: lastSeen
+          ? lastSeen instanceof Date
+            ? lastSeen.toISOString()
+            : new Date(lastSeen).toISOString()
+          : null,
+        minutesActive24h: m24Map.get(u.userId) ?? 0,
+        minutesActive7d: m7Map.get(u.userId) ?? 0,
+        minutesActive30d: m30Map.get(u.userId) ?? 0,
       };
     }),
   );
 
-  // Sort by name/email for predictable output.
+  // Sort by most-recently-active first; users without any activity
+  // sink to the bottom and there sort by name/email for predictable
+  // output.
   users.sort((a, b) => {
+    const aT = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+    const bT = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+    if (bT !== aT) return bT - aT;
     const aKey = (a.name ?? a.email ?? a.userId).toLowerCase();
     const bKey = (b.name ?? b.email ?? b.userId).toLowerCase();
     return aKey.localeCompare(bKey);

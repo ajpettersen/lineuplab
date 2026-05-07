@@ -111,6 +111,10 @@ export interface AdminUserRow {
     role: string | null;
     permission: string;
   }>;
+  lastSeenAt: string | null;
+  minutesActive24h: number;
+  minutesActive7d: number;
+  minutesActive30d: number;
 }
 
 export interface AdminAiUsageTeam {

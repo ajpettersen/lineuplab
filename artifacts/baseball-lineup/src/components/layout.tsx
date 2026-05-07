@@ -37,6 +37,7 @@ import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
 import { useAdminMe } from "@/hooks/use-admin";
+import { useHeartbeat } from "@/hooks/use-heartbeat";
 
 type NavLeaf = { href: string; label: string; icon: typeof Home };
 type NavGroup = { label: string; icon: typeof Home; children: NavLeaf[] };
@@ -150,6 +151,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { data: ctx } = useTeamContext();
   const { tier, isLoading: permissionLoading } = usePermission();
   const { data: adminMe } = useAdminMe();
+  // 60s telemetry ping while tab is visible — feeds the master-admin
+  // "active minutes" rollup. Fire-and-forget; failures are silent.
+  useHeartbeat();
   // Don't surface the "Read-only" badge while the team context is
   // still loading. `usePermission` defensively defaults `tier='view'`
   // during load so write-buttons stay hidden, but flashing a

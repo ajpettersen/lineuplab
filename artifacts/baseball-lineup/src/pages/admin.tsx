@@ -34,6 +34,19 @@ function relativeOrNever(iso: string | null): string {
 }
 
 /**
+ * Format a count of "active minutes" as a compact label. < 60 stays
+ * as "Nm"; >= 60 collapses to "Xh Ym" (or just "Xh" when Y=0). Zero
+ * renders as an em-dash so empty cells don't shout numbers.
+ */
+function formatMinutes(n: number): string {
+  if (!n || n <= 0) return "—";
+  if (n < 60) return `${n}m`;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/**
  * Master-admin landing page. Lists every team in the database and
  * (collapsed below) every distinct user that's ever joined a team.
  *
@@ -355,7 +368,10 @@ export default function Admin() {
           <CardDescription>
             Every distinct Clerk user that has either created or joined
             a team. The "teams" column is the team name plus the user's
-            permission tier on that team.
+            permission tier on that team. "Last seen" + active-minute
+            rollups come from a 60-second client heartbeat — only fires
+            while a tab is open and the user is signed in, so closed
+            tabs and offline coaches don't accumulate time.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -369,6 +385,10 @@ export default function Admin() {
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Teams</TableHead>
+                  <TableHead>Last seen</TableHead>
+                  <TableHead className="text-right">24 h</TableHead>
+                  <TableHead className="text-right">7 d</TableHead>
+                  <TableHead className="text-right">30 d</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -391,33 +411,49 @@ export default function Admin() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <ul className="space-y-1 text-xs">
-                        {u.teams.map((t) => (
-                          <li
-                            key={t.ownerUserId}
-                            className="flex items-center gap-1"
-                          >
-                            <Link
-                              href={`/admin/teams/${encodeURIComponent(t.ownerUserId)}`}
-                              className="text-primary hover:underline"
+                      {u.teams.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <ul className="space-y-1 text-xs">
+                          {u.teams.map((t) => (
+                            <li
+                              key={t.ownerUserId}
+                              className="flex items-center gap-1"
                             >
-                              {t.ownerUserId}
-                            </Link>
-                            <span className="text-muted-foreground">·</span>
-                            <span className="text-muted-foreground">
-                              {t.isOwner ? "owner" : t.permission}
-                            </span>
-                            {t.role && (
-                              <>
-                                <span className="text-muted-foreground">·</span>
-                                <span className="text-muted-foreground">
-                                  {t.role}
-                                </span>
-                              </>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                              <Link
+                                href={`/admin/teams/${encodeURIComponent(t.ownerUserId)}`}
+                                className="text-primary hover:underline"
+                              >
+                                {t.ownerUserId}
+                              </Link>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="text-muted-foreground">
+                                {t.isOwner ? "owner" : t.permission}
+                              </span>
+                              {t.role && (
+                                <>
+                                  <span className="text-muted-foreground">·</span>
+                                  <span className="text-muted-foreground">
+                                    {t.role}
+                                  </span>
+                                </>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      {relativeOrNever(u.lastSeenAt)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono text-xs">
+                      {formatMinutes(u.minutesActive24h)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono text-xs">
+                      {formatMinutes(u.minutesActive7d)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono text-xs">
+                      {formatMinutes(u.minutesActive30d)}
                     </TableCell>
                   </TableRow>
                 ))}
