@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, max } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
 import {
   db,
@@ -7,11 +7,13 @@ import {
   teamSettingsTable,
   playersTable,
   gamesTable,
+  aiUsageLogTable,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
 } from "@workspace/db";
 import { requireMasterAdmin } from "../middlewares/requireMasterAdmin";
 import { isMasterAdmin } from "../lib/permissions";
+import { AI_DAILY_TEAM_BUDGET } from "../lib/ai-usage";
 
 const router: IRouter = Router();
 
@@ -286,6 +288,127 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
   });
 
   res.json(users);
+});
+
+/**
+ * GET /api/admin/ai-usage — per-team OpenAI usage rollups + grand
+ * totals for the master-admin dashboard. Master admins are excluded
+ * from the log entirely (their calls are exempt and unrecorded), so
+ * these numbers reflect real customer usage. Sorted by last-24h
+ * volume descending so hot teams float to the top.
+ */
+router.get("/admin/ai-usage", async (_req, res): Promise<void> => {
+  const now = Date.now();
+  const since24h = new Date(now - 24 * 60 * 60 * 1000);
+  const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+  // Pull every row from the last 30 days in one query and aggregate in
+  // memory — at expected scale (10s of teams × dozens of calls/day)
+  // the table is tiny and a single scan keeps the endpoint simple +
+  // round-trip-cheap. If this ever gets large, replace with three
+  // GROUP BY (ownerUserId) queries against the indexed (owner, created)
+  // pair, one per window.
+  const rows = await db
+    .select({
+      ownerUserId: aiUsageLogTable.ownerUserId,
+      feature: aiUsageLogTable.feature,
+      createdAt: aiUsageLogTable.createdAt,
+    })
+    .from(aiUsageLogTable)
+    .where(gte(aiUsageLogTable.createdAt, since30d));
+
+  type PerTeam = {
+    ownerUserId: string;
+    last24h: number;
+    last7d: number;
+    last30d: number;
+    lastCallAt: Date | null;
+    featureCounts: Record<string, number>;
+  };
+  const byTeam = new Map<string, PerTeam>();
+  let total24h = 0;
+  let total7d = 0;
+  let total30d = 0;
+
+  for (const r of rows) {
+    const created = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt);
+    let bucket = byTeam.get(r.ownerUserId);
+    if (!bucket) {
+      bucket = {
+        ownerUserId: r.ownerUserId,
+        last24h: 0,
+        last7d: 0,
+        last30d: 0,
+        lastCallAt: null,
+        featureCounts: {},
+      };
+      byTeam.set(r.ownerUserId, bucket);
+    }
+    bucket.last30d += 1;
+    total30d += 1;
+    if (created >= since7d) {
+      bucket.last7d += 1;
+      total7d += 1;
+      // featureCounts is the 7d feature breakdown — recent and useful
+      // for spotting which surface a team is hammering.
+      bucket.featureCounts[r.feature] = (bucket.featureCounts[r.feature] ?? 0) + 1;
+    }
+    if (created >= since24h) {
+      bucket.last24h += 1;
+      total24h += 1;
+    }
+    if (!bucket.lastCallAt || created > bucket.lastCallAt) {
+      bucket.lastCallAt = created;
+    }
+  }
+
+  // Enrich with team name + owner profile.
+  const ownerIds = Array.from(byTeam.keys());
+  const settingsMap = new Map<string, { teamName: string; teamShortName: string }>();
+  if (ownerIds.length > 0) {
+    const settingsRows = await db
+      .select()
+      .from(teamSettingsTable)
+      .where(inArray(teamSettingsTable.userId, ownerIds));
+    for (const s of settingsRows) {
+      settingsMap.set(s.userId, {
+        teamName: s.teamName ?? DEFAULT_TEAM_NAME,
+        teamShortName: s.teamShortName ?? DEFAULT_TEAM_SHORT_NAME,
+      });
+    }
+  }
+
+  const perTeam = await Promise.all(
+    Array.from(byTeam.values()).map(async (b) => {
+      const lite = await fetchClerkLite(b.ownerUserId);
+      const settings = settingsMap.get(b.ownerUserId);
+      return {
+        ownerUserId: b.ownerUserId,
+        teamName: settings?.teamName ?? DEFAULT_TEAM_NAME,
+        teamShortName: settings?.teamShortName ?? DEFAULT_TEAM_SHORT_NAME,
+        ownerName: lite.name,
+        ownerEmail: lite.email,
+        last24h: b.last24h,
+        last7d: b.last7d,
+        last30d: b.last30d,
+        lastCallAt: b.lastCallAt ? b.lastCallAt.toISOString() : null,
+        featureCounts: b.featureCounts,
+      };
+    }),
+  );
+
+  perTeam.sort((a, b) => {
+    if (b.last24h !== a.last24h) return b.last24h - a.last24h;
+    if (b.last7d !== a.last7d) return b.last7d - a.last7d;
+    return b.last30d - a.last30d;
+  });
+
+  res.json({
+    budgetPerDay: AI_DAILY_TEAM_BUDGET,
+    totals: { last24h: total24h, last7d: total7d, last30d: total30d },
+    perTeam,
+  });
 });
 
 export default router;

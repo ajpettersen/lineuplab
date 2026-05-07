@@ -12,6 +12,7 @@ import {
   teamSettingsTable,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { chargeAiCall } from "../lib/ai-usage";
 import {
   generateFairLineup,
   ALL_KNOWN_POSITIONS,
@@ -232,6 +233,9 @@ ${constraintLines || "(none)"}
 
 Coach's message:
 ${body.data.message}`;
+
+  const charge = await chargeAiCall(req, "ai-assistant");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
 
   let aiResponse: AiResponse | null = null;
   try {

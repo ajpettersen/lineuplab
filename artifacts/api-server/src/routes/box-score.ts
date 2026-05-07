@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { gateWrites } from "../lib/permissions";
+import { chargeAiCall } from "../lib/ai-usage";
 import { getOwnedGame } from "../lib/ownership";
 import {
   getBattingLinesForGame,
@@ -165,6 +166,12 @@ router.post(
         .json({ error: "Add players to your roster before importing a box score" });
       return;
     }
+
+    // Each uploaded image is a separate OpenAI call (parallel below) —
+    // charge the team's daily budget once for the whole batch so a
+    // 4-image upload either fully succeeds or is rejected up-front.
+    const charge = await chargeAiCall(req, "box-score", files.length);
+    if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
 
     const rosterText = players
       .map((p) => {

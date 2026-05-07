@@ -6,6 +6,7 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { FIELD_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame } from "../lib/ownership";
 import { gateWrites } from "../lib/permissions";
+import { chargeAiCall } from "../lib/ai-usage";
 
 const router: IRouter = Router();
 router.use("/games", gateWrites("partial"));
@@ -231,6 +232,9 @@ Game length: ${game.innings} innings.`;
 
   // OpenAI vision: pass the image as a base64 data URL on a content part.
   const dataUrl = `data:${body.data.mimeType};base64,${body.data.imageBase64}`;
+
+  const charge = await chargeAiCall(req, "lineup-image");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
 
   let aiResult: AiResult | null = null;
   try {

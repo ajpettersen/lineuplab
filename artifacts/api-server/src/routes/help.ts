@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { chargeAiCall } from "../lib/ai-usage";
 
 const router: IRouter = Router();
 
@@ -106,6 +107,9 @@ router.post("/help/ask", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Question is required (3-500 characters)." });
     return;
   }
+
+  const charge = await chargeAiCall(req, "help");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
 
   let raw = "";
   try {

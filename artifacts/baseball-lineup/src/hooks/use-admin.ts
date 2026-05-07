@@ -113,6 +113,37 @@ export interface AdminUserRow {
   }>;
 }
 
+export interface AdminAiUsageTeam {
+  ownerUserId: string;
+  teamName: string;
+  teamShortName: string;
+  ownerName: string | null;
+  ownerEmail: string | null;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  lastCallAt: string | null;
+  featureCounts: Record<string, number>;
+}
+
+export interface AdminAiUsage {
+  budgetPerDay: number;
+  totals: { last24h: number; last7d: number; last30d: number };
+  perTeam: AdminAiUsageTeam[];
+}
+
+export function useAdminAiUsage(enabled: boolean) {
+  return useQuery<AdminAiUsage>({
+    queryKey: ["admin", "ai-usage"],
+    queryFn: () => fetchJson<AdminAiUsage>(`${BASE}/api/admin/ai-usage`),
+    enabled,
+    retry: false,
+    // The dashboard is a debugging surface — refetch on focus so it
+    // reflects whatever just happened in another tab.
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useAdminUsers(enabled: boolean) {
   return useQuery<AdminUserRow[]>({
     queryKey: ["admin", "users"],

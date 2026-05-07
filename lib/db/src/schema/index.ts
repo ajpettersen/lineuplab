@@ -18,3 +18,4 @@ export * from "./pitch-rules";
 export * from "./practices";
 export * from "./practice_attendance";
 export * from "./task_dismissals";
+export * from "./ai_usage_log";

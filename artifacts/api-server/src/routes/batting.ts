@@ -7,6 +7,7 @@ import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
 import { getBattingTotals } from "../lib/batting-totals";
+import { chargeAiCall } from "../lib/ai-usage";
 
 const router: IRouter = Router();
 router.use("/batting", gateWrites("partial"));
@@ -229,6 +230,9 @@ router.post("/batting/restore", async (req, res): Promise<void> => {
 router.post("/batting/extract", upload.single("file"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
+
+  const charge = await chargeAiCall(req, "batting-import");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
 
   const players = await db
     .select()

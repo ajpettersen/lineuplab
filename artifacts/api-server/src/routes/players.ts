@@ -5,6 +5,7 @@ import multer from "multer";
 import { z } from "zod";
 import { db, playersTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { chargeAiCall } from "../lib/ai-usage";
 import {
   CreatePlayerBody,
   GetPlayerParams,
@@ -126,6 +127,9 @@ async function callExtractor(content: Array<{ type: "text"; text: string } | { t
 }
 
 router.post("/players/extract", upload.single("file"), async (req, res): Promise<void> => {
+  // Per-team daily AI budget — single call regardless of mode.
+  const charge = await chargeAiCall(req, "roster-import");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
   // Two modes: file upload (multipart) OR { text } JSON
   if (req.file) {
     const base64 = req.file.buffer.toString("base64");

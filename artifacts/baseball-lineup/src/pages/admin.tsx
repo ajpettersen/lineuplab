@@ -18,8 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShieldCheck, ChevronRight, Users, AlertTriangle } from "lucide-react";
-import { useAdminMe, useAdminTeams, useAdminUsers } from "@/hooks/use-admin";
+import { ShieldCheck, ChevronRight, Users, AlertTriangle, Sparkles } from "lucide-react";
+import { useAdminMe, useAdminTeams, useAdminUsers, useAdminAiUsage } from "@/hooks/use-admin";
 import { formatDistanceToNow } from "date-fns";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -48,6 +48,7 @@ export default function Admin() {
   const isAdmin = !!meQuery.data?.isMasterAdmin;
   const teamsQuery = useAdminTeams(isAdmin);
   const usersQuery = useAdminUsers(isAdmin);
+  const aiUsageQuery = useAdminAiUsage(isAdmin);
   const [showEmpty, setShowEmpty] = useState(false);
 
   if (meQuery.isLoading) {
@@ -94,6 +95,146 @@ export default function Admin() {
           head coach.
         </p>
       </div>
+
+      <Card data-testid="card-admin-ai-usage">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            AI usage
+          </CardTitle>
+          <CardDescription>
+            Per-team OpenAI request counts. Each team is capped at{" "}
+            <span className="font-mono">
+              {aiUsageQuery.data?.budgetPerDay ?? "…"}
+            </span>{" "}
+            requests per rolling 24 h (override with the{" "}
+            <span className="font-mono">AI_DAILY_TEAM_BUDGET</span> env var).
+            Master-admin calls are exempt and not counted here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {aiUsageQuery.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading usage…</div>
+          ) : !aiUsageQuery.data ? (
+            <div className="text-sm text-muted-foreground">
+              {aiUsageQuery.error?.message ?? "Failed to load usage."}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs uppercase text-muted-foreground tracking-wide">
+                    Last 24 h
+                  </div>
+                  <div className="text-2xl font-mono">
+                    {aiUsageQuery.data.totals.last24h.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs uppercase text-muted-foreground tracking-wide">
+                    Last 7 d
+                  </div>
+                  <div className="text-2xl font-mono">
+                    {aiUsageQuery.data.totals.last7d.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs uppercase text-muted-foreground tracking-wide">
+                    Last 30 d
+                  </div>
+                  <div className="text-2xl font-mono">
+                    {aiUsageQuery.data.totals.last30d.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {aiUsageQuery.data.perTeam.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No AI activity in the last 30 days.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Team</TableHead>
+                      <TableHead className="text-right">24 h</TableHead>
+                      <TableHead className="text-right">7 d</TableHead>
+                      <TableHead className="text-right">30 d</TableHead>
+                      <TableHead>Top features (7 d)</TableHead>
+                      <TableHead>Last call</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {aiUsageQuery.data.perTeam.map((t) => {
+                      const budget = aiUsageQuery.data!.budgetPerDay;
+                      const overBudget = t.last24h >= budget;
+                      const features = Object.entries(t.featureCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 4);
+                      return (
+                        <TableRow
+                          key={t.ownerUserId}
+                          data-testid={`row-admin-ai-usage-${t.ownerUserId}`}
+                        >
+                          <TableCell>
+                            <Link
+                              href={`/admin/teams/${encodeURIComponent(t.ownerUserId)}`}
+                              className="font-medium hover:underline"
+                            >
+                              {t.teamName}
+                            </Link>
+                            <div className="text-xs text-muted-foreground">
+                              {t.ownerName ?? t.ownerEmail ?? t.ownerUserId}
+                            </div>
+                          </TableCell>
+                          <TableCell
+                            className={`text-right tabular-nums font-mono ${
+                              overBudget ? "text-destructive font-semibold" : ""
+                            }`}
+                          >
+                            {t.last24h}
+                            <span className="text-muted-foreground text-xs">
+                              {" "}/{budget}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-mono">
+                            {t.last7d}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-mono">
+                            {t.last30d}
+                          </TableCell>
+                          <TableCell>
+                            {features.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {features.map(([feat, n]) => (
+                                  <span
+                                    key={feat}
+                                    className="text-xs rounded bg-muted px-1.5 py-0.5"
+                                  >
+                                    {feat}{" "}
+                                    <span className="text-muted-foreground">
+                                      {n}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {relativeOrNever(t.lastCallAt)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card data-testid="card-admin-teams">
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">

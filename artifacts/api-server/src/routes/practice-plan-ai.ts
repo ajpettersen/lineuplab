@@ -10,6 +10,7 @@ import {
   type PracticeBlockJson,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { chargeAiCall } from "../lib/ai-usage";
 import {
   GeneratePracticePlanParams,
   GeneratePracticePlanBody,
@@ -472,6 +473,9 @@ Build the time-blocked plan now.`;
     // up an Express worker indefinitely (availability/DOS surface). 45s is
     // generous for gpt-5.2 + 1800-token plans and well under the proxy's
     // request timeout.
+    const charge = await chargeAiCall(req, "practice-plan");
+    if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
+
     let raw = "";
     try {
       const completion = await openai.chat.completions.create(

@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
+import { chargeAiCall } from "../lib/ai-usage";
 
 const router: IRouter = Router();
 router.use("/constraints", gateWrites("full"));
@@ -116,6 +117,9 @@ router.post("/constraints/parse", async (req, res): Promise<void> => {
         isNull(playersTable.deletedAt),
       ),
     );
+  const charge = await chargeAiCall(req, "lineup-constraints");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
+
   const playerList = players.map((p) => `${p.id}: ${p.name}`).join("\n");
   // Include the optional LCF/RCF; coaches running a 10-player field may
   // express constraints against those slots.
