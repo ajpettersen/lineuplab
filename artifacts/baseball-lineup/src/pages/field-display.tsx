@@ -29,6 +29,7 @@ import {
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
+import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
@@ -1784,8 +1785,11 @@ export default function FieldDisplay() {
                     <span className="shrink-0 w-10 sm:w-12 flex items-center justify-center font-display font-bold text-lg sm:text-xl tabular-nums bg-white/5 text-slate-400">
                       {slotLabel}
                     </span>
-                    <span className="flex-1 min-w-0 flex items-center px-2 sm:px-3 text-sm sm:text-base font-bold leading-tight truncate text-white">
-                      {r.playerName}
+                    <span
+                      className="flex-1 min-w-0 flex items-center px-2 sm:px-3 text-sm sm:text-base font-bold leading-tight truncate text-white"
+                      title={r.playerName}
+                    >
+                      {formatPlayerNameShort(r.playerName)}
                     </span>
                   </li>
                 );
@@ -1818,7 +1822,7 @@ export default function FieldDisplay() {
                 {activeDragInfo.position === "Bench" ? "BN" : activeDragInfo.position}
               </div>
               <div className="px-3 py-1 font-bold text-sm text-white whitespace-nowrap tracking-wide flex items-center">
-                {activeDragInfo.name}
+                {formatPlayerNameShort(activeDragInfo.name)}
               </div>
             </div>
           ) : null}
@@ -1945,9 +1949,9 @@ function DraggableFieldChip({
       <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px]">
         {pos}
       </div>
-      <div className="px-2 sm:px-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
+      <div className="px-2 sm:px-3 py-1 flex items-center min-w-[64px] sm:min-w-[96px] max-w-[120px] sm:max-w-[170px]">
         <div className="text-xs sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
-          {name}
+          {formatPlayerNameShort(name)}
         </div>
       </div>
     </div>
@@ -2060,7 +2064,7 @@ function DraggableBenchChip({
       data-testid={`bench-name-${name}`}
       title={`${name} — drag onto a position to sub in`}
     >
-      {name}
+      {formatPlayerNameShort(name)}
     </span>
   );
 }
