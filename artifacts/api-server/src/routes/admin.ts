@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, inArray, max } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, max } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
 import {
   db,
@@ -53,18 +53,32 @@ router.use("/admin", requireMasterAdmin);
  * profile snippet for the owner.
  */
 router.get("/admin/teams", async (_req, res): Promise<void> => {
-  // Distinct owners — only users who actually OWN a team (have an
-  // `isOwner = true` row in team_memberships). A coach who joined
-  // someone else's team has a team_settings row seeded for them on
-  // first sign-in, but they should not show up as their own team in
-  // the admin list — so we deliberately do NOT fall back to
-  // team_settings here.
-  const ownersFromMemberships = await db
-    .selectDistinct({ ownerUserId: teamMembershipsTable.ownerUserId })
-    .from(teamMembershipsTable)
-    .where(eq(teamMembershipsTable.isOwner, true));
+  // Distinct owners — union of two sources:
+  //   (a) users with an `isOwner = true` row in team_memberships
+  //       (the modern signup path always writes one of these), and
+  //   (b) users who have at least one active (non-soft-deleted) player
+  //       on their roster. This second source brings back accounts
+  //       created before the `isOwner` row was being seeded — they
+  //       still own a team and have real data, but were getting hidden
+  //       from the admin list because their membership row was never
+  //       written. A coach who only JOINED someone else's team via
+  //       invite never owns players under their own user_id, so they
+  //       still won't show up here.
+  const [ownersFromMemberships, ownersFromPlayers] = await Promise.all([
+    db
+      .selectDistinct({ ownerUserId: teamMembershipsTable.ownerUserId })
+      .from(teamMembershipsTable)
+      .where(eq(teamMembershipsTable.isOwner, true)),
+    db
+      .selectDistinct({ userId: playersTable.userId })
+      .from(playersTable)
+      .where(isNull(playersTable.deletedAt)),
+  ]);
   const owners = Array.from(
-    new Set(ownersFromMemberships.map((r) => r.ownerUserId)),
+    new Set([
+      ...ownersFromMemberships.map((r) => r.ownerUserId),
+      ...ownersFromPlayers.map((r) => r.userId),
+    ]),
   );
 
   if (owners.length === 0) {
