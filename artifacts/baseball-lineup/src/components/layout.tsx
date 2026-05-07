@@ -244,6 +244,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems: NavItem[] = [
     { href: "/", label: "Dashboard", icon: Home },
+    // Team grouping: Roster + Settings collapsed under one header to
+    // shrink the top-level item count from 6 → 4 (plus Admin for
+    // master-admins). Both pages are squarely "team config" so they
+    // share a parent metaphor.
+    {
+      label: "Team",
+      icon: Users,
+      children: [
+        { href: "/players", label: "Roster", icon: Users },
+        { href: "/settings", label: "Settings", icon: SettingsIcon },
+      ],
+    },
     {
       label: "Events",
       icon: CalendarRange,
@@ -267,8 +279,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/season-stats", label: "Season Stats", icon: Activity },
       ],
     },
-    { href: "/players", label: "Roster", icon: Users },
-    { href: "/settings", label: "Settings", icon: SettingsIcon },
     // Master-admin-only: tucked at the end so it doesn't visually
     // dominate for users who'll never see it.
     ...(isMasterAdmin
