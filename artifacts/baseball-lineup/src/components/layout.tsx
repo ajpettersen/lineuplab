@@ -286,16 +286,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
       <header
-        className="sticky top-0 z-30 flex h-18 items-center gap-4 border-b border-[hsl(220_85%_14%)] px-4 shadow-md md:px-6 relative"
+        className="sticky top-0 z-30 border-b border-[hsl(220_85%_14%)] shadow-md relative"
         style={{
           background:
             "linear-gradient(135deg, hsl(220 85% 18%) 0%, hsl(220 85% 24%) 60%, hsl(220 85% 20%) 100%)",
-          paddingTop: "env(safe-area-inset-top)",
-          height: "calc(4.5rem + env(safe-area-inset-top))",
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
         }}
       >
+        {/* Safe-area spacer: when the app runs as an installed PWA on
+            iOS the system status bar (clock + battery) sits on top of
+            our gradient. This empty strip pushes the actual nav content
+            below it. Falls back to 0 height in browsers/desktop. */}
+        <div style={{ height: "env(safe-area-inset-top, 0px)" }} aria-hidden />
+        <div
+          className="flex h-18 items-center gap-4 px-4 md:px-6"
+          style={{
+            paddingLeft: "max(1rem, env(safe-area-inset-left))",
+            paddingRight: "max(1rem, env(safe-area-inset-right))",
+          }}
+        >
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-accent" />
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           <SheetTrigger asChild>
@@ -574,6 +582,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <ChevronRight className="h-5 w-5" />
           </button>
         )}
+        </div>
         </div>
       </header>
       <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
