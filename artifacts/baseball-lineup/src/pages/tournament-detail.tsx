@@ -44,6 +44,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
+import { tournamentDateAsLocal } from "@/lib/tournament-date";
 
 function parseOptionalInt(s: string): number | null {
   const t = s.trim();
@@ -182,8 +183,8 @@ export default function TournamentDetail() {
             <div className="text-sm text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                {format(new Date(tournament.startDate), "MMM d")} –{" "}
-                {format(new Date(tournament.endDate), "MMM d, yyyy")}
+                {format(tournamentDateAsLocal(tournament.startDate), "MMM d")} –{" "}
+                {format(tournamentDateAsLocal(tournament.endDate), "MMM d, yyyy")}
               </span>
               {tournament.location && (
                 <span className="flex items-center gap-1.5">
@@ -413,42 +414,58 @@ export default function TournamentDetail() {
           <DialogHeader>
             <DialogTitle>Add a game</DialogTitle>
             <DialogDescription>
-              Pick an existing game to link, or create a new one from the Schedule page first.
+              Create a new game for this tournament, or link one that's already on your schedule.
             </DialogDescription>
           </DialogHeader>
-          {availableGames.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No unlinked games to add. <Link href="/games/new" className="text-primary hover:underline">Create a new game</Link>.
-            </p>
-          ) : (
-            <ul className="divide-y border rounded-md">
-              {availableGames.map((g) => (
-                <li
-                  key={g.id}
-                  className="p-3 flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">vs {g.opponent}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {format(new Date(g.gameDate), "EEE, MMM d · h:mm a")}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      updateGame.mutate(
-                        { id: g.id, data: { tournamentId } },
-                        { onSuccess: () => setAddGameOpen(false) },
-                      );
-                    }}
-                    disabled={updateGame.isPending}
-                    data-testid={`button-link-game-${g.id}`}
+          {/* Always-available "create new" CTA so a coach can build a
+              tournament's schedule from scratch without bouncing through
+              the main Schedule page first. The new-game form reads the
+              ?tournamentId query param, pre-selects gameType=tournament,
+              and links the game back to this tournament on save. */}
+          <Link href={`/games/new?tournamentId=${tournamentId}`}>
+            <Button
+              className="w-full justify-center"
+              data-testid="button-create-game-for-tournament"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              Create new game
+            </Button>
+          </Link>
+          {availableGames.length > 0 && (
+            <>
+              <div className="text-xs text-muted-foreground text-center">
+                or link an existing game
+              </div>
+              <ul className="divide-y border rounded-md max-h-[40vh] overflow-y-auto">
+                {availableGames.map((g) => (
+                  <li
+                    key={g.id}
+                    className="p-3 flex items-center justify-between gap-3"
                   >
-                    Link
-                  </Button>
-                </li>
-              ))}
-            </ul>
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">vs {g.opponent}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {format(new Date(g.gameDate), "EEE, MMM d · h:mm a")}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        updateGame.mutate(
+                          { id: g.id, data: { tournamentId } },
+                          { onSuccess: () => setAddGameOpen(false) },
+                        );
+                      }}
+                      disabled={updateGame.isPending}
+                      data-testid={`button-link-game-${g.id}`}
+                    >
+                      Link
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddGameOpen(false)}>Done</Button>

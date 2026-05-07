@@ -26,6 +26,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
+import { tournamentDateAsLocal } from "@/lib/tournament-date";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -286,9 +287,9 @@ export default function Tournaments() {
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <CalendarDays className="h-3.5 w-3.5 shrink-0" />
                     <span>
-                      {format(new Date(t.startDate), "MMM d")}
+                      {format(tournamentDateAsLocal(t.startDate), "MMM d")}
                       {" – "}
-                      {format(new Date(t.endDate), "MMM d, yyyy")}
+                      {format(tournamentDateAsLocal(t.endDate), "MMM d, yyyy")}
                     </span>
                   </div>
                   {t.location && (

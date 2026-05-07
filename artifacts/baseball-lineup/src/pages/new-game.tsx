@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   useCreateGame,
+  useUpdateGame,
   getListGamesQueryKey,
+  getGetTournamentQueryKey,
+  getListTournamentsQueryKey,
   useGetPreferences,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,19 +18,36 @@ import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
 export default function NewGame() {
-  const [, navigate] = useLocation();
+  const [location_, navigate] = useLocation();
   const createGame = useCreateGame();
+  const updateGame = useUpdateGame();
   const qc = useQueryClient();
   const { toast } = useToast();
   const prefsQuery = useGetPreferences();
   const { usesTournaments } = useTeamSettings();
+
+  // When the coach lands on this page from a tournament's "Create new
+  // game" CTA, the tournament id rides along as ?tournamentId=N. We
+  // pre-select gameType=tournament, link the new game to that
+  // tournament on save, and bounce back to the tournament page so they
+  // don't have to re-navigate.
+  const tournamentIdFromQuery = useMemo(() => {
+    const qs = typeof window === "undefined"
+      ? ""
+      : window.location.search;
+    const n = Number(new URLSearchParams(qs).get("tournamentId"));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [location_]);
+
   const [opponent, setOpponent] = useState("");
   const [gameDate, setGameDate] = useState("");
   const [location, setLocation] = useState("");
   const [innings, setInnings] = useState("6");
   const [inningsTouched, setInningsTouched] = useState(false);
   const [notes, setNotes] = useState("");
-  const [gameType, setGameType] = useState<"none" | "league" | "tournament">("none");
+  const [gameType, setGameType] = useState<"none" | "league" | "tournament">(
+    tournamentIdFromQuery != null && usesTournaments ? "tournament" : "none",
+  );
 
   // Apply the coach's preferred default once preferences load,
   // unless the coach has already manually changed the field.
@@ -61,6 +81,36 @@ export default function NewGame() {
       {
         onSuccess: (game) => {
           qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+          // If we came from a tournament, link the freshly-created game
+          // to it via PATCH (the create endpoint doesn't accept
+          // tournamentId), then bounce back to the tournament page.
+          if (tournamentIdFromQuery != null) {
+            updateGame.mutate(
+              { id: game.id, data: { tournamentId: tournamentIdFromQuery } },
+              {
+                onSuccess: () => {
+                  qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+                  qc.invalidateQueries({
+                    queryKey: getGetTournamentQueryKey(tournamentIdFromQuery),
+                  });
+                  qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
+                  toast({ title: "Game added to tournament" });
+                  navigate(`/tournaments/${tournamentIdFromQuery}`);
+                },
+                onError: () => {
+                  // Game was created successfully; tournament link
+                  // failed. Surface the partial success and drop the
+                  // coach on the game page so they can re-link manually.
+                  toast({
+                    title: "Game added, but couldn't link to tournament",
+                    variant: "destructive",
+                  });
+                  navigate(`/games/${game.id}`);
+                },
+              },
+            );
+            return;
+          }
           toast({ title: "Game added" });
           navigate(`/games/${game.id}`);
         },
@@ -72,9 +122,16 @@ export default function NewGame() {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <div className="flex items-center gap-3">
-        <Link href="/games">
+        <Link
+          href={
+            tournamentIdFromQuery != null
+              ? `/tournaments/${tournamentIdFromQuery}`
+              : "/games"
+          }
+        >
           <Button variant="ghost" size="sm" className="gap-1">
-            <ArrowLeft className="h-4 w-4" /> Schedule
+            <ArrowLeft className="h-4 w-4" />{" "}
+            {tournamentIdFromQuery != null ? "Tournament" : "Schedule"}
           </Button>
         </Link>
       </div>
