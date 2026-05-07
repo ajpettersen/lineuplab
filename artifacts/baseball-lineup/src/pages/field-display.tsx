@@ -32,7 +32,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ListOrdered, Map as MapIcon, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Every position the field display knows how to lay out. The team's actual
@@ -981,6 +981,17 @@ export default function FieldDisplay() {
   // brightness slider; on OLED it directly saves battery because dark pixels
   // are off pixels. Persisted to localStorage so an accidental Exit → back
   // doesn't lose the setting mid-game.
+  // Phone-portrait tab state. The field display has three responsive layouts:
+  //   - Phone portrait (max-md:portrait:): single-panel-at-a-time with a
+  //     bottom tab bar — coach swaps between FIELD (diagram + bench strip)
+  //     and ORDER (full-bleed batting list) instead of stacking them.
+  //   - Phone landscape (max-lg:landscape:) and iPad/desktop (lg:): the
+  //     original split layout — both panels visible at once.
+  // The tab state is purely UI-only; nothing else in the page reads it.
+  // Defaults to "field" because that's what coaches glance at most often
+  // mid-inning. State is intentionally not persisted — switching games or
+  // reloading should land back on the field.
+  const [mobileTab, setMobileTab] = useState<"field" | "order">("field");
   const DIM_KEY = "fd-dim-mode";
   const [dimMode, setDimMode] = useState<boolean>(() => {
     try {
@@ -1390,7 +1401,7 @@ export default function FieldDisplay() {
     // Lock the page to the viewport on tablet+ so the field, bench, and
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
-    <div className="min-h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:landscape:overflow-hidden lg:overflow-hidden">
+    <div className="min-h-[100dvh] max-md:portrait:h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden">
       {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ── */}
       <header className="flex items-center justify-between gap-3 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
         {/* Left cluster: exit + team vs opponent */}
@@ -1650,10 +1661,12 @@ export default function FieldDisplay() {
        *  AFTER `lg:` in the compiled CSS, so an unscoped `landscape:`
        *  rule would win against `lg:` on iPad-landscape and shrink the
        *  iPad sidebar to phone-landscape width. */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 max-lg:landscape:grid-cols-[1fr_minmax(180px,240px)] max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
+      <main className="flex-1 min-h-0 grid grid-cols-1 max-md:portrait:overflow-hidden max-lg:landscape:grid-cols-[1fr_minmax(180px,240px)] max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
-          className="flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden bg-[#03060a]"
+          className={`flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden bg-[#03060a] ${
+            mobileTab !== "field" ? "max-md:portrait:hidden" : ""
+          }`}
           data-testid="section-field"
         >
           {/* Field min-height is generous in portrait (so the diagram is
@@ -1661,7 +1674,7 @@ export default function FieldDisplay() {
            *  on lg, where the parent already constrains height to the
            *  viewport and the field is allowed to fill whatever's left. */}
           <div
-            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:landscape:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]"
+            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-md:portrait:min-h-0 max-lg:landscape:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]"
             style={{ background: lighting.grassGradient }}
             data-lighting={lighting.label}
             data-testid={`field-lighting-${lighting.label}`}
@@ -1851,7 +1864,9 @@ export default function FieldDisplay() {
          *    there's no way to know what's actually happening on the
          *    field without GameChanger integration, and a stale at-bat
          *    indicator was worse than no indicator. */}
-        <aside className="border-t max-lg:landscape:border-t-0 max-lg:landscape:border-l lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-lg:landscape:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20">
+        <aside className={`border-t max-md:portrait:border-t-0 max-lg:landscape:border-t-0 max-lg:landscape:border-l lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
+          mobileTab !== "order" ? "max-md:portrait:hidden" : ""
+        }`}>
           {/* Broadcast-graphic LINEUP header — Oswald uppercase with a gold
            *  underline to feel like a TV chyron */}
           <div className="shrink-0 bg-[#0f172a] border-b-2 border-broadcast-gold px-4 py-2 sm:py-3 text-center">
@@ -1872,12 +1887,12 @@ export default function FieldDisplay() {
            *  grid with fixed row heights, which can grow past the
            *  viewport — that's intentional, the page itself scrolls
            *  in that mode (root is min-h, not h). */}
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-2 sm:p-3">
+          <div className="flex-1 min-h-0 overflow-hidden max-md:portrait:overflow-y-auto flex flex-col p-2 sm:p-3">
           {battingOrder.length === 0 ? (
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
             <ol
-              className="grid grid-cols-2 gap-1 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:flex-1 max-lg:landscape:min-h-0 max-lg:landscape:gap-1 lg:flex lg:flex-col lg:flex-1 lg:min-h-0 lg:gap-1"
+              className="grid grid-cols-2 gap-1 max-md:portrait:flex max-md:portrait:flex-col max-md:portrait:flex-1 max-md:portrait:min-h-0 max-md:portrait:gap-1.5 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:flex-1 max-lg:landscape:min-h-0 max-lg:landscape:gap-1 lg:flex lg:flex-col lg:flex-1 lg:min-h-0 lg:gap-1"
               data-testid="batting-order-list"
             >
               {battingOrder.map((r, idx) => {
@@ -1946,6 +1961,52 @@ export default function FieldDisplay() {
         document.body,
       )}
       </DndContext>
+
+      {/* Phone-portrait bottom tab bar — only shown on phones in portrait
+       *  (max-md:portrait:). Pinned to the bottom of the viewport via the
+       *  flex column so it never scrolls away. The main grid above reserves
+       *  a 64px bottom pad on phone-portrait so the field/lineup never
+       *  hides behind it. Hidden on phone-landscape and iPad/desktop where
+       *  field + lineup are already visible side-by-side.
+       *
+       *  Two tabs only (FIELD and ORDER) instead of variant A's three —
+       *  the bench is intentionally kept inside the FIELD tab as the
+       *  existing BenchStrip drag-target so coaches can drag-and-drop
+       *  between field and bench without leaving the panel. */}
+      <nav
+        className="hidden max-md:portrait:flex shrink-0 h-16 bg-[#050d1a] border-t border-[#1a2a42] z-30"
+        aria-label="Field display section"
+        data-testid="mobile-tab-bar"
+      >
+        <button
+          type="button"
+          onClick={() => setMobileTab("field")}
+          aria-pressed={mobileTab === "field"}
+          data-testid="mobile-tab-field"
+          className={`flex-1 flex flex-col items-center justify-center gap-1 border-t-2 transition-colors ${
+            mobileTab === "field"
+              ? "border-broadcast-gold text-white bg-white/5"
+              : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <MapIcon className={`h-5 w-5 ${mobileTab === "field" ? "text-broadcast-gold" : ""}`} aria-hidden="true" />
+          <span className="font-display text-[11px] font-bold uppercase tracking-[0.18em]">Field</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab("order")}
+          aria-pressed={mobileTab === "order"}
+          data-testid="mobile-tab-order"
+          className={`flex-1 flex flex-col items-center justify-center gap-1 border-t-2 transition-colors ${
+            mobileTab === "order"
+              ? "border-broadcast-gold text-white bg-white/5"
+              : "border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <ListOrdered className={`h-5 w-5 ${mobileTab === "order" ? "text-broadcast-gold" : ""}`} aria-hidden="true" />
+          <span className="font-display text-[11px] font-bold uppercase tracking-[0.18em]">Order</span>
+        </button>
+      </nav>
 
       {/*
        * Dim overlay. Fixed/full-viewport so it works in fullscreen mode too.
