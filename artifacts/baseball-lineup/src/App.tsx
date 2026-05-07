@@ -21,6 +21,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout";
 import { OnlineResumer } from "@/components/online-resumer";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import Dashboard from "@/pages/dashboard";
 import Players from "@/pages/players";
 import PlayerDetail from "@/pages/player-detail";
@@ -250,19 +251,47 @@ function StashAndRedirectToSignIn() {
 }
 
 /**
- * Onboarding gate — currently a no-op passthrough.
+ * Auto-redirect new signups into the /welcome wizard. We avoid the
+ * "every coach with null onboardingCompletedAt" trap (which dragged
+ * pre-wizard legacy teams back through "name your team" they'd
+ * already set) by also requiring the team_settings row to have been
+ * created on or after WIZARD_REENABLE_AT — i.e. only teams that
+ * signed up after this guard shipped.
  *
- * The auto-redirect to `/welcome` for head coaches without
- * `onboardingCompletedAt` was removed by user request: it kept
- * forcing existing coaches (whose legacy row had a null timestamp)
- * back into the wizard's "team identity" step, asking them to
- * re-enter their team name + short name they had already set.
- *
- * The `/welcome` route still exists for any coach who navigates
- * there directly, but no one is forced into it. Team identity is
- * editable any time from Settings → Team Identity.
+ * Anyone created before the cutoff is left alone forever; they can
+ * still visit /welcome manually if they want a guided setup pass.
+ * Editing identity / colors / roster is always available from
+ * Settings and the relevant pages.
  */
+const WIZARD_REENABLE_AT = new Date("2026-05-07T00:00:00Z").getTime();
+
 function OnboardingGate({ children }: { children: React.ReactNode }) {
+  const settings = useTeamSettings();
+  const [location] = useLocation();
+
+  // While the settings query is rehydrating we don't know yet — render
+  // children rather than blank to avoid a layout flash for everyone.
+  // For a brand-new signup the dashboard will briefly show empty state
+  // before the redirect lands; that's an acceptable trade-off vs. a
+  // global loading gate.
+  if (settings.isLoading || settings.isError) return <>{children}</>;
+
+  const createdAtMs = settings.createdAt ? new Date(settings.createdAt).getTime() : 0;
+  const isNewSignup =
+    !settings.onboardingCompletedAt &&
+    Number.isFinite(createdAtMs) &&
+    createdAtMs >= WIZARD_REENABLE_AT;
+
+  // Don't redirect off /welcome itself, the join flow, or the
+  // standalone field-display page (which is meant to be opened
+  // directly on an iPad).
+  const onWelcome = location === "/welcome";
+  const onFieldDisplay = /^\/games\/[^/]+\/display$/.test(location);
+  const onJoin = location.startsWith("/join/");
+
+  if (isNewSignup && !onWelcome && !onFieldDisplay && !onJoin) {
+    return <Redirect to="/welcome" />;
+  }
   return <>{children}</>;
 }
 

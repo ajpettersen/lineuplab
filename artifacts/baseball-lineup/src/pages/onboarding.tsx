@@ -94,6 +94,30 @@ export default function Onboarding() {
   const [stepIdx, setStepIdx] = useState(0);
   const step = STEPS[stepIdx]!;
   const isLast = stepIdx === STEPS.length - 1;
+  const [skipping, setSkipping] = useState(false);
+
+  // Quiet escape hatch: stamps onboardingCompletedAt so the gate
+  // doesn't bounce them back here on the next page load. Available
+  // from every step except the final one (which has its own Finish).
+  async function handleSkip() {
+    setSkipping(true);
+    try {
+      const resp = await fetch(`${BASE}/api/team-settings/complete-onboarding`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
+      setLocation("/");
+    } catch (err) {
+      toast({
+        title: "Couldn't skip setup",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      setSkipping(false);
+    }
+  }
 
   // ── Step state ──────────────────────────────────────────────────
   const [displayName, setDisplayName] = useState("");
@@ -304,11 +328,24 @@ export default function Onboarding() {
       <div className="mx-auto flex min-h-[100dvh] max-w-3xl flex-col px-4 py-8 sm:px-6 sm:py-12">
         {/* Stepper */}
         <div className="mb-8">
-          <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <span data-testid="text-step-label">
               Step {stepIdx + 1} of {STEPS.length} · {step.label}
             </span>
-            <span>{Math.round(((stepIdx + 1) / STEPS.length) * 100)}%</span>
+            <div className="flex items-center gap-3">
+              <span>{Math.round(((stepIdx + 1) / STEPS.length) * 100)}%</span>
+              {!isLast && (
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  disabled={skipping || finishing}
+                  className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+                  data-testid="button-onboarding-skip"
+                >
+                  {skipping ? "Skipping…" : "Skip setup"}
+                </button>
+              )}
+            </div>
           </div>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div

@@ -24,6 +24,7 @@ export function useTeamSettings() {
     activeFieldPositions,
     usesTournaments,
     onboardingCompletedAt: query.data?.onboardingCompletedAt ?? null,
+    createdAt: query.data?.createdAt ?? null,
     isLoading: query.isLoading,
     isError: query.isError,
     raw: query,
