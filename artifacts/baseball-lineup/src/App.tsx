@@ -41,8 +41,6 @@ import Join from "@/pages/join";
 import Landing from "@/pages/landing";
 import Onboarding from "@/pages/onboarding";
 import NotFound from "@/pages/not-found";
-import { useGetTeamSettings } from "@workspace/api-client-react";
-import { useTeamContext } from "@/hooks/use-team-context";
 
 // gcTime must exceed the persister's max-age, otherwise React Query
 // would garbage-collect entries the persister later tries to rehydrate.
@@ -251,32 +249,19 @@ function StashAndRedirectToSignIn() {
 }
 
 /**
- * First-run gate: head coaches who haven't completed the onboarding
- * wizard get redirected to /welcome from any other route. We only
- * gate the head coach (`isOwner`) — assistant coaches who join via an
- * invite shouldn't see the wizard, and master admins visiting another
- * team in support mode also shouldn't.
+ * Onboarding gate — currently a no-op passthrough.
+ *
+ * The auto-redirect to `/welcome` for head coaches without
+ * `onboardingCompletedAt` was removed by user request: it kept
+ * forcing existing coaches (whose legacy row had a null timestamp)
+ * back into the wizard's "team identity" step, asking them to
+ * re-enter their team name + short name they had already set.
+ *
+ * The `/welcome` route still exists for any coach who navigates
+ * there directly, but no one is forced into it. Team identity is
+ * editable any time from Settings → Team Identity.
  */
 function OnboardingGate({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
-  const { data: ctx } = useTeamContext();
-  const { data: settings } = useGetTeamSettings();
-  const onWelcome = location === "/welcome";
-  const onJoin = location.startsWith("/join/");
-  const onDisplay = location.includes("/display");
-  // Wait for both queries to resolve before deciding — otherwise we'd
-  // briefly redirect users whose onboarding is already complete.
-  if (!ctx || !settings) return <>{children}</>;
-  const needsOnboarding =
-    ctx.isOwner && !ctx.currentUser.isMasterAdmin && !settings.onboardingCompletedAt;
-  if (needsOnboarding && !onWelcome && !onJoin && !onDisplay) {
-    return <Redirect to="/welcome" />;
-  }
-  // If they finished the wizard but somehow land back on /welcome,
-  // bounce them home so the route isn't a permanent dead-end.
-  if (!needsOnboarding && onWelcome) {
-    return <Redirect to="/" />;
-  }
   return <>{children}</>;
 }
 
