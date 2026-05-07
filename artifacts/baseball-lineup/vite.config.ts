@@ -86,10 +86,14 @@ export default defineConfig({
         start_url: ".",
         scope: ".",
         icons: [
+          // Single 1024×1024 master icon — modern iOS/Android/Chrome
+          // resample down to whatever size they need from this. The
+          // image was generated with ~15% safe-zone padding so iOS's
+          // circular mask doesn't clip the shield.
           {
-            src: "favicon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
+            src: "icon.png",
+            sizes: "192x192 512x512 1024x1024",
+            type: "image/png",
             purpose: "any maskable",
           },
         ],

@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "7NkF884R5ClEUXGhdXaaU"
+uri = "file://attached_assets/generated_images/lineup-lab-icon.png"
+type = "image"
+title = "lineup lab app icon"
