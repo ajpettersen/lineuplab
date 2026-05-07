@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin, ClipboardList, X, Info } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
+import { HelpCard } from "@/components/help-card";
 import { format, isToday, isTomorrow } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
@@ -396,6 +397,13 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
+
+        {/* Ask-the-app FAQ — sits at the bottom so it's a discoverable
+            "I'm stuck" escape hatch without competing with the primary
+            dashboard cards above. Spans both columns on large screens. */}
+        <div className="lg:col-span-2">
+          <HelpCard />
+        </div>
 
         {/* Playing Time Alert */}
         {mostBenchPlayer && mostBenchPlayer.benchInnings > 0 && (
