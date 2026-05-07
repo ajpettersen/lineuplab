@@ -585,7 +585,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
         </div>
       </header>
-      <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+      <main
+        className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
+        style={{
+          // iPhone home-indicator clearance: extra bottom padding equal to
+          // the safe-area inset so the last card / button on long pages
+          // isn't hidden behind the system gesture bar in the PWA. 0px on
+          // desktop and non-PWA browsers.
+          paddingBottom: "calc(1rem + env(safe-area-inset-bottom))",
+        }}
+      >
         {children}
       </main>
       {/* First-time onboarding modal — auto-opens once per (user, team)

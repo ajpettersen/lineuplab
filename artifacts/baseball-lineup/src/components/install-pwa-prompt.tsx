@@ -76,7 +76,7 @@ export function InstallPwaPrompt() {
 
   return (
     <div
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] rounded-lg border border-primary/20 bg-card shadow-lg p-3 flex items-start gap-3"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] rounded-lg border border-primary/20 bg-card shadow-lg p-3 flex items-start gap-3"
       data-testid="banner-install-pwa"
       role="dialog"
       aria-live="polite"
