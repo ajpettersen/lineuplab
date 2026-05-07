@@ -66,20 +66,33 @@ router.get("/admin/teams", async (_req, res): Promise<void> => {
   //       written. A coach who only JOINED someone else's team via
   //       invite never owns players under their own user_id, so they
   //       still won't show up here.
-  const [ownersFromMemberships, ownersFromPlayers] = await Promise.all([
-    db
-      .selectDistinct({ ownerUserId: teamMembershipsTable.ownerUserId })
-      .from(teamMembershipsTable)
-      .where(eq(teamMembershipsTable.isOwner, true)),
-    db
-      .selectDistinct({ userId: playersTable.userId })
-      .from(playersTable)
-      .where(isNull(playersTable.deletedAt)),
-  ]);
+  // Three sources, unioned:
+  //   (a) `isOwner=true` rows in team_memberships (modern signup path)
+  //   (b) users with at least one active player (legacy accounts whose
+  //       owner-row was never seeded, but still have real roster data)
+  //   (c) users with a team_settings row (covers the in-between case
+  //       where an account customized team identity / branding but
+  //       hasn't built a roster yet AND somehow has no isOwner row —
+  //       e.g. settings written via a code path that bypassed
+  //       ensureOwnerMembership). These show up as zero-member teams
+  //       under "Show empty teams".
+  const [ownersFromMemberships, ownersFromPlayers, ownersFromSettings] =
+    await Promise.all([
+      db
+        .selectDistinct({ ownerUserId: teamMembershipsTable.ownerUserId })
+        .from(teamMembershipsTable)
+        .where(eq(teamMembershipsTable.isOwner, true)),
+      db
+        .selectDistinct({ userId: playersTable.userId })
+        .from(playersTable)
+        .where(isNull(playersTable.deletedAt)),
+      db.selectDistinct({ userId: teamSettingsTable.userId }).from(teamSettingsTable),
+    ]);
   const owners = Array.from(
     new Set([
       ...ownersFromMemberships.map((r) => r.ownerUserId),
       ...ownersFromPlayers.map((r) => r.userId),
+      ...ownersFromSettings.map((r) => r.userId),
     ]),
   );
 
