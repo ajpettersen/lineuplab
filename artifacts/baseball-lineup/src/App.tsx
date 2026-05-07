@@ -1,6 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import {
+  queryPersister,
+  PERSIST_BUSTER,
+  PERSIST_MAX_AGE,
+  purgePersistedQueryCache,
+} from "@/lib/query-persister";
 import {
   ClerkProvider,
   SignIn,
@@ -36,7 +43,15 @@ import NotFound from "@/pages/not-found";
 import { useGetTeamSettings } from "@workspace/api-client-react";
 import { useTeamContext } from "@/hooks/use-team-context";
 
-const queryClient = new QueryClient();
+// gcTime must exceed the persister's max-age, otherwise React Query
+// would garbage-collect entries the persister later tries to rehydrate.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: PERSIST_MAX_AGE,
+    },
+  },
+});
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -148,6 +163,12 @@ function ClerkQueryClientCacheInvalidator() {
         prevUserIdRef.current !== userId
       ) {
         qc.clear();
+        // Also wipe the IndexedDB-persisted cache directly. qc.clear()
+        // alone isn't enough: the persister has a 1s write throttle,
+        // so a dehydrate scheduled before the user change can still
+        // overwrite IDB *after* the clear, leaking data into the next
+        // sign-in on a shared iPad. See purgePersistedQueryCache().
+        void purgePersistedQueryCache();
       }
       prevUserIdRef.current = userId;
     });
@@ -347,7 +368,21 @@ function ClerkProviderWithRoutes() {
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister: queryPersister,
+          maxAge: PERSIST_MAX_AGE,
+          buster: PERSIST_BUSTER,
+          // Don't persist mutation state or in-flight queries — they
+          // can't safely resume across reloads. Successful query
+          // results (the data we want offline) are persisted by
+          // default.
+          dehydrateOptions: {
+            shouldDehydrateMutation: () => false,
+          },
+        }}
+      >
         <ClerkQueryClientCacheInvalidator />
         <TooltipProvider>
           <Switch>
@@ -358,7 +393,7 @@ function ClerkProviderWithRoutes() {
           </Switch>
           <Toaster />
         </TooltipProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </ClerkProvider>
   );
 }

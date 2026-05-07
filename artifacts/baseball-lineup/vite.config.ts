@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { VitePWA } from "vite-plugin-pwa";
 
 const rawPort = process.env.PORT;
 
@@ -32,6 +33,71 @@ export default defineConfig({
     react(),
     tailwindcss({ optimize: false }),
     runtimeErrorOverlay(),
+    // Phase 1 offline support: registers a service worker so the app
+    // shell loads with no network (essential for an iPad opened at a
+    // field). We deliberately do NOT runtime-cache /api responses
+    // here — the React Query persister (lib/query-persister.ts) owns
+    // data caching and is per-user-aware via qc.clear() on sign-out.
+    // Letting the SW also cache /api would let a previous user's
+    // responses leak into the next sign-in on a shared device.
+    VitePWA({
+      registerType: "autoUpdate",
+      injectRegister: "auto",
+      workbox: {
+        // SPA fallback — every navigation request without a real file
+        // gets index.html so wouter can take over even when offline.
+        navigateFallback: "index.html",
+        // Don't intercept /api at all (see comment above) and keep
+        // Clerk's auth flow exclusively on the network so login
+        // never gets served a stale page.
+        navigateFallbackDenylist: [/^\/api\//, /^\/sign-in/, /^\/sign-up/],
+        // Bump the precache size cap so larger JS chunks (recharts,
+        // dnd-kit) don't get silently skipped.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            // Google Fonts CSS — small, fine to cache aggressively.
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\//,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "google-fonts-stylesheets" },
+          },
+          {
+            // Google Fonts WOFF2 binaries.
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
+      manifest: {
+        name: "Lineup Lab",
+        short_name: "Lineup Lab",
+        description:
+          "Build lineups, run rotations, and manage tournament days for youth baseball / softball teams.",
+        // Deep navy primary from the broadcast theme.
+        theme_color: "#0a2552",
+        background_color: "#0a2552",
+        display: "standalone",
+        orientation: "any",
+        start_url: ".",
+        scope: ".",
+        icons: [
+          {
+            src: "favicon.svg",
+            sizes: "any",
+            type: "image/svg+xml",
+            purpose: "any maskable",
+          },
+        ],
+      },
+      // Lets us hit the SW in `pnpm dev` previews so we can verify
+      // offline behavior in Replit before publishing.
+      devOptions: { enabled: true, type: "module" },
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

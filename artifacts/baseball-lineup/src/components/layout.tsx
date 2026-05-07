@@ -33,6 +33,8 @@ import { TeamSwitcher } from "@/components/team-switcher";
 import { CoachProfilePrompt } from "@/components/coach-profile-prompt";
 import { TeamNamePrompt } from "@/components/team-name-prompt";
 import { TeamThemeApplier } from "@/components/team-theme-applier";
+import { SyncStatusChip } from "@/components/sync-status-chip";
+import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
 import { useAdminMe } from "@/hooks/use-admin";
@@ -436,6 +438,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <div className="shrink-0">
+            <SyncStatusChip />
+          </div>
+          <div className="shrink-0">
             <TeamSwitcher />
           </div>
           {displayIdentity && (
@@ -516,6 +521,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* Inject per-team primary/secondary CSS variables on the html
           element so the brand follows the active team. */}
       <TeamThemeApplier />
+      {/* iOS-only nudge to "Add to Home Screen" so the app installs
+          as a PWA — required for the service worker to keep the page
+          available with no wifi at the field. */}
+      <InstallPwaPrompt />
     </div>
   );
 }
