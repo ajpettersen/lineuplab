@@ -563,10 +563,17 @@ function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
   );
 }
 
+// Brightness pass (May 2026) — every grass gradient bumped ~20-30%,
+// night ambient/vignette opacities relaxed, and the field container's
+// inset shadow softened from 0.55 → 0.35. Coaches reported the field
+// reading "a little dark" indoors / under bad gym lighting — these
+// numbers keep the broadcast time-of-day vibe but lift overall
+// luminance enough that chips pop and the diamond stays legible at
+// arm's length on a phone.
 const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
   morning: {
     grassGradient:
-      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(58, 142, 76) 0%, rgb(34, 102, 50) 55%, rgb(16, 56, 26) 100%)",
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(78, 168, 96) 0%, rgb(48, 124, 66) 55%, rgb(24, 72, 36) 100%)",
     topVignette: "from-amber-200/20 to-transparent",
     ambientOverlay:
       "bg-gradient-to-br from-amber-200/30 via-yellow-100/10 to-transparent",
@@ -575,26 +582,26 @@ const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
   },
   day: {
     grassGradient:
-      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(38, 120, 60) 0%, rgb(22, 86, 40) 55%, rgb(8, 38, 18) 100%)",
-    topVignette: "from-black/30 to-transparent",
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(58, 146, 80) 0%, rgb(34, 108, 54) 55%, rgb(14, 54, 26) 100%)",
+    topVignette: "from-black/20 to-transparent",
     ambientOverlay: null,
     stadiumLights: false,
     label: "day",
   },
   evening: {
     grassGradient:
-      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(48, 112, 58) 0%, rgb(28, 78, 38) 55%, rgb(12, 42, 22) 100%)",
-    topVignette: "from-orange-500/30 via-rose-400/10 to-transparent",
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(66, 134, 76) 0%, rgb(40, 96, 50) 55%, rgb(18, 56, 30) 100%)",
+    topVignette: "from-orange-500/25 via-rose-400/10 to-transparent",
     ambientOverlay:
-      "bg-gradient-to-br from-orange-500/35 via-rose-400/15 to-transparent",
+      "bg-gradient-to-br from-orange-500/30 via-rose-400/12 to-transparent",
     stadiumLights: false,
     label: "evening",
   },
   night: {
     grassGradient:
-      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(22, 78, 40) 0%, rgb(12, 48, 24) 55%, rgb(4, 22, 10) 100%)",
-    topVignette: "from-slate-950/70 to-transparent",
-    ambientOverlay: "bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/30",
+      "radial-gradient(ellipse 75% 60% at 50% 60%, rgb(36, 100, 54) 0%, rgb(20, 66, 34) 55%, rgb(8, 32, 16) 100%)",
+    topVignette: "from-slate-950/40 to-transparent",
+    ambientOverlay: "bg-gradient-to-b from-slate-950/20 via-transparent to-slate-950/15",
     stadiumLights: true,
     label: "night",
   },
@@ -1674,7 +1681,7 @@ export default function FieldDisplay() {
            *  on lg, where the parent already constrains height to the
            *  viewport and the field is allowed to fill whatever's left. */}
           <div
-            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-md:portrait:min-h-0 max-lg:landscape:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]"
+            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-md:portrait:min-h-0 max-lg:landscape:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.35)]"
             style={{ background: lighting.grassGradient }}
             data-lighting={lighting.label}
             data-testid={`field-lighting-${lighting.label}`}
