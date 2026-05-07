@@ -290,6 +290,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         style={{
           background:
             "linear-gradient(135deg, hsl(220 85% 18%) 0%, hsl(220 85% 24%) 60%, hsl(220 85% 20%) 100%)",
+          paddingTop: "env(safe-area-inset-top)",
+          height: "calc(4.5rem + env(safe-area-inset-top))",
+          paddingLeft: "max(1rem, env(safe-area-inset-left))",
+          paddingRight: "max(1rem, env(safe-area-inset-right))",
         }}
       >
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-accent" />
