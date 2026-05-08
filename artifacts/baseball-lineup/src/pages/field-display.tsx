@@ -32,7 +32,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ListOrdered, Map as MapIcon, Maximize2, Moon, Play, RotateCcw, Sun, WifiOff } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Moon, Play, Plus, RotateCcw, Sun, SunDim, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Every position the field display knows how to lay out. The team's actual
@@ -731,12 +731,22 @@ export default function FieldDisplay() {
     return loadJSON<LineupEntry[]>(lineupCacheKey(id));
   }, [id]);
 
+  // Pause the 5s background poll while we still have unsynced writes
+  // for that side. Without this, a successful GET (which still works on
+  // a flaky/captive-portal connection where POST/PATCH fails) overwrites
+  // the optimistic UI with stale server state — the coach sees their
+  // edits "revert" mid-game even though the pending write is safely in
+  // localStorage. Polling resumes automatically the moment the pending
+  // queue drains and `hasUnsynced*` flips false. We also disable
+  // `refetchOnWindowFocus` for the same reason: tabbing back to the
+  // iPad with pending writes shouldn't refetch and clobber.
   const { data: game } = useGetGame(id, {
     query: {
       enabled: !!id,
       queryKey: getGetGameQueryKey(id),
-      refetchInterval: POLL_MS,
+      refetchInterval: hasUnsyncedScore ? false : POLL_MS,
       refetchIntervalInBackground: true,
+      refetchOnWindowFocus: !hasUnsyncedScore,
       initialData: initialGame,
       // Mark stale so a refetch still happens once online — initialData
       // is just a paint-time placeholder, not authoritative.
@@ -747,8 +757,9 @@ export default function FieldDisplay() {
     query: {
       enabled: !!id,
       queryKey: getGetGameLineupQueryKey(id),
-      refetchInterval: POLL_MS,
+      refetchInterval: hasUnsyncedLineup ? false : POLL_MS,
       refetchIntervalInBackground: true,
+      refetchOnWindowFocus: !hasUnsyncedLineup,
       initialData: initialLineup,
       initialDataUpdatedAt: 0,
     },
@@ -976,9 +987,65 @@ export default function FieldDisplay() {
   // Pick the field lighting palette based on the game's scheduled start.
   // Memoized so a 5s lineup poll doesn't re-derive on every tick — only when
   // the game date itself changes (very rare during a live game).
+  // Brightness mode — tri-state cycle that lets the coach pick a screen
+  // treatment on the fly without diving into settings:
+  //   • "auto"     — default; time-of-day lighting palette + standard chip
+  //                  contrast. The right call for shaded dugouts and
+  //                  evening games.
+  //   • "sunlight" — force the brightest grass palette, drop the field's
+  //                  inner shadow, lay a faint white wash over the page
+  //                  to lift mid-tones, and bump chip contrast. Designed
+  //                  for direct sun on the iPad/phone screen where the
+  //                  dim factory backlight makes everything look gray.
+  //   • "dim"      — translucent black overlay across the whole page so
+  //                  the iPad isn't burning battery between innings.
+  // Persisted to localStorage so an accidental Exit → back doesn't lose
+  // the setting mid-game. Old `fd-dim-mode` boolean key is migrated on
+  // first read so existing dim-mode users don't lose their preference.
+  // Declared above the `lighting` memo because the memo reads
+  // `sunlightMode` to override the time-of-day palette.
+  type BrightnessMode = "auto" | "sunlight" | "dim";
+  const BRIGHTNESS_KEY = "fd-brightness-mode";
+  const DIM_KEY_LEGACY = "fd-dim-mode";
+  const [brightnessMode, setBrightnessMode] = useState<BrightnessMode>(() => {
+    try {
+      if (typeof window === "undefined") return "auto";
+      const v = localStorage.getItem(BRIGHTNESS_KEY);
+      if (v === "auto" || v === "sunlight" || v === "dim") return v;
+      // Migrate the old boolean dim flag.
+      if (localStorage.getItem(DIM_KEY_LEGACY) === "1") return "dim";
+      return "auto";
+    } catch {
+      return "auto";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(BRIGHTNESS_KEY, brightnessMode);
+      // Drop the legacy key once we've upgraded so it doesn't drift.
+      localStorage.removeItem(DIM_KEY_LEGACY);
+    } catch {
+      // Private mode / storage disabled — silent no-op.
+    }
+  }, [brightnessMode]);
+  const cycleBrightness = () =>
+    setBrightnessMode((m) =>
+      m === "auto" ? "sunlight" : m === "sunlight" ? "dim" : "auto",
+    );
+  const dimMode = brightnessMode === "dim";
+  const sunlightMode = brightnessMode === "sunlight";
+
+  // Time-of-day palette, unless the coach has flipped on Sunlight mode —
+  // in which case force the brightest preset (`morning`) regardless of
+  // game time, so a 7pm tournament under stadium lights still gets the
+  // washed-out-by-sun treatment when needed (e.g. east-facing dugout
+  // staring straight into a low afternoon sun).
   const lighting = useMemo(
-    () => FIELD_LIGHTING[getLightingMode(game?.gameDate)],
-    [game?.gameDate],
+    () =>
+      sunlightMode
+        ? FIELD_LIGHTING.morning
+        : FIELD_LIGHTING[getLightingMode(game?.gameDate)],
+    [game?.gameDate, sunlightMode],
   );
 
   // Dim Mode — drops a translucent black overlay across the whole page so the
@@ -999,22 +1066,6 @@ export default function FieldDisplay() {
   // mid-inning. State is intentionally not persisted — switching games or
   // reloading should land back on the field.
   const [mobileTab, setMobileTab] = useState<"field" | "order">("field");
-  const DIM_KEY = "fd-dim-mode";
-  const [dimMode, setDimMode] = useState<boolean>(() => {
-    try {
-      return typeof window !== "undefined" && localStorage.getItem(DIM_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(DIM_KEY, dimMode ? "1" : "0");
-    } catch {
-      // Private mode / storage disabled — silent no-op; the in-memory state
-      // still works for this session.
-    }
-  }, [dimMode]);
 
   /**
    * Apply a single drag-drop move to the lineup. Mirrors the semantics from
@@ -1153,34 +1204,31 @@ export default function FieldDisplay() {
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
         } catch {
-          // Distinguish a clean offline-drop from a real server error.
-          // If the browser flipped offline mid-POST, restore pending so
-          // we retry on reconnect. (Captive-portal/blocked-but-online
-          // scenarios fall through to the toast path below — better to
-          // show the coach a one-off error than silently lose the move.)
-          if (typeof navigator !== "undefined" && !navigator.onLine) {
-            // Restore only if no newer drag has set a fresher pending
-            // (which would already be persisted by saveLineupOptimistically).
-            if (pendingLineupRef.current == null) {
-              pendingLineupRef.current = toSave;
-              saveJSON(pendingSaveKey(id), toSave);
-            }
-            setHasUnsyncedLineup(true);
-            return;
-          }
-          // Real server error: drop pending, refetch authoritative state,
-          // toast the coach. Same logic as before — don't snapshot-rollback
-          // because that could clobber newer successful state.
+          // ───────── DATA-LOSS FIX (May 2026) ─────────
+          // We used to distinguish "offline drop" (restore pending) from
+          // "real server error" (CLEAR pending + refetch + toast). The
+          // problem: `navigator.onLine` reports `true` on flaky/captive-
+          // portal connections where the actual fetch fails, so a coach
+          // editing the lineup at a sketchy ballpark would have their
+          // edits silently wiped — pending cleared, query invalidated,
+          // and the screen snapped back to the stale server state. The
+          // `online` event eventually firing did NOT recover the data
+          // because by then we'd already destroyed the localStorage
+          // backup.
+          //
+          // New policy: ANY thrown error is treated as transient. Keep
+          // the pending write in localStorage + ref, do NOT invalidate
+          // the query (which would overwrite optimistic state with stale
+          // server data), and let the backup-drain timer / online-event
+          // / next user action retry the POST. Worst case on a real
+          // 4xx/5xx is the coach sees "Offline · will sync" forever —
+          // they can reload to inspect — but no edit is ever lost
+          // without a successful round trip.
           if (pendingLineupRef.current == null) {
-            clearKey(pendingSaveKey(id));
-            setHasUnsyncedLineup(false);
+            pendingLineupRef.current = toSave;
+            saveJSON(pendingSaveKey(id), toSave);
           }
-          qc.invalidateQueries({ queryKey });
-          toast({
-            title: "Couldn't save move",
-            description: "Pulled the latest lineup from the server. Try again.",
-            variant: "destructive",
-          });
+          setHasUnsyncedLineup(true);
         }
       })
       .catch(() => {
@@ -1238,27 +1286,19 @@ export default function FieldDisplay() {
           setLastSavedAt(Date.now());
           qc.invalidateQueries({ queryKey });
         } catch {
-          if (typeof navigator !== "undefined" && !navigator.onLine) {
-            // Offline-drop: restore pending only if no newer tap has
-            // already replaced it (which would already be persisted).
-            if (pendingGamePatchRef.current == null) {
-              pendingGamePatchRef.current = patch;
-              saveJSON(pendingGamePatchKey(id), patch);
-            }
-            setHasUnsyncedScore(true);
-            return;
-          }
-          // Real server error — roll back to server truth, surface to coach.
+          // Same data-loss-prevention policy as flushSave above. Treat
+          // every failed PATCH as transient and keep the pending patch
+          // in localStorage + ref so the retry timer (or the next
+          // online-event flip) drains it. We must NOT invalidate the
+          // query here — doing so refetches stale server data and
+          // wipes the coach's optimistic score from the screen, which
+          // is what was happening on flaky-WiFi setups where
+          // `navigator.onLine` lies.
           if (pendingGamePatchRef.current == null) {
-            clearKey(pendingGamePatchKey(id));
-            setHasUnsyncedScore(false);
+            pendingGamePatchRef.current = patch;
+            saveJSON(pendingGamePatchKey(id), patch);
           }
-          qc.invalidateQueries({ queryKey });
-          toast({
-            title: "Couldn't save score",
-            description: "Pulled the latest from the server. Try again.",
-            variant: "destructive",
-          });
+          setHasUnsyncedScore(true);
         }
       })
       .catch(() => {
@@ -1505,6 +1545,32 @@ export default function FieldDisplay() {
           >
             <ChevronRight className="h-6 w-6" />
           </Button>
+          {/* Extra-innings nudger.
+            *
+            * Only appears when the coach has navigated to the LAST inning
+            * (the chevron-right is disabled at that point — this is the
+            * "we're tied, going extras" escape hatch). Tapping bumps
+            * `game.innings` by one through the same offline-aware PATCH
+            * chain as score, so it survives a WiFi drop and instantly
+            * unblocks the next-inning chevron above. We cap at 12 to
+            * keep the inning chip readable in the broadcast bar — twelve
+            * innings of youth ball is already a Cal Ripken story. */}
+          {currentInning >= innings && innings < 12 && (
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() =>
+                saveGamePatchOptimistically({ innings: innings + 1 })
+              }
+              className="h-10 px-2 sm:h-11 sm:px-3 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 rounded-none flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold"
+              data-testid="button-add-extra-inning"
+              aria-label="Add extra inning"
+              title="Add an extra inning"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Extra</span>
+            </Button>
+          )}
         </div>
 
         {/* Right cluster: live status, score, fullscreen */}
@@ -1613,21 +1679,81 @@ export default function FieldDisplay() {
               label={formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || "Them"}
             />
           </div>
+          {/* End Game.
+            *
+            * Visible "I'm done coaching" button — distinct from the small
+            * Exit chevron in the top-left because that one feels like
+            * "step away" while this is a finalization. Confirms with a
+            * native dialog (destructive enough to want a tap-tap, but
+            * cheap enough to not warrant a full modal), then routes back
+            * to the game-detail page where the coach can review/finalize
+            * the score and mark the game complete. We do NOT auto-set
+            * `status: "completed"` here on purpose — the score steppers
+            * on the field display are good enough mid-game but a parent
+            * keeping a real book usually wants to reconcile before
+            * locking the record. */}
+          <Link href={`/games/${id}`}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                if (
+                  typeof window !== "undefined" &&
+                  !window.confirm(
+                    "End game and head back to the game screen to finalize the score?",
+                  )
+                ) {
+                  e.preventDefault();
+                }
+              }}
+              className="hidden sm:flex items-center gap-1.5 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
+              data-testid="button-end-game"
+              aria-label="End game"
+              title="End game and return to the game screen"
+            >
+              <Flag className="h-3.5 w-3.5" aria-hidden="true" />
+              End Game
+            </Button>
+          </Link>
+          {/* Brightness cycle: Auto → Sunlight → Dim → Auto. One tap to
+            * advance; the icon shows what mode is currently active so
+            * the coach can read it at a glance without remembering what
+            * the next tap does. */}
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setDimMode((d) => !d)}
+            onClick={cycleBrightness}
             className={`px-2 ${
-              dimMode
-                ? "text-broadcast-gold hover:text-amber-200 hover:bg-slate-800/60"
-                : "text-slate-500 hover:text-white hover:bg-slate-800/60"
+              sunlightMode
+                ? "text-amber-300 hover:text-amber-200 hover:bg-slate-800/60"
+                : dimMode
+                  ? "text-broadcast-gold hover:text-amber-200 hover:bg-slate-800/60"
+                  : "text-slate-500 hover:text-white hover:bg-slate-800/60"
             }`}
-            aria-label={dimMode ? "Disable dim mode (brighten screen)" : "Enable dim mode (save battery)"}
-            aria-pressed={dimMode}
-            title={dimMode ? "Brighten" : "Dim screen to save battery"}
-            data-testid="button-dim-mode"
+            aria-label={
+              sunlightMode
+                ? "Sunlight mode on — tap to dim screen"
+                : dimMode
+                  ? "Dim mode on — tap to return to auto"
+                  : "Auto brightness — tap for sunlight mode"
+            }
+            title={
+              sunlightMode
+                ? "Sunlight (max contrast for direct sun) — tap to dim"
+                : dimMode
+                  ? "Dim (saves battery) — tap to return to auto"
+                  : "Auto brightness — tap for sunlight mode"
+            }
+            data-testid="button-brightness-mode"
+            data-brightness-mode={brightnessMode}
           >
-            {dimMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {sunlightMode ? (
+              <Sun className="h-4 w-4" />
+            ) : dimMode ? (
+              <Moon className="h-4 w-4" />
+            ) : (
+              <SunDim className="h-4 w-4" />
+            )}
           </Button>
           <Button
             variant="ghost"
@@ -2028,6 +2154,20 @@ export default function FieldDisplay() {
         data-testid="dim-overlay"
         className={`pointer-events-none fixed inset-0 z-50 bg-black transition-opacity duration-300 ${
           dimMode ? "opacity-40" : "opacity-0"
+        }`}
+      />
+      {/* Sunlight wash. Lays a faint white veil across the page (NOT the
+       * field itself — the field gets its bright `morning` palette via
+       * the `lighting` override above) to lift mid-tones in the dark
+       * scoreboard chrome under direct outdoor sun. 12% is the sweet
+       * spot — high enough to actually punch through glare on an iPad
+       * at full brightness, low enough that chip text and the gold
+       * accent line don't go washed out themselves. */}
+      <div
+        aria-hidden="true"
+        data-testid="sunlight-overlay"
+        className={`pointer-events-none fixed inset-0 z-50 bg-white transition-opacity duration-300 ${
+          sunlightMode ? "opacity-[0.12]" : "opacity-0"
         }`}
       />
     </div>
