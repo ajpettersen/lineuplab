@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
+import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -67,6 +68,9 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
   // regardless of direction so they don't crowd out real data.
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Click-through: opens the per-player game-log dialog. Reused across
+  // every stat-table click site.
+  const [logPlayerId, setLogPlayerId] = useState<number | null>(null);
 
   const statsMap = Object.fromEntries(battingStats.map((b) => [b.playerId, b]));
 
@@ -415,7 +419,14 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                   return (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30">
                       <td className="py-2.5 pr-4">
-                        <div className="font-medium">{p.name}</div>
+                        <button
+                          type="button"
+                          onClick={() => setLogPlayerId(p.id)}
+                          className="font-medium text-left hover:underline focus:underline focus:outline-none"
+                          title="View game log"
+                        >
+                          {p.name}
+                        </button>
                         {p.number != null && <div className="text-xs text-muted-foreground">#{p.number}</div>}
                       </td>
                       {COLS.map((c) => {
@@ -539,6 +550,12 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PlayerGameLogDialog
+        playerId={logPlayerId}
+        open={logPlayerId != null}
+        onOpenChange={(v) => !v && setLogPlayerId(null)}
+      />
     </div>
   );
 }

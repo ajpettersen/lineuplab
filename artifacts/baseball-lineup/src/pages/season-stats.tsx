@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useListPlayers } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BattingTab } from "@/components/batting-tab";
+import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -30,6 +32,9 @@ function usePitchingStats() {
 function PitchingTab() {
   const { data: rows = [], isLoading } = usePitchingStats();
   const withOutings = rows.filter((r) => r.outings > 0);
+  // Same click-through as BattingTab — clicking a pitcher's name opens
+  // their per-game log (batting + pitching combined).
+  const [logPlayerId, setLogPlayerId] = useState<number | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -65,7 +70,14 @@ function PitchingTab() {
                   {withOutings.map((r) => (
                     <tr key={r.playerId} className="border-b border-border/50 hover:bg-muted/30">
                       <td className="py-2.5 pr-4">
-                        <div className="font-medium">{r.playerName}</div>
+                        <button
+                          type="button"
+                          onClick={() => setLogPlayerId(r.playerId)}
+                          className="font-medium text-left hover:underline focus:underline focus:outline-none"
+                          title="View game log"
+                        >
+                          {r.playerName}
+                        </button>
                         {r.playerNumber != null && (
                           <div className="text-xs text-muted-foreground">#{r.playerNumber}</div>
                         )}
@@ -87,6 +99,12 @@ function PitchingTab() {
           )}
         </CardContent>
       </Card>
+
+      <PlayerGameLogDialog
+        playerId={logPlayerId}
+        open={logPlayerId != null}
+        onOpenChange={(v) => !v && setLogPlayerId(null)}
+      />
     </div>
   );
 }

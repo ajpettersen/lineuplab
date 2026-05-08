@@ -3,7 +3,14 @@ import { gateWrites } from "../lib/permissions";
 import { and, eq, isNull } from "drizzle-orm";
 import multer from "multer";
 import { z } from "zod";
-import { db, playersTable } from "@workspace/db";
+import {
+  db,
+  playersTable,
+  gamesTable,
+  gameBattingLinesTable,
+  pitchCountsTable,
+} from "@workspace/db";
+import { desc } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { chargeAiCall } from "../lib/ai-usage";
 import {
@@ -470,6 +477,184 @@ router.post("/players/:id/restore", async (req, res): Promise<void> => {
     return;
   }
   res.json(player);
+});
+
+// ---------------------------------------------------------------------------
+// Per-player game log. Powers the click-through from the season stats
+// tables (Batting, Pitching, Rotation Report). Returns one row per
+// game the player has either a batting line or a pitch count for, in
+// reverse-chronological order. Hand-rolled (not in OpenAPI) — clients
+// call with plain fetch, matching the `/api/batting` + `/api/pitching`
+// pattern documented in replit.md.
+// ---------------------------------------------------------------------------
+router.get("/players/:id/game-log", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid player id" });
+    return;
+  }
+  // Confirm ownership before exposing any per-game data; without this
+  // check a coach could probe another team's player ids.
+  const [player] = await db
+    .select({
+      id: playersTable.id,
+      name: playersTable.name,
+      number: playersTable.number,
+      canPitch: playersTable.canPitch,
+    })
+    .from(playersTable)
+    .where(
+      and(
+        eq(playersTable.id, id),
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+      ),
+    );
+  if (!player) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+
+  // Two parallel reads: per-game batting lines + per-game pitch counts.
+  // Both join `games` so we can include date/opponent/score without a
+  // second round-trip and so that soft-deleted games drop out.
+  const [battingRows, pitchingRows] = await Promise.all([
+    db
+      .select({
+        gameId: gameBattingLinesTable.gameId,
+        gameDate: gamesTable.gameDate,
+        opponent: gamesTable.opponent,
+        gameType: gamesTable.gameType,
+        ourScore: gamesTable.ourScore,
+        opponentScore: gamesTable.opponentScore,
+        status: gamesTable.status,
+        ab: gameBattingLinesTable.ab,
+        runs: gameBattingLinesTable.runs,
+        hits: gameBattingLinesTable.hits,
+        doubles: gameBattingLinesTable.doubles,
+        triples: gameBattingLinesTable.triples,
+        hr: gameBattingLinesTable.hr,
+        rbi: gameBattingLinesTable.rbi,
+        bb: gameBattingLinesTable.bb,
+        k: gameBattingLinesTable.k,
+        hbp: gameBattingLinesTable.hbp,
+        sac: gameBattingLinesTable.sac,
+        sb: gameBattingLinesTable.sb,
+      })
+      .from(gameBattingLinesTable)
+      .innerJoin(gamesTable, eq(gamesTable.id, gameBattingLinesTable.gameId))
+      .where(
+        and(
+          eq(gameBattingLinesTable.userId, userId),
+          eq(gameBattingLinesTable.playerId, id),
+          isNull(gamesTable.deletedAt),
+        ),
+      ),
+    db
+      .select({
+        gameId: pitchCountsTable.gameId,
+        gameDate: gamesTable.gameDate,
+        opponent: gamesTable.opponent,
+        gameType: gamesTable.gameType,
+        ourScore: gamesTable.ourScore,
+        opponentScore: gamesTable.opponentScore,
+        status: gamesTable.status,
+        pitches: pitchCountsTable.pitches,
+        notes: pitchCountsTable.notes,
+      })
+      .from(pitchCountsTable)
+      .innerJoin(gamesTable, eq(gamesTable.id, pitchCountsTable.gameId))
+      .where(
+        and(
+          eq(pitchCountsTable.userId, userId),
+          eq(pitchCountsTable.playerId, id),
+          isNull(gamesTable.deletedAt),
+        ),
+      ),
+  ]);
+
+  // Merge by gameId so a game where the kid both batted AND pitched is
+  // a single row (the most common case for youth ball). When merging,
+  // the game header columns are identical between sources so we just
+  // take whichever populated them first.
+  type GameLogRow = {
+    gameId: number;
+    gameDate: string;
+    opponent: string;
+    gameType: string | null;
+    ourScore: number | null;
+    opponentScore: number | null;
+    status: string;
+    batting: {
+      ab: number;
+      runs: number;
+      hits: number;
+      doubles: number;
+      triples: number;
+      hr: number;
+      rbi: number;
+      bb: number;
+      k: number;
+      hbp: number;
+      sac: number;
+      sb: number;
+    } | null;
+    pitching: { pitches: number; notes: string | null } | null;
+  };
+  const byGame = new Map<number, GameLogRow>();
+  for (const r of battingRows) {
+    byGame.set(r.gameId, {
+      gameId: r.gameId,
+      gameDate: r.gameDate.toISOString(),
+      opponent: r.opponent,
+      gameType: r.gameType,
+      ourScore: r.ourScore,
+      opponentScore: r.opponentScore,
+      status: r.status,
+      batting: {
+        ab: r.ab,
+        runs: r.runs,
+        hits: r.hits,
+        doubles: r.doubles,
+        triples: r.triples,
+        hr: r.hr,
+        rbi: r.rbi,
+        bb: r.bb,
+        k: r.k,
+        hbp: r.hbp,
+        sac: r.sac,
+        sb: r.sb,
+      },
+      pitching: null,
+    });
+  }
+  for (const r of pitchingRows) {
+    const cur = byGame.get(r.gameId);
+    if (cur) {
+      cur.pitching = { pitches: r.pitches, notes: r.notes };
+    } else {
+      byGame.set(r.gameId, {
+        gameId: r.gameId,
+        gameDate: r.gameDate.toISOString(),
+        opponent: r.opponent,
+        gameType: r.gameType,
+        ourScore: r.ourScore,
+        opponentScore: r.opponentScore,
+        status: r.status,
+        batting: null,
+        pitching: { pitches: r.pitches, notes: r.notes },
+      });
+    }
+  }
+  const games = Array.from(byGame.values()).sort(
+    (a, b) => new Date(b.gameDate).getTime() - new Date(a.gameDate).getTime(),
+  );
+  // `desc` is imported above so future callers can reuse it for any
+  // server-side ordering. Keep it referenced so the ESM bundler can't
+  // tree-shake the import away mid-edit.
+  void desc;
+  res.json({ player, games });
 });
 
 export default router;

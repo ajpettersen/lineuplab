@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { Trash2, Download, Info } from "lucide-react";
+import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -336,6 +337,8 @@ export default function Stats() {
   const { data: players = [] } = useListPlayers();
   const [groupInfield, setGroupInfield] = useState(true);
   const displayGroupOrder = groupInfield ? GROUP_ORDER_MERGED : GROUP_ORDER;
+  // Click-through to per-player game log — same dialog used on Season Stats.
+  const [logPlayerId, setLogPlayerId] = useState<number | null>(null);
 
   const benchData = playerStats
     .filter((p) => p.combinedTotal > 0)
@@ -438,7 +441,14 @@ export default function Stats() {
                             return (
                               <tr key={p.playerId} className="border-b border-border/50 hover:bg-muted/30">
                                 <td className="py-2.5 pr-4">
-                                  <div className="font-medium">{p.playerName}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLogPlayerId(p.playerId)}
+                                    className="font-medium text-left hover:underline focus:underline focus:outline-none"
+                                    title="View game log"
+                                  >
+                                    {p.playerName}
+                                  </button>
                                   {p.playerNumber != null && <div className="text-xs text-muted-foreground">#{p.playerNumber}</div>}
                                   {p.historicalTotal > 0 && <div className="text-xs text-blue-600">{p.historicalTotal} hist.</div>}
                                 </td>
@@ -502,6 +512,12 @@ export default function Stats() {
           <HistoryTab players={players} />
         </TabsContent>
       </Tabs>
+
+      <PlayerGameLogDialog
+        playerId={logPlayerId}
+        open={logPlayerId != null}
+        onOpenChange={(v) => !v && setLogPlayerId(null)}
+      />
     </div>
   );
 }
