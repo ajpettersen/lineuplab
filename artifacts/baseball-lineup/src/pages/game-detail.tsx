@@ -40,6 +40,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -217,6 +218,25 @@ export default function GameDetail() {
   // other was visually noisy and made the page feel cluttered — funneling
   // them through one CTA cleans up the lineup card header.
   const [lineupActionsOpen, setLineupActionsOpen] = useState(false);
+  // Active tab among the four "what do you want to look at for this game"
+  // panels: defensive lineup grid, batting order, innings tally, pitch
+  // counts. Defaults to defense; deep-links from the dashboard's pitch
+  // counts task (`#pitch-counts-card`) jump straight to the pitching tab.
+  const [lineupTab, setLineupTab] = useState<
+    "defense" | "batting" | "innings" | "pitching"
+  >(() => {
+    if (typeof window !== "undefined" && window.location.hash === "#pitch-counts-card") {
+      return "pitching";
+    }
+    return "defense";
+  });
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash === "#pitch-counts-card") setLineupTab("pitching");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   // "Copy from previous game" picker state.
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyGames, setCopyGames] = useState<Array<{
@@ -2522,6 +2542,37 @@ export default function GameDetail() {
             <div className="print-meta">{game.location}</div>
           )}
         </div>
+      <Tabs
+        value={lineupTab}
+        onValueChange={(v) => setLineupTab(v as typeof lineupTab)}
+        className="game-tabs"
+      >
+        <TabsList className="no-print w-full grid grid-cols-2 sm:grid-cols-4 h-auto">
+          <TabsTrigger value="defense" data-testid="tab-defense">
+            Defense
+          </TabsTrigger>
+          <TabsTrigger
+            value="batting"
+            disabled={displayLineup.length === 0}
+            data-testid="tab-batting"
+          >
+            Batting Order
+          </TabsTrigger>
+          <TabsTrigger
+            value="innings"
+            disabled={displayLineup.length === 0}
+            data-testid="tab-innings"
+          >
+            Innings
+          </TabsTrigger>
+          <TabsTrigger value="pitching" data-testid="tab-pitching">
+            Pitch Counts
+          </TabsTrigger>
+        </TabsList>
+        {/* `forceMount` keeps every panel mounted so print CSS can
+            reveal them all at once and so heavy panels (lineup grid)
+            don't have to re-mount when the coach toggles between tabs. */}
+        <TabsContent value="defense" forceMount className="mt-3 data-[state=inactive]:hidden">
       <Card>
         <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
           <div>
@@ -2865,12 +2916,14 @@ export default function GameDetail() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
-      {/* Batting order — drag-and-drop sortable list. The numbered chip on
-           the left is the slot, the grip handle on the right is the drag
-           target. Stages reorders into editedLineup so the standard Save
-           Changes flow persists them. */}
-      {displayLineup.length > 0 && battingOrderRows.length > 0 && (
+        {/* Batting order — drag-and-drop sortable list. The numbered chip on
+             the left is the slot, the grip handle on the right is the drag
+             target. Stages reorders into editedLineup so the standard Save
+             Changes flow persists them. */}
+        <TabsContent value="batting" forceMount className="mt-3 data-[state=inactive]:hidden">
+      {displayLineup.length > 0 && battingOrderRows.length > 0 ? (
         <Card data-testid="card-batting-order">
           <CardHeader className="space-y-1">
             <CardTitle className="text-base">Batting Order</CardTitle>
@@ -2916,10 +2969,16 @@ export default function GameDetail() {
             </DndContext>
           </CardContent>
         </Card>
+      ) : (
+        <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-md">
+          Generate or import a lineup first to see the batting order.
+        </div>
       )}
+        </TabsContent>
 
-      {/* Innings by Position tally */}
-      {displayLineup.length > 0 && (
+        {/* Innings by Position tally */}
+        <TabsContent value="innings" forceMount className="mt-3 data-[state=inactive]:hidden">
+      {displayLineup.length > 0 ? (
         <Card data-testid="card-tally">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-3">
             <CardTitle className="text-base">Innings by Position</CardTitle>
@@ -3031,7 +3090,24 @@ export default function GameDetail() {
             </p>
           </CardContent>
         </Card>
+      ) : (
+        <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-md">
+          Generate or import a lineup first to see the innings tally.
+        </div>
       )}
+        </TabsContent>
+
+        {/* Pitch counts — works standalone or rolls into a tournament. The
+            id anchor lets the dashboard "pitch counts not logged" task
+            deep-link straight to this card (#pitch-counts-card). */}
+        <TabsContent value="pitching" forceMount className="mt-3 data-[state=inactive]:hidden">
+          {game && (
+            <div id="pitch-counts-card" className="scroll-mt-20">
+              <PitchCountsCard gameId={id} game={game} />
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Print-only footer — timestamp + tool credit so coaches can
           tell stale printouts apart at the field. */}
@@ -3039,15 +3115,6 @@ export default function GameDetail() {
         Printed {format(new Date(), "MMM d, yyyy · h:mm a")} · {teamName || "Lineup Lab"}
       </div>
       </section>
-
-      {/* Pitch counts (always visible — works standalone or rolls into a tournament). */}
-      {game && (
-        // id anchor lets the dashboard "pitch counts not logged" task
-        // deep-link straight to this card (#pitch-counts-card).
-        <div id="pitch-counts-card" className="scroll-mt-20">
-          <PitchCountsCard gameId={id} game={game} />
-        </div>
-      )}
 
       {/* "Always lock pitchers and catchers" prompt — fires when the coach
           enabled the preference in Settings and hits "Generate Lineup" while

@@ -426,6 +426,18 @@
     display: none !important;
   }
 
+  /* The four-up tab strip on game-detail uses Radix Tabs which sets
+     `hidden` (and our utility class) on inactive panels. For print we
+     want every panel visible so the coach gets a single complete
+     printout — defense grid, batting order, innings tally, pitch
+     counts. Override the `hidden` mechanism just inside `.game-tabs`. */
+  .game-tabs [role="tabpanel"] {
+    display: block !important;
+  }
+  .game-tabs [role="tabpanel"] + [role="tabpanel"] {
+    margin-top: 16px;
+  }
+
   /* Force the desktop grid even on phone-sized media queries — the
      transposed mobile view is harder to scan on paper. Browsers
      evaluate min-width/max-width media queries against the print
