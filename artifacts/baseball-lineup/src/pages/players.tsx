@@ -747,13 +747,19 @@ const COVERAGE_TOOLTIP: Record<CoverageLevel, string> = {
 function PositionCoveragePanel({
   players,
 }: {
-  players: ReadonlyArray<{ preferredPositions: string[] }>;
+  players: ReadonlyArray<{ preferredPositions: string[]; canPitch?: boolean }>;
 }) {
   const coverage: Record<string, number> = Object.fromEntries(
     ALL_POSITIONS.map((p) => [p, 0]),
   );
   for (const player of players) {
-    for (const pos of player.preferredPositions ?? []) {
+    const positions = new Set(player.preferredPositions ?? []);
+    // "Can pitch" flag is the source of truth for who can take the mound,
+    // even if a coach hasn't added "P" to their preferred positions list.
+    // Surface them in the P coverage tally so the depth indicator matches
+    // who would actually be eligible to pitch.
+    if (player.canPitch) positions.add("P");
+    for (const pos of positions) {
       if (pos in coverage) coverage[pos]++;
     }
   }
