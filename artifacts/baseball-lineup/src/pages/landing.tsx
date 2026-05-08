@@ -46,7 +46,7 @@ const FEATURES = [
     icon: Trophy,
     title: "Built for youth coaches",
     body:
-      "Designed around the way real coaches juggle a season — fast inputs, big tap targets, and zero billing screens.",
+      "Designed around the way real coaches juggle a season — fast inputs, big tap targets, and a workflow that respects your time.",
   },
 ];
 
@@ -101,7 +101,7 @@ export default function Landing() {
           <div className="mx-auto max-w-3xl text-center">
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <Sparkles className="h-3.5 w-3.5" />
-              Free for every coach
+              Built for youth baseball
             </span>
             <h1 className="mt-5 font-display text-4xl font-bold tracking-tight sm:text-6xl">
               Better lineups.
@@ -120,7 +120,7 @@ export default function Landing() {
                   className="px-8 text-base"
                   data-testid="link-landing-sign-up"
                 >
-                  Sign up free
+                  Get started
                 </Button>
               </Link>
               <Link href="/sign-in">
@@ -134,9 +134,6 @@ export default function Landing() {
                 </Button>
               </Link>
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">
-              No credit card. No trials. No paywalls — Lineup Lab is just free.
-            </p>
           </div>
         </section>
 
@@ -188,7 +185,7 @@ export default function Landing() {
                 className="px-10 text-base"
                 data-testid="link-landing-sign-up-bottom"
               >
-                Create my free account
+                Create my account
               </Button>
             </Link>
           </div>

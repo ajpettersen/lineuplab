@@ -61,7 +61,7 @@ export function Scene5() {
           animate={phase >= 3 ? { opacity: 1, scale: 1, filter: 'blur(0px)' } : { opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
           transition={{ duration: 1, ease: "easeOut" }}
         >
-          Free for every coach
+          For youth baseball coaches
         </motion.div>
       </div>
     </motion.div>
