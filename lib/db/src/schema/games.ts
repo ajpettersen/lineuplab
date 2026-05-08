@@ -58,6 +58,12 @@ export const gamesTable = pgTable(
     // `game_batting_lines`; this column lets the UI avoid an extra
     // count(*) round-trip on the game-detail page).
     boxScoreImportedAt: timestamp("box_score_imported_at", { withTimezone: true }),
+    // Object-storage paths (e.g. "/objects/uploads/<uuid>") for the
+    // GameChanger / scorebook screenshots the coach uploaded for the
+    // last box-score import. Stored so we can render the originals
+    // back in the import dialog ("here's what you uploaded"). Wiped
+    // on DELETE /box-score; replaced on each re-import.
+    boxScoreImagePaths: jsonb("box_score_image_paths").$type<string[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // Soft-delete timestamp. Null = visible. Set by the trash action
     // so the coach can hit Undo on the toast. All read queries scope

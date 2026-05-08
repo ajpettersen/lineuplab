@@ -1548,6 +1548,12 @@ export const GetBoxScoreResponse = zod
     importedAt: zod.coerce.date().nullable(),
     ourScore: zod.number().nullish(),
     opponentScore: zod.number().nullish(),
+    imagePaths: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Object-storage paths for the screenshots the coach uploaded with the most recent import. Each is fetched via `GET \/api\/games\/{id}\/box-score\/images\/{idx}`.",
+      ),
     batting: zod.array(
       zod.object({
         id: zod.number(),
@@ -1642,6 +1648,12 @@ export const SaveBoxScoreBody = zod.object({
     .optional(),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
+  imagePaths: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Object-storage paths to attach to the game. Replaces any prior set on each save. Omit (or send empty) to clear.",
+    ),
   markCompleted: zod
     .boolean()
     .default(saveBoxScoreBodyMarkCompletedDefault)
@@ -1728,6 +1740,12 @@ export const ExtractBoxScoreResponse = zod
     ),
     ourScore: zod.number().nullish(),
     opponentScore: zod.number().nullish(),
+    imagePaths: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        'Object-storage paths (e.g. \"\/objects\/uploads\/<uuid>\") for the original screenshots the coach uploaded. The save endpoint accepts these unchanged so the originals stay attached to the game.',
+      ),
   })
   .describe(
     "Preview payload returned by the AI extractor. The coach edits this in the UI before committing.",

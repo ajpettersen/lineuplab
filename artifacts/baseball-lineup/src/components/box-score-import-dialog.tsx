@@ -111,6 +111,12 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
   const [pitching, setPitching] = useState<EditablePitching[]>([]);
   const [ourScore, setOurScore] = useState<string>("");
   const [opponentScore, setOpponentScore] = useState<string>("");
+  // Object-storage paths for the screenshots attached to this import.
+  // Either hydrated from the saved state (re-opening an already-imported
+  // game) or returned by /extract after a fresh upload. Sent back on
+  // /save so the originals stay attached to the game.
+  const [imagePaths, setImagePaths] = useState<string[]>([]);
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // When the dialog opens, hydrate from saved state if it exists. If
@@ -149,15 +155,18 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
       );
       setOurScore(state.ourScore != null ? String(state.ourScore) : "");
       setOpponentScore(state.opponentScore != null ? String(state.opponentScore) : "");
+      setImagePaths(state.imagePaths ?? []);
       setStep("preview");
     } else {
       setBatting([]);
       setPitching([]);
       setOurScore("");
       setOpponentScore("");
+      setImagePaths(state?.imagePaths ?? []);
       setStep("upload");
     }
     setFiles([]);
+    setLightboxIdx(null);
   }, [open, stateLoading, state]);
 
   const playersById = useMemo(() => {
@@ -235,6 +244,7 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
       setOpponentScore(
         result.opponentScore != null ? String(result.opponentScore) : "",
       );
+      setImagePaths(result.imagePaths ?? []);
       setStep("preview");
       toast({
         title: `Extracted ${result.batting.length} batting line(s)`,
@@ -305,6 +315,7 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
           pitching: validPitching.map(({ _key, ...rest }) => rest),
           ourScore: ourScore.trim() === "" ? null : Number(ourScore),
           opponentScore: opponentScore.trim() === "" ? null : Number(opponentScore),
+          imagePaths,
           markCompleted: true,
         },
       });
@@ -481,6 +492,38 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
 
         {step === "preview" && (
           <div className="space-y-6">
+            {imagePaths.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold text-sm">Your screenshots</h3>
+                  <span className="text-xs text-muted-foreground">
+                    Tap an image to view full size
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {imagePaths.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setLightboxIdx(i)}
+                      className="relative shrink-0 rounded border bg-muted hover:ring-2 hover:ring-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                      title={`Screenshot ${i + 1}`}
+                    >
+                      <img
+                        src={`${BASE}/api/games/${gameId}/box-score/images/${i}`}
+                        alt={`Box score screenshot ${i + 1}`}
+                        className="h-32 w-auto rounded object-contain bg-background"
+                        loading="lazy"
+                      />
+                      <span className="absolute bottom-1 right-1 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium">
+                        {i + 1}/{imagePaths.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <div className="grid grid-cols-2 gap-4 rounded border p-3 bg-muted/40">
               <div>
                 <Label className="text-xs">Our score</Label>
@@ -710,6 +753,29 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
           </div>
         )}
       </DialogContent>
+      {/*
+       * Lightbox — click a screenshot thumbnail to view it full size.
+       * Closes on backdrop tap or Escape (handled by Dialog's default).
+       */}
+      {lightboxIdx != null && imagePaths[lightboxIdx] && (
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setLightboxIdx(null);
+          }}
+        >
+          <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto p-2">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Box-score screenshot {lightboxIdx + 1}</DialogTitle>
+            </DialogHeader>
+            <img
+              src={`${BASE}/api/games/${gameId}/box-score/images/${lightboxIdx}`}
+              alt={`Box score screenshot ${lightboxIdx + 1}`}
+              className="w-full h-auto rounded"
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 }

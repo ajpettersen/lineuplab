@@ -872,6 +872,8 @@ export interface ExtractedBoxScore {
   ourScore?: number | null;
   /** @nullable */
   opponentScore?: number | null;
+  /** Object-storage paths (e.g. "/objects/uploads/<uuid>") for the original screenshots the coach uploaded. The save endpoint accepts these unchanged so the originals stay attached to the game. */
+  imagePaths?: string[];
 }
 
 export interface SaveBoxScoreBody {
@@ -881,6 +883,8 @@ export interface SaveBoxScoreBody {
   ourScore?: number | null;
   /** @nullable */
   opponentScore?: number | null;
+  /** Object-storage paths to attach to the game. Replaces any prior set on each save. Omit (or send empty) to clear. */
+  imagePaths?: string[];
   /** When true (default) flips the game's status to "completed" — importing a box score implies the game is over. */
   markCompleted?: boolean;
 }
@@ -928,6 +932,8 @@ export interface BoxScoreState {
   ourScore?: number | null;
   /** @nullable */
   opponentScore?: number | null;
+  /** Object-storage paths for the screenshots the coach uploaded with the most recent import. Each is fetched via `GET /api/games/{id}/box-score/images/{idx}`. */
+  imagePaths?: string[];
   batting: BoxScoreStateBattingItem[];
   pitching: PitchCount[];
 }

@@ -2160,6 +2160,11 @@ components:
           type: ["integer", "null"]
         opponentScore:
           type: ["integer", "null"]
+        imagePaths:
+          type: array
+          description: Object-storage paths (e.g. "/objects/uploads/<uuid>") for the original screenshots the coach uploaded. The save endpoint accepts these unchanged so the originals stay attached to the game.
+          items:
+            type: string
       required:
         - batting
         - pitching
@@ -2179,6 +2184,11 @@ components:
           type: ["integer", "null"]
         opponentScore:
           type: ["integer", "null"]
+        imagePaths:
+          type: array
+          description: Object-storage paths to attach to the game. Replaces any prior set on each save. Omit (or send empty) to clear.
+          items:
+            type: string
         markCompleted:
           type: boolean
           default: true
@@ -2219,6 +2229,11 @@ components:
           type: ["integer", "null"]
         opponentScore:
           type: ["integer", "null"]
+        imagePaths:
+          type: array
+          description: Object-storage paths for the screenshots the coach uploaded with the most recent import. Each is fetched via `GET /api/games/{id}/box-score/images/{idx}`.
+          items:
+            type: string
         batting:
           type: array
           items:

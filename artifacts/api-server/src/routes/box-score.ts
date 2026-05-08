@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { randomUUID } from "crypto";
+import { Readable } from "stream";
 import {
   db,
   gamesTable,
@@ -18,6 +20,81 @@ import {
   deleteBattingLinesForGame,
   filterToOwnedActivePlayerIds,
 } from "../lib/batting-totals";
+import {
+  objectStorageClient,
+  ObjectStorageService,
+  ObjectNotFoundError,
+} from "../lib/objectStorage";
+import { setObjectAclPolicy, getObjectAclPolicy } from "../lib/objectAcl";
+
+// ---------------------------------------------------------------------------
+// Object-storage helpers for the uploaded box-score screenshots. Each file
+// the coach uploads is persisted to GCS so we can render the originals back
+// in the dialog ("here's what you uploaded"). We store the canonical
+// `/objects/uploads/<uuid>` path on the game row.
+// ---------------------------------------------------------------------------
+
+const objectStorage = new ObjectStorageService();
+
+function gcsBucketAndObject(privateObjectDir: string, entityId: string) {
+  // privateObjectDir is "/<bucket>/<...>" — first segment is the bucket name.
+  let dir = privateObjectDir;
+  if (!dir.startsWith("/")) dir = `/${dir}`;
+  if (!dir.endsWith("/")) dir = `${dir}/`;
+  const fullPath = `${dir}${entityId}`;
+  const parts = fullPath.split("/").filter((s) => s.length > 0);
+  const bucketName = parts[0];
+  const objectName = parts.slice(1).join("/");
+  return { bucketName, objectName };
+}
+
+async function uploadBoxScoreImage(
+  file: Express.Multer.File,
+  ownerUserId: string,
+): Promise<string> {
+  const entityId = `uploads/${randomUUID()}`;
+  const { bucketName, objectName } = gcsBucketAndObject(
+    objectStorage.getPrivateObjectDir(),
+    entityId,
+  );
+  const gcsFile = objectStorageClient.bucket(bucketName).file(objectName);
+  await gcsFile.save(file.buffer, {
+    contentType: file.mimetype || "image/png",
+    resumable: false,
+  });
+  // Stamp the uploader as the ACL owner so that any later /save call
+  // referencing this path can be proved (or refused) — without this
+  // a coach who learned another team's uploaded UUID could attach
+  // it to their own game.
+  await setObjectAclPolicy(gcsFile, {
+    owner: ownerUserId,
+    visibility: "private",
+  });
+  return `/objects/${entityId}`;
+}
+
+async function isImagePathOwnedBy(
+  objectPath: string,
+  userId: string,
+): Promise<boolean> {
+  try {
+    const file = await objectStorage.getObjectEntityFile(objectPath);
+    const acl = await getObjectAclPolicy(file);
+    return acl?.owner === userId;
+  } catch {
+    return false;
+  }
+}
+
+async function deleteBoxScoreImage(objectPath: string): Promise<void> {
+  // Best-effort — failures are logged but don't block the API response.
+  try {
+    const file = await objectStorage.getObjectEntityFile(objectPath);
+    await file.delete({ ignoreNotFound: true });
+  } catch {
+    // swallow; the row is going away anyway.
+  }
+}
 
 /**
  * Box-score import — POST 1-4 phone screenshots of a GameChanger
@@ -77,6 +154,13 @@ const SaveBoxScoreBody = z.object({
   pitching: z.array(ExtractedPitchingLine).default([]),
   ourScore: z.number().int().min(0).nullable().optional(),
   opponentScore: z.number().int().min(0).nullable().optional(),
+  // Object-storage paths for the uploaded screenshots — handed back
+  // unchanged from the /extract response. Whatever the client sends
+  // here REPLACES the prior set on the game row.
+  imagePaths: z
+    .array(z.string().startsWith("/objects/"))
+    .max(8)
+    .optional(),
   /**
    * If true, also flip the game's status to "completed". Default true
    * — importing a box score implies the game has been played. UI can
@@ -120,10 +204,60 @@ router.get("/games/:id/box-score", async (req, res): Promise<void> => {
     importedAt: game.boxScoreImportedAt ?? null,
     ourScore: game.ourScore ?? null,
     opponentScore: game.opponentScore ?? null,
+    imagePaths: game.boxScoreImagePaths ?? [],
     batting: battingLines,
     pitching: pitchCounts,
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET — stream a previously-uploaded box-score screenshot. Auth-scoped to
+// the game's owning team so a coach can only see their own uploads.
+// `idx` is the position within game.boxScoreImagePaths (0..n-1).
+// Hand-rolled (not in OpenAPI) — the dialog hits it via plain fetch /
+// <img src>.
+// ---------------------------------------------------------------------------
+router.get(
+  "/games/:id/box-score/images/:idx",
+  async (req, res): Promise<void> => {
+    const userId = req.ownerUserId!;
+    const id = Number(req.params.id);
+    const idx = Number(req.params.idx);
+    if (!Number.isInteger(id) || !Number.isInteger(idx) || idx < 0) {
+      res.status(400).json({ error: "Invalid id or index" });
+      return;
+    }
+    const game = await getOwnedGame(userId, id);
+    if (!game) {
+      res.status(404).json({ error: "Game not found" });
+      return;
+    }
+    const paths = game.boxScoreImagePaths ?? [];
+    const path = paths[idx];
+    if (!path) {
+      res.status(404).json({ error: "Image not found" });
+      return;
+    }
+    try {
+      const file = await objectStorage.getObjectEntityFile(path);
+      const [metadata] = await file.getMetadata();
+      res.setHeader(
+        "Content-Type",
+        (metadata.contentType as string) || "image/png",
+      );
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      if (metadata.size) res.setHeader("Content-Length", String(metadata.size));
+      Readable.from(file.createReadStream()).pipe(res);
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: "Image not found" });
+        return;
+      }
+      req.log.error({ err }, "Failed to stream box-score image");
+      res.status(500).json({ error: "Failed to load image" });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // POST /extract — AI image → preview JSON. Does not write to the DB.
@@ -289,9 +423,28 @@ Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentSco
       };
     }
 
+    // Run AI extraction AND image upload in parallel — both sets of work
+    // are independent and we want to hand back the object-storage paths
+    // alongside the extracted lines so the dialog can render the
+    // originals immediately. If an upload fails we still want the
+    // extraction to succeed (the import dialog is useful even without
+    // the originals attached); we log and skip the failed path.
     let perImage: Awaited<ReturnType<typeof extractOne>>[];
+    let uploadedPaths: string[];
     try {
-      perImage = await Promise.all(files.map((f) => extractOne(f)));
+      const [extracted, uploads] = await Promise.all([
+        Promise.all(files.map((f) => extractOne(f))),
+        Promise.all(
+          files.map((f) =>
+            uploadBoxScoreImage(f, userId).catch((err: unknown) => {
+              req.log.warn({ err }, "Box-score image upload failed");
+              return null;
+            }),
+          ),
+        ),
+      ]);
+      perImage = extracted;
+      uploadedPaths = uploads.filter((p): p is string => p !== null);
     } catch (err) {
       req.log.error({ err }, "Box-score extraction failed");
       res.status(502).json({ error: "AI extraction failed" });
@@ -354,6 +507,7 @@ Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentSco
       pitching: Array.from(pitchingByPlayer.values()),
       ourScore,
       opponentScore,
+      imagePaths: uploadedPaths,
     });
   },
 );
@@ -441,6 +595,32 @@ router.post("/games/:id/box-score", async (req, res): Promise<void> => {
       gameUpdate.opponentScore = parsed.data.opponentScore;
     }
     if (parsed.data.markCompleted) gameUpdate.status = "completed";
+    // imagePaths REPLACES the prior set on each save. We accept any
+    // path that is EITHER (a) already on this game (re-saving without
+    // changing screenshots) or (b) owned by the calling user according
+    // to ACL — uploadBoxScoreImage stamps the uploader as owner. This
+    // blocks a coach who learned another team's UUID from attaching
+    // it to their own game. Best-effort cleanup of any GCS objects
+    // that fell out of the new set so we don't leak storage.
+    if (parsed.data.imagePaths !== undefined) {
+      const prior = new Set(game.boxScoreImagePaths ?? []);
+      const accepted: string[] = [];
+      for (const p of parsed.data.imagePaths) {
+        if (prior.has(p) || (await isImagePathOwnedBy(p, userId))) {
+          accepted.push(p);
+        } else {
+          req.log.warn(
+            { path: p, gameId: id },
+            "Refusing to attach box-score image not owned by user",
+          );
+        }
+      }
+      gameUpdate.boxScoreImagePaths = accepted.length > 0 ? accepted : null;
+      const nextSet = new Set(accepted);
+      for (const p of prior) {
+        if (!nextSet.has(p)) await deleteBoxScoreImage(p);
+      }
+    }
     await tx.update(gamesTable).set(gameUpdate).where(eq(gamesTable.id, id));
   });
 
@@ -493,9 +673,15 @@ router.delete("/games/:id/box-score", async (req, res): Promise<void> => {
       ),
   ]);
   await deleteBattingLinesForGame(userId, id);
+  // We DO NOT delete the GCS objects here — Undo needs the originals
+  // to still be there. The /restore endpoint reattaches the same
+  // paths to the game row. If the coach never undoes, the objects
+  // become orphans (small leak); a future GC sweep can prune by
+  // checking ACL owner + age.
+  const priorImagePaths = game.boxScoreImagePaths ?? [];
   await db
     .update(gamesTable)
-    .set({ boxScoreImportedAt: null })
+    .set({ boxScoreImportedAt: null, boxScoreImagePaths: null })
     .where(eq(gamesTable.id, id));
   res.json({
     gameId: id,
@@ -504,6 +690,7 @@ router.delete("/games/:id/box-score", async (req, res): Promise<void> => {
       : null,
     ourScore: game.ourScore,
     opponentScore: game.opponentScore,
+    imagePaths: priorImagePaths,
     lines: linesSnapshot,
     pitchCounts: pitchSnapshot.map((p) => ({
       playerId: p.playerId,
@@ -517,6 +704,10 @@ const RestoreBoxScoreSchema = z.object({
   importedAt: z.string().datetime().nullable().optional(),
   ourScore: z.number().int().nullable().optional(),
   opponentScore: z.number().int().nullable().optional(),
+  imagePaths: z
+    .array(z.string().startsWith("/objects/"))
+    .max(8)
+    .optional(),
   lines: z.array(ExtractedBattingLine.partial({ playerName: true })),
   pitchCounts: z.array(
     z.object({
@@ -582,6 +773,15 @@ router.post(
       const upd: Record<string, unknown> = { boxScoreImportedAt: importedAt };
       if (parsed.data.ourScore !== undefined) upd.ourScore = parsed.data.ourScore;
       if (parsed.data.opponentScore !== undefined) upd.opponentScore = parsed.data.opponentScore;
+      if (parsed.data.imagePaths !== undefined) {
+        // Only re-attach paths whose ACL still names the calling user
+        // as owner — same defense-in-depth as /save.
+        const safe: string[] = [];
+        for (const p of parsed.data.imagePaths) {
+          if (await isImagePathOwnedBy(p, userId)) safe.push(p);
+        }
+        upd.boxScoreImagePaths = safe.length > 0 ? safe : null;
+      }
       await tx.update(gamesTable).set(upd).where(eq(gamesTable.id, id));
     });
     res.json({ gameId: id, restoredLines: safeLines.length, restoredPitchers: safePitches.length });
