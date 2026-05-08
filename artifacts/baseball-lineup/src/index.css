@@ -226,6 +226,57 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* ── iOS Safari mobile polish ─────────────────────────────────────────
+     Friend-tested on iPhone Safari (the most common entry point for new
+     coaches). These three rules eliminate the bulk of the "feels janky"
+     complaints that don't have a deeper cause:
+
+     1) `-webkit-text-size-adjust: 100%` — Safari otherwise auto-zooms
+        text when the phone is rotated to landscape, which throws off
+        every layout we've spent time tightening.
+     2) `-webkit-tap-highlight-color: transparent` — kills the dark grey
+        flash overlay Safari paints on every tap, which made our gold
+        accent + emerald active-now dot look bruised on touch.
+     3) `touch-action: manipulation` on interactive elements — disables
+        the legacy 300 ms double-tap-to-zoom delay so taps feel
+        instantaneous. Limited to actual interactive elements so pages
+        with editable text / drag-to-pan can still pinch-zoom. */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  html,
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  label,
+  summary,
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    touch-action: manipulation;
+  }
+
+  /* iOS Safari focuses inputs with font-size < 16px by zooming the
+     viewport in (because it assumes the text is too small to read).
+     The zoom never restores cleanly on blur, leaving the page stuck
+     wide. Force every form field to ≥16px on touch-coarse devices so
+     focus stays put. The `@media (pointer: coarse)` gate keeps our
+     compact desktop forms unchanged. */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: max(16px, 1rem);
+    }
+  }
 }
 
 @layer utilities {

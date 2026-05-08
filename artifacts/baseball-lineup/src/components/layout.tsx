@@ -18,6 +18,7 @@ import {
   Clipboard,
   ChevronLeft,
   ChevronRight,
+  MoreHorizontal,
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
@@ -360,7 +361,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             below it. Falls back to 0 height in browsers/desktop. */}
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} aria-hidden />
         <div
-          className="flex h-18 items-center gap-4 px-4 md:px-6"
+          className="flex h-14 md:h-18 items-center gap-3 md:gap-4 px-3 md:px-6"
           style={{
             paddingLeft: "max(1rem, env(safe-area-inset-left))",
             paddingRight: "max(1rem, env(safe-area-inset-right))",
@@ -649,17 +650,93 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main
-        className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
-        style={{
-          // iPhone home-indicator clearance: extra bottom padding equal to
-          // the safe-area inset so the last card / button on long pages
-          // isn't hidden behind the system gesture bar in the PWA. 0px on
-          // desktop and non-PWA browsers.
-          paddingBottom: "calc(1rem + env(safe-area-inset-bottom))",
-        }}
+        // Bottom padding has to clear TWO things on mobile:
+        //   (a) the new fixed bottom tab bar (~56px tall), and
+        //   (b) iOS's home-indicator gesture strip (env safe-area).
+        // On md+ the tab bar is hidden so we drop back to the original
+        // 1rem + safe-area clearance.
+        className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-[calc(1rem+env(safe-area-inset-bottom))]"
       >
         {children}
       </main>
+      {/* ── Mobile bottom tab bar ─────────────────────────────────────
+          Friend feedback was that "navigating on Safari is clunky" —
+          the only path to anywhere was the hamburger sheet, which is
+          two taps minimum + an opaque overlay. A native-feeling
+          fixed-bottom bar with the four most-touched destinations
+          (Dashboard, Schedule, Roster, Stats) makes the common case
+          one tap and zero overlay. The fifth slot opens the existing
+          full-nav sheet for everything else (Practices, Tournaments,
+          Settings, Admin, Sign-out). Hidden on md+ where the
+          horizontal top-bar nav is already visible. */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-[hsl(220_85%_14%)] shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.25)]"
+        style={{
+          background:
+            "linear-gradient(180deg, hsl(220 85% 22%) 0%, hsl(220 85% 18%) 100%)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
+        }}
+        data-testid="mobile-bottom-nav"
+        aria-label="Primary"
+      >
+        <div className="flex items-stretch h-14">
+          {[
+            { href: "/", label: "Home", icon: Home, match: (l: string) => l === "/" },
+            {
+              href: "/games",
+              label: "Schedule",
+              icon: CalendarDays,
+              match: (l: string) =>
+                l.startsWith("/games") || l.startsWith("/tournaments"),
+            },
+            {
+              href: "/players",
+              label: "Roster",
+              icon: Users,
+              match: (l: string) => l.startsWith("/players"),
+            },
+            {
+              href: "/stats",
+              label: "Stats",
+              icon: BarChart2,
+              match: (l: string) =>
+                l.startsWith("/stats") || l.startsWith("/season-stats"),
+            },
+          ].map(({ href, label, icon: Icon, match }) => {
+            const active = match(location);
+            return (
+              <Link
+                key={href}
+                href={href}
+                data-testid={`link-tabbar-${label.toLowerCase()}`}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-broadcast uppercase tracking-[0.12em] transition-colors ${
+                  active
+                    ? "text-primary-foreground"
+                    : "text-primary-foreground/65 hover:text-primary-foreground"
+                }`}
+              >
+                <Icon className="h-5 w-5" strokeWidth={active ? 2.4 : 2} />
+                <span>{label}</span>
+                {active && (
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-10 rounded-b-full bg-accent shadow-[0_0_6px_var(--color-broadcast-gold)]" />
+                )}
+              </Link>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            data-testid="button-tabbar-more"
+            aria-label="Open full navigation menu"
+            className="relative flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-broadcast uppercase tracking-[0.12em] text-primary-foreground/65 hover:text-primary-foreground transition-colors"
+          >
+            <MoreHorizontal className="h-5 w-5" />
+            <span>More</span>
+          </button>
+        </div>
+      </nav>
       {/* First-time onboarding modal — auto-opens once per (user, team)
           when the coach hasn't filled in their per-team displayName yet. */}
       <CoachProfilePrompt />
