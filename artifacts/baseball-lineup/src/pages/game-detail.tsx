@@ -1907,10 +1907,19 @@ export default function GameDetail() {
     ids.forEach((pid, i) => newOrderById.set(pid, i + 1));
 
     const data = previewLineup ?? editedLineup ?? lineup;
+    // Write the new slot to EVERY entry for the player, including bench
+    // innings. The old "if Bench → null" shortcut meant a bench-only
+    // extra (e.g. the 11th player in nine-man mode, who never takes the
+    // field) couldn't be dragged up the order — every entry kept
+    // battingOrder=null, so the next render re-derived their slot from
+    // the alphabetical fallback and they snapped right back to the
+    // bottom. Carrying battingOrder on bench entries is harmless: the
+    // batting-order memo collapses per-player using the first non-null
+    // slot it finds, and `position === "Bench"` is what marks them
+    // benched on the field grid (separate field from battingOrder).
     const next = data.map((e) => ({
       ...e,
-      battingOrder:
-        e.position === "Bench" ? null : (newOrderById.get(e.playerId) ?? e.battingOrder ?? null),
+      battingOrder: newOrderById.get(e.playerId) ?? e.battingOrder ?? null,
     }));
     if (previewLineup) setPreviewLineup(next);
     else setEditedLineup(next);
@@ -2578,6 +2587,9 @@ export default function GameDetail() {
                               onTileClick={(id) =>
                                 handleCellClick({ entryId: id, inning, position: "Bench" })
                               }
+                              onEmptyClick={() =>
+                                handleCellClick({ inning, position: "Bench" })
+                              }
                             />
                           </td>
                         </tr>
@@ -2684,6 +2696,9 @@ export default function GameDetail() {
                               draggedEntryId={activeDrag?.entryId ?? null}
                               onTileClick={(id) =>
                                 handleCellClick({ entryId: id, inning, position: "Bench" })
+                              }
+                              onEmptyClick={() =>
+                                handleCellClick({ inning, position: "Bench" })
                               }
                             />
                           </td>
@@ -3329,10 +3344,14 @@ export default function GameDetail() {
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  // capture="environment" tells phones to open the rear camera
-                  // when this input is tapped. Desktop browsers ignore the
-                  // attribute and show the regular file picker.
-                  capture="environment"
+                  // NOTE: intentionally NO `capture` attribute. iOS Safari
+                  // treats `capture="environment"` (and even an empty
+                  // `capture`) as a hard request for the rear camera and
+                  // will skip the photo-library option entirely — coaches
+                  // who already screenshotted a lineup on their phone
+                  // couldn't pick it. Without `capture`, iOS shows the
+                  // standard "Photo Library / Take Photo / Choose File"
+                  // sheet so both flows work.
                   className="sr-only"
                   data-testid="input-image-file"
                   onChange={(e) => {
@@ -3958,9 +3977,22 @@ interface BenchAreaProps {
   isHotInning: boolean;
   draggedEntryId: number | null;
   onTileClick: (entryId: number) => void;
+  /**
+   * Tap on the empty bench area (no chip, no chip selected) → open the
+   * roster picker so the coach can add a player who STARTS on the bench
+   * without first having to put them on the field and drag them off.
+   * Mirrors `FieldCell`'s empty-cell tap behavior — coaches who can't
+   * make drag-and-drop work on mobile Safari now have a tap-to-add path
+   * for the bench too.
+   */
+  onEmptyClick: () => void;
 }
 
-/** Bench column for an inning. The whole area is one big drop zone. */
+/**
+ * Bench column for an inning. The whole area is one big drop zone, and
+ * tapping the empty area (or the "+" affordance) opens the same roster
+ * picker the field cells use.
+ */
 function BenchArea({
   inning,
   entries,
@@ -3968,6 +4000,7 @@ function BenchArea({
   isHotInning,
   draggedEntryId,
   onTileClick,
+  onEmptyClick,
 }: BenchAreaProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: `bench-${inning}`,
@@ -3980,7 +4013,7 @@ function BenchArea({
       className={`min-h-[2.25rem] rounded transition-colors px-1 py-1 ${overRing} ${isHotInning && entries.length === 0 ? "border border-dashed border-primary/40" : ""}`}
       data-testid={`bench-${inning}`}
     >
-      <div className="flex flex-wrap gap-1 justify-center">
+      <div className="flex flex-wrap gap-1 justify-center items-center">
         {entries.map((e) => (
           <PlayerTile
             key={e.id}
@@ -3993,6 +4026,22 @@ function BenchArea({
             testId={`cell-${inning}-Bench-${e.id}`}
           />
         ))}
+        {/* Always-visible "+" so coaches can add bench-starters without
+            needing drag-and-drop. Hidden while a chip is selected (in
+            click-to-swap mode the whole area is the drop target) and
+            hidden during a drag-over so it doesn't fight the ring. */}
+        {selectedEntryId == null && !isOver && (
+          <button
+            type="button"
+            onClick={onEmptyClick}
+            className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap min-w-[1.75rem] border border-dashed border-muted-foreground/30 text-muted-foreground/60 hover:border-primary/50 hover:text-primary hover:bg-primary/5"
+            data-testid={`cell-${inning}-Bench-empty`}
+            title="Add a bench player from the roster"
+            aria-label={`Add a player to the bench for inning ${inning}`}
+          >
+            +
+          </button>
+        )}
         {isHotInning && entries.length === 0 && (
           <span className="text-xs text-primary/70">drop on bench</span>
         )}
