@@ -2636,6 +2636,11 @@ export default function GameDetail() {
           ) : (
             <DndContext
               sensors={sensors}
+              // autoScroll OFF: when it kicked in near the viewport edge
+              // it desynced the DragOverlay's rect math from the cursor
+              // and the floating chip would snap to the top of the page
+              // mid-drag. Coaches can scroll manually before grabbing.
+              autoScroll={false}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
@@ -4034,7 +4039,14 @@ function PlayerTile({
       ref={setNodeRef}
       type="button"
       onClick={() => onClick(entry.id)}
-      className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-shadow ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} cursor-grab active:cursor-grabbing hover:shadow-md`}
+      // `touch-none` is required for @dnd-kit's PointerSensor to fully
+      // capture the gesture instead of letting the browser steal it for
+      // pan-scroll. Re-added after the iOS-polish CSS started applying
+      // `touch-action: manipulation` to every [role=button] (which the
+      // chip inherits from useDraggable's attributes). Without this the
+      // overlay rect went haywire and the floating chip jumped to the
+      // top of the page mid-swap.
+      className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-shadow touch-none ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} cursor-grab active:cursor-grabbing hover:shadow-md`}
       data-testid={testId}
       data-entry-id={entry.id}
       data-selected={isSelected ? "true" : "false"}
