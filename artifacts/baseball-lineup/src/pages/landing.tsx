@@ -79,6 +79,23 @@ export default function Landing() {
       </header>
 
       <main>
+        {/* Promo video */}
+        <section className="mx-auto max-w-6xl px-4 pt-10 sm:px-6 sm:pt-14">
+          <div
+            className="relative overflow-hidden rounded-xl border border-border bg-black shadow-lg"
+            style={{ aspectRatio: "16 / 9" }}
+          >
+            <iframe
+              src="/promo-video/"
+              title="Lineup Lab promo"
+              className="absolute inset-0 h-full w-full"
+              loading="lazy"
+              allow="autoplay"
+              data-testid="iframe-landing-promo"
+            />
+          </div>
+        </section>
+
         {/* Hero */}
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
           <div className="mx-auto max-w-3xl text-center">
