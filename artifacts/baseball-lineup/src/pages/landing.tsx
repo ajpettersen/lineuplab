@@ -72,7 +72,13 @@ export default function Landing() {
               </Button>
             </Link>
             <Link href="/sign-up">
-              <Button data-testid="link-landing-sign-up-top">Get started</Button>
+              <Button
+                size="lg"
+                className="shadow-md shadow-primary/20"
+                data-testid="link-landing-sign-up-top"
+              >
+                Get started
+              </Button>
             </Link>
           </div>
         </div>
@@ -117,17 +123,17 @@ export default function Landing() {
               <Link href="/sign-up">
                 <Button
                   size="lg"
-                  className="px-8 text-base"
+                  className="h-14 px-10 text-lg font-semibold shadow-lg shadow-primary/25 transition-transform hover:-translate-y-0.5"
                   data-testid="link-landing-sign-up"
                 >
-                  Get started
+                  Create your team
                 </Button>
               </Link>
               <Link href="/sign-in">
                 <Button
                   size="lg"
                   variant="outline"
-                  className="px-8 text-base"
+                  className="h-14 px-8 text-base"
                   data-testid="link-landing-sign-in-hero"
                 >
                   I already have an account

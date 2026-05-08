@@ -140,13 +140,87 @@ function SignInPage() {
 }
 
 function SignUpPage() {
+  const valueProps = [
+    "AI-generated lineups in seconds",
+    "Box-score import from GameChanger screenshots",
+    "iPad-friendly dugout view that works offline",
+    "Schedule, roster, and practices in one place",
+  ];
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 py-8">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-      />
+    <div className="grid min-h-[100dvh] bg-background lg:grid-cols-2">
+      {/* Left: brand / value */}
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-[hsl(220,85%,16%)] p-10 text-white lg:flex">
+        {/* Decorative gradient blobs */}
+        <div
+          className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full opacity-30 blur-3xl"
+          style={{ background: "radial-gradient(circle, hsl(42,95%,55%), transparent)" }}
+        />
+        <div
+          className="pointer-events-none absolute -bottom-32 -right-24 h-[28rem] w-[28rem] rounded-full opacity-20 blur-3xl"
+          style={{ background: "radial-gradient(circle, hsl(220,85%,55%), transparent)" }}
+        />
+        {/* Logo + brand */}
+        <a
+          href={basePath || "/"}
+          className="relative z-10 inline-flex items-center gap-3"
+          data-testid="link-signup-logo"
+        >
+          <img
+            src={`${basePath}/logo.svg`}
+            alt="Lineup Lab"
+            className="h-10 w-10"
+          />
+          <span className="font-display text-2xl font-bold tracking-tight">
+            Lineup Lab
+          </span>
+        </a>
+        {/* Headline + bullets */}
+        <div className="relative z-10 max-w-md space-y-8">
+          <h2 className="font-display text-4xl font-bold leading-tight tracking-tight">
+            Better lineups.
+            <br />
+            <span className="text-[hsl(42,95%,65%)]">Less paper-shuffling.</span>
+          </h2>
+          <ul className="space-y-3 text-base text-white/80">
+            {valueProps.map((vp) => (
+              <li key={vp} className="flex items-start gap-3">
+                <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[hsl(42,95%,55%)]" />
+                <span>{vp}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative z-10 text-sm text-white/60">
+          The team binder for youth baseball and softball coaches.
+        </p>
+      </div>
+
+      {/* Right: sign-up form */}
+      <div className="flex flex-col items-center justify-center px-4 py-10 sm:px-8">
+        {/* Mobile-only logo */}
+        <a
+          href={basePath || "/"}
+          className="mb-6 inline-flex items-center gap-2 lg:hidden"
+          data-testid="link-signup-logo-mobile"
+        >
+          <img
+            src={`${basePath}/logo.svg`}
+            alt="Lineup Lab"
+            className="h-8 w-8"
+          />
+          <span className="font-display text-lg font-bold tracking-tight">
+            Lineup Lab
+          </span>
+        </a>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+        />
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          By creating an account you agree to our terms.
+        </p>
+      </div>
     </div>
   );
 }
