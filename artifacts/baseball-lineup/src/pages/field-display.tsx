@@ -28,6 +28,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
@@ -618,6 +619,15 @@ export default function FieldDisplay() {
   const [, params] = useRoute("/games/:id/display");
   const id = parseInt(params?.id ?? "0");
   const { teamName, teamShortName, activeFieldPositions } = useTeamSettings();
+  // Field Display renders OUTSIDE the main `<Layout>` shell (it owns the
+  // whole viewport for the dugout iPad), so the Layout-mounted
+  // `useHeartbeat()` doesn't fire here. Without this call, a coach
+  // running a real game for 90+ minutes would look "offline" to the
+  // master-admin "last seen" view the entire time. Mounting the
+  // heartbeat directly is cheap (no-op when tab is hidden, internal
+  // signed-in gate) and means active game-day usage now actually
+  // registers.
+  useHeartbeat();
   const qc = useQueryClient();
   const { toast } = useToast();
   const saveLineup = useSaveLineup();

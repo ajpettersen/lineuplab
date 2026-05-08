@@ -729,16 +729,48 @@ export default function Admin() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleUsers.map((u) => (
+                {visibleUsers.map((u) => {
+                  // Per-row "active right now" dot — same 5-minute
+                  // window as the summary card so a glance at the table
+                  // tells you who's currently in the app, not just who
+                  // logged in this week. Pulses (animate-ping) so it
+                  // reads as live and not a static badge. The whole
+                  // pip is wrapped in a fixed-width slot so rows don't
+                  // shift when someone goes online/offline mid-render.
+                  const lastSeenMs = u.lastSeenAt
+                    ? new Date(u.lastSeenAt).getTime()
+                    : 0;
+                  const isActiveNow =
+                    lastSeenMs > 0 && nowMs - lastSeenMs <= FIVE_MIN;
+                  return (
                   <TableRow
                     key={u.userId}
                     data-testid={`row-admin-user-${u.userId}`}
                   >
                     <TableCell>
-                      <div className="text-sm font-medium">
-                        {u.name ?? u.email ?? "—"}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="relative inline-flex w-2 h-2 shrink-0"
+                          aria-label={isActiveNow ? "Active now" : "Not active"}
+                          title={
+                            isActiveNow ? "Active in the last 5 min" : undefined
+                          }
+                          data-testid={`dot-active-${u.userId}`}
+                        >
+                          {isActiveNow ? (
+                            <>
+                              <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75" />
+                              <span className="relative h-2 w-2 rounded-full bg-emerald-500" />
+                            </>
+                          ) : (
+                            <span className="h-2 w-2 rounded-full bg-muted-foreground/20" />
+                          )}
+                        </span>
+                        <div className="text-sm font-medium">
+                          {u.name ?? u.email ?? "—"}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground font-mono">
+                      <div className="text-xs text-muted-foreground font-mono mt-0.5">
                         {u.userId}
                       </div>
                       {u.email && u.name && (
@@ -793,7 +825,8 @@ export default function Admin() {
                       {formatMinutes(u.minutesActive30d)}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
