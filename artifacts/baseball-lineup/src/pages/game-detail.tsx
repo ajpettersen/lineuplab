@@ -30,11 +30,13 @@ import {
   useSnapshotPlan,
   useClearPlanSnapshot,
   useGetPreferences,
+  useGetTournament,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
   getListGamesQueryKey,
   getGetSeasonStatsQueryKey,
   getGetPlayerStatsQueryKey,
+  getGetTournamentQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,7 +71,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -137,6 +139,17 @@ export default function GameDetail() {
   // "Generate Lineup" (before the prefs query resolves) doesn't silently
   // bypass the gate or fire it incorrectly.
   const { data: prefs, isLoading: prefsLoading } = useGetPreferences();
+  // For tournament games we fetch the parent tournament so we can surface a
+  // pitch-budget callout above the lineup ("Two pitchers are nearly out for
+  // today"). Same data already powers PitchCountsCard — this just hoists a
+  // summary up to where the equity insights live.
+  const tournamentIdForCallout = game?.tournamentId ?? null;
+  const tournamentForCallout = useGetTournament(tournamentIdForCallout ?? 0, {
+    query: {
+      enabled: tournamentIdForCallout != null,
+      queryKey: getGetTournamentQueryKey(tournamentIdForCallout ?? 0),
+    },
+  });
   const generateLineup = useGenerateLineup();
   const saveLineup = useSaveLineup();
   // Lineup edits require partial+. View-only coaches can browse the
@@ -282,18 +295,33 @@ export default function GameDetail() {
   // new lineup arrives (new save / preview / regenerate) so the coach sees
   // it again with fresh advice.
   const [equityDismissed, setEquityDismissed] = useState(false);
-  const sensors = useSensors(
-    // Distance constraint lets a click pass through to the underlying button
-    // (so tap-to-select still works) while a small movement triggers a drag.
+  // Detect coarse-pointer (touch) devices once on mount. On touch we DISABLE
+  // drag-and-drop entirely — coaches were accidentally dragging chips while
+  // trying to scroll the page. The tap-to-select-then-tap-target flow
+  // (handleCellClick) is the only mobile interaction. Desktop / mouse keeps
+  // both modes: drag a chip OR click-then-click.
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setIsCoarsePointer(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  // Per-session dismissal for the "tap to swap" hint banner shown to mobile
+  // coaches. Re-shows on a new session so a coach who closed it weeks ago
+  // sees it again next time.
+  const [tapHintDismissed, setTapHintDismissed] = useState(false);
+  // PointerSensor with a distance constraint lets a click still pass through
+  // (so tap-to-select works) while a small movement triggers a drag. We omit
+  // TouchSensor entirely — on coarse-pointer we'll skip mounting these
+  // sensors so chips don't intercept scroll gestures at all.
+  const desktopSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // Use the SAME distance-based activation on touch instead of a hold delay.
-    // The hold delay made the drag feel "broken" on iPad — a quick swipe to
-    // move a chip ended before 150 ms, so the click handler fired and the
-    // "add player" picker popped up instead of starting a drag. The tile is
-    // small enough that scrolling almost never starts on top of one, so the
-    // page can still scroll fine by touching anywhere off the chip.
-    useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
   );
+  const touchOnlySensors = useSensors();
+  const sensors = isCoarsePointer ? touchOnlySensors : desktopSensors;
   // Tracks when the most recent drag ended. A few ms after a drop, browsers
   // fire a synthetic click on whatever was under the pointer — that would
   // re-open the "add player" picker right on top of the move you just made.
@@ -2364,6 +2392,122 @@ export default function GameDetail() {
         </div>
       )}
 
+      {/* Tournament pitch-budget callout — surfaces pitchers who are
+          resting today or have a small remaining budget so the coach
+          notices BEFORE they pencil that pitcher into the next inning.
+          Pulls from the same `pitcherAvailability` payload PitchCountsCard
+          uses below; this is a "skim above the fold" version. */}
+      {game.gameType === "tournament" &&
+        tournamentForCallout.data &&
+        (() => {
+          const items = tournamentForCallout.data.pitcherAvailability
+            .filter((p) => {
+              if (p.restingUntil) return true;
+              if (p.pitchesAvailableToday == null) return false;
+              if (p.dailyMax == null) return false;
+              // Show pitchers at or below 25 pitches remaining today, or
+              // anyone already capped out. Tunable threshold — a fresh
+              // pitcher with 65 left isn't interesting, but one down to
+              // 20 is a real "use them carefully" signal.
+              return p.pitchesAvailableToday <= 25;
+            })
+            .sort(
+              (a, b) =>
+                (a.pitchesAvailableToday ?? -1) -
+                (b.pitchesAvailableToday ?? -1),
+            );
+          if (items.length === 0) return null;
+          return (
+            <div
+              className="rounded-lg border border-purple-200 bg-purple-50 p-3 print:hidden"
+              data-testid="tournament-pitch-callout"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 text-purple-700 shrink-0" />
+                <div className="text-sm text-purple-900 min-w-0 flex-1">
+                  <p className="font-medium leading-snug">
+                    Pitch budget watch
+                    {tournamentForCallout.data.effectiveDailyMax != null && (
+                      <span className="font-normal text-purple-700">
+                        {" "}
+                        · daily max {tournamentForCallout.data.effectiveDailyMax}
+                      </span>
+                    )}
+                  </p>
+                  <ul className="mt-1.5 space-y-1 leading-snug">
+                    {items.map((p) => (
+                      <li
+                        key={p.playerId}
+                        className="flex items-start gap-1.5"
+                        data-testid={`pitch-callout-${p.playerId}`}
+                      >
+                        <span className="text-purple-500">•</span>
+                        <span>
+                          <span className="font-medium">{p.playerName}</span>
+                          {p.restingUntil ? (
+                            <span>
+                              {" "}
+                              — resting until{" "}
+                              {format(
+                                new Date(p.restingUntil.availableOn),
+                                "EEE M/d",
+                              )}
+                            </span>
+                          ) : (
+                            <span>
+                              {" "}
+                              — {p.pitchesAvailableToday} pitch
+                              {p.pitchesAvailableToday === 1 ? "" : "es"} left
+                              today
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs text-purple-700">
+                    Tap to record counts in the Pitch Counts card below.
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* One-time-per-session hint for mobile coaches: drag-and-drop is OFF
+          on touch devices (it kept fighting page scroll), so the only way
+          to move a player is the tap-to-select / tap-to-place flow. The
+          desktop tile already shows this in its tooltip. */}
+      {isCoarsePointer &&
+        !tapHintDismissed &&
+        canEditLineup &&
+        displayLineup.length > 0 && (
+          <div
+            className="rounded-lg border border-sky-200 bg-sky-50 p-3 print:hidden"
+            data-testid="banner-tap-to-swap-hint"
+          >
+            <div className="flex items-start gap-2">
+              <MousePointerClick className="h-4 w-4 mt-0.5 text-sky-700 shrink-0" />
+              <div className="text-sm text-sky-900 flex-1 min-w-0 leading-snug">
+                <p className="font-medium">Tap a player, then tap where to send them.</p>
+                <p className="text-xs text-sky-800 mt-0.5">
+                  Tapping the same player again deselects. The page scrolls
+                  normally — chips don't grab the screen anymore.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTapHintDismissed(true)}
+                className="text-sky-400 hover:text-sky-700 shrink-0"
+                aria-label="Dismiss tap-to-swap hint"
+                data-testid="button-tap-hint-dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
       <section id="printable-lineup">
         {/* Print-only header: gives the printout team/opponent/date
             context. Hidden on screen via the global `.print-only`
@@ -3890,7 +4034,7 @@ function PlayerTile({
       ref={setNodeRef}
       type="button"
       onClick={() => onClick(entry.id)}
-      className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-all ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} touch-none cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-px`}
+      className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-shadow ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} cursor-grab active:cursor-grabbing hover:shadow-md`}
       data-testid={testId}
       data-entry-id={entry.id}
       data-selected={isSelected ? "true" : "false"}
