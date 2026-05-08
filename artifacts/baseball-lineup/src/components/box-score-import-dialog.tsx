@@ -401,7 +401,7 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl w-[calc(100vw-1rem)] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle>Import box score</DialogTitle>
           <DialogDescription>
@@ -559,7 +559,90 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
                   No batting lines. Add one or upload more images.
                 </p>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                {/*
+                 * Mobile (<sm): stacked card per batter with a 4-col
+                 * grid of compact stat inputs — the 12-column desktop
+                 * table doesn't fit on a phone even with horizontal
+                 * scroll, since each cell needs a tap-target.
+                 */}
+                <div className="space-y-2 sm:hidden">
+                  {batting.map((r) => (
+                    <div
+                      key={r._key}
+                      className="rounded border bg-background p-2 space-y-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={r.playerId > 0 ? String(r.playerId) : ""}
+                          onValueChange={(v) =>
+                            updateBatting(r._key, "playerId", Number(v))
+                          }
+                        >
+                          <SelectTrigger className="h-9 flex-1">
+                            <SelectValue placeholder="Pick player" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sortedPlayers.map((p) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.name}
+                                {p.number != null ? ` #${p.number}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeBattingRow(r._key)}
+                          aria-label="Remove batter"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {(
+                          [
+                            ["ab", "AB"],
+                            ["runs", "R"],
+                            ["hits", "H"],
+                            ["rbi", "RBI"],
+                            ["doubles", "2B"],
+                            ["triples", "3B"],
+                            ["hr", "HR"],
+                            ["bb", "BB"],
+                            ["k", "K"],
+                            ["hbp", "HBP"],
+                            ["sac", "SAC"],
+                            ["sb", "SB"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <label key={key} className="block">
+                            <span className="block text-[10px] uppercase text-muted-foreground text-center">
+                              {label}
+                            </span>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              value={r[key] ?? 0}
+                              onChange={(e) =>
+                                updateBatting(
+                                  r._key,
+                                  key,
+                                  Math.max(0, Number(e.target.value) || 0),
+                                )
+                              }
+                              className="h-9 text-center px-1"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop (sm+): full 12-column table */}
+                <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-muted/60 text-xs">
@@ -662,6 +745,7 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </section>
 
