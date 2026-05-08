@@ -496,7 +496,10 @@ function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
     // Re-render once immediately so the display shows the right elapsed
     // value even if `now` was stale from before startedAt was set.
     setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    // Tick every 15s — the display is minute-resolution, so a 1s tick was
+    // 60× more re-renders than needed. 15s keeps the minute flip feeling
+    // prompt without burning battery on the dugout iPad.
+    const id = setInterval(() => setNow(Date.now()), 15000);
     return () => clearInterval(id);
   }, [startedAt]);
 
@@ -520,14 +523,10 @@ function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
   const startMs = new Date(startedAt).getTime();
   // Clamp to 0 in case of clock skew (rare: device clock briefly behind
   // the server's `startedAt` write). Math.max prevents a "-:-1" flash.
-  const elapsedSec = Math.max(0, Math.floor((now - startMs) / 1000));
-  const hours = Math.floor(elapsedSec / 3600);
-  const minutes = Math.floor((elapsedSec % 3600) / 60);
-  const seconds = elapsedSec % 60;
-  const display =
-    hours > 0
-      ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
-      : `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const elapsedMin = Math.max(0, Math.floor((now - startMs) / 60000));
+  const hours = Math.floor(elapsedMin / 60);
+  const minutes = elapsedMin % 60;
+  const display = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
   const handleReset = () => {
     if (typeof window !== "undefined" && window.confirm("Reset the game timer?")) {
