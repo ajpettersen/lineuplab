@@ -81,6 +81,7 @@ import { effectiveStatus } from "@/lib/game-status";
 import { PitchCountsCard } from "@/components/pitch-counts-card";
 import { SelectPositionsDialog } from "@/components/select-positions-dialog";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
+import { BoxScoreDisplayCard } from "@/components/box-score-display-card";
 import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
@@ -2085,7 +2086,11 @@ export default function GameDetail() {
                 })()}
                 {(game.status === "upcoming" ||
                   (game.status !== "cancelled" && game.innings > 1)) && (
-                  <div className="ml-auto flex gap-2 flex-wrap justify-end">
+                  // On mobile these wrap to their own row, so align them
+                  // left to match the rest of the card content. On sm+ we
+                  // restore the auto-margin push so they sit on the title
+                  // line, right-aligned.
+                  <div className="flex gap-2 flex-wrap justify-start basis-full sm:basis-auto sm:ml-auto sm:justify-end">
                     {can("partial") && game.status !== ("cancelled" as typeof game.status) && (
                       <Button
                         variant="outline"
@@ -2199,6 +2204,16 @@ export default function GameDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Read-only box score — auto-renders when boxScoreImportedAt is set.
+          Coaches land here after a game and want to see results without
+          re-opening the import dialog. The Edit button still routes there. */}
+      {game.boxScoreImportedAt && (
+        <BoxScoreDisplayCard
+          gameId={game.id}
+          onEdit={can("partial") ? () => setBoxScoreOpen(true) : undefined}
+        />
+      )}
 
       {/* AI Assistant search bar */}
       <Card>
