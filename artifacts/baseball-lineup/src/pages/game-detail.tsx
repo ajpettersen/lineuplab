@@ -211,6 +211,12 @@ export default function GameDetail() {
     position: string;
   } | null>(null);
   const [previewLineup, setPreviewLineup] = useState<typeof lineup | null>(null);
+  // Single popup that fronts the three "where does this lineup come from"
+  // entry points (AI generate / upload screenshot / copy previous game).
+  // Friend feedback was that three primary buttons sitting next to each
+  // other was visually noisy and made the page feel cluttered — funneling
+  // them through one CTA cleans up the lineup card header.
+  const [lineupActionsOpen, setLineupActionsOpen] = useState(false);
   // "Copy from previous game" picker state.
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyGames, setCopyGames] = useState<Array<{
@@ -2147,29 +2153,6 @@ export default function GameDetail() {
                   {/* All of these mutate the lineup → partial+ only. */}
                   {canEditLineup && (
                     <>
-                      {lineup.length > 0 ? (
-                        <Button
-                          variant="default"
-                          onClick={openImage}
-                          data-testid="button-update-from-photo"
-                        >
-                          <Camera className="h-4 w-4 mr-2" />
-                          Upload Lineup Screenshot
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          onClick={openImage}
-                          data-testid="button-from-screenshot"
-                        >
-                          <ImageIcon className="h-4 w-4 mr-2" />
-                          Upload Lineup Screenshot
-                        </Button>
-                      )}
-                      <Button variant="outline" onClick={openCopy} data-testid="button-copy-from-previous">
-                        <CopyIcon className="h-4 w-4 mr-2" />
-                        Copy Previous Lineup
-                      </Button>
                       {(lineup.length > 0 || previewLineup || editedLineup) && (
                         <Button
                           variant="outline"
@@ -2180,9 +2163,14 @@ export default function GameDetail() {
                           Edit Available
                         </Button>
                       )}
-                      <Button onClick={openGenerate} data-testid="button-generate-lineup">
+                      {/* Single CTA that opens a chooser with all three
+                          lineup-source entry points. */}
+                      <Button
+                        onClick={() => setLineupActionsOpen(true)}
+                        data-testid="button-lineup-actions"
+                      >
                         <Wand2 className="h-4 w-4 mr-2" />
-                        {lineup.length > 0 ? "Replace Lineup" : "Generate Lineup"}
+                        {lineup.length > 0 ? "Replace Lineup" : "Set Lineup"}
                       </Button>
                     </>
                   )}
@@ -2619,17 +2607,12 @@ export default function GameDetail() {
               <Wand2 className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p>No lineup generated yet.</p>
               <div className="flex gap-2 justify-center mt-3 flex-wrap">
-                <Button variant="outline" onClick={openImage}>
-                  <ImageIcon className="h-4 w-4 mr-2" />
-                  From Screenshot
-                </Button>
-                <Button variant="outline" onClick={openCopy}>
-                  <CopyIcon className="h-4 w-4 mr-2" />
-                  Copy from Previous
-                </Button>
-                <Button onClick={openGenerate}>
+                <Button
+                  onClick={() => setLineupActionsOpen(true)}
+                  data-testid="button-lineup-actions-empty"
+                >
                   <Wand2 className="h-4 w-4 mr-2" />
-                  Generate Lineup
+                  Set Lineup
                 </Button>
               </div>
             </div>
@@ -3912,6 +3895,81 @@ export default function GameDetail() {
               {snapshotPlan.isPending ? "Saving original..." : "Keep original"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lineup-source chooser. Single CTA replaces the old three-button row;
+          each option just dispatches to the existing handler and closes. */}
+      <Dialog open={lineupActionsOpen} onOpenChange={setLineupActionsOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-lineup-actions">
+          <DialogHeader>
+            <DialogTitle>
+              {lineup.length > 0 ? "Replace lineup" : "Set lineup"}
+            </DialogTitle>
+            <DialogDescription>
+              Pick where this lineup should come from. You can still tweak it
+              by hand after.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setLineupActionsOpen(false);
+                openGenerate();
+              }}
+              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-left hover:border-primary hover:bg-primary/5 transition-colors"
+              data-testid="lineup-action-generate"
+            >
+              <Wand2 className="h-5 w-5 mt-0.5 text-primary shrink-0" />
+              <div className="min-w-0">
+                <div className="font-semibold text-sm">Generate with AI</div>
+                <div className="text-xs text-muted-foreground leading-snug">
+                  Auto-build a fair rotation from your roster, preferences, and
+                  fairness dial.
+                </div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLineupActionsOpen(false);
+                openImage();
+              }}
+              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-left hover:border-primary hover:bg-primary/5 transition-colors"
+              data-testid="lineup-action-screenshot"
+            >
+              <Camera className="h-5 w-5 mt-0.5 text-primary shrink-0" />
+              <div className="min-w-0">
+                <div className="font-semibold text-sm">
+                  Upload lineup screenshot
+                </div>
+                <div className="text-xs text-muted-foreground leading-snug">
+                  Snap or upload a photo of your handwritten lineup card and
+                  we'll read it.
+                </div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLineupActionsOpen(false);
+                openCopy();
+              }}
+              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-left hover:border-primary hover:bg-primary/5 transition-colors"
+              data-testid="lineup-action-copy"
+            >
+              <CopyIcon className="h-5 w-5 mt-0.5 text-primary shrink-0" />
+              <div className="min-w-0">
+                <div className="font-semibold text-sm">
+                  Copy from a previous game
+                </div>
+                <div className="text-xs text-muted-foreground leading-snug">
+                  Reuse positions from any saved game on your schedule.
+                </div>
+              </div>
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -88,11 +88,29 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
 
   // Whether this team has opted-in to GameChanger box-score reminders.
   // Lazy team_settings rows mean missing row = false (default).
+  //
+  // Smart auto-detect: even if the explicit toggle is off, if the team has
+  // EVER imported a box score for any game, we treat the feature as
+  // implicitly enabled and keep nudging them on the games they haven't
+  // gotten to yet. Coaches who try it once but don't want to be nagged
+  // can flip the explicit toggle off in Settings → Defaults to suppress.
+  // Conversely, brand-new teams that flip the toggle ON in Settings see
+  // the reminders right away (no past imports needed).
   const [settings] = await db
     .select({ usesGameChanger: teamSettingsTable.usesGameChanger })
     .from(teamSettingsTable)
     .where(eq(teamSettingsTable.userId, userId));
-  const usesGameChanger = settings?.usesGameChanger ?? false;
+  // The column is a non-nullable boolean defaulting to false, so we can't
+  // distinguish "explicitly turned off" from "never touched the toggle".
+  // We treat the feature as on whenever EITHER the toggle is on OR the
+  // team has ever imported a box score. Coaches who decide to stop using
+  // GameChanger after importing a few games can dismiss the outstanding
+  // tasks one-by-one — the dismissals are permanent, so no new nags.
+  const explicitlyOn = settings?.usesGameChanger ?? false;
+  const hasEverImportedBoxScore = pastGames.some(
+    (g) => g.boxScoreImportedAt != null,
+  );
+  const usesGameChanger = explicitlyOn || hasEverImportedBoxScore;
 
   // Existing dismissals — keyed by `${gameId}:${taskType}` for cheap lookup.
   const dismissed = await db
