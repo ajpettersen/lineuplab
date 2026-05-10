@@ -25,21 +25,42 @@ export const ScrollX = React.forwardRef<
   React.useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
+    let raf = 0;
+    // Defensive: ResizeObserver callbacks can fire synchronously while
+    // React is still committing layout, and if a state update from one
+    // callback ever triggered a layout change that re-fired the
+    // observer we'd get the dreaded "ResizeObserver loop limit
+    // exceeded" warning + a visible flicker. We coalesce all reads and
+    // state writes into the next animation frame so React batches them
+    // outside the observer's callback.
     const update = () => {
-      const overflow = el.scrollWidth > el.clientWidth + 1;
-      setHasOverflow(overflow);
-      setAtEnd(
-        !overflow ||
-          el.scrollLeft + el.clientWidth >= el.scrollWidth - 1,
-      );
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const node = innerRef.current;
+        if (!node) return;
+        const overflow = node.scrollWidth > node.clientWidth + 1;
+        const ended =
+          !overflow ||
+          node.scrollLeft + node.clientWidth >= node.scrollWidth - 1;
+        // Functional setState with a same-value bail-out so identical
+        // measurements don't queue a re-render — important since this
+        // can fire on every scroll tick and on every parent resize.
+        setHasOverflow((prev) => (prev === overflow ? prev : overflow));
+        setAtEnd((prev) => (prev === ended ? prev : ended));
+      });
     };
     update();
     el.addEventListener("scroll", update, { passive: true });
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(update);
+      ro.observe(el);
+    }
     return () => {
+      if (raf) window.cancelAnimationFrame(raf);
       el.removeEventListener("scroll", update);
-      ro.disconnect();
+      ro?.disconnect();
     };
   }, []);
 
