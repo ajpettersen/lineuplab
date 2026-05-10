@@ -56,6 +56,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
+import { NextGameHero, pickHeroGame } from "@/components/next-game-hero";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -549,6 +550,23 @@ export default function Games() {
   // passed is shown under "Past" so it doesn't pretend to still be on the schedule.
   const upcoming = filtered.filter((g) => effectiveStatus(g) === "upcoming");
   const past = filtered.filter((g) => effectiveStatus(g) !== "upcoming").reverse();
+  // Hero card mirrors the dashboard's "Up Next" treatment so the
+  // soonest game gets the same broadcast graphic on the schedule
+  // too. We pick from the WHOLE games list (not the filtered list)
+  // so flipping to Practices / Events doesn't blow the hero away —
+  // it stays anchored to the next actual game. We then drop that
+  // game from the regular `upcoming` list so it doesn't render
+  // twice when the All filter is active.
+  const heroGame = pickHeroGame(games);
+  const upcomingForList = heroGame
+    ? upcoming.filter((g) => g.id !== heroGame.id)
+    : upcoming;
+  // Hero can fall back to a past-uncompleted game when nothing is
+  // upcoming, so also strip it from the past list to avoid double
+  // rendering.
+  const pastForList = heroGame
+    ? past.filter((g) => g.id !== heroGame.id)
+    : past;
 
   const handleDelete = () => {
     if (!deleteId) return;
@@ -796,18 +814,21 @@ export default function Games() {
         </Card>
       ) : (
         <>
-          {upcoming.length > 0 && (
+          {heroGame && filter !== "practice" && filter !== "other" && (
+            <NextGameHero game={heroGame} teamName={teamName ?? ""} />
+          )}
+          {upcomingForList.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Upcoming</h2>
-              {upcoming.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
+              {upcomingForList.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
             </div>
           )}
-          {past.length > 0 && (
+          {pastForList.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 {filter === "game" ? "Past Games" : "Past"}
               </h2>
-              {past.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
+              {pastForList.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
             </div>
           )}
         </>

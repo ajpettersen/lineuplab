@@ -12,11 +12,12 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, MapPin, ClipboardList, X, Info } from "lucide-react";
+import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info } from "lucide-react";
+import { NextGameHero } from "@/components/next-game-hero";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { HelpCard } from "@/components/help-card";
-import { format, isToday, isTomorrow } from "date-fns";
+import { format } from "date-fns";
 import { isTrulyUpcoming, isPastUnrecorded } from "@/lib/game-status";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -97,20 +98,8 @@ export default function Dashboard() {
       .sort((a, b) => b.when - a.when);
     return pastUnfinished[0]?.g ?? null;
   })();
-  const heroDate = heroGame ? new Date(heroGame.gameDate) : null;
-  // If we fell back to a past-uncompleted game (because there are no future
-  // ones), call it out instead of mis-labeling it "Up Next" — the coach needs
-  // to either record a result or cancel it.
-  const heroIsPast = heroGame ? isPastUnrecorded(heroGame) : false;
-  const heroLabel = heroDate
-    ? heroIsPast
-      ? "Needs Result"
-      : isToday(heroDate)
-        ? "Today's Game"
-        : isTomorrow(heroDate)
-          ? "Tomorrow's Game"
-          : "Up Next"
-    : "";
+  // <NextGameHero/> computes its own label + isPast badge from the
+  // game it receives, so we just need to know whether to render it.
 
   const mostBenchPlayer = playerStats
     .filter((p) => p.totalInnings > 0)
@@ -144,119 +133,12 @@ export default function Dashboard() {
       </div>
 
       {/*
-       * Today / Up Next hero — broadcast "lower-third" treatment. Deep navy
-       * panel, gold top strip, Oswald uppercase opponent name, Roboto Mono
-       * numeric date. Mirrors the Field Display chrome so the dashboard
-       * feels like part of the same broadcast product on game day.
+       * Today / Up Next hero — broadcast "lower-third" treatment. Shared
+       * with the Schedule page so the soonest game gets the same TV-graphic
+       * treatment everywhere it appears. See <NextGameHero/>.
        */}
-      {heroGame && heroDate && (
-        <Card
-          className="relative overflow-hidden border-0 p-0 shadow-[0_8px_32px_rgba(15,23,42,0.18)]"
-          data-testid="card-hero-game"
-        >
-          {/* Gold stripe — broadcast accent. */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-broadcast-gold z-10" />
-          {/* Navy backdrop with subtle radial highlight. */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(ellipse at top left, hsl(220 85% 28%) 0%, hsl(220 85% 18%) 55%, hsl(220 85% 14%) 100%)",
-            }}
-          />
-          {/* Subtle diagonal grid overlay for sports-graphic texture. */}
-          <div
-            className="absolute inset-0 opacity-[0.06] pointer-events-none"
-            style={{
-              backgroundImage:
-                "repeating-linear-gradient(45deg, transparent 0 14px, #fff 14px 15px)",
-            }}
-          />
-          <CardContent className="relative p-6 sm:p-8">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="eyebrow text-broadcast-gold">{heroLabel}</span>
-                  <span className="h-px w-10 bg-broadcast-gold/40" />
-                </div>
-                <div className="mt-2 flex items-baseline gap-2 sm:gap-3 min-w-0 flex-wrap">
-                  {/* Full settings team name on the left, "vs." separator,
-                      auto-shortened opponent (city) on the right. Tooltip
-                      preserves the full official opponent name so coaches
-                      can confirm the matchup. */}
-                  <span
-                    className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-white truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
-                    title={teamName || undefined}
-                  >
-                    {teamName || "Team"}
-                  </span>
-                  <span className="text-white/60 font-broadcast uppercase tracking-widest text-base sm:text-lg leading-none">
-                    vs.
-                  </span>
-                  <span
-                    className="font-broadcast uppercase tracking-wider text-3xl sm:text-5xl font-bold text-broadcast-gold truncate leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
-                    title={heroGame.opponent ?? undefined}
-                  >
-                    {formatOpponentForMatchup(heroGame.opponent, teamName) || heroGame.opponent}
-                  </span>
-                </div>
-                <div className="mt-4 flex items-center gap-4 sm:gap-6 flex-wrap">
-                  <span className="flex items-center gap-2 text-white">
-                    <CalendarDays className="h-4 w-4 text-broadcast-gold/80" />
-                    <span className="font-numeric text-sm sm:text-base">
-                      {format(heroDate, "EEE · MMM d · h:mm a")}
-                    </span>
-                  </span>
-                  {heroGame.location && (
-                    <span className="flex items-center gap-2 text-white/85">
-                      <MapPin className="h-4 w-4 text-broadcast-gold/80" />
-                      <span className="text-sm sm:text-base">{heroGame.location}</span>
-                    </span>
-                  )}
-                  <span className="flex items-center gap-2 px-2.5 py-0.5 rounded-sm bg-white/10 border border-white/20">
-                    <span className="font-numeric text-sm text-white">{heroGame.innings}</span>
-                    <span className="eyebrow text-white/60">innings</span>
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-                {!heroIsPast && (
-                  <Button
-                    size="lg"
-                    className="bg-broadcast-gold text-broadcast-navy hover:bg-amber-300 font-broadcast uppercase tracking-wider shadow-[0_4px_16px_rgba(251,191,36,0.35)] border-0"
-                    onClick={() =>
-                      window.open(
-                        `${BASE}/games/${heroGame.id}/display`,
-                        "_blank",
-                        "noopener",
-                      )
-                    }
-                    data-testid="button-hero-field-display"
-                    title="Open the dugout / fence-iPad display in a new tab"
-                  >
-                    <Tv className="h-5 w-5 mr-2" />
-                    Open Field Display
-                  </Button>
-                )}
-                <Link href={`/games/${heroGame.id}`}>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className={
-                      heroIsPast
-                        ? "w-full sm:w-auto bg-broadcast-gold text-broadcast-navy hover:bg-amber-300 border-0 font-broadcast uppercase tracking-wider shadow-[0_4px_16px_rgba(251,191,36,0.35)]"
-                        : "w-full sm:w-auto bg-transparent text-white border-white/40 hover:bg-white/10 hover:text-white font-broadcast uppercase tracking-wider"
-                    }
-                    data-testid="button-hero-open-game"
-                  >
-                    {heroIsPast ? "Record Result" : "Open Game"}
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {heroGame && (
+        <NextGameHero game={heroGame} teamName={teamName ?? ""} />
       )}
 
       {/* Coaching tasks (only renders when the coach has open items, so a
