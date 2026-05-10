@@ -12,7 +12,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown, MoreVertical } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollX } from "@/components/ui/scroll-x";
 import { useToast } from "@/hooks/use-toast";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
@@ -258,25 +264,47 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">Track offensive stats for lineup optimization. High OBP players can be prioritized for important games.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
-            <Wand2 className="h-4 w-4 mr-1" /> Extract from Screenshot
-          </Button>
+      {/*
+        Compact mobile toolbar: the destructive "Delete all manual
+        stats" button used to live next to "Extract from Screenshot",
+        which wrapped to a second row on phones and pushed the table
+        below the fold. Now the primary Extract action is icon-only on
+        mobile (full label from `sm` up) and the destructive action
+        moves into a kebab menu so the toolbar always fits a single
+        line.
+      */}
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Track offensive stats for lineup optimization. High OBP players can be prioritized for important games.
+        </p>
+        <div className="flex shrink-0 items-center gap-1">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => {
-              setNukeConfirm("");
-              setNukeOpen(true);
-            }}
+            onClick={() => setUploadOpen(true)}
+            aria-label="Extract from Screenshot"
           >
-            <Trash2 className="h-4 w-4 mr-1" /> Delete all manual stats
+            <Wand2 className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Extract from Screenshot</span>
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="More batting actions">
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[12rem]">
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => {
+                  setNukeConfirm("");
+                  setNukeOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> Delete all manual stats
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
