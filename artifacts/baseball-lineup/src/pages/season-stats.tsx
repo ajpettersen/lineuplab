@@ -23,9 +23,13 @@ interface PitchingRow {
 function usePitchingStats() {
   return useQuery({
     queryKey: ["pitching-stats"],
-    queryFn: async () => {
+    queryFn: async (): Promise<PitchingRow[]> => {
       const r = await fetch(`${BASE}/api/pitching`);
-      return r.json() as Promise<PitchingRow[]>;
+      // Surface HTTP errors as react-query errors instead of returning a
+      // non-array body that the table render would then choke on.
+      if (!r.ok) throw new Error(`GET /api/pitching failed (${r.status})`);
+      const data = await r.json();
+      return Array.isArray(data) ? (data as PitchingRow[]) : [];
     },
   });
 }

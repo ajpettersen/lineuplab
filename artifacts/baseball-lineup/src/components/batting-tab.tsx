@@ -39,9 +39,14 @@ type ExtractedRow = { playerId: number; playerName: string; ab: number; hits: nu
 function useBattingStats() {
   return useQuery({
     queryKey: ["batting-stats"],
-    queryFn: async () => {
+    queryFn: async (): Promise<BattingRow[]> => {
       const r = await fetch(`${BASE}/api/batting`);
-      return r.json() as Promise<BattingRow[]>;
+      // Surface HTTP errors as react-query errors instead of returning an
+      // error envelope that the table render would then choke on with
+      // "battingStats.map is not a function" → white screen.
+      if (!r.ok) throw new Error(`GET /api/batting failed (${r.status})`);
+      const data = await r.json();
+      return Array.isArray(data) ? (data as BattingRow[]) : [];
     },
   });
 }
