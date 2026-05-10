@@ -498,7 +498,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex flex-col leading-tight">
             <h1
-              className="text-xl md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none whitespace-nowrap"
+              className="text-xl md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none truncate min-w-0 max-w-[55vw] md:max-w-none md:whitespace-nowrap"
               data-testid="text-team-name"
             >
               {displayTeamName}

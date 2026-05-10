@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { Trash2, Download, Info } from "lucide-react";
+import { ScrollX } from "@/components/ui/scroll-x";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -279,7 +280,7 @@ function HistoryTab({ players }: { players: { id: number; name: string; number: 
             </Button>
           </div>
           {parsed && (
-            <div className="overflow-x-auto border rounded-md">
+            <ScrollX className="border rounded-md">
               <table className="w-full text-xs">
                 <thead className="bg-muted/50">
                   <tr>
@@ -294,7 +295,7 @@ function HistoryTab({ players }: { players: { id: number; name: string; number: 
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollX>
           )}
         </CardContent>
       </Card>
@@ -412,7 +413,7 @@ export default function Stats() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
+                  <ScrollX>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
@@ -474,7 +475,7 @@ export default function Stats() {
                           })}
                       </tbody>
                     </table>
-                  </div>
+                  </ScrollX>
                 </CardContent>
               </Card>
 

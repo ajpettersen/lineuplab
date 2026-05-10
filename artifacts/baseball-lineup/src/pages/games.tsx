@@ -49,7 +49,14 @@ import {
   AlertCircle,
   Tv,
   FileText,
+  MoreVertical,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
@@ -660,17 +667,21 @@ export default function Games() {
               </div>
             </div>
           </Link>
+          {/*
+           * Action cluster. On phones the five-button row was a tap-target
+           * mess (32 px buttons packed next to a wrapping title made it
+           * easy to mis-tap delete). We now keep the most common actions
+           * — Field Display + Open — visible at all sizes and collapse
+           * Edit / View box score / Delete into a "…" overflow menu on
+           * mobile. From `sm:` up the original five-button row is
+           * restored so desktop habits are unchanged.
+           */}
           <div className="flex items-center gap-1 ml-2">
-            {/*
-             * Field Display launcher — only meaningful for actual games that
-             * haven't been cancelled. Open in a new tab so the iPad stays on
-             * the display while the coach uses the source tab to edit.
-             */}
             {g.type !== "practice" && g.type !== "other" && g.status !== "cancelled" && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-primary"
+                className="h-9 w-9 text-muted-foreground hover:text-primary"
                 onClick={(e) => {
                   e.preventDefault();
                   window.open(`${BASE}/games/${g.id}/display`, "_blank", "noopener");
@@ -678,46 +689,99 @@ export default function Games() {
                 title="Open the dugout / fence-iPad display in a new tab"
                 data-testid={`button-game-display-${g.id}`}
               >
-                <Tv className="h-3.5 w-3.5" />
+                <Tv className="h-4 w-4" />
               </Button>
             )}
-            {g.boxScoreImportedAt && (
+            {/* Desktop-only: keep the original "view box score" + "edit"
+                + "delete" icon row. On mobile these live in the overflow
+                menu below. */}
+            <div className="hidden sm:flex items-center gap-1">
+              {g.boxScoreImportedAt && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-green-700 hover:text-green-800"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onViewBoxScore(g.id);
+                  }}
+                  title="Box score submitted — click to view or edit"
+                  data-testid={`button-view-box-score-${g.id}`}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-green-700 hover:text-green-800"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onViewBoxScore(g.id);
-                }}
-                title="Box score submitted — click to view or edit"
-                data-testid={`button-view-box-score-${g.id}`}
+                className="h-8 w-8 text-muted-foreground hover:text-primary"
+                onClick={(e) => { e.preventDefault(); setEditGame(g as Game); }}
+                title="Edit game"
               >
-                <FileText className="h-3.5 w-3.5" />
+                <Pencil className="h-3.5 w-3.5" />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-primary"
-              onClick={(e) => { e.preventDefault(); setEditGame(g as Game); }}
-              title="Edit game"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Link href={`/games/${g.id}`}>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ChevronRight className="h-4 w-4" />
+              <Link href={`/games/${g.id}`}>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+                onClick={() => setDeleteId(g.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            {/* Mobile-only: Open chevron stays visible, secondary actions
+                collapse into an overflow menu so destructive Delete is
+                one extra tap away from a thumb-sized target. */}
+            <Link href={`/games/${g.id}`} className="sm:hidden">
+              <Button variant="ghost" size="icon" className="h-9 w-9">
+                <ChevronRight className="h-5 w-5" />
               </Button>
             </Link>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              onClick={() => setDeleteId(g.id)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild className="sm:hidden">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-muted-foreground"
+                  onClick={(e) => e.preventDefault()}
+                  aria-label="More actions"
+                  data-testid={`button-game-menu-${g.id}`}
+                >
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[10rem]">
+                {g.boxScoreImportedAt && (
+                  <DropdownMenuItem
+                    onSelect={() => onViewBoxScore(g.id)}
+                    data-testid={`menu-view-box-score-${g.id}`}
+                  >
+                    <FileText className="mr-2 h-4 w-4 text-green-700" />
+                    View box score
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onSelect={() => setEditGame(g as Game)}
+                  data-testid={`menu-edit-game-${g.id}`}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => setDeleteId(g.id)}
+                  className="text-destructive focus:text-destructive"
+                  data-testid={`menu-delete-game-${g.id}`}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </CardContent>

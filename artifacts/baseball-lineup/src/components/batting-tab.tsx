@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { ScrollX } from "@/components/ui/scroll-x";
 import { useToast } from "@/hooks/use-toast";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
@@ -284,7 +285,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
               <Button size="sm" onClick={saveExtracted} disabled={saving}>Save All</Button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <ScrollX>
             <table className="w-full text-xs">
               <thead><tr className="border-b border-yellow-300">
                 <th className="text-left py-1 pr-3">Player</th>
@@ -340,7 +341,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         </div>
       )}
 
@@ -348,7 +349,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
       <Card>
         <CardHeader><CardTitle className="text-base">Batting Stats</CardTitle></CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <ScrollX>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
@@ -480,7 +481,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         </CardContent>
       </Card>
 

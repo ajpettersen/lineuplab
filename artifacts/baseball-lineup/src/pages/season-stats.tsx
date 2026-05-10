@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BattingTab } from "@/components/batting-tab";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
+import { ScrollX } from "@/components/ui/scroll-x";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -54,7 +55,7 @@ function PitchingTab() {
               No recorded outings yet. Pitch counts logged on games (or imported via box scores) will roll up here.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <ScrollX>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
@@ -95,7 +96,7 @@ function PitchingTab() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollX>
           )}
         </CardContent>
       </Card>
