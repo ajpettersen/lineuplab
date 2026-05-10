@@ -53,7 +53,10 @@ const FEATURES = [
 export default function Landing() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
-      <header className="border-b border-border/60 bg-card/40">
+      <header
+        className="border-b border-border/60 bg-card/40"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2">
             <img
