@@ -186,8 +186,21 @@ export async function getBattingTotals(userId: string): Promise<BattingTotalsRow
     cur.gamesRecorded += src.gamesRecorded ?? 0;
     cur.hasPerGameLines = cur.hasPerGameLines || (src.hasPerGameLines ?? false);
     if (src.updatedAt) {
-      if (!cur.updatedAt || src.updatedAt.getTime() > cur.updatedAt.getTime()) {
-        cur.updatedAt = src.updatedAt;
+      // Drizzle returns timestamp columns as Date for typed fields
+      // (manual `batting_stats.updatedAt`) but as a raw ISO string
+      // for the per-game aggregate (`max(updatedAt)` via raw sql)
+      // — coerce both sides before comparing so we don't crash the
+      // whole endpoint on `string.getTime is not a function`.
+      const incoming =
+        src.updatedAt instanceof Date ? src.updatedAt : new Date(src.updatedAt);
+      const current =
+        cur.updatedAt == null
+          ? null
+          : cur.updatedAt instanceof Date
+          ? cur.updatedAt
+          : new Date(cur.updatedAt);
+      if (!current || incoming.getTime() > current.getTime()) {
+        cur.updatedAt = incoming;
       }
     }
     acc.set(playerId, cur);
