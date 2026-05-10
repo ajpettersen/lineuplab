@@ -1469,8 +1469,8 @@ export default function FieldDisplay() {
               className="text-slate-400 hover:text-white hover:bg-slate-800/60 px-2 sm:px-3"
               data-testid="button-exit-display"
             >
-              <ArrowLeft className="h-4 w-4 sm:mr-1.5" />
-              <span className="hidden sm:inline">Exit</span>
+              <ArrowLeft className="h-4 w-4 mr-1.5" />
+              <span>Exit</span>
             </Button>
           </Link>
           {/* Team-vs-opponent title.

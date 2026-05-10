@@ -56,6 +56,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -164,7 +170,7 @@ export default function GameDetail() {
   const clearPlanSnapshot = useClearPlanSnapshot();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { teamName, battingStyle, activeFieldPositions } = useTeamSettings();
+  const { teamName, battingStyle, activeFieldPositions, showSelectPositions } = useTeamSettings();
   // Two new dialogs introduced for the post-game photo override flow:
   // - replaceConfirmOpen: shown after a photo is parsed AND a saved lineup
   //   already exists, asking whether to keep the original as a plan snapshot.
@@ -2084,44 +2090,23 @@ export default function GameDetail() {
                     return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
                   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
                 })()}
-                {(game.status === "upcoming" ||
-                  (game.status !== "cancelled" && game.innings > 1)) && (
-                  // On mobile these wrap to their own row, so align them
-                  // left to match the rest of the card content. On sm+ we
-                  // restore the auto-margin push so they sit on the title
-                  // line, right-aligned.
+                {can("partial") && game.status !== ("cancelled" as typeof game.status) && (
+                  // Single CTA — the Box Score dialog now handles screenshots,
+                  // final score, AND "game ended early" (last-inning input)
+                  // in one combined flow, so we don't need separate Mark
+                  // Complete / Game Ended Early buttons crowding the header.
+                  // Wraps to its own row on mobile and aligns left with the
+                  // rest of the card content; pushes right on sm+.
                   <div className="flex gap-2 flex-wrap justify-start basis-full sm:basis-auto sm:ml-auto sm:justify-end">
-                    {can("partial") && game.status !== ("cancelled" as typeof game.status) && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setBoxScoreOpen(true)}
-                        data-testid="button-import-box-score"
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        {game.boxScoreImportedAt ? "Re-import box score" : "Import box score"}
-                      </Button>
-                    )}
-                    {game.status === "upcoming" && (
-                      <Button variant="outline" size="sm" onClick={() => setCompleteOpen(true)}>
-                        <Trophy className="h-4 w-4 mr-2" />
-                        Mark Complete
-                      </Button>
-                    )}
-                    {game.innings > 1 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setEndEarlyLastInning(String(game.innings - 1));
-                          setEndEarlyOpen(true);
-                        }}
-                        data-testid="button-game-ended-early"
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Game Ended Early
-                      </Button>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBoxScoreOpen(true)}
+                      data-testid="button-import-box-score"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      {game.boxScoreImportedAt ? "Re-import box score" : "Import box score"}
+                    </Button>
                   </div>
                 )}
               </div>
@@ -2630,7 +2615,7 @@ export default function GameDetail() {
                   Remove {formatPlayerNameShort(selectedEntry.playerName)}
                 </Button>
               )}
-              <SelectPositionsDialog />
+              {showSelectPositions && <SelectPositionsDialog />}
               <Button
                 variant="outline"
                 size="sm"
@@ -2642,24 +2627,42 @@ export default function GameDetail() {
                 <Tv className="h-4 w-4 mr-1.5" />
                 Field Display
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCopyLineup}
-                data-testid="button-copy-lineup"
-                className="no-print"
-                title="Copy defensive lineup, batting order, and innings-by-position to your clipboard in Google Sheets format"
-              >
-                <ClipboardCopy className="h-4 w-4 mr-1.5" />
-                Copy for Sheets
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="button-print-lineup" className="no-print">
-                <Printer className="h-4 w-4 mr-1.5" />
-                Print
-              </Button>
+              {/* Single Export menu — replaces the prior pair of "Copy
+                  for Sheets" + "Print" buttons. Same actions, half the
+                  header width on mobile. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid="button-export-lineup"
+                    className="no-print"
+                    title="Copy the lineup to your clipboard or print this card"
+                  >
+                    <Upload className="h-4 w-4 mr-1.5" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={handleCopyLineup}
+                    data-testid="menu-copy-lineup"
+                  >
+                    <ClipboardCopy className="h-4 w-4 mr-2" />
+                    Copy for Sheets
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => window.print()}
+                    data-testid="menu-print-lineup"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
-          {displayLineup.length === 0 && (
+          {displayLineup.length === 0 && showSelectPositions && (
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <SelectPositionsDialog />
             </div>
@@ -4124,6 +4127,7 @@ export default function GameDetail() {
       {boxScoreOpen && (
         <BoxScoreImportDialog
           gameId={game.id}
+          gameInnings={game.innings}
           players={players ?? []}
           open={boxScoreOpen}
           onOpenChange={setBoxScoreOpen}

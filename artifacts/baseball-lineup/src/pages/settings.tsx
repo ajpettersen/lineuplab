@@ -106,6 +106,7 @@ export default function Settings() {
   const [showEquityTips, setShowEquityTips] = useState(true);
   const [usesGameChanger, setUsesGameChanger] = useState(false);
   const [usesTournaments, setUsesTournaments] = useState(true);
+  const [showSelectPositions, setShowSelectPositions] = useState(false);
 
   useEffect(() => {
     if (teamQuery.data) {
@@ -129,6 +130,7 @@ export default function Settings() {
       );
       setUsesGameChanger(teamQuery.data.usesGameChanger ?? false);
       setUsesTournaments(teamQuery.data.usesTournaments ?? true);
+      setShowSelectPositions(teamQuery.data.showSelectPositions ?? false);
     }
   }, [teamQuery.data]);
 
@@ -523,6 +525,30 @@ export default function Settings() {
               }}
               disabled={teamLoading || !canEditTeam}
               data-testid="switch-uses-gamechanger"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5 pr-3">
+              <Label htmlFor="showSelectPositions" className="text-sm font-medium">
+                Show "Select Positions" on the lineup card
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Adds a button on each game's Defensive Lineup card to switch
+                between the standard 9-position field (CF) and the 10-player
+                field (LCF + RCF). Off by default — most teams pick once and
+                don't need a per-game switcher.
+              </p>
+            </div>
+            <Switch
+              id="showSelectPositions"
+              checked={showSelectPositions}
+              onCheckedChange={(v) => {
+                setShowSelectPositions(v);
+                updateTeam.mutate({ data: { showSelectPositions: v } });
+              }}
+              disabled={teamLoading || !canEditTeam}
+              data-testid="switch-show-select-positions"
             />
           </div>
 

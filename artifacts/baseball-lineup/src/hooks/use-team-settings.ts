@@ -17,12 +17,17 @@ export function useTeamSettings() {
   // game-type picker). While the query is loading we also assume true
   // so the nav doesn't flash an item in/out on every page load.
   const usesTournaments: boolean = query.data?.usesTournaments ?? true;
+  // Defensive Lineup → Select Positions button visibility. Hidden by
+  // default; coaches who swap field formats game-to-game enable it
+  // from Settings → Defaults.
+  const showSelectPositions: boolean = query.data?.showSelectPositions ?? false;
   return {
     teamName: query.data?.teamName ?? "",
     teamShortName: query.data?.teamShortName ?? "",
     battingStyle,
     activeFieldPositions,
     usesTournaments,
+    showSelectPositions,
     onboardingCompletedAt: query.data?.onboardingCompletedAt ?? null,
     createdAt: query.data?.createdAt ?? null,
     isLoading: query.isLoading,

@@ -78,6 +78,16 @@ export const teamSettingsTable = pgTable("team_settings", {
    */
   usesTournaments: boolean("uses_tournaments").notNull().default(true),
   /**
+   * When true, the Defensive Lineup card on a game shows the
+   * "Select Positions" button (which opens the standard-9 vs.
+   * 10-player-field picker). Off by default — most teams pick
+   * once during onboarding and never need the in-game switcher,
+   * so the button just clutters the action row. Coaches who
+   * actually swap formats game-to-game can flip this on from
+   * Settings → Defaults.
+   */
+  showSelectPositions: boolean("show_select_positions").notNull().default(false),
+  /**
    * Per-team UI theme overrides. Stored as space-separated HSL strings
    * (`"H S% L%"` — e.g. `"220 85% 22%"`) so they can drop straight into
    * the existing `hsl(var(--primary))` CSS variables without any
@@ -110,6 +120,7 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   activeFieldPositions: true,
   usesGameChanger: true,
   usesTournaments: true,
+  showSelectPositions: true,
   primaryColor: true,
   secondaryColor: true,
 });

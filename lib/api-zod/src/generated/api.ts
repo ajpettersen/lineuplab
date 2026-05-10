@@ -754,6 +754,12 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       "When true (the default), the Events nav exposes Tournaments\nand the game-type picker offers Tournament. When false the\ntournament feature is hidden from new\/edit forms and the\ntop nav. Existing tournament games still render correctly.\n",
     ),
+  showSelectPositions: zod
+    .boolean()
+    .optional()
+    .describe(
+      'When true, the Defensive Lineup card on each game shows the\n\"Select Positions\" button (standard 9 vs. 10-player field).\nOff by default — most teams pick once and don\'t need a\nper-game switcher.\n',
+    ),
   primaryColor: zod
     .string()
     .nullish()
@@ -850,6 +856,7 @@ export const UpdateTeamSettingsBody = zod.object({
     .optional(),
   usesGameChanger: zod.boolean().optional(),
   usesTournaments: zod.boolean().optional(),
+  showSelectPositions: zod.boolean().optional(),
   primaryColor: zod
     .string()
     .nullish()
@@ -929,6 +936,12 @@ export const UpdateTeamSettingsResponse = zod.object({
     .optional()
     .describe(
       "When true (the default), the Events nav exposes Tournaments\nand the game-type picker offers Tournament. When false the\ntournament feature is hidden from new\/edit forms and the\ntop nav. Existing tournament games still render correctly.\n",
+    ),
+  showSelectPositions: zod
+    .boolean()
+    .optional()
+    .describe(
+      'When true, the Defensive Lineup card on each game shows the\n\"Select Positions\" button (standard 9 vs. 10-player field).\nOff by default — most teams pick once and don\'t need a\nper-game switcher.\n',
     ),
   primaryColor: zod
     .string()
@@ -1020,6 +1033,12 @@ export const CompleteOnboardingResponse = zod.object({
     .optional()
     .describe(
       "When true (the default), the Events nav exposes Tournaments\nand the game-type picker offers Tournament. When false the\ntournament feature is hidden from new\/edit forms and the\ntop nav. Existing tournament games still render correctly.\n",
+    ),
+  showSelectPositions: zod
+    .boolean()
+    .optional()
+    .describe(
+      'When true, the Defensive Lineup card on each game shows the\n\"Select Positions\" button (standard 9 vs. 10-player field).\nOff by default — most teams pick once and don\'t need a\nper-game switcher.\n',
     ),
   primaryColor: zod
     .string()

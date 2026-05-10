@@ -393,6 +393,12 @@ tournament feature is hidden from new/edit forms and the
 top nav. Existing tournament games still render correctly.
  */
   usesTournaments?: boolean;
+  /** When true, the Defensive Lineup card on each game shows the
+"Select Positions" button (standard 9 vs. 10-player field).
+Off by default — most teams pick once and don't need a
+per-game switcher.
+ */
+  showSelectPositions?: boolean;
   /**
    * Per-team UI primary color override. HSL string of the form
 `"H S% L%"` (e.g. `"220 85% 22%"`) so it drops into
@@ -470,6 +476,7 @@ export interface UpdateTeamSettingsBody {
   activeFieldPositions?: UpdateTeamSettingsBodyActiveFieldPositionsItem[];
   usesGameChanger?: boolean;
   usesTournaments?: boolean;
+  showSelectPositions?: boolean;
   /**
    * HSL string `"H S% L%"`. Pass null to clear back to app default.
    * @nullable

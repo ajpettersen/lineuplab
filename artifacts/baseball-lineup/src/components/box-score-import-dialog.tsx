@@ -5,8 +5,10 @@ import {
   useExtractBoxScore,
   useSaveBoxScore,
   useDeleteBoxScore,
+  useUpdateGame,
   getGetBoxScoreQueryKey,
   getGetGameQueryKey,
+  getGetGameLineupQueryKey,
   getListGamesQueryKey,
   getGetSeasonStatsQueryKey,
   getGetPlayerStatsQueryKey,
@@ -43,6 +45,14 @@ import { format } from "date-fns";
 
 interface Props {
   gameId: number;
+  /**
+   * The game's currently scheduled innings count. Surfaced as the
+   * default + max for the "Last inning played" picker on the preview
+   * step. When the coach saves with a lower value we also patch the
+   * game to shorten it (drops lineup entries / locks past that
+   * inning) — replaces the standalone "Game Ended Early" dialog.
+   */
+  gameInnings: number;
   players: Player[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -89,9 +99,16 @@ const newKey = () => `r${++_kid}`;
  * needed) and let the coach tweak + re-save, or "Remove import" to
  * wipe the per-game lines.
  */
-export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Props) {
+export function BoxScoreImportDialog({
+  gameId,
+  gameInnings,
+  players,
+  open,
+  onOpenChange,
+}: Props) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const updateGame = useUpdateGame();
 
   const { data: state, isLoading: stateLoading } = useGetBoxScore(gameId, {
     query: {
@@ -111,6 +128,10 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
   const [pitching, setPitching] = useState<EditablePitching[]>([]);
   const [ourScore, setOurScore] = useState<string>("");
   const [opponentScore, setOpponentScore] = useState<string>("");
+  // "Last inning actually played" — defaults to the full scheduled
+  // length. Picking a smaller number shortens the game on save
+  // (replaces the old standalone "Game Ended Early" flow).
+  const [lastInning, setLastInning] = useState<number>(gameInnings);
   // Object-storage paths for the screenshots attached to this import.
   // Either hydrated from the saved state (re-opening an already-imported
   // game) or returned by /extract after a fresh upload. Sent back on
@@ -167,7 +188,11 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
     }
     setFiles([]);
     setLightboxIdx(null);
-  }, [open, stateLoading, state]);
+    // Reset the last-inning picker to the game's full length each
+    // time the dialog opens — coaches who mark a game complete
+    // shouldn't accidentally inherit a prior shortening.
+    setLastInning(gameInnings);
+  }, [open, stateLoading, state, gameInnings]);
 
   const playersById = useMemo(() => {
     const m = new Map<number, Player>();
@@ -308,6 +333,17 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
       return;
     }
     try {
+      // Cap "last inning played" at >=1 and <= existing game length
+      // (UI enforces, but defend-in-depth).
+      const trimmedLast = Math.max(
+        1,
+        Math.min(gameInnings, Math.floor(lastInning) || gameInnings),
+      );
+      // 1. Save the box score FIRST. If this fails we abort before
+      //    touching game.innings — shortening the game cascades into
+      //    destructive trims of lineup entries, locks, and AI pins,
+      //    which we don't want to apply unless the box score is
+      //    actually persisted.
       await save.mutateAsync({
         id: gameId,
         data: {
@@ -319,10 +355,25 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
           markCompleted: true,
         },
       });
+      // 2. Now (best-effort) shorten the game. If this fails the box
+      //    score is still saved; the coach can re-edit innings from
+      //    the game card. We surface the error in a toast below.
+      let trimError: unknown = null;
+      if (trimmedLast < gameInnings) {
+        try {
+          await updateGame.mutateAsync({
+            id: gameId,
+            data: { innings: trimmedLast },
+          });
+        } catch (err) {
+          trimError = err;
+        }
+      }
       // Invalidate everything that depends on per-game stats / scores.
       await Promise.all([
         qc.invalidateQueries({ queryKey: getGetBoxScoreQueryKey(gameId) }),
         qc.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) }),
+        qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(gameId) }),
         qc.invalidateQueries({ queryKey: getListGamesQueryKey() }),
         qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() }),
         qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() }),
@@ -331,8 +382,22 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
       ]);
       toast({
         title: "Box score saved",
-        description: `${validBatting.length} batting line(s), ${validPitching.length} pitcher(s).`,
+        description: `${validBatting.length} batting line(s), ${validPitching.length} pitcher(s).${
+          trimmedLast < gameInnings && !trimError
+            ? ` Game shortened to ${trimmedLast} inning${trimmedLast === 1 ? "" : "s"}.`
+            : ""
+        }`,
       });
+      if (trimError) {
+        toast({
+          title: "Couldn't shorten the game",
+          description:
+            trimError instanceof Error
+              ? trimError.message
+              : "The box score saved, but updating the inning count failed. Edit it from the game card.",
+          variant: "destructive",
+        });
+      }
       onOpenChange(false);
     } catch (err) {
       toast({
@@ -475,6 +540,27 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
               </div>
             )}
 
+            {/* Escape hatch — coach has no screenshots and just wants
+                to record the final score (and optionally shorten the
+                game). Jumps to the editable preview with no AI call;
+                they can still add batting/pitching rows by hand. */}
+            <p className="text-center text-xs text-muted-foreground">
+              No screenshots?{" "}
+              <button
+                type="button"
+                className="underline hover:text-foreground"
+                onClick={() => {
+                  setBatting([]);
+                  setPitching([]);
+                  setStep("preview");
+                }}
+                data-testid="button-skip-screenshots"
+              >
+                Enter the score manually
+              </button>
+              .
+            </p>
+
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
@@ -545,6 +631,37 @@ export function BoxScoreImportDialog({ gameId, players, open, onOpenChange }: Pr
                   className="mt-1"
                 />
               </div>
+              {/* Game-ended-early picker — replaces the old standalone
+                  "Game Ended Early" button. Default = full scheduled
+                  length; pick lower to shorten on save. Only shown
+                  when shortening is actually possible (innings > 1). */}
+              {gameInnings > 1 && (
+                <div className="col-span-2">
+                  <Label className="text-xs">Last inning played</Label>
+                  <Select
+                    value={String(lastInning)}
+                    onValueChange={(v) => setLastInning(Number(v))}
+                  >
+                    <SelectTrigger className="mt-1" data-testid="select-last-inning-played">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: gameInnings }, (_, i) => i + 1).map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          Inning {n}
+                          {n === gameInnings ? " (full game)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {lastInning < gameInnings && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Saving will shorten this game from {gameInnings} to {lastInning} inning
+                      {lastInning === 1 ? "" : "s"} — entries past inning {lastInning} will be removed.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <section>

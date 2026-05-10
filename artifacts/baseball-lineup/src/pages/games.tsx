@@ -850,14 +850,24 @@ export default function Games() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {boxScoreGameId != null && (
-        <BoxScoreImportDialog
-          gameId={boxScoreGameId}
-          players={players}
-          open={boxScoreGameId != null}
-          onOpenChange={(o) => !o && setBoxScoreGameId(null)}
-        />
-      )}
+      {boxScoreGameId != null && (() => {
+        // Pull the game's current scheduled length from the cached
+        // games list so the dialog's "Last inning played" picker can
+        // bound itself correctly. Falls back to 6 (the app default)
+        // for the rare race where the game has been removed from the
+        // list but the dialog id is still set.
+        const innings =
+          games.find((g) => g.id === boxScoreGameId)?.innings ?? 6;
+        return (
+          <BoxScoreImportDialog
+            gameId={boxScoreGameId}
+            gameInnings={innings}
+            players={players}
+            open={boxScoreGameId != null}
+            onOpenChange={(o) => !o && setBoxScoreGameId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
