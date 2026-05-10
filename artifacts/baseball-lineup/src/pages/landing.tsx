@@ -90,10 +90,15 @@ export default function Landing() {
       <main>
         {/* Promo video */}
         <section className="mx-auto max-w-6xl px-4 pt-10 sm:px-6 sm:pt-14">
-          <div
-            className="relative overflow-hidden rounded-xl border border-border bg-black shadow-lg"
-            style={{ aspectRatio: "16 / 9" }}
-          >
+          {/*
+            On mobile, a 16:9 frame at viewport width is only ~200 px
+            tall, which crushes the scene text + animations. Use a
+            taller 4:5 frame on phones so the video composition (which
+            absolutely-positions to fill its container) has real estate
+            to render legibly. Snap back to 16:9 from `sm` up where the
+            wide cinematic crop is intended.
+          */}
+          <div className="relative aspect-[4/5] overflow-hidden rounded-xl border border-border bg-black shadow-lg sm:aspect-video">
             <iframe
               src="/promo-video/"
               title="Lineup Lab promo"
