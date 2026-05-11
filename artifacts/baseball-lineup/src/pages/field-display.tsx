@@ -1496,20 +1496,23 @@ export default function FieldDisplay() {
        * is unchanged.
        */}
       {/* Mobile layout strategy:
-       *  - Outer is `flex-col` on phones so each sub-cluster sits on its
-       *    own row. On `sm:` it flips back to a wrapping flex row so the
-       *    desktop layout is unchanged.
-       *  - The identity cluster (Exit + team-vs-opp) gets `w-full` on
-       *    mobile = row 1 by itself. The team name no longer fights the
-       *    inning chip for horizontal space.
-       *  - Center (inning) and right (timer/score/kebab) are wrapped
-       *    together in a `sm:contents` shim. On mobile that wrapper is a
-       *    real flex row (= row 2) with `justify-between` so the inning
-       *    chip pins left and the scores pin right. On `sm:`, `contents`
-       *    makes the wrapper transparent to flex so center & right
-       *    participate in the header's row directly — desktop layout is
-       *    byte-for-byte the same as before. */}
-      <header className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-y-2 sm:gap-x-3 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
+       *  - Header is a wrapping flex row at every viewport. The identity
+       *    cluster (Exit + team-vs-opp) gets `w-full` on mobile so it
+       *    forces a row-break, owning row 1 by itself — the team name
+       *    no longer fights the inning chip for horizontal space.
+       *  - Center (inning chip) + right (timer/score/kebab) then sit
+       *    together on row 2. The header's existing `justify-between`
+       *    naturally pins inning to the left edge and scores to the
+       *    right edge of that row, no extra wrapper needed.
+       *  - Desktop layout is byte-identical to before because at `sm:`
+       *    the left cluster reverts to `flex-1` and all three clusters
+       *    fit on a single row.
+       *  Earlier iteration used a `sm:contents` shim around center+right
+       *  to coerce a justify-between row on mobile; that triggered a
+       *  visual overlap of the inning chevron and the Exit button on
+       *  iPad Safari (display:contents has known quirks as a flex item
+       *  in WebKit). The wrapper-free approach above sidesteps both. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
           {/* Exit no longer navigates directly — it opens the
@@ -1571,12 +1574,6 @@ export default function FieldDisplay() {
           </div>
         </div>
 
-        {/* Mobile row-2 wrapper: groups center (inning) + right (scores)
-         *  on one row with the inning pinned left and the scores pinned
-         *  right. `sm:contents` collapses this wrapper out of the flex
-         *  layout on desktop so the center + right clusters slot back
-         *  into the header's flex row directly. */}
-        <div className="flex items-center justify-between gap-3 w-full sm:w-auto sm:contents">
         {/* Center cluster: broadcast inning badge + compact controls.
          *  The black-bg + side-border "broadcast chip" treatment is
          *  scoped to `sm:` because on a phone, where the chip sits on
@@ -1932,7 +1929,6 @@ export default function FieldDisplay() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
         </div>
       </header>
 
