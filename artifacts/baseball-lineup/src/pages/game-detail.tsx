@@ -4333,7 +4333,11 @@ function PlayerTile({
       // `touch-action: manipulation` to every [role=button] (which the
       // chip inherits from useDraggable's attributes). Without this the
       // overlay rect went haywire and the floating chip jumped to the
-      // top of the page mid-swap.
+      // top of the page mid-swap. The inline `touchAction: "none"` on
+      // `style` below is a belt-and-suspenders against any @layer
+      // ordering surprise that could let the base `button { touch-action:
+      // manipulation }` rule beat the utility class.
+      style={{ touchAction: "none" }}
       className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap min-w-[3rem] shadow-sm transition-shadow touch-none ${positionColor(positionForColor)} ${ringClasses} ${hideOriginal ? "opacity-30" : ""} cursor-grab active:cursor-grabbing hover:shadow-md`}
       data-testid={testId}
       data-entry-id={entry.id}
@@ -4581,6 +4585,18 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
         </div>
         <button
           type="button"
+          // Same focus-scroll guard as the defense PlayerTile chip:
+          // suppress the browser's mousedown-focuses-the-button behavior
+          // (which can scroll the handle into view at the top of the
+          // viewport mid-drag, making the row look "pinned to the top")
+          // and remove the handle from the tab order. Pointer events
+          // still reach @dnd-kit's PointerSensor (it listens to
+          // pointerdown, which fires before mousedown). The inline
+          // `touchAction: "none"` is a belt-and-suspenders next to
+          // `touch-none` so the base CSS rule applying
+          // `touch-action: manipulation` to every <button> can't win.
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ touchAction: "none" }}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted touch-none cursor-grab active:cursor-grabbing no-print"
           aria-label={`Drag ${row.playerName}`}
           title="Drag to reorder"
