@@ -96,10 +96,20 @@ export function PitchCountsCard({ gameId, game }: Props) {
     },
   });
 
-  const pitchers = useMemo<Player[]>(
-    () => players.filter((p) => p.canPitch),
-    [players],
-  );
+  // Roster pitchers (canPitch) PLUS any player who already has a recorded
+  // pitch count for this game — covers the edge case where a non-pitcher
+  // ends up on the mound in a tournament (emergency long-relief, blowout
+  // mop-up, lineup mistake, etc.). Without this, the coach can't track
+  // those pitches against the tournament's pitch budget. Order: roster
+  // pitchers first (alpha), then the "ad-hoc" arms below.
+  const pitchers = useMemo<Player[]>(() => {
+    const recordedIds = new Set(counts.map((c) => c.playerId));
+    const rostered = players.filter((p) => p.canPitch);
+    const adHoc = players.filter(
+      (p) => !p.canPitch && recordedIds.has(p.id),
+    );
+    return [...rostered, ...adHoc];
+  }, [players, counts]);
 
   // Local draft state: playerId → string (so the user can clear / type freely).
   const [drafts, setDrafts] = useState<Record<number, string>>({});
