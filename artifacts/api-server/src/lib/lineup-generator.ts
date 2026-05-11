@@ -65,6 +65,24 @@ export interface LineupConstraints {
    * 10-element list here and the generator fills 10 slots per inning.
    */
   fieldPositions?: readonly string[];
+  /**
+   * Per-position depth chart, sourced from `team_settings.depthChart`.
+   * Map shape: `{ "SS": [aliceId, bobId, carlosId], "2B": [...] }` — the
+   * first id in each array is the coach's #1 at that position, second is
+   * the #2, etc. Only consulted as a SOFT BIAS during the greedy fill;
+   * the bonus per (player, position) match scales inversely with the
+   * equity dial just like `preferredPositions`:
+   *   - equity 0.0 (fully competitive): rank-1 player gets a strong push
+   *     (~+30) toward their best slot, rank-2 ~+24, decaying linearly to
+   *     0 by rank 6+.
+   *   - equity 0.5 (balanced default):  no depth-chart bonus.
+   *   - equity 1.0 (max fairness):      no depth-chart bonus.
+   * The depth chart is additive with the existing preferred-position
+   * bonus, so a player who is BOTH preferred and #1 in the depth chart
+   * gets the strongest possible nudge in competitive games. Players not
+   * listed in the depth chart for a position simply receive no bonus.
+   */
+  depthChart?: Record<string, number[]>;
 }
 
 export interface GeneratedEntry {
@@ -147,6 +165,31 @@ export function generateFairLineup(
   const basePreferredBonus = Math.max(0, (0.5 - equity) * 50);
   const preferredBonus =
     constraints.gameType === "tournament" ? basePreferredBonus * 2 : basePreferredBonus;
+
+  // Depth-chart bonus — same equity curve as preferredBonus but a touch
+  // stronger at the top of the order (max ~30 at e=0) and decaying with
+  // rank position so #1 gets a real push, #2 a smaller push, etc., and
+  // by rank 6 the bonus is gone. Tournament games double the base just
+  // like preferredBonus so the coach's depth-chart wins more often when
+  // the game type itself is competitive.
+  const depthChart = constraints.depthChart ?? {};
+  const baseDepthBonus = Math.max(0, (0.5 - equity) * 60);
+  const depthBonusFactor = constraints.gameType === "tournament" ? 2 : 1;
+  /**
+   * Depth-chart bonus for `playerId` at `position`. Returns 0 if the
+   * player isn't listed in the depth chart for that slot OR if equity
+   * is at/above the neutral midpoint.
+   */
+  const depthBonusFor = (playerId: number, position: string): number => {
+    if (baseDepthBonus <= 0) return 0;
+    const order = depthChart[position];
+    if (!order || order.length === 0) return 0;
+    const rank = order.indexOf(playerId);
+    if (rank < 0) return 0;
+    // Linear decay: rank 0 → 1.0, rank 5+ → 0.
+    const decay = Math.max(0, 1 - rank * 0.2);
+    return baseDepthBonus * depthBonusFactor * decay;
+  };
 
   // Player-specific constraints
   const cannotPlayMap = new Map<number, Set<string>>();
@@ -302,11 +345,20 @@ export function generateFairLineup(
           // Preferred-position bonus scales up as the equity dial drops below 50.
           const aPref = a.preferredPositions.includes(pos) ? preferredBonus : 0;
           const bPref = b.preferredPositions.includes(pos) ? preferredBonus : 0;
+          // Depth-chart bonus: also scales up below e=0.5, decays with
+          // depth-chart rank. Additive with preferredBonus so a player
+          // who is BOTH preferred and #1 in the depth chart gets the
+          // strongest possible push toward this slot in tournament play.
+          const aDepth = depthBonusFor(a.id, pos);
+          const bDepth = depthBonusFor(b.id, pos);
           const scoreDiff =
-            (scorePlayer(b.id, inning, isLastInning) + bMust + bPref) -
-            (scorePlayer(a.id, inning, isLastInning) + aMust + aPref);
+            (scorePlayer(b.id, inning, isLastInning) + bMust + bPref + bDepth) -
+            (scorePlayer(a.id, inning, isLastInning) + aMust + aPref + aDepth);
           if (scoreDiff !== 0) return scoreDiff;
-          // Final tiebreaker: still prefer preferred positions (matches legacy at e>=0.5)
+          // Final tiebreaker: still prefer preferred positions (matches legacy at e>=0.5).
+          // We do NOT add a depth-chart tiebreaker here — once the bonus
+          // hits 0 (e>=0.5) we honor the coach's "everyone gets time"
+          // intent and don't sneak the depth chart back in via tiebreak.
           const aPreferred = a.preferredPositions.includes(pos) ? -1 : 0;
           const bPreferred = b.preferredPositions.includes(pos) ? -1 : 0;
           return aPreferred - bPreferred;

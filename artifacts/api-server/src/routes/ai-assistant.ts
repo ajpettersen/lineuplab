@@ -24,17 +24,28 @@ import {
 const STANDARD_FIELD_POSITIONS = [...FIELD_POSITIONS] as readonly string[];
 
 // Loads the team's active defensive positions (the standard 9 or the
-// 10-player LCF+RCF split). Falls back to the standard 9 when the row is
-// missing/empty so legacy teams behave exactly as before. Mirrors the
-// pattern used in routes/lineups.ts so AI-regenerated lineups honor the
-// same field shape as the manual generate flow.
-async function loadActiveFieldPositions(userId: string): Promise<readonly string[]> {
+// 10-player LCF+RCF split) AND the per-position depth chart. Falls back
+// to the standard 9 / empty depth chart when the row is missing so legacy
+// teams behave exactly as before. Mirrors the pattern used in
+// routes/lineups.ts so AI-regenerated lineups honor the same field shape
+// AND the same depth-chart bias as the manual generate flow.
+async function loadFieldShapeAndDepth(userId: string): Promise<{
+  activeFieldPositions: readonly string[];
+  depthChart: Record<string, number[]>;
+}> {
   const [row] = await db
-    .select({ activeFieldPositions: teamSettingsTable.activeFieldPositions })
+    .select({
+      activeFieldPositions: teamSettingsTable.activeFieldPositions,
+      depthChart: teamSettingsTable.depthChart,
+    })
     .from(teamSettingsTable)
     .where(eq(teamSettingsTable.userId, userId));
   const stored = row?.activeFieldPositions;
-  return Array.isArray(stored) && stored.length > 0 ? stored : STANDARD_FIELD_POSITIONS;
+  const activeFieldPositions =
+    Array.isArray(stored) && stored.length > 0 ? stored : STANDARD_FIELD_POSITIONS;
+  const depthChart =
+    (row?.depthChart as Record<string, number[]> | null | undefined) ?? {};
+  return { activeFieldPositions, depthChart };
 }
 import { getOwnedGame } from "../lib/ownership";
 
@@ -136,7 +147,7 @@ function parseAiJson(raw: string): AiResponse | null {
 
 router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
-  const activeFieldPositions = await loadActiveFieldPositions(userId);
+  const { activeFieldPositions, depthChart } = await loadFieldShapeAndDepth(userId);
   const params = ParamsSchema.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid game id" });
@@ -545,7 +556,7 @@ ${body.data.message}`;
   const generated = generateFairLineup(
     activePlayers,
     game.innings,
-    { fieldPositions: activeFieldPositions },
+    { fieldPositions: activeFieldPositions, depthChart },
     constraints,
     pinned,
   );

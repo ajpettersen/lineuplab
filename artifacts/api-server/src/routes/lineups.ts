@@ -157,6 +157,14 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     .select({
       battingStyle: teamSettingsTable.battingStyle,
       activeFieldPositions: teamSettingsTable.activeFieldPositions,
+      // Per-position depth chart — used as a soft bias by the lineup
+      // generator. Scales inversely with the equity dial: in
+      // tournament mode (or any game with a low fairness setting) the
+      // coach's #1-ranked player at each position gets a real push
+      // toward that slot; at the default balanced equity it has no
+      // effect, so the existing "fair" behavior is preserved for
+      // coaches who never touch the Depth Chart page.
+      depthChart: teamSettingsTable.depthChart,
     })
     .from(teamSettingsTable)
     .where(eq(teamSettingsTable.userId, userId));
@@ -181,6 +189,8 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       playerSeasonSLG: slgMap,
       battingStyle,
       fieldPositions: activeFieldPositions,
+      depthChart:
+        (teamSettingsRow?.depthChart as Record<string, number[]> | null | undefined) ?? undefined,
     },
     storedConstraints,
     pinned,
