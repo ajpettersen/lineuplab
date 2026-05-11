@@ -1495,9 +1495,23 @@ export default function FieldDisplay() {
        * into a kebab dropdown below the `sm` breakpoint. The desktop layout
        * is unchanged.
        */}
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
+      {/* Mobile layout strategy:
+       *  - Outer is `flex-col` on phones so each sub-cluster sits on its
+       *    own row. On `sm:` it flips back to a wrapping flex row so the
+       *    desktop layout is unchanged.
+       *  - The identity cluster (Exit + team-vs-opp) gets `w-full` on
+       *    mobile = row 1 by itself. The team name no longer fights the
+       *    inning chip for horizontal space.
+       *  - Center (inning) and right (timer/score/kebab) are wrapped
+       *    together in a `sm:contents` shim. On mobile that wrapper is a
+       *    real flex row (= row 2) with `justify-between` so the inning
+       *    chip pins left and the scores pin right. On `sm:`, `contents`
+       *    makes the wrapper transparent to flex so center & right
+       *    participate in the header's row directly — desktop layout is
+       *    byte-for-byte the same as before. */}
+      <header className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-y-2 sm:gap-x-3 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
         {/* Left cluster: exit + team vs opponent */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
           {/* Exit no longer navigates directly — it opens the
            * "Is this game complete?" prompt so the coach gets a
            * chance to finalize the score and upload a box score on
@@ -1557,8 +1571,19 @@ export default function FieldDisplay() {
           </div>
         </div>
 
-        {/* Center cluster: broadcast inning badge + compact controls */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0 bg-[#050d1a] border-l border-r border-[#1a2a42] px-2 sm:px-4 py-1">
+        {/* Mobile row-2 wrapper: groups center (inning) + right (scores)
+         *  on one row with the inning pinned left and the scores pinned
+         *  right. `sm:contents` collapses this wrapper out of the flex
+         *  layout on desktop so the center + right clusters slot back
+         *  into the header's flex row directly. */}
+        <div className="flex items-center justify-between gap-3 w-full sm:w-auto sm:contents">
+        {/* Center cluster: broadcast inning badge + compact controls.
+         *  The black-bg + side-border "broadcast chip" treatment is
+         *  scoped to `sm:` because on a phone, where the chip sits on
+         *  its own row next to the score steppers, the heavy bg made
+         *  the inning controls look like a free-floating modal that
+         *  didn't belong with the rest of the header. */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 sm:bg-[#050d1a] sm:border-l sm:border-r sm:border-[#1a2a42] px-0 sm:px-4 py-1">
           <Button
             variant="outline"
             size="lg"
@@ -1636,7 +1661,7 @@ export default function FieldDisplay() {
         </div>
 
         {/* Right cluster: live status, score, fullscreen */}
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0 flex-1 justify-end">
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0 sm:flex-1 sm:justify-end">
           {/* Connection status badge.
             * Three visual states (priority order):
             *   OFFLINE — amber WifiOff icon + "Offline" or "Offline · will
@@ -1907,6 +1932,7 @@ export default function FieldDisplay() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
         </div>
       </header>
 
