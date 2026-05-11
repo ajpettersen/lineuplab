@@ -2074,12 +2074,69 @@ export default function GameDetail() {
         </Link>
       </div>
 
-      {/* Game Header */}
-      <Card>
-        <CardContent className="p-5">
+      {/* Game Header — tournament games get a distinctive purple/indigo
+          treatment (top gradient stripe, ring, Trophy eyebrow with a
+          link back to the parent tournament, and a faint trophy
+          watermark) so the coach can tell at a glance this is a
+          tournament game with pitch-budget rules in play. */}
+      {(() => {
+        const isTournament = game.gameType === "tournament";
+        const tournamentName =
+          isTournament && tournamentForCallout.data?.name
+            ? tournamentForCallout.data.name
+            : null;
+        return (
+      <Card
+        className={
+          isTournament
+            ? "relative overflow-hidden border-purple-300/70 ring-1 ring-purple-200 shadow-[0_2px_18px_-6px_rgba(126,34,206,0.25)]"
+            : ""
+        }
+        data-testid={isTournament ? "card-tournament-game-header" : undefined}
+      >
+        {isTournament && (
+          <>
+            {/* Top gradient stripe — purple → indigo → purple, like a
+                championship banner across the top of the card. */}
+            <div
+              aria-hidden
+              className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-purple-600 via-indigo-500 to-purple-600"
+            />
+            {/* Faint Trophy watermark in the top-right; pointer-events-
+                none so it never intercepts clicks. */}
+            <Trophy
+              aria-hidden
+              className="pointer-events-none absolute -right-3 -top-3 h-28 w-28 text-purple-200/40 rotate-12"
+              strokeWidth={1.25}
+            />
+          </>
+        )}
+        <CardContent className={isTournament ? "p-5 pt-6 relative" : "p-5"}>
           <div className="flex flex-col gap-4">
             <div>
-              <div className="eyebrow text-primary/70">Game</div>
+              {isTournament ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 px-2.5 py-1 text-[11px] font-broadcast font-bold uppercase tracking-[0.16em] text-white shadow-sm"
+                    data-testid="badge-tournament-eyebrow"
+                  >
+                    <Trophy className="h-3 w-3" />
+                    Tournament
+                  </span>
+                  {tournamentName && game.tournamentId != null && (
+                    <Link
+                      href={`/tournaments/${game.tournamentId}`}
+                      className="text-xs font-medium text-purple-700 hover:text-purple-900 hover:underline truncate max-w-[16rem]"
+                      data-testid="link-parent-tournament"
+                      title={tournamentName}
+                    >
+                      {tournamentName}
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <div className="eyebrow text-primary/70">Game</div>
+              )}
               {/* Title row: opponent + status badge on the left, status-
                   changing actions (Mark Complete / Game Ended Early)
                   pushed to the right with ml-auto so they sit on the
@@ -2199,6 +2256,8 @@ export default function GameDetail() {
           </div>
         </CardContent>
       </Card>
+        );
+      })()}
 
       {/* Read-only box score — auto-renders when boxScoreImportedAt is set.
           Coaches land here after a game and want to see results without
