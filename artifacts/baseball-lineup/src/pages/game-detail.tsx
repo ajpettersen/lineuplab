@@ -2669,7 +2669,7 @@ export default function GameDetail() {
             reveal them all at once and so heavy panels (lineup grid)
             don't have to re-mount when the coach toggles between tabs. */}
         <TabsContent value="defense" forceMount className="mt-3 data-[state=inactive]:hidden">
-      <Card>
+      <Card data-testid="card-defensive-lineup">
         <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
           <div>
             <CardTitle className="text-base">
