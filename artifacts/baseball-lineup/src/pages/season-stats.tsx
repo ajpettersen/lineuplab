@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BattingTab } from "@/components/batting-tab";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 import { ScrollX } from "@/components/ui/scroll-x";
+import { TableSkeleton } from "@/components/ui/skeleton";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -53,7 +54,11 @@ function PitchingTab() {
         <CardHeader><CardTitle className="text-base">Pitching Stats</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            // 6-row table skeleton matching the 6 columns below
+            // (Pitcher / Outings / Total / Avg / Max / Last). Same
+            // vertical footprint as a typical loaded table so the
+            // page doesn't jump when data lands.
+            <TableSkeleton rows={6} columns={6} />
           ) : withOutings.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No recorded outings yet. Pitch counts logged on games (or imported via box scores) will roll up here.

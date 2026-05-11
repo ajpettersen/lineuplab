@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CardGridSkeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -250,9 +251,12 @@ export default function Practices() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+        // Skeleton card grid that mirrors the real practice-card
+        // layout (sm:grid-cols-2). Reserves the same vertical space
+        // as the loaded list so the page doesn't jump when data
+        // arrives, and replaces the previous centered spinner that
+        // collapsed to ~48 px and made the page look broken.
+        <CardGridSkeleton count={4} columns={2} cardHeight="h-32" />
       ) : practices.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center space-y-3">

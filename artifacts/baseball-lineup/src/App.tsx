@@ -48,10 +48,25 @@ import NotFound from "@/pages/not-found";
 
 // gcTime must exceed the persister's max-age, otherwise React Query
 // would garbage-collect entries the persister later tries to rehydrate.
+//
+// staleTime: 30 s default. With React Query's default of 0 every page
+// mount triggered a background refetch and showed a loading spinner
+// even when the data was already in the cache from 5 seconds ago —
+// navigating between Dashboard / Schedule / Roster / Stats felt
+// laggy on every tap. With a 30 s freshness window, intra-app
+// navigation paints from cache instantly (no spinner, no flicker)
+// and only revalidates after the user has been somewhere else for
+// half a minute. Mutations still invalidate explicitly via
+// `qc.invalidateQueries`, so this does NOT make writes look stale —
+// it only kills the flash on read-only navigation.
+//
+// Long-lived background data (team context, admin lookups, per-player
+// game logs) sets its own staleTime locally and overrides this default.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       gcTime: PERSIST_MAX_AGE,
+      staleTime: 30_000,
     },
   },
 });
