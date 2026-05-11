@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRoute, Link } from "wouter";
+import { useRoute, Link, useLocation } from "wouter";
 import {
   useGetGame,
   useGetGameLineup,
@@ -33,8 +33,15 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Moon, Play, Plus, RotateCcw, Sun, SunDim, WifiOff } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Every position the field display knows how to lay out. The team's actual
 // `activeFieldPositions` (from team_settings) is intersected with this list
@@ -616,6 +623,7 @@ const FIELD_LIGHTING: Record<LightingMode, LightingPalette> = {
  */
 export default function FieldDisplay() {
   const [, params] = useRoute("/games/:id/display");
+  const [, setLocation] = useLocation();
   const id = parseInt(params?.id ?? "0");
   const { teamName, teamShortName, activeFieldPositions } = useTeamSettings();
   // Field Display renders OUTSIDE the main `<Layout>` shell (it owns the
@@ -1458,18 +1466,34 @@ export default function FieldDisplay() {
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
     <div className="min-h-[100dvh] max-md:portrait:h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden">
-      {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ── */}
-      <header className="flex items-center justify-between gap-3 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
+      {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ──
+       *
+       * Mobile layout note: the original single-row header packed exit +
+       * team-name + inning controls + live status + timer + score steppers +
+       * end-game + brightness + fullscreen onto one line, which overflowed
+       * the right edge of phone viewports — coaches couldn't see (or tap)
+       * Exit, Fullscreen, or the score. Now the header wraps to two rows on
+       * mobile (`flex-wrap`), Exit is enlarged into a real touch target, and
+       * the secondary actions (End Game / Brightness / Fullscreen) collapse
+       * into a kebab dropdown below the `sm` breakpoint. The desktop layout
+       * is unchanged.
+       */}
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <Link href={`/games/${id}`}>
             <Button
               variant="ghost"
               size="sm"
-              className="text-slate-400 hover:text-white hover:bg-slate-800/60 px-2 sm:px-3"
+              /* Mobile: enlarged tap target (h-10, bigger icon, kept label
+               * visible) so coaches can actually find their way out without
+               * fishing for a 24px chevron. Desktop is unchanged. */
+              className="h-10 sm:h-9 px-2.5 sm:px-3 text-slate-200 sm:text-slate-400 hover:text-white hover:bg-slate-800/60 border border-slate-700/50 sm:border-transparent rounded-md font-display uppercase tracking-wider text-[11px] sm:text-sm"
               data-testid="button-exit-display"
+              aria-label="Exit field display"
+              style={{ touchAction: "manipulation" }}
             >
-              <ArrowLeft className="h-4 w-4 mr-1.5" />
+              <ArrowLeft className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-1.5" />
               <span>Exit</span>
             </Button>
           </Link>
@@ -1525,6 +1549,12 @@ export default function FieldDisplay() {
             className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-broadcast-gold disabled:opacity-30 rounded-none"
             data-testid="button-prev-inning"
             aria-label="Previous inning"
+            /* `touch-action: manipulation` removes iOS Safari's 300 ms
+             * "wait for double-tap-to-zoom" delay AND prevents the browser
+             * from interpreting the tap as a potential zoom gesture, which
+             * was making the chevron feel like it required two taps to
+             * advance. */
+            style={{ touchAction: "manipulation" }}
           >
             <ChevronLeft className="h-6 w-6" />
           </Button>
@@ -1551,6 +1581,8 @@ export default function FieldDisplay() {
             className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-broadcast-gold disabled:opacity-30 rounded-none"
             data-testid="button-next-inning"
             aria-label="Next inning"
+            /* See prev-inning button for the touch-action rationale. */
+            style={{ touchAction: "manipulation" }}
           >
             <ChevronRight className="h-6 w-6" />
           </Button>
@@ -1575,6 +1607,9 @@ export default function FieldDisplay() {
               data-testid="button-add-extra-inning"
               aria-label="Add extra inning"
               title="Add an extra inning"
+              /* Same touch-action rationale as the prev/next chevrons —
+               * keep the inning cluster feeling instant on iOS. */
+              style={{ touchAction: "manipulation" }}
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Extra</span>
@@ -1727,12 +1762,16 @@ export default function FieldDisplay() {
           {/* Brightness cycle: Auto → Sunlight → Dim → Auto. One tap to
             * advance; the icon shows what mode is currently active so
             * the coach can read it at a glance without remembering what
-            * the next tap does. */}
+            * the next tap does.
+            *
+            * Hidden below `sm` — the same action is available from the
+            * mobile kebab dropdown to keep the phone header from
+            * overflowing horizontally. */}
           <Button
             variant="ghost"
             size="sm"
             onClick={cycleBrightness}
-            className={`px-2 ${
+            className={`hidden sm:inline-flex px-2 ${
               sunlightMode
                 ? "text-amber-300 hover:text-amber-200 hover:bg-slate-800/60"
                 : dimMode
@@ -1768,12 +1807,100 @@ export default function FieldDisplay() {
             variant="ghost"
             size="sm"
             onClick={toggleFullscreen}
-            className="text-slate-500 hover:text-white hover:bg-slate-800/60 px-2"
+            className="hidden sm:inline-flex text-slate-500 hover:text-white hover:bg-slate-800/60 px-2"
             aria-label="Toggle fullscreen"
             data-testid="button-fullscreen"
           >
             <Maximize2 className="h-4 w-4" />
           </Button>
+          {/* Mobile-only "More" kebab.
+           *
+           * On phones the right-hand cluster used to keep growing past
+           * the viewport edge, hiding End Game / Brightness / Fullscreen
+           * entirely. Below the `sm` breakpoint we collapse those three
+           * actions into a single dropdown so the header stays inside
+           * the viewport and every action remains reachable with one
+           * tap. (Desktop keeps the inline buttons unchanged.) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild className="sm:hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 text-slate-200 hover:text-white hover:bg-slate-800/60 border border-slate-700/50 rounded-md"
+                aria-label="More field display actions"
+                data-testid="button-field-display-more"
+                style={{ touchAction: "manipulation" }}
+              >
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              className="min-w-[14rem]"
+            >
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  cycleBrightness();
+                }}
+                data-testid="menu-brightness-mode"
+              >
+                {sunlightMode ? (
+                  <Sun className="h-4 w-4 mr-2" />
+                ) : dimMode ? (
+                  <Moon className="h-4 w-4 mr-2" />
+                ) : (
+                  <SunDim className="h-4 w-4 mr-2" />
+                )}
+                <span>
+                  {sunlightMode
+                    ? "Sunlight — tap to dim"
+                    : dimMode
+                      ? "Dim — tap for auto"
+                      : "Auto — tap for sunlight"}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  toggleFullscreen();
+                }}
+                data-testid="menu-fullscreen"
+              >
+                <Maximize2 className="h-4 w-4 mr-2" />
+                <span>Toggle fullscreen</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-broadcast-gold focus:text-amber-200"
+                onSelect={(e) => {
+                  if (
+                    typeof window === "undefined" ||
+                    !window.confirm(
+                      "End game and head back to the game screen to finalize the score?",
+                    )
+                  ) {
+                    e.preventDefault();
+                    return;
+                  }
+                  setLocation(`/games/${id}`);
+                }}
+                data-testid="menu-end-game"
+              >
+                <Flag className="h-4 w-4 mr-2" />
+                <span>End game</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => setLocation(`/games/${id}`)}
+                data-testid="menu-exit"
+              >
+                <X className="h-4 w-4 mr-2" />
+                <span>Exit field display</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
