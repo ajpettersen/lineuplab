@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   Card,
@@ -130,7 +130,27 @@ export default function Admin() {
   type UserSortKey = "name" | "lastSeen" | "min24h" | "min7d" | "min30d";
   const [userSortKey, setUserSortKey] = useState<UserSortKey>("lastSeen");
   const [userSortDir, setUserSortDir] = useState<"asc" | "desc">("desc");
-  const [activeOnly7d, setActiveOnly7d] = useState(false);
+  // Users-table activity filter. Tri-state so the two stat cards
+  // ("Active now" → 5 min, "Active this week" → 7 d) can each act as
+  // a click-to-filter shortcut, and the user can clear back to "all".
+  type UserActivityFilter = "all" | "5m" | "7d";
+  const [userActivityFilter, setUserActivityFilter] =
+    useState<UserActivityFilter>("all");
+  // Ref + scroll helper for the click-to-jump behavior on the stat
+  // cards. `scrollIntoView` with `block: "start"` lands the table
+  // header just below the sticky top bar.
+  const usersCardRef = useRef<HTMLDivElement | null>(null);
+  const jumpToUsers = (filter: UserActivityFilter) => {
+    setUserActivityFilter(filter);
+    // Defer one frame so the filter applies (and the table re-renders
+    // to its new height) before we scroll.
+    requestAnimationFrame(() => {
+      usersCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
   const toggleUserSort = (key: UserSortKey) => {
     if (key === userSortKey) {
       setUserSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -193,9 +213,10 @@ export default function Admin() {
   // sort indicators reflect what's actually rendered.
   const visibleUsers = users
     .filter((u) => {
-      if (!activeOnly7d) return true;
+      if (userActivityFilter === "all") return true;
       if (!u.lastSeenAt) return false;
-      return nowMs - new Date(u.lastSeenAt).getTime() <= SEVEN_DAYS;
+      const age = nowMs - new Date(u.lastSeenAt).getTime();
+      return userActivityFilter === "5m" ? age <= FIVE_MIN : age <= SEVEN_DAYS;
     })
     .slice()
     .sort((a, b) => {
@@ -236,37 +257,62 @@ export default function Admin() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="row-admin-activity-stats">
-        <Card data-testid="card-active-now">
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-              <span className="relative inline-flex">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                {activeNowCount > 0 && (
-                  <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75" />
-                )}
-              </span>
-              Active now
-            </div>
-            <div className="text-2xl font-mono tabular-nums mt-1">
-              {activeNowCount}
-            </div>
-            <div className="text-[11px] text-muted-foreground">last 5 min</div>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-active-7d">
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-              <Activity className="h-3 w-3" />
-              Active this week
-            </div>
-            <div className="text-2xl font-mono tabular-nums mt-1">
-              {active7dCount}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              of {users.length} {users.length === 1 ? "user" : "users"}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Click jumps to the Users table below and filters it to
+            users with a heartbeat in the last 5 min. */}
+        <button
+          type="button"
+          onClick={() => jumpToUsers("5m")}
+          aria-label={`Show ${activeNowCount} users active in the last 5 minutes`}
+          className="text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+          data-testid="button-jump-active-now"
+        >
+          <Card
+            data-testid="card-active-now"
+            className="hover:border-primary/40 hover:shadow-sm transition cursor-pointer h-full"
+          >
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                <span className="relative inline-flex">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  {activeNowCount > 0 && (
+                    <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75" />
+                  )}
+                </span>
+                Active now
+              </div>
+              <div className="text-2xl font-mono tabular-nums mt-1">
+                {activeNowCount}
+              </div>
+              <div className="text-[11px] text-muted-foreground">last 5 min · click to view</div>
+            </CardContent>
+          </Card>
+        </button>
+        {/* Click jumps to the Users table below and filters to last 7 d. */}
+        <button
+          type="button"
+          onClick={() => jumpToUsers("7d")}
+          aria-label={`Show ${active7dCount} users active in the last 7 days`}
+          className="text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-shadow"
+          data-testid="button-jump-active-7d"
+        >
+          <Card
+            data-testid="card-active-7d"
+            className="hover:border-primary/40 hover:shadow-sm transition cursor-pointer h-full"
+          >
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                <Activity className="h-3 w-3" />
+                Active this week
+              </div>
+              <div className="text-2xl font-mono tabular-nums mt-1">
+                {active7dCount}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                of {users.length} {users.length === 1 ? "user" : "users"} · click to view
+              </div>
+            </CardContent>
+          </Card>
+        </button>
         <Card data-testid="card-team-count">
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
@@ -636,18 +682,27 @@ export default function Admin() {
         </CardContent>
       </Card>
 
-      <Card data-testid="card-admin-users">
+      <Card data-testid="card-admin-users" ref={usersCardRef}>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div className="space-y-1.5">
             <CardTitle className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Users ({visibleUsers.length}
-              {activeOnly7d && visibleUsers.length !== users.length && (
-                <span className="text-muted-foreground font-normal text-sm">
-                  {" "}of {users.length}
+              {userActivityFilter !== "all" &&
+                visibleUsers.length !== users.length && (
+                  <span className="text-muted-foreground font-normal text-sm">
+                    {" "}of {users.length}
+                  </span>
+                )}
+              )
+              {userActivityFilter !== "all" && (
+                <span
+                  className="ml-1 inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+                  data-testid="badge-active-filter"
+                >
+                  {userActivityFilter === "5m" ? "Active now" : "Active this week"}
                 </span>
               )}
-              )
             </CardTitle>
             <CardDescription>
               Every distinct Clerk user that has either created or joined
@@ -660,18 +715,33 @@ export default function Admin() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
-            <Checkbox
-              id="admin-active-only-7d"
-              checked={activeOnly7d}
-              onCheckedChange={(v) => setActiveOnly7d(v === true)}
-              data-testid="checkbox-admin-active-only-7d"
-            />
-            <Label
-              htmlFor="admin-active-only-7d"
-              className="text-sm font-normal cursor-pointer"
-            >
-              Active in last 7 days
-            </Label>
+            {userActivityFilter !== "all" ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setUserActivityFilter("all")}
+                data-testid="button-clear-active-filter"
+              >
+                Clear filter
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="admin-active-only-7d"
+                  checked={false}
+                  onCheckedChange={(v) =>
+                    setUserActivityFilter(v === true ? "7d" : "all")
+                  }
+                  data-testid="checkbox-admin-active-only-7d"
+                />
+                <Label
+                  htmlFor="admin-active-only-7d"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Active in last 7 days
+                </Label>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
