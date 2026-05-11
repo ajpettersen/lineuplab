@@ -2,14 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRoute, Link } from "wouter";
 import {
+  closestCenter,
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  pointerWithin,
   TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -342,11 +345,10 @@ export default function GameDetail() {
   // new lineup arrives (new save / preview / regenerate) so the coach sees
   // it again with fresh advice.
   const [equityDismissed, setEquityDismissed] = useState(false);
-  // Detect coarse-pointer (touch) devices once on mount. On touch we DISABLE
-  // drag-and-drop entirely — coaches were accidentally dragging chips while
-  // trying to scroll the page. The tap-to-select-then-tap-target flow
-  // (handleCellClick) is the only mobile interaction. Desktop / mouse keeps
-  // both modes: drag a chip OR click-then-click.
+  // Detect coarse-pointer (touch) devices once on mount. We still mount the
+  // sensors on touch — but with a long-press activation (delay+tolerance)
+  // so a normal scroll doesn't accidentally start a drag. The tap-to-select
+  // flow (handleCellClick) remains as a fallback for coaches who prefer it.
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
@@ -360,15 +362,33 @@ export default function GameDetail() {
   // coaches. Re-shows on a new session so a coach who closed it weeks ago
   // sees it again next time.
   const [tapHintDismissed, setTapHintDismissed] = useState(false);
-  // PointerSensor with a distance constraint lets a click still pass through
-  // (so tap-to-select works) while a small movement triggers a drag. We omit
-  // TouchSensor entirely — on coarse-pointer we'll skip mounting these
-  // sensors so chips don't intercept scroll gestures at all.
-  const desktopSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  // Sensors: switched off PointerSensor (which had reliability issues
+  // across browsers — drops would intermittently report `over: null`
+  // even when the cursor was clearly over a target cell) to the
+  // explicit MouseSensor + TouchSensor combo, which is dnd-kit's
+  // default-recommended setup.
+  // - MouseSensor: 5px activation distance — a click still passes
+  //   through so tap-to-select works, a small movement starts a drag.
+  // - TouchSensor: 200ms long-press + 8px tolerance. A normal scroll
+  //   gesture (move within the first 200ms) is preserved; holding
+  //   still for 200ms grabs the chip. This unblocks iPad coaches who
+  //   previously had no drag at all.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    }),
   );
-  const touchOnlySensors = useSensors();
-  const sensors = isCoarsePointer ? touchOnlySensors : desktopSensors;
+  // Collision detection: pointerWithin first (cursor must be inside the
+  // droppable rect — most precise, exactly matches "I dropped on THIS
+  // cell"), then closestCenter as a fallback for the small case where
+  // the cursor sits in the row gap between cells. This combo is dnd-kit's
+  // recommended pattern for dense grids — pure closestCenter alone could
+  // pick an adjacent inning's cell when the user releases near the edge.
+  const fieldCollisionDetection: CollisionDetection = (args) => {
+    const pointer = pointerWithin(args);
+    return pointer.length > 0 ? pointer : closestCenter(args);
+  };
   // Tracks when the most recent drag ended. A few ms after a drop, browsers
   // fire a synthetic click on whatever was under the pointer — that would
   // re-open the "add player" picker right on top of the move you just made.
@@ -2784,6 +2804,13 @@ export default function GameDetail() {
           ) : (
             <DndContext
               sensors={sensors}
+              // pointerWithin → closestCenter fallback. The default
+              // rectIntersection intermittently reported `over: null`
+              // even when the cursor was clearly over a target cell.
+              // pointerWithin alone would no-op when releasing in the
+              // tiny gap between cells, so closestCenter picks up
+              // those edge cases. See `fieldCollisionDetection` above.
+              collisionDetection={fieldCollisionDetection}
               // autoScroll OFF: when it kicked in near the viewport edge
               // it desynced the DragOverlay's rect math from the cursor
               // and the floating chip would snap to the top of the page
@@ -4305,6 +4332,16 @@ function PlayerTile({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `player-${entry.id}`,
   });
+  // MouseSensor's listener is `onMouseDown`, which would normally be
+  // overwritten if we spread `{...listeners}` and THEN added our own
+  // `onMouseDown={preventDefault}` to suppress the browser's
+  // mousedown-focuses-the-button + scroll-into-view behavior. Capture the
+  // sensor's listener before the spread so we can call it from inside our
+  // wrapper, getting BOTH the preventDefault (no page jump) AND the drag
+  // activation. Without this, drags would never start on desktop.
+  const sensorMouseDown = (
+    listeners as { onMouseDown?: (e: React.MouseEvent) => void } | undefined
+  )?.onMouseDown;
   const ringClasses = isSelected
     ? "ring-2 ring-primary ring-offset-1"
     : isHotInning
@@ -4326,8 +4363,7 @@ function PlayerTile({
       // page". Pointer events still fire (dnd-kit listens to
       // pointerdown, which runs before mousedown) and the click event
       // still arrives on mouseup, so tap-to-select keeps working.
-      onMouseDown={(e) => e.preventDefault()}
-      // `touch-none` is required for @dnd-kit's PointerSensor to fully
+      // `touch-none` is required for @dnd-kit's TouchSensor to fully
       // capture the gesture instead of letting the browser steal it for
       // pan-scroll. Re-added after the iOS-polish CSS started applying
       // `touch-action: manipulation` to every [role=button] (which the
@@ -4343,8 +4379,15 @@ function PlayerTile({
       data-entry-id={entry.id}
       data-selected={isSelected ? "true" : "false"}
       title={`${entry.playerName} — drag onto another player to swap, or onto an empty slot to move them there`}
-      {...listeners}
       {...attributes}
+      {...listeners}
+      // MUST come AFTER `{...listeners}` so this wrapper wins over
+      // MouseSensor's own onMouseDown — and we manually forward to the
+      // sensor inside so drag activation still happens.
+      onMouseDown={(e) => {
+        e.preventDefault();
+        sensorMouseDown?.(e);
+      }}
     >
       {formatPlayerNameShort(entry.playerName)}
     </button>
@@ -4525,6 +4568,14 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.playerId,
   });
+  // See PlayerTile for the full explanation. MouseSensor's listener is
+  // `onMouseDown`, so we capture it before the spread and forward to it
+  // from inside our preventDefault wrapper — otherwise the spread would
+  // overwrite our wrapper and the page would jump on grab, OR our
+  // wrapper would overwrite the sensor and drag would never start.
+  const sensorMouseDown = (
+    listeners as { onMouseDown?: (e: React.MouseEvent) => void } | undefined
+  )?.onMouseDown;
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -4588,14 +4639,10 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
           // Same focus-scroll guard as the defense PlayerTile chip:
           // suppress the browser's mousedown-focuses-the-button behavior
           // (which can scroll the handle into view at the top of the
-          // viewport mid-drag, making the row look "pinned to the top")
-          // and remove the handle from the tab order. Pointer events
-          // still reach @dnd-kit's PointerSensor (it listens to
-          // pointerdown, which fires before mousedown). The inline
-          // `touchAction: "none"` is a belt-and-suspenders next to
-          // `touch-none` so the base CSS rule applying
+          // viewport mid-drag, making the row look "pinned to the top").
+          // The inline `touchAction: "none"` is a belt-and-suspenders next
+          // to `touch-none` so the base CSS rule applying
           // `touch-action: manipulation` to every <button> can't win.
-          onMouseDown={(e) => e.preventDefault()}
           style={{ touchAction: "none" }}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted touch-none cursor-grab active:cursor-grabbing no-print"
           aria-label={`Drag ${row.playerName}`}
@@ -4603,6 +4650,13 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
           data-testid={`drag-handle-${slot - 1}`}
           {...attributes}
           {...listeners}
+          // MUST come AFTER `{...listeners}` so this wrapper wins over
+          // MouseSensor's own onMouseDown — and we manually forward to the
+          // sensor inside so drag activation still happens.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            sensorMouseDown?.(e);
+          }}
         >
           <GripVertical className="h-4 w-4" />
         </button>
