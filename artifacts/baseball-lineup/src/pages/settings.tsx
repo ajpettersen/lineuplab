@@ -22,6 +22,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Link } from "wouter";
 import { CoachesCard } from "@/components/coaches-card";
 import { TeamColorsCard } from "@/components/team-colors-card";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
@@ -201,8 +203,29 @@ export default function Settings() {
     });
   };
 
+  // Tabs are driven by the URL hash so deep links from the dashboard
+  // / nav can land on the right section (e.g. Constraints), and the
+  // back button navigates between tabs naturally. Defaults to "team".
+  const [tab, setTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "team";
+    const h = window.location.hash.replace(/^#/, "");
+    if (h === "constraints-section" || h === "constraints") return "constraints";
+    if (["team", "coaches", "lineup", "gameday", "constraints"].includes(h)) return h;
+    return "team";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onHash = () => {
+      const h = window.location.hash.replace(/^#/, "");
+      if (h === "constraints-section" || h === "constraints") setTab("constraints");
+      else if (["team", "coaches", "lineup", "gameday"].includes(h)) setTab(h);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-3xl mx-auto">
       <div>
         <div className="eyebrow text-primary/70">Configuration</div>
         <h1 className="page-title text-foreground mt-1">Settings</h1>
@@ -212,8 +235,38 @@ export default function Settings() {
         </p>
       </div>
 
-      <CoachesCard />
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setTab(v);
+          // Mirror tab into the URL hash so deep links / back button
+          // / sharing all line up. replaceState (not pushState) keeps
+          // the in-page tab switch out of the back-button history —
+          // back goes to the previous *page*, not the previous tab.
+          if (typeof window !== "undefined") {
+            try {
+              window.history.replaceState(null, "", `#${v}`);
+            } catch {
+              window.location.hash = v;
+            }
+          }
+        }}
+      >
+        {/* Horizontal scroll on narrow screens so all five tabs stay
+            reachable without truncation on a phone. */}
+        <TabsList className="w-full overflow-x-auto justify-start">
+          <TabsTrigger value="team" data-testid="tab-team">Team</TabsTrigger>
+          <TabsTrigger value="coaches" data-testid="tab-coaches">Coaches</TabsTrigger>
+          <TabsTrigger value="lineup" data-testid="tab-lineup">Lineup</TabsTrigger>
+          <TabsTrigger value="gameday" data-testid="tab-gameday">Game Day</TabsTrigger>
+          <TabsTrigger value="constraints" data-testid="tab-constraints">Constraints</TabsTrigger>
+        </TabsList>
 
+      <TabsContent value="coaches" className="space-y-6 mt-4">
+      <CoachesCard />
+      </TabsContent>
+
+      <TabsContent value="team" className="space-y-6 mt-4">
       <Card data-testid="card-team-branding">
         <CardHeader>
           <CardTitle>Team Branding</CardTitle>
@@ -344,7 +397,9 @@ export default function Settings() {
       </Card>
 
       <TeamColorsCard />
+      </TabsContent>
 
+      <TabsContent value="lineup" className="space-y-6 mt-4">
       <Card data-testid="card-defaults">
         <CardHeader>
           <CardTitle>Defaults</CardTitle>
@@ -590,12 +645,29 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {DEMO_SEED_ENABLED && <DemoDataCard />}
+      </TabsContent>
 
+      <TabsContent value="gameday" className="space-y-6 mt-4">
+      {DEMO_SEED_ENABLED && <DemoDataCard />}
+      <Card>
+        <CardHeader>
+          <CardTitle>Game-day tools</CardTitle>
+          <CardDescription>
+            Looking for the depth chart? It now lives under{" "}
+            <Link href="/depth-chart" className="text-primary underline">
+              Team → Depth Chart
+            </Link>{" "}
+            so you can pull it up alongside the lineup grid during a game.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+      </TabsContent>
+
+      <TabsContent value="constraints" className="space-y-6 mt-4">
       {/* Constraints — moved out of the sidebar and into Settings so all
           team-wide rule configuration lives in one place. The /constraints
           URL still works and redirects here. */}
-      <div id="constraints-section" className="scroll-mt-20 pt-2 space-y-3">
+      <div id="constraints-section" className="scroll-mt-20 space-y-3">
         <div className="flex items-center gap-2">
           <Sliders className="h-5 w-5 text-primary" />
           <h2 className="text-xl font-semibold tracking-tight">Constraints</h2>
@@ -605,6 +677,8 @@ export default function Settings() {
         </p>
         <Constraints embedded />
       </div>
+      </TabsContent>
+      </Tabs>
     </div>
   );
 }

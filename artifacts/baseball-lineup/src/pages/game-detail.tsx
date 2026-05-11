@@ -88,6 +88,7 @@ import { PitchCountsCard } from "@/components/pitch-counts-card";
 import { SelectPositionsDialog } from "@/components/select-positions-dialog";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
 import { EditGameDialog } from "@/components/edit-game-dialog";
+import { DepthChartReference, DepthChartIcon } from "@/pages/depth-chart";
 import { BoxScoreDisplayCard } from "@/components/box-score-display-card";
 import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
@@ -278,6 +279,7 @@ export default function GameDetail() {
   // string is left in place; it's harmless and lets the coach refresh
   // back into the same state.
   const [editGameOpen, setEditGameOpen] = useState(false);
+  const [depthChartOpen, setDepthChartOpen] = useState(false);
   const [boxScoreOpen, setBoxScoreOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return new URLSearchParams(window.location.search).get("openBoxScore") === "1";
@@ -2159,12 +2161,24 @@ export default function GameDetail() {
                     return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
                   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
                 })()}
-                {can("partial") && (
-                  // Header action group — Edit (always available, even on
-                  // cancelled games so a coach can un-cancel) + Import box
-                  // score (hidden when cancelled). Wraps to its own row on
-                  // mobile and pushes right on sm+.
-                  <div className="flex gap-2 flex-wrap justify-start basis-full sm:basis-auto sm:ml-auto sm:justify-end">
+                {/* Header action group. The Depth Chart dialog is read-
+                    only so it's available to every viewer (including
+                    "view" tier); Edit + Box Score still gate at
+                    `partial`. Wraps to its own row on mobile and
+                    pushes right on sm+. */}
+                <div className="flex gap-2 flex-wrap justify-start basis-full sm:basis-auto sm:ml-auto sm:justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDepthChartOpen(true)}
+                    data-testid="button-depth-chart"
+                    title="View depth chart"
+                  >
+                    <DepthChartIcon className="h-4 w-4 mr-2" />
+                    Depth chart
+                  </Button>
+                  {can("partial") && (
+                  <>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2186,8 +2200,9 @@ export default function GameDetail() {
                         {game.boxScoreImportedAt ? "Re-import box score" : "Import box score"}
                       </Button>
                     )}
-                  </div>
-                )}
+                  </>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1">
@@ -4202,6 +4217,25 @@ export default function GameDetail() {
               {clearPlanSnapshot.isPending ? "Discarding..." : "Discard snapshot"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={depthChartOpen} onOpenChange={setDepthChartOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DepthChartIcon className="h-5 w-5 text-primary" />
+              Depth Chart
+            </DialogTitle>
+            <DialogDescription>
+              Quick reference for tonight's matchups. Edit on the{" "}
+              <Link href="/depth-chart" className="text-primary underline">
+                full Depth Chart page
+              </Link>
+              .
+            </DialogDescription>
+          </DialogHeader>
+          <DepthChartReference topN={3} />
         </DialogContent>
       </Dialog>
 

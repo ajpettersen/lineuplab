@@ -772,6 +772,12 @@ export const GetTeamSettingsResponse = zod.object({
     .describe(
       "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
     ),
+  depthChart: zod
+    .record(zod.string(), zod.array(zod.number()))
+    .optional()
+    .describe(
+      'Coach-curated depth chart. Maps each defensive position code\n(e.g. \"P\", \"1B\", \"SS\") to an ordered list of playerIds —\nindex 0 is the starter, index 1 the backup, and so on. A\nplayer can appear in multiple positions. Empty object = no\ndepth chart configured.\n',
+    ),
   onboardingCompletedAt: zod.coerce
     .date()
     .nullish()
@@ -869,6 +875,12 @@ export const UpdateTeamSettingsBody = zod.object({
     .describe(
       'HSL string `\"H S% L%\"`. Pass null to clear back to app default.',
     ),
+  depthChart: zod
+    .record(zod.string(), zod.array(zod.number()))
+    .optional()
+    .describe(
+      "Coach-curated depth chart. Position code → ordered list of playerIds.",
+    ),
 });
 
 export const updateTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
@@ -954,6 +966,12 @@ export const UpdateTeamSettingsResponse = zod.object({
     .nullish()
     .describe(
       "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
+    ),
+  depthChart: zod
+    .record(zod.string(), zod.array(zod.number()))
+    .optional()
+    .describe(
+      'Coach-curated depth chart. Maps each defensive position code\n(e.g. \"P\", \"1B\", \"SS\") to an ordered list of playerIds —\nindex 0 is the starter, index 1 the backup, and so on. A\nplayer can appear in multiple positions. Empty object = no\ndepth chart configured.\n',
     ),
   onboardingCompletedAt: zod.coerce
     .date()
@@ -1051,6 +1069,12 @@ export const CompleteOnboardingResponse = zod.object({
     .nullish()
     .describe(
       "Per-team UI secondary\/accent color override. Same format as\nprimaryColor.\n",
+    ),
+  depthChart: zod
+    .record(zod.string(), zod.array(zod.number()))
+    .optional()
+    .describe(
+      'Coach-curated depth chart. Maps each defensive position code\n(e.g. \"P\", \"1B\", \"SS\") to an ordered list of playerIds —\nindex 0 is the starter, index 1 the backup, and so on. A\nplayer can appear in multiple positions. Empty object = no\ndepth chart configured.\n',
     ),
   onboardingCompletedAt: zod.coerce
     .date()

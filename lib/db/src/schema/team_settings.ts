@@ -98,6 +98,17 @@ export const teamSettingsTable = pgTable("team_settings", {
   primaryColor: text("primary_color"),
   secondaryColor: text("secondary_color"),
   /**
+   * Coach-curated depth chart. Maps each defensive position code
+   * (e.g. "P", "1B", "SS") to an ordered list of playerIds — index 0
+   * is the starter at that position, index 1 the backup, etc. A
+   * player can appear in multiple positions (and usually will, since
+   * preferred-positions seeds the initial list). Players removed from
+   * the roster are filtered out at read time on the client; we don't
+   * try to keep this index in sync with `players.deletedAt` in the DB.
+   * Empty / missing key = no depth chart configured for that position.
+   */
+  depthChart: jsonb("depth_chart").$type<Record<string, number[]>>().notNull().default({}),
+  /**
    * When the head coach finished the first-run onboarding wizard
    * (welcome, name, team identity, colors, roster, invites, tour).
    * Null = wizard not done yet → next sign-in redirects to /welcome.
@@ -123,6 +134,7 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   showSelectPositions: true,
   primaryColor: true,
   secondaryColor: true,
+  depthChart: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

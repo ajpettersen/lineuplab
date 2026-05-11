@@ -75,6 +75,12 @@ const UpdateBody = z
       .trim()
       .regex(/^\d{1,3}\s+\d{1,3}%\s+\d{1,3}%$/, "Color must be in HSL form 'H S% L%'")
       .nullish(),
+    // Position code → ordered playerId list. We only validate the
+    // shape here; downstream consumers tolerate stale/unknown ids
+    // (e.g. a player who was later deleted).
+    depthChart: z
+      .record(z.string().min(1).max(8), z.array(z.number().int().positive()))
+      .optional(),
   })
   .refine(
     (v) =>
@@ -89,7 +95,8 @@ const UpdateBody = z
       v.usesTournaments !== undefined ||
       v.showSelectPositions !== undefined ||
       v.primaryColor !== undefined ||
-      v.secondaryColor !== undefined,
+      v.secondaryColor !== undefined ||
+      v.depthChart !== undefined,
     { message: "Provide at least one field to update" }
   );
 
@@ -142,6 +149,7 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     showSelectPositions?: boolean;
     primaryColor?: string | null;
     secondaryColor?: string | null;
+    depthChart?: Record<string, number[]>;
     updatedAt: ReturnType<typeof sql>;
   } = { updatedAt: sql`now()` };
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
@@ -165,6 +173,8 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     patch.primaryColor = parsed.data.primaryColor ?? null;
   if (parsed.data.secondaryColor !== undefined)
     patch.secondaryColor = parsed.data.secondaryColor ?? null;
+  if (parsed.data.depthChart !== undefined)
+    patch.depthChart = parsed.data.depthChart;
   const [updated] = await db
     .update(teamSettingsTable)
     .set(patch)

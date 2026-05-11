@@ -16,6 +16,7 @@ import {
   LogOut,
   Trophy,
   Clipboard,
+  ListOrdered,
   ChevronLeft,
   ChevronRight,
   MoreHorizontal,
@@ -300,6 +301,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       icon: Users,
       children: [
         { href: "/players", label: "Roster", icon: Users },
+        { href: "/depth-chart", label: "Depth Chart", icon: ListOrdered },
         { href: "/arm-watch", label: "Arm Watch", icon: Shield },
       ],
     },

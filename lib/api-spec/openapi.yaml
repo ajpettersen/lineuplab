@@ -1439,6 +1439,18 @@ components:
           description: |
             Per-team UI secondary/accent color override. Same format as
             primaryColor.
+        depthChart:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: integer
+          description: |
+            Coach-curated depth chart. Maps each defensive position code
+            (e.g. "P", "1B", "SS") to an ordered list of playerIds —
+            index 0 is the starter, index 1 the backup, and so on. A
+            player can appear in multiple positions. Empty object = no
+            depth chart configured.
         onboardingCompletedAt:
           type: ["string", "null"]
           format: date-time
@@ -1505,6 +1517,13 @@ components:
         secondaryColor:
           type: ["string", "null"]
           description: HSL string `"H S% L%"`. Pass null to clear back to app default.
+        depthChart:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: integer
+          description: Coach-curated depth chart. Position code → ordered list of playerIds.
 
     UserPreferences:
       type: object

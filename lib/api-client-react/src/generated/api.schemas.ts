@@ -357,6 +357,16 @@ export const TeamSettingsBattingStyle = {
   nine_man: "nine_man",
 } as const;
 
+/**
+ * Coach-curated depth chart. Maps each defensive position code
+(e.g. "P", "1B", "SS") to an ordered list of playerIds —
+index 0 is the starter, index 1 the backup, and so on. A
+player can appear in multiple positions. Empty object = no
+depth chart configured.
+
+ */
+export type TeamSettingsDepthChart = { [key: string]: number[] };
+
 export interface TeamSettings {
   userId: string;
   teamName: string;
@@ -414,6 +424,13 @@ primaryColor.
    * @nullable
    */
   secondaryColor?: string | null;
+  /** Coach-curated depth chart. Maps each defensive position code
+(e.g. "P", "1B", "SS") to an ordered list of playerIds —
+index 0 is the starter, index 1 the backup, and so on. A
+player can appear in multiple positions. Empty object = no
+depth chart configured.
+ */
+  depthChart?: TeamSettingsDepthChart;
   /**
    * Timestamp when the head coach finished the first-run
 onboarding wizard. Null = wizard not yet completed; the
@@ -452,6 +469,11 @@ export const UpdateTeamSettingsBodyActiveFieldPositionsItem = {
   RF: "RF",
 } as const;
 
+/**
+ * Coach-curated depth chart. Position code → ordered list of playerIds.
+ */
+export type UpdateTeamSettingsBodyDepthChart = { [key: string]: number[] };
+
 export interface UpdateTeamSettingsBody {
   /**
    * @minLength 1
@@ -487,6 +509,8 @@ export interface UpdateTeamSettingsBody {
    * @nullable
    */
   secondaryColor?: string | null;
+  /** Coach-curated depth chart. Position code → ordered list of playerIds. */
+  depthChart?: UpdateTeamSettingsBodyDepthChart;
 }
 
 export interface UserPreferences {

@@ -37,6 +37,7 @@ import Stats from "@/pages/stats";
 import SeasonStats from "@/pages/season-stats";
 import ArmWatch from "@/pages/arm-watch";
 import Settings from "@/pages/settings";
+import DepthChart from "@/pages/depth-chart";
 import Admin from "@/pages/admin";
 import AdminTeamDetail from "@/pages/admin-team-detail";
 import Join from "@/pages/join";
@@ -403,8 +404,9 @@ function ProtectedApp() {
                 <Route path="/arm-watch" component={ArmWatch} />
                 {/* Constraints lives inside Settings now — keep the old URL alive for bookmarks. */}
                 <Route path="/constraints">
-                  <Redirect to="/settings#constraints-section" />
+                  <Redirect to="/settings#constraints" />
                 </Route>
+                <Route path="/depth-chart" component={DepthChart} />
                 <Route path="/settings" component={Settings} />
                 {/* Master-admin only — server-side `requireMasterAdmin`
                     middleware 403s the underlying APIs for non-admins,
