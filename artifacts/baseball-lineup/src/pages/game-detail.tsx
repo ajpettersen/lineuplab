@@ -78,7 +78,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -87,6 +87,7 @@ import { effectiveStatus } from "@/lib/game-status";
 import { PitchCountsCard } from "@/components/pitch-counts-card";
 import { SelectPositionsDialog } from "@/components/select-positions-dialog";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
+import { EditGameDialog } from "@/components/edit-game-dialog";
 import { BoxScoreDisplayCard } from "@/components/box-score-display-card";
 import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
@@ -276,6 +277,7 @@ export default function GameDetail() {
   // (e.g. closing the dialog) shouldn't re-trigger it. The query
   // string is left in place; it's harmless and lets the coach refresh
   // back into the same state.
+  const [editGameOpen, setEditGameOpen] = useState(false);
   const [boxScoreOpen, setBoxScoreOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return new URLSearchParams(window.location.search).get("openBoxScore") === "1";
@@ -2157,23 +2159,33 @@ export default function GameDetail() {
                     return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
                   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
                 })()}
-                {can("partial") && game.status !== ("cancelled" as typeof game.status) && (
-                  // Single CTA — the Box Score dialog now handles screenshots,
-                  // final score, AND "game ended early" (last-inning input)
-                  // in one combined flow, so we don't need separate Mark
-                  // Complete / Game Ended Early buttons crowding the header.
-                  // Wraps to its own row on mobile and aligns left with the
-                  // rest of the card content; pushes right on sm+.
+                {can("partial") && (
+                  // Header action group — Edit (always available, even on
+                  // cancelled games so a coach can un-cancel) + Import box
+                  // score (hidden when cancelled). Wraps to its own row on
+                  // mobile and pushes right on sm+.
                   <div className="flex gap-2 flex-wrap justify-start basis-full sm:basis-auto sm:ml-auto sm:justify-end">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setBoxScoreOpen(true)}
-                      data-testid="button-import-box-score"
+                      onClick={() => setEditGameOpen(true)}
+                      data-testid="button-edit-game"
+                      title="Edit game details"
                     >
-                      <FileText className="h-4 w-4 mr-2" />
-                      {game.boxScoreImportedAt ? "Re-import box score" : "Import box score"}
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
                     </Button>
+                    {game.status !== ("cancelled" as typeof game.status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBoxScoreOpen(true)}
+                        data-testid="button-import-box-score"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {game.boxScoreImportedAt ? "Re-import box score" : "Import box score"}
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -4200,6 +4212,26 @@ export default function GameDetail() {
           players={players ?? []}
           open={boxScoreOpen}
           onOpenChange={setBoxScoreOpen}
+        />
+      )}
+
+      {editGameOpen && (
+        <EditGameDialog
+          game={{
+            id: game.id,
+            opponent: game.opponent,
+            gameDate: game.gameDate,
+            location: game.location ?? null,
+            innings: game.innings,
+            status: game.status,
+            gameType: game.gameType ?? null,
+            notes: game.notes ?? null,
+          }}
+          onClose={() => setEditGameOpen(false)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
+            qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
+          }}
         />
       )}
     </div>
