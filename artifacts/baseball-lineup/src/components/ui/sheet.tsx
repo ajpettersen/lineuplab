@@ -68,8 +68,23 @@ const SheetContent = React.forwardRef<
       className={cn(sheetVariants({ side }), className)}
       {...props}
     >
-      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-        <X className="h-4 w-4" />
+      {/* The close ("X") button must clear the iOS / Android safe-area
+          inset on top — the SheetContent itself already pads with
+          env(safe-area-inset-top), but this absolutely-positioned button
+          would otherwise float into the status-bar dead zone where the
+          icon sits visually ABOVE the actual hit area (system steals
+          taps near the notch). The bigger 11×11 hit area + p-2 padding
+          also gets us above Apple's 44pt minimum tap target. `right`
+          gets the same treatment for landscape iPhones (curved edges
+          inset). */}
+      <SheetPrimitive.Close
+        className="absolute rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary inline-flex h-11 w-11 items-center justify-center"
+        style={{
+          top: "calc(0.5rem + env(safe-area-inset-top))",
+          right: "calc(0.5rem + env(safe-area-inset-right))",
+        }}
+      >
+        <X className="h-5 w-5" />
         <span className="sr-only">Close</span>
       </SheetPrimitive.Close>
       {children}
