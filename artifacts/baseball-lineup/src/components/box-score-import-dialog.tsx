@@ -466,7 +466,7 @@ export function BoxScoreImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[calc(100vw-1rem)] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto p-3 sm:p-6">
+      <DialogContent className="max-w-5xl w-[calc(100vw-1rem)] max-h-[95dvh] sm:max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle>Import box score</DialogTitle>
           <DialogDescription>
@@ -965,7 +965,7 @@ export function BoxScoreImportDialog({
             if (!o) setLightboxIdx(null);
           }}
         >
-          <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto p-2">
+          <DialogContent className="max-w-4xl max-h-[95dvh] overflow-y-auto p-2">
             <DialogHeader className="sr-only">
               <DialogTitle>Box-score screenshot {lightboxIdx + 1}</DialogTitle>
             </DialogHeader>

@@ -130,7 +130,7 @@ export default function Tournaments() {
               New Tournament
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>New tournament</DialogTitle>
               <DialogDescription>

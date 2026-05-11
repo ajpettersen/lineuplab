@@ -23,7 +23,13 @@ import {
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -386,6 +392,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
             side="left"
             className="flex w-72 flex-col bg-sidebar text-sidebar-foreground border-r-sidebar-border"
           >
+            {/* Visually-hidden title + description so Radix's a11y
+                requirements are met (otherwise it logs a missing-Title
+                console warning every time the menu opens). The visible
+                team-name banner below is decorative for sighted users. */}
+            <SheetTitle className="sr-only">Navigation menu</SheetTitle>
+            <SheetDescription className="sr-only">
+              Main navigation for {displayTeamName}
+            </SheetDescription>
             <div className="flex h-16 items-center border-b-2 border-accent/80 px-4 gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.15)]">
                 <Shield className="h-5 w-5 text-primary" />

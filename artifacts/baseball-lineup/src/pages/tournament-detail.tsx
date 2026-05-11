@@ -410,7 +410,7 @@ export default function TournamentDetail() {
 
       {/* Add game dialog */}
       <Dialog open={addGameOpen} onOpenChange={setAddGameOpen}>
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add a game</DialogTitle>
             <DialogDescription>
@@ -436,7 +436,7 @@ export default function TournamentDetail() {
               <div className="text-xs text-muted-foreground text-center">
                 or link an existing game
               </div>
-              <ul className="divide-y border rounded-md max-h-[40vh] overflow-y-auto">
+              <ul className="divide-y border rounded-md max-h-[40dvh] overflow-y-auto">
                 {availableGames.map((g) => (
                   <li
                     key={g.id}
@@ -574,7 +574,7 @@ function EditTournamentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit tournament</DialogTitle>
           <DialogDescription>

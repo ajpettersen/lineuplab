@@ -20,6 +20,7 @@ import { shadcn } from "@clerk/themes";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import Dashboard from "@/pages/dashboard";
@@ -371,6 +372,11 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedApp() {
+  // We key the per-route ErrorBoundary on `location` so a render error
+  // on one page (e.g. /stats) doesn't leave the fallback UI sticky when
+  // the user navigates somewhere else — the new pathname rebuilds the
+  // boundary, which clears its internal `error` state.
+  const [location] = useLocation();
   return (
     <>
       <Show when="signed-in">
@@ -388,6 +394,11 @@ function ProtectedApp() {
           <Route path="/welcome" component={Onboarding} />
           <Route>
             <Layout>
+              {/* Per-route error boundary so a render-time crash on one
+                  page (e.g. /stats hitting an undefined field in API
+                  data) doesn't blank the whole app shell. The user gets
+                  a "try again / reload" UI instead of a white screen. */}
+              <ErrorBoundary key={location}>
               <Switch>
                 <Route path="/" component={Dashboard} />
                 <Route path="/players" component={Players} />
@@ -416,6 +427,7 @@ function ProtectedApp() {
                 <Route path="/admin" component={Admin} />
                 <Route component={NotFound} />
               </Switch>
+              </ErrorBoundary>
             </Layout>
           </Route>
         </Switch>

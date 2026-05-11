@@ -159,7 +159,7 @@ export function PlayerGameLogDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-3 sm:p-6">
+      <DialogContent className="max-w-3xl w-[calc(100vw-1rem)] max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle>
             {data?.player

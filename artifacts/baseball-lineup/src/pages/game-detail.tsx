@@ -3328,7 +3328,7 @@ export default function GameDetail() {
 
       {/* Generate Dialog */}
       <Dialog open={generateOpen} onOpenChange={(o) => !o && setGenerateOpen(false)}>
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Generate Lineup</DialogTitle>
           </DialogHeader>
@@ -3450,7 +3450,7 @@ export default function GameDetail() {
         open={addSlotTarget != null}
         onOpenChange={(o) => !o && setAddSlotTarget(null)}
       >
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               Add player to {addSlotTarget?.position} · Inning{" "}
@@ -3561,7 +3561,7 @@ export default function GameDetail() {
 
       {/* Edit Available Players Dialog */}
       <Dialog open={availableOpen} onOpenChange={(o) => !o && setAvailableOpen(false)}>
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Available Players</DialogTitle>
             <DialogDescription>
@@ -3655,7 +3655,7 @@ export default function GameDetail() {
           }
         }}
       >
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ImageIcon className="h-4 w-4" />
@@ -3755,7 +3755,7 @@ export default function GameDetail() {
 
       {/* Copy From Previous Dialog */}
       <Dialog open={copyOpen} onOpenChange={(o) => !o && setCopyOpen(false)}>
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-4 w-4" />
@@ -4191,7 +4191,7 @@ export default function GameDetail() {
             </DialogDescription>
           </DialogHeader>
           {game.planSnapshot && game.planSnapshot.length > 0 ? (
-            <div className="max-h-[60vh] overflow-auto rounded-md border">
+            <div className="max-h-[60dvh] overflow-auto rounded-md border">
               <table className="w-full text-sm">
                 <thead className="bg-muted text-left">
                   <tr>
@@ -4248,7 +4248,7 @@ export default function GameDetail() {
       </Dialog>
 
       <Dialog open={depthChartOpen} onOpenChange={setDepthChartOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DepthChartIcon className="h-5 w-5 text-primary" />

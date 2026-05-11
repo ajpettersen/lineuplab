@@ -140,11 +140,14 @@ export default function Landing() {
             wide cinematic crop is intended.
           */}
           <div className="relative aspect-[4/5] overflow-hidden rounded-xl border border-border bg-black shadow-lg sm:aspect-video">
+            {/* No `loading="lazy"` here — this iframe is the very first
+                visible content above the fold, so deferring it just
+                leaves a black box during the initial render. We want the
+                promo bundle to start fetching as soon as possible. */}
             <iframe
               src="/promo-video/"
               title="Lineup Lab promo"
               className="absolute inset-0 h-full w-full"
-              loading="lazy"
               allow="autoplay"
               data-testid="iframe-landing-promo"
             />
