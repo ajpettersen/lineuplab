@@ -351,7 +351,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
       <header
-        className="sticky top-0 z-30 border-b border-[hsl(220_85%_14%)] shadow-md relative"
+        className="sticky top-0 z-30 border-b border-[hsl(220_85%_14%)] shadow-md"
         style={{
           background:
             "linear-gradient(135deg, hsl(220 85% 18%) 0%, hsl(220 85% 24%) 60%, hsl(220 85% 20%) 100%)",
@@ -359,15 +359,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       >
         {/* Safe-area spacer: when the app runs as an installed PWA on
             iOS the system status bar (clock + battery) sits on top of
-            our gradient. This empty strip pushes the actual nav content
-            below it. Falls back to 0 height in browsers/desktop. */}
+            our gradient (we declared `apple-mobile-web-app-status-bar-style:
+            black-translucent` in index.html so the bar is transparent).
+            This empty strip pushes the actual nav content below the
+            status bar while the gradient extends up underneath it.
+            Falls back to 0 height in normal mobile browsers and desktop. */}
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} aria-hidden />
         <div
-          className="flex h-14 md:h-18 items-center gap-3 md:gap-4 px-3 md:px-6"
-          style={{
-            paddingLeft: "max(1rem, env(safe-area-inset-left))",
-            paddingRight: "max(1rem, env(safe-area-inset-right))",
-          }}
+          className="relative flex h-14 md:h-16 items-center gap-2 md:gap-4 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]"
         >
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-accent" />
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -494,13 +493,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </SheetContent>
         </Sheet>
-        <div className="flex items-center gap-3 w-full justify-center md:justify-start md:w-auto md:shrink-0">
-          <div className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)] shrink-0">
-            <Shield className="h-5 w-5 text-primary" />
+        {/* Brand cluster — left-aligned next to the menu button on
+            mobile, fills remaining space (so the team switcher hugs
+            the right edge). The accent shield medallion is shown on
+            both mobile and desktop now so the brand mark balances the
+            menu button visually instead of leaving the team name
+            floating in dead space. */}
+        <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 md:flex-none md:shrink-0">
+          <div className="flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)] shrink-0">
+            <Shield className="h-4 w-4 md:h-5 md:w-5 text-primary" />
           </div>
-          <div className="flex flex-col leading-tight">
+          <div className="flex flex-col leading-tight min-w-0">
             <h1
-              className="text-xl md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none truncate min-w-0 max-w-[55vw] md:max-w-none md:whitespace-nowrap"
+              className="text-lg md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none truncate md:whitespace-nowrap"
               data-testid="text-team-name"
             >
               {displayTeamName}
@@ -510,8 +515,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
         </div>
-        {/* Mobile-only team switcher (desktop is in the right cluster). */}
-        <div className="md:hidden ml-auto">
+        {/* Mobile-only team switcher (desktop is in the right cluster).
+            Hidden entirely when the user only belongs to one team —
+            TeamSwitcher returns null in that case, but we keep the
+            wrapper out of the flex flow with `contents` so it doesn't
+            create an empty gap. */}
+        <div className="md:hidden shrink-0 contents">
           <TeamSwitcher />
         </div>
         {/* Desktop right cluster: takes remaining width and scrolls
