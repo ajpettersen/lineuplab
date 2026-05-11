@@ -4193,6 +4193,15 @@ function PlayerTile({
       ref={setNodeRef}
       type="button"
       onClick={() => onClick(entry.id)}
+      // Suppress the browser's default mousedown behavior (which focuses
+      // the button and may scroll it into view at the top of the
+      // viewport). Without this, grabbing a chip that's even slightly
+      // below center on a desktop screen would yank the page upward and
+      // make the floating drag chip appear "pinned to the top of the
+      // page". Pointer events still fire (dnd-kit listens to
+      // pointerdown, which runs before mousedown) and the click event
+      // still arrives on mouseup, so tap-to-select keeps working.
+      onMouseDown={(e) => e.preventDefault()}
       // `touch-none` is required for @dnd-kit's PointerSensor to fully
       // capture the gesture instead of letting the browser steal it for
       // pan-scroll. Re-added after the iOS-polish CSS started applying

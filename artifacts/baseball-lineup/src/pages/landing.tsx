@@ -1,3 +1,4 @@
+import { useState, type ComponentType } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,44 +12,84 @@ import {
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Each feature card renders a screenshot above the icon/title. The
+// `image` paths point at `public/feature-shots/<slug>.png` — drop a
+// real screenshot in there and it'll just show up. Until a file
+// exists, `<FeatureImage>` falls back to a stylized icon-on-gradient
+// placeholder (see component below).
 const FEATURES = [
   {
     icon: Sparkles,
+    image: "feature-shots/ai-lineups.png",
     title: "AI lineups in seconds",
     body:
       "Generate fair, balanced lineups from your roster, batting order, and fielding history — or talk to the assistant in plain English.",
   },
   {
     icon: Users,
+    image: "feature-shots/roster.png",
     title: "Roster + multi-coach",
     body:
       "Bulk-import players from a screenshot, share the team with assistant coaches, and give each helper exactly the access they need.",
   },
   {
     icon: ListChecks,
+    image: "feature-shots/stats.png",
     title: "Stats that mean something",
     body:
       "Box-score import from GameChanger screenshots, season batting and pitching aggregates, and a fairness score for playing time.",
   },
   {
     icon: CalendarDays,
+    image: "feature-shots/schedule.png",
     title: "Schedule + practices",
     body:
       "Paste an iCal URL to import games, plan practices with AI-generated drill blocks, and track tournament pitching rules.",
   },
   {
     icon: ClipboardList,
+    image: "feature-shots/field-display.png",
     title: "Field display for the dugout",
     body:
       "iPad-friendly view that works offline so you can adjust positions on the fence without losing your spot.",
   },
   {
     icon: Trophy,
+    image: "feature-shots/youth-coaches.png",
     title: "Built for youth coaches",
     body:
       "Designed around the way real coaches juggle a season — fast inputs, big tap targets, and a workflow that respects your time.",
   },
 ];
+
+function FeatureImage({
+  src,
+  alt,
+  Icon,
+}: {
+  src: string;
+  alt: string;
+  Icon: ComponentType<{ className?: string }>;
+}) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border/60 bg-gradient-to-br from-primary/15 via-primary/5 to-accent/15">
+      {!failed ? (
+        <img
+          src={`${basePath}/${src}`}
+          alt={alt}
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <Icon className="h-14 w-14 text-primary/30" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Landing() {
   return (
@@ -164,19 +205,24 @@ export default function Landing() {
               </p>
             </div>
             <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ icon: Icon, title, body }) => (
+              {FEATURES.map(({ icon: Icon, image, title, body }) => (
                 <div
                   key={title}
-                  className="rounded-xl border border-border bg-background p-6 shadow-sm transition-shadow hover:shadow-md"
+                  className="overflow-hidden rounded-xl border border-border bg-background shadow-sm transition-shadow hover:shadow-md"
                   data-testid={`feature-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon className="h-5 w-5" />
+                  <div className="p-3 pb-0">
+                    <FeatureImage src={image} alt={title} Icon={Icon} />
                   </div>
-                  <h3 className="mt-4 font-display text-lg font-semibold">
-                    {title}
-                  </h3>
-                  <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+                  <div className="p-6 pt-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="mt-4 font-display text-lg font-semibold">
+                      {title}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+                  </div>
                 </div>
               ))}
             </div>
