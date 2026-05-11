@@ -269,7 +269,17 @@ export default function GameDetail() {
   // Click-to-swap selection: the entry id of the player picked first.
   const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
-  const [boxScoreOpen, setBoxScoreOpen] = useState(false);
+  // Box score dialog. Auto-opens on arrival when the URL carries
+  // `?openBoxScore=1` so that the field-display "End game" flow can
+  // drop the coach straight into the upload screen on the way out.
+  // We only honor the flag once on first mount — subsequent renders
+  // (e.g. closing the dialog) shouldn't re-trigger it. The query
+  // string is left in place; it's harmless and lets the coach refresh
+  // back into the same state.
+  const [boxScoreOpen, setBoxScoreOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("openBoxScore") === "1";
+  });
   // "Game ended early" flow — coach picks the last inning that was actually
   // played (e.g. 10-run rule) and the server trims the game length plus any
   // saved lineup data past that inning.

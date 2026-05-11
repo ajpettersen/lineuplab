@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRoute, Link, useLocation } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import {
   useGetGame,
   useGetGameLineup,
@@ -42,6 +42,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Every position the field display knows how to lay out. The team's actual
 // `activeFieldPositions` (from team_settings) is intersected with this list
@@ -625,6 +635,13 @@ export default function FieldDisplay() {
   const [, params] = useRoute("/games/:id/display");
   const [, setLocation] = useLocation();
   const id = parseInt(params?.id ?? "0");
+  // "Is this game complete?" exit prompt. Every path out of the field
+  // display (top-left Exit, top-right End Game, mobile kebab → Exit,
+  // mobile kebab → End game) opens this single dialog so a coach
+  // can't accidentally walk away from a finished game without being
+  // offered the box-score upload + final-score finalize flow. See
+  // <EndGameDialog/> further down for the actual options.
+  const [endGameDialogOpen, setEndGameDialogOpen] = useState(false);
   const { teamName, teamShortName, activeFieldPositions } = useTeamSettings();
   // Field Display renders OUTSIDE the main `<Layout>` shell (it owns the
   // whole viewport for the dugout iPad), so the Layout-mounted
@@ -1481,22 +1498,23 @@ export default function FieldDisplay() {
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-          <Link href={`/games/${id}`}>
-            <Button
-              variant="ghost"
-              size="sm"
-              /* Mobile: enlarged tap target (h-10, bigger icon, kept label
-               * visible) so coaches can actually find their way out without
-               * fishing for a 24px chevron. Desktop is unchanged. */
-              className="h-10 sm:h-9 px-2.5 sm:px-3 text-slate-200 sm:text-slate-400 hover:text-white hover:bg-slate-800/60 border border-slate-700/50 sm:border-transparent rounded-md font-display uppercase tracking-wider text-[11px] sm:text-sm"
-              data-testid="button-exit-display"
-              aria-label="Exit field display"
-              style={{ touchAction: "manipulation" }}
-            >
-              <ArrowLeft className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-1.5" />
-              <span>Exit</span>
-            </Button>
-          </Link>
+          {/* Exit no longer navigates directly — it opens the
+           * "Is this game complete?" prompt so the coach gets a
+           * chance to finalize the score and upload a box score on
+           * the way out. The same prompt is reachable from the
+           * top-right End Game button and the mobile kebab. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setEndGameDialogOpen(true)}
+            className="h-10 sm:h-9 px-2.5 sm:px-3 text-slate-200 sm:text-slate-400 hover:text-white hover:bg-slate-800/60 border border-slate-700/50 sm:border-transparent rounded-md font-display uppercase tracking-wider text-[11px] sm:text-sm"
+            data-testid="button-exit-display"
+            aria-label="Exit field display"
+            style={{ touchAction: "manipulation" }}
+          >
+            <ArrowLeft className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-1.5" />
+            <span>Exit</span>
+          </Button>
           {/* Team-vs-opponent title.
            *  Sized down from the original text-4xl on lg because the
            *  header carries a lot of fixed-width siblings (inning chip,
@@ -1736,29 +1754,22 @@ export default function FieldDisplay() {
             * on the field display are good enough mid-game but a parent
             * keeping a real book usually wants to reconcile before
             * locking the record. */}
-          <Link href={`/games/${id}`}>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => {
-                if (
-                  typeof window !== "undefined" &&
-                  !window.confirm(
-                    "End game and head back to the game screen to finalize the score?",
-                  )
-                ) {
-                  e.preventDefault();
-                }
-              }}
-              className="hidden sm:flex items-center gap-1.5 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
-              data-testid="button-end-game"
-              aria-label="End game"
-              title="End game and return to the game screen"
-            >
-              <Flag className="h-3.5 w-3.5" aria-hidden="true" />
-              End Game
-            </Button>
-          </Link>
+          {/* Top-right End Game (desktop). Same dialog target as the
+           * Exit chevron and the mobile kebab — see the EndGameDialog
+           * mounted near the bottom of the component for the actual
+           * "mark complete + upload box score" branching. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEndGameDialogOpen(true)}
+            className="hidden sm:flex items-center gap-1.5 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
+            data-testid="button-end-game"
+            aria-label="End game"
+            title="End game and return to the game screen"
+          >
+            <Flag className="h-3.5 w-3.5" aria-hidden="true" />
+            End Game
+          </Button>
           {/* Brightness cycle: Auto → Sunlight → Dim → Auto. One tap to
             * advance; the icon shows what mode is currently active so
             * the coach can read it at a glance without remembering what
@@ -1875,16 +1886,8 @@ export default function FieldDisplay() {
               <DropdownMenuItem
                 className="text-broadcast-gold focus:text-amber-200"
                 onSelect={(e) => {
-                  if (
-                    typeof window === "undefined" ||
-                    !window.confirm(
-                      "End game and head back to the game screen to finalize the score?",
-                    )
-                  ) {
-                    e.preventDefault();
-                    return;
-                  }
-                  setLocation(`/games/${id}`);
+                  e.preventDefault();
+                  setEndGameDialogOpen(true);
                 }}
                 data-testid="menu-end-game"
               >
@@ -1893,7 +1896,10 @@ export default function FieldDisplay() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => setLocation(`/games/${id}`)}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setEndGameDialogOpen(true);
+                }}
                 data-testid="menu-exit"
               >
                 <X className="h-4 w-4 mr-2" />
@@ -2306,6 +2312,72 @@ export default function FieldDisplay() {
           sunlightMode ? "opacity-[0.12]" : "opacity-0"
         }`}
       />
+
+      {/* ── End-game / exit confirmation ──────────────────────────
+       * Funnel for every "I'm leaving the field display" path. Three
+       * options:
+       *   1. Mark complete & finalize  — flips `game.status` to
+       *      "completed" via the existing offline-aware patch chain
+       *      (so it survives a flaky WiFi drop) and routes to the
+       *      game-detail screen with `?openBoxScore=1`, which
+       *      auto-opens the box-score upload dialog. This is the
+       *      "happy path" — coach finishes the game, fills in the
+       *      final score + uploads GameChanger screenshots in one
+       *      flow.
+       *   2. Just exit  — leave the game as-is (typically used
+       *      between innings of a long doubleheader, or when a
+       *      parent is taking over). Status untouched.
+       *   3. Keep coaching  — close the dialog, no navigation.
+       *
+       * The score on the field display already syncs through the
+       * same patch chain, so any pending +1 taps on the score
+       * stepper are persisted before navigation happens. */}
+      <AlertDialog open={endGameDialogOpen} onOpenChange={setEndGameDialogOpen}>
+        <AlertDialogContent data-testid="dialog-end-game">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Is this game complete?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Mark the game as complete to finalize the final score and upload your box score. You can also just exit and pick this back up later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel
+              data-testid="button-end-game-keep-coaching"
+              className="sm:mr-auto"
+            >
+              Keep coaching
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEndGameDialogOpen(false);
+                setLocation(`/games/${id}`);
+              }}
+              data-testid="button-end-game-just-exit"
+            >
+              Just exit
+            </Button>
+            <AlertDialogAction
+              onClick={() => {
+                /* Optimistically flip status — the patch chain handles
+                 * offline retry, so even on a captive-portal phone the
+                 * field shows the right state and the server gets the
+                 * write when connectivity returns. */
+                if ((game?.status ?? "upcoming") !== "completed") {
+                  saveGamePatchOptimistically({ status: "completed" });
+                }
+                setEndGameDialogOpen(false);
+                setLocation(`/games/${id}?openBoxScore=1`);
+              }}
+              data-testid="button-end-game-mark-complete"
+            >
+              <Flag className="h-4 w-4 mr-2" />
+              Mark complete &amp; finish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
