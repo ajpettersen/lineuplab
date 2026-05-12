@@ -1512,7 +1512,24 @@ export default function FieldDisplay() {
        *  visual overlap of the inning chevron and the Exit button on
        *  iPad Safari (display:contents has known quirks as a flex item
        *  in WebKit). The wrapper-free approach above sidesteps both. */}
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 py-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10">
+      <header
+        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10"
+        style={{
+          // iPad status bar (clock / WiFi / battery) sits on top of the
+          // page in installed-PWA / fullscreen mode (we set
+          // `apple-mobile-web-app-status-bar-style: black-translucent`
+          // in index.html) AND in landscape Safari above ~iPadOS 17.
+          // Without this inset the inning ▲ chevron + EXTRA / battery
+          // icons collide with the status bar — coaches reported the
+          // top inning chevron was unreachable on a real iPad. The
+          // `max()` keeps the original 0.5 rem padding for browsers
+          // where the inset is 0 (e.g. desktop, non-PWA mobile). We
+          // only override paddingTop here; horizontal padding is left
+          // to the px-3 sm:px-6 classes above so the desktop layout
+          // keeps its original 1.5 rem side margins.
+          paddingTop: "max(0.5rem, env(safe-area-inset-top))",
+        }}
+      >
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
           {/* Exit no longer navigates directly — it opens the
