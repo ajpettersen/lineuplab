@@ -33,7 +33,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, WifiOff, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -642,6 +642,17 @@ export default function FieldDisplay() {
   // offered the box-score upload + final-score finalize flow. See
   // <EndGameDialog/> further down for the actual options.
   const [endGameDialogOpen, setEndGameDialogOpen] = useState(false);
+  // Final-score capture inside the End Game dialog. Coaches asked for
+  // the score to land in the same offline-aware patch chain as the
+  // header steppers — this lets them confirm/edit the score AT exit
+  // time (rather than having to navigate to /games/:id and edit there
+  // on a flaky parking-lot connection where /games/:id has no
+  // localStorage queue). Both Just Exit and Mark Complete & Finish
+  // funnel any change through saveGamePatchOptimistically before
+  // navigating, so the score survives a WiFi drop the same way a
+  // mid-game tap would.
+  const [dialogOurScore, setDialogOurScore] = useState(0);
+  const [dialogOppScore, setDialogOppScore] = useState(0);
   const { teamName, teamShortName, activeFieldPositions } = useTeamSettings();
   // Field Display renders OUTSIDE the main `<Layout>` shell (it owns the
   // whole viewport for the dugout iPad), so the Layout-mounted
@@ -865,6 +876,22 @@ export default function FieldDisplay() {
   // us the post-reconnect refresh for free.
   useEffect(() => {
     if (!online) return;
+    // Re-assert any pending optimistic state on the cache BEFORE
+    // flushing, in case the App-level <OnlineResumer>'s
+    // qc.invalidateQueries() (also fired on this same `online` event)
+    // forked a refetch that lands first and clobbers the dugout
+    // coach's offline drags. flushSave/flushGameSave each re-apply
+    // again as a second layer of defense, but doing it here too means
+    // the UI never visibly flickers through the stale server state.
+    if (pendingLineupRef.current) {
+      qc.setQueryData(getGetGameLineupQueryKey(id), pendingLineupRef.current);
+    }
+    if (pendingGamePatchRef.current) {
+      const patch = pendingGamePatchRef.current;
+      qc.setQueryData(getGetGameQueryKey(id), (prev: Game | undefined) =>
+        prev ? { ...prev, ...patch } : prev,
+      );
+    }
     flushSave();
     flushGameSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1017,6 +1044,33 @@ export default function FieldDisplay() {
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
   const oppScore = game?.opponentScore ?? 0;
+
+  // Sync the End Game dialog's score editors from the live game state
+  // every time the dialog opens — the coach may have tapped the
+  // header steppers since the last open and we want the dialog to
+  // reflect the current optimistic score, not a stale one. Only
+  // overwrites on the open transition so typing inside the dialog
+  // isn't fighting a re-sync.
+  useEffect(() => {
+    if (endGameDialogOpen) {
+      setDialogOurScore(ourScore);
+      setDialogOppScore(oppScore);
+    }
+    // We intentionally only depend on endGameDialogOpen — the score
+    // values are read on the open transition only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endGameDialogOpen]);
+
+  // Persist any dialog-edited score through the offline-aware patch
+  // chain. Only PATCHes the fields that actually differ so a no-op
+  // exit doesn't generate a wasted PATCH. Returns nothing — the patch
+  // chain handles its own queuing.
+  const persistDialogScores = () => {
+    const patch: UpdateGameBody = {};
+    if (dialogOurScore !== ourScore) patch.ourScore = dialogOurScore;
+    if (dialogOppScore !== oppScore) patch.opponentScore = dialogOppScore;
+    if (Object.keys(patch).length > 0) saveGamePatchOptimistically(patch);
+  };
 
   // Pick the field lighting palette based on the game's scheduled start.
   // Memoized so a 5s lineup poll doesn't re-derive on every tick — only when
@@ -1203,6 +1257,18 @@ export default function FieldDisplay() {
       .then(async () => {
         const toSave = pendingLineupRef.current;
         if (!toSave) return;
+        // ── DATA-LOSS FIX (May 2026, Part 2) ──
+        // Re-assert the optimistic cache on every drain attempt. The
+        // App-level <OnlineResumer> calls qc.invalidateQueries() with
+        // no key filter on the browser `online` event, which forks a
+        // refetch of THIS lineup query that returns the stale server
+        // snapshot — clobbering the dugout coach's offline drags
+        // before flushSave can POST them. We can't change OnlineResumer
+        // (it's needed for the rest of the app's queue), so we make
+        // the field display defensive: any time we still have pending
+        // edits, the cache reflects them. Cheap; setQueryData is a
+        // synchronous structural-share write.
+        qc.setQueryData(queryKey, toSave);
         // OFFLINE FAST-PATH: if the browser knows we have no network, do
         // not even attempt the POST. Leave pendingLineupRef + the
         // localStorage backup in place; the online-flip effect will
@@ -1307,6 +1373,14 @@ export default function FieldDisplay() {
       .then(async () => {
         const patch = pendingGamePatchRef.current;
         if (!patch) return;
+        // Re-assert optimistic patch on the cache for the same reason
+        // as flushSave above — the App-level <OnlineResumer> can have
+        // refetched and clobbered our optimistic score during the
+        // offline → online flip. Merge so any newly-fetched server
+        // fields ride along; our pending field values overwrite.
+        qc.setQueryData(queryKey, (prev: Game | undefined) =>
+          prev ? { ...prev, ...patch } : prev,
+        );
         if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
         pendingGamePatchRef.current = null;
@@ -1532,24 +1606,15 @@ export default function FieldDisplay() {
       >
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
-          {/* Exit no longer navigates directly — it opens the
-           * "Is this game complete?" prompt so the coach gets a
-           * chance to finalize the score and upload a box score on
-           * the way out. The same prompt is reachable from the
-           * top-right End Game button and the mobile kebab. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setEndGameDialogOpen(true)}
-            className="h-10 sm:h-9 px-2.5 sm:px-3 text-slate-200 sm:text-slate-400 hover:text-white hover:bg-slate-800/60 border border-slate-700/50 sm:border-transparent rounded-md font-display uppercase tracking-wider text-[11px] sm:text-sm"
-            data-testid="button-exit-display"
-            aria-label="Exit field display"
-            style={{ touchAction: "manipulation" }}
-          >
-            <ArrowLeft className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-1.5" />
-            <span>Exit</span>
-          </Button>
           {/* Team-vs-opponent title.
+           *  (The standalone "Exit" button that used to live here was
+           *  removed — coaches reported it was duplicative with the
+           *  top-right "End Game" button since both opened the SAME
+           *  end-game dialog. Now there's a single way out: the
+           *  End Game button on desktop, or the kebab → End game on
+           *  mobile. Both lead to the same "is this game complete?"
+           *  prompt with score-entry + Mark complete / Just exit.)
+           *
            *  Sized down from the original text-4xl on lg because the
            *  header carries a lot of fixed-width siblings (inning chip,
            *  game timer, score steppers, dim toggle) and the leftover
@@ -1933,17 +1998,6 @@ export default function FieldDisplay() {
                 <Flag className="h-4 w-4 mr-2" />
                 <span>End game</span>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  setEndGameDialogOpen(true);
-                }}
-                data-testid="menu-exit"
-              >
-                <X className="h-4 w-4 mr-2" />
-                <span>Exit field display</span>
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -2210,7 +2264,20 @@ export default function FieldDisplay() {
               data-testid="batting-order-list"
             >
               {battingOrder.map((r, idx) => {
-                const slotLabel = r.order != null ? r.order : "—";
+                // Display sequential slot numbers (1..N) based on the
+                // sorted index, NOT the stored `r.order` field. The
+                // stored field can have gaps when a player is pulled
+                // mid-game (e.g. dragged to bench, marked sick, or had
+                // a per-inning entry without a battingOrder set), and
+                // the dugout coach reads "4th batter" as "4th in this
+                // visible list" — not "the player whose stored order
+                // is 4". Renumbering here keeps the labels matching
+                // the visual position so a removal doesn't leave the
+                // 5th batter showing as #5 with #4 missing.
+                // Players with no order at all (true bench-only) sort
+                // last and still show "—" so they're not mistaken for
+                // a real batting position.
+                const slotLabel = r.order != null ? idx + 1 : "—";
                 // No "currently at bat" highlight — there's no way to
                 // know real game state without a GameChanger-style
                 // integration, and a fake/stale indicator (we used to
@@ -2376,9 +2443,45 @@ export default function FieldDisplay() {
           <AlertDialogHeader>
             <AlertDialogTitle>Is this game complete?</AlertDialogTitle>
             <AlertDialogDescription>
-              Mark the game as complete to finalize the final score and upload your box score. You can also just exit and pick this back up later.
+              Confirm the final score below — it'll be saved even if
+              you're still on a flaky parking-lot connection. Mark
+              complete to finalize and upload your box score, or just
+              exit and pick this back up later.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {/* Inline final-score capture. The header steppers already
+            * sync through the offline-aware patch chain, but coaches
+            * told us they often skip them mid-game and want one last
+            * "what was the final score?" prompt at exit time. Both
+            * exit paths below funnel any change through
+            * persistDialogScores() before navigating, so a score
+            * entered here on a parking-lot WiFi drop is queued in
+            * localStorage and POSTed when the iPad reconnects. */}
+          <div
+            className="my-2 rounded-md border bg-muted/40 p-4"
+            data-testid="end-game-score-editor"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <DialogScoreInput
+                label={teamShortName || teamName || "Us"}
+                value={dialogOurScore}
+                onChange={setDialogOurScore}
+                testId="dialog-our-score"
+              />
+              <DialogScoreInput
+                label={
+                  formatOpponentForMatchup(game?.opponent, teamName) ||
+                  game?.opponent ||
+                  "Them"
+                }
+                value={dialogOppScore}
+                onChange={setDialogOppScore}
+                testId="dialog-opp-score"
+              />
+            </div>
+          </div>
+
           <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogCancel
               data-testid="button-end-game-keep-coaching"
@@ -2390,6 +2493,10 @@ export default function FieldDisplay() {
               type="button"
               variant="outline"
               onClick={() => {
+                // Persist score edits through the offline-aware patch
+                // chain BEFORE navigating away. The chain queues to
+                // localStorage if offline so the score isn't lost.
+                persistDialogScores();
                 setEndGameDialogOpen(false);
                 setLocation(`/games/${id}`);
               }}
@@ -2399,10 +2506,11 @@ export default function FieldDisplay() {
             </Button>
             <AlertDialogAction
               onClick={() => {
-                /* Optimistically flip status — the patch chain handles
-                 * offline retry, so even on a captive-portal phone the
-                 * field shows the right state and the server gets the
-                 * write when connectivity returns. */
+                // Save score edits first, then optimistically flip
+                // status. Both ride the same offline-aware patch chain,
+                // so a captive-portal exit still records everything
+                // and POSTs on reconnect.
+                persistDialogScores();
                 if ((game?.status ?? "upcoming") !== "completed") {
                   saveGamePatchOptimistically({ status: "completed" });
                 }
@@ -2433,6 +2541,66 @@ interface FieldPositionSlotProps {
   layout: { top: string; left: string };
   accent: string;
   isBeingDragged: boolean;
+}
+
+/**
+ * Compact +/- stepper used inside the End Game dialog to capture the
+ * final score. Intentionally simple (no swipe gestures, no broadcast
+ * styling) so it reads clearly on the white AlertDialog surface — the
+ * dugout-broadcast `<ScoreStepper>` looks wrong in this context. The
+ * value flows out via `onChange`; the parent owns the persisted side
+ * (it batches the change into the offline-aware patch chain on exit,
+ * NOT on every tap, so a coach who rapidly taps +5 doesn't generate 5
+ * separate PATCH attempts).
+ */
+interface DialogScoreInputProps {
+  label: string;
+  value: number;
+  onChange: (next: number) => void;
+  testId: string;
+}
+
+function DialogScoreInput({ label, value, onChange, testId }: DialogScoreInputProps) {
+  return (
+    <div className="flex flex-col items-center gap-2" data-testid={testId}>
+      <span
+        className="text-[10px] sm:text-xs font-display uppercase tracking-[0.18em] text-muted-foreground text-center max-w-full truncate"
+        title={label}
+      >
+        {label}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => onChange(Math.max(0, value - 1))}
+          aria-label={`Decrease ${label} score`}
+          data-testid={`${testId}-down`}
+        >
+          <Minus className="h-4 w-4" />
+        </Button>
+        <span
+          className="text-3xl font-bold tabular-nums w-10 text-center font-['Roboto_Mono']"
+          data-testid={`${testId}-value`}
+        >
+          {value}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => onChange(value + 1)}
+          aria-label={`Increase ${label} score`}
+          data-testid={`${testId}-up`}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /**
