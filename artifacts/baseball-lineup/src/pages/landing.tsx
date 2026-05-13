@@ -8,6 +8,9 @@ import {
   Sparkles,
   CalendarDays,
   ClipboardList,
+  UserPlus,
+  Wand2,
+  Tablet,
 } from "lucide-react";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -129,33 +132,11 @@ export default function Landing() {
       </header>
 
       <main>
-        {/* Promo video */}
+        {/* Hero — moved above the promo video so the <h1> + value prop
+            are the first content the page (and any crawler) sees. The
+            video still appears immediately after, before the fold on
+            most laptops. */}
         <section className="mx-auto max-w-6xl px-4 pt-10 sm:px-6 sm:pt-14">
-          {/*
-            On mobile, a 16:9 frame at viewport width is only ~200 px
-            tall, which crushes the scene text + animations. Use a
-            taller 4:5 frame on phones so the video composition (which
-            absolutely-positions to fill its container) has real estate
-            to render legibly. Snap back to 16:9 from `sm` up where the
-            wide cinematic crop is intended.
-          */}
-          <div className="relative aspect-[4/5] overflow-hidden rounded-xl border border-border bg-black shadow-lg sm:aspect-video">
-            {/* No `loading="lazy"` here — this iframe is the very first
-                visible content above the fold, so deferring it just
-                leaves a black box during the initial render. We want the
-                promo bundle to start fetching as soon as possible. */}
-            <iframe
-              src="/promo-video/"
-              title="Lineup Lab promo"
-              className="absolute inset-0 h-full w-full"
-              allow="autoplay"
-              data-testid="iframe-landing-promo"
-            />
-          </div>
-        </section>
-
-        {/* Hero */}
-        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
           <div className="mx-auto max-w-3xl text-center">
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <Sparkles className="h-3.5 w-3.5" />
@@ -192,7 +173,85 @@ export default function Landing() {
                 </Button>
               </Link>
             </div>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Free to use · No credit card · Set up in 5 minutes
+            </p>
           </div>
+        </section>
+
+        {/* Promo video */}
+        <section className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 sm:pt-16">
+          {/*
+            On mobile, a 16:9 frame at viewport width is only ~200 px
+            tall, which crushes the scene text + animations. Use a
+            taller 4:5 frame on phones so the video composition (which
+            absolutely-positions to fill its container) has real estate
+            to render legibly. Snap back to 16:9 from `sm` up where the
+            wide cinematic crop is intended.
+          */}
+          <div className="relative aspect-[4/5] overflow-hidden rounded-xl border border-border bg-black shadow-lg sm:aspect-video">
+            {/* No `loading="lazy"` here — even though the video is now
+                below the hero, on most desktops it's still in the
+                first viewport, so deferring just leaves a black box
+                during the initial render. */}
+            <iframe
+              src="/promo-video/"
+              title="Lineup Lab promo"
+              className="absolute inset-0 h-full w-full"
+              allow="autoplay"
+              data-testid="iframe-landing-promo"
+            />
+          </div>
+        </section>
+
+        {/* How it works — three concrete steps so coaches can mentally
+            simulate using the app before signing up. Helps conversion
+            and gives Google more keyword-rich landing-page copy. */}
+        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              Up and running in three steps
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              No spreadsheets, no setup wizards that take an hour.
+            </p>
+          </div>
+          <ol className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {[
+              {
+                icon: UserPlus,
+                title: "1. Bring your roster",
+                body:
+                  "Snap a photo of your team list or paste it in — the AI splits names, jersey numbers, and preferred positions for you.",
+              },
+              {
+                icon: Wand2,
+                title: "2. Generate a fair lineup",
+                body:
+                  "Tell Lineup Lab the game and inning count. It builds a balanced batting order and rotation that respects who sat last week.",
+              },
+              {
+                icon: Tablet,
+                title: "3. Coach from the dugout",
+                body:
+                  "Open the iPad-friendly Field Display, swap players inning-by-inning, and let parents follow along — even with no signal.",
+              },
+            ].map(({ icon: Icon, title, body }) => (
+              <li
+                key={title}
+                className="rounded-xl border border-border bg-card/40 p-6"
+                data-testid={`how-it-works-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="mt-4 font-display text-lg font-semibold">
+                  {title}
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+              </li>
+            ))}
+          </ol>
         </section>
 
         {/* Features */}
@@ -227,6 +286,72 @@ export default function Landing() {
                     <p className="mt-2 text-sm text-muted-foreground">{body}</p>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ — answers the questions a parent-coach actually asks
+            before signing up. Doubles as long-tail SEO copy. Rendered
+            as native <details>/<summary> for built-in expand/collapse
+            without pulling in another shadcn primitive. */}
+        <section className="border-t border-border/60 bg-card/30">
+          <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 sm:py-20">
+            <div className="text-center">
+              <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                Frequently asked questions
+              </h2>
+              <p className="mt-3 text-muted-foreground">
+                Quick answers for new coaches checking us out.
+              </p>
+            </div>
+            <div className="mt-10 space-y-3">
+              {[
+                {
+                  q: "Is Lineup Lab free?",
+                  a: "Yes. The full app — roster management, AI lineups, schedule import, practice plans, box-score stats, and the iPad Field Display — is free for coaches to use today.",
+                },
+                {
+                  q: "Does it work for both baseball and softball?",
+                  a: "Yes. The defensive shape (standard 9 with CF, or 10-player with LCF/RCF) and pitching rules are configurable per team, so it works for Little League, travel ball, rec leagues, and youth softball.",
+                },
+                {
+                  q: "How does the fair lineup generator work?",
+                  a: "Lineup Lab tracks how often each player has batted, sat, and played each position across the season. When you generate a new lineup, it weights the rotation toward kids who've sat the most and rotates infield/outfield assignments so playing time evens out across games. You can dial the fairness from 0 (skill-first) to 100 (strict equal time).",
+                },
+                {
+                  q: "Can my assistant coaches help?",
+                  a: "Yes. Invite assistant coaches with a link and pick a permission tier — full access, partial (no settings), upload-only for a stat-keeper parent, or view-only.",
+                },
+                {
+                  q: "Does it work without a signal at the field?",
+                  a: "Yes. The Field Display caches your roster and lineup on the device. You can adjust positions inning-by-inning even with no cellular signal, and changes sync automatically when you're back online.",
+                },
+                {
+                  q: "Can I import my schedule from my league?",
+                  a: "Most leagues publish an iCal/webcal feed. Paste the URL in Lineup Lab and the season's games import in one click — opponent names and start times included.",
+                },
+                {
+                  q: "Can I import GameChanger box scores?",
+                  a: "Yes. Snap 1–4 phone screenshots of your GameChanger box score; the AI extracts batting and pitching lines plus the final score, with an editable preview before it saves.",
+                },
+              ].map(({ q, a }) => (
+                <details
+                  key={q}
+                  className="group rounded-xl border border-border bg-background p-5 [&_summary::-webkit-details-marker]:hidden"
+                  data-testid={`faq-${q.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`}
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-display text-base font-semibold">
+                    <span>{q}</span>
+                    <span
+                      aria-hidden="true"
+                      className="text-xl text-muted-foreground transition-transform group-open:rotate-45"
+                    >
+                      +
+                    </span>
+                  </summary>
+                  <p className="mt-3 text-sm text-muted-foreground">{a}</p>
+                </details>
               ))}
             </div>
           </div>
