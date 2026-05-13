@@ -36,6 +36,13 @@ interface BattingRow {
   rbi: number; bb: number; k: number; hbp: number; sac: number; sb: number;
   runs?: number;
   avg: number | null; obp: number | null; slg: number | null; ops: number | null;
+  // Distinct games this player has a per-game batting line for
+  // (i.e. games with a saved box score). Manual-only rows return 0
+  // here even though the player may have played in many games —
+  // hence the "—" rendering when `hasPerGameLines` is false. See
+  // `getBattingTotals()` in api-server/src/lib/batting-totals.ts.
+  gamesRecorded?: number;
+  hasPerGameLines?: boolean;
   sourceNote: string | null;
   updatedAt: string;
 }
@@ -186,7 +193,13 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
   // R comes from rolled-up game lines (not editable here), and AVG/OBP/SLG/OPS are
   // derived rates. `editKey` marks the BattingStats column the cell maps to in the
   // manual edit form; columns without `editKey` render as derived/read-only in edit mode.
-  const COLS: Array<{ label: string; statKey: string; editKey?: string; derived?: "pa" | "rate" | "runs" }> = [
+  const COLS: Array<{ label: string; statKey: string; editKey?: string; derived?: "pa" | "rate" | "runs" | "games" }> = [
+    // G = distinct games with a saved box score for this player.
+    // Pairs with PA so a coach can eyeball PA/G ("are my 6th-9th
+    // hitters getting roughly the same plate appearances per game?").
+    // Renders "—" for manual-only stat rows because we don't know
+    // how many games those plate appearances came from.
+    { label: "G",   statKey: "gamesRecorded", derived: "games" },
     { label: "PA",  statKey: "pa",      derived: "pa" },
     { label: "AB",  statKey: "ab",      editKey: "ab" },
     { label: "H",   statKey: "hits",    editKey: "hits" },
@@ -224,6 +237,13 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     const s = statsMap[p.id];
     if (!s) return null;
     if (key === "pa") return computePA(s);
+    // For G, treat manual-only rows (no per-game lines) as null so
+    // they sort to the bottom — sorting them as "0" would push real
+    // box-score data below players who simply haven't been imported.
+    if (key === "gamesRecorded") {
+      if (!s.hasPerGameLines) return null;
+      return s.gamesRecorded ?? null;
+    }
     const v = (s as unknown as Record<string, number | null | undefined>)[key];
     return v == null ? null : v;
   };
@@ -394,6 +414,8 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                       title={
                         c.derived === "pa"
                           ? "Plate Appearances = AB + BB + HBP + SAC. Click to sort."
+                          : c.derived === "games"
+                          ? "Games Played = distinct games with a saved box score. Pair with PA for plate appearances per game. Click to sort."
                           : "Click to sort"
                       }
                       onClick={() => toggleSort(c.statKey)}
@@ -438,6 +460,8 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                               </td>
                             );
                           }
+                          // G in edit mode: read-only — sourced from
+                          // box-score imports, not the manual form.
                           return <td key={c.statKey} className="px-1 text-center text-muted-foreground">—</td>;
                         })}
                         <td className="py-2 pl-2 whitespace-nowrap">
@@ -472,6 +496,26 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                               title="Plate Appearances = AB + BB + HBP + SAC"
                             >
                               {pa ?? "—"}
+                            </td>
+                          );
+                        }
+                        if (c.derived === "games") {
+                          // Show "—" when the player has no per-game
+                          // lines so a manual-only row doesn't display
+                          // a misleading "0" — they may well have
+                          // played, we just don't have per-game data.
+                          const g = s?.hasPerGameLines ? s.gamesRecorded ?? 0 : null;
+                          return (
+                            <td
+                              key={c.statKey}
+                              className="text-center px-2 font-medium"
+                              title={
+                                g == null
+                                  ? "No box-score data imported for this player yet."
+                                  : "Games with a saved box score"
+                              }
+                            >
+                              {g ?? "—"}
                             </td>
                           );
                         }
