@@ -240,6 +240,96 @@ export default function PracticeDetailPage() {
     );
   };
 
+  // ---- Focus points ("Things to work on") — coach-authored bullet
+  // list that the AI uses to design drills around weaknesses. Same
+  // single-flight save chain pattern as `flushBlocks`: only one PATCH
+  // is in flight at a time, and rapid add/remove during an in-flight
+  // save coalesce into ONE follow-up PATCH carrying the latest
+  // snapshot. This matters because focusPoints is a JSONB column with
+  // REPLACE semantics — two racing PATCHes could complete out of
+  // order and the older one's payload would silently overwrite the
+  // newer one's. On error we drop pending and invalidate so the UI
+  // pulls authoritative server state (rather than leaving an
+  // incorrect optimistic state stuck on screen).
+  const [localFocusPoints, setLocalFocusPoints] = useState<string[]>([]);
+  const [newFocusPoint, setNewFocusPoint] = useState("");
+  const pendingFocusPointsRef = useRef<string[] | null>(null);
+  useEffect(() => {
+    if (practice && pendingFocusPointsRef.current === null) {
+      setLocalFocusPoints(practice.focusPoints ?? []);
+    }
+  }, [practice]);
+  const saveFocusPointsQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const flushFocusPoints = () => {
+    saveFocusPointsQueueRef.current = saveFocusPointsQueueRef.current
+      .then(async () => {
+        const toSave = pendingFocusPointsRef.current;
+        if (!toSave) return;
+        pendingFocusPointsRef.current = null;
+        try {
+          await qc.cancelQueries({
+            queryKey: getGetPracticeQueryKey(practiceId),
+          });
+          await updatePractice(practiceId, { focusPoints: toSave });
+          if (pendingFocusPointsRef.current == null) {
+            void qc.invalidateQueries({
+              queryKey: getGetPracticeQueryKey(practiceId),
+            });
+          }
+          void qc.invalidateQueries({ queryKey: getListPracticesQueryKey() });
+        } catch (err) {
+          // Same recovery as flushBlocks: drop pending so the chain
+          // can drain, refetch authoritative state, and tell the
+          // coach. The next render's sync effect will replace the
+          // (now stale) optimistic local list with whatever the
+          // server actually has.
+          pendingFocusPointsRef.current = null;
+          void qc.invalidateQueries({
+            queryKey: getGetPracticeQueryKey(practiceId),
+          });
+          toast({
+            title: "Couldn't save",
+            description:
+              err instanceof Error ? err.message : "Pulled the latest from the server.",
+            variant: "destructive",
+          });
+        }
+      })
+      .catch(() => {
+        // Belt-and-suspenders: a rejected chain promise would make every
+        // future flushFocusPoints silently no-op.
+      });
+  };
+  const persistFocusPoints = (next: string[]) => {
+    setLocalFocusPoints(next);
+    pendingFocusPointsRef.current = next;
+    flushFocusPoints();
+  };
+  const addFocusPoint = () => {
+    const trimmed = newFocusPoint.trim().slice(0, 200);
+    if (!trimmed) return;
+    // Case-insensitive dupe check matches the server's dedupeFocusPoints
+    // so a coach who tries "bunt defense" twice doesn't get a phantom
+    // optimistic insert that disappears on the next server round-trip.
+    if (localFocusPoints.some((fp) => fp.toLowerCase() === trimmed.toLowerCase())) {
+      setNewFocusPoint("");
+      return;
+    }
+    if (localFocusPoints.length >= 20) {
+      toast({
+        title: "Max 20 items",
+        description: "Remove one first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    persistFocusPoints([...localFocusPoints, trimmed]);
+    setNewFocusPoint("");
+  };
+  const removeFocusPoint = (idx: number) => {
+    persistFocusPoints(localFocusPoints.filter((_, i) => i !== idx));
+  };
+
   // ---- Blocks editor — local mirror so up/down/delete are responsive,
   // then PATCH to persist via a single-flight save chain (see flushBlocks).
   const [localBlocks, setLocalBlocks] = useState<PracticeBlock[]>([]);
@@ -376,6 +466,13 @@ export default function PracticeDetailPage() {
       focusAreas: bFocus,
       ...(existing?.groups && existing.groups.length > 0
         ? { groups: existing.groups }
+        : {}),
+      // Preserve AI-tagged "addresses these focus points" badges on
+      // edit — the dialog doesn't expose them as editable fields, but
+      // a coach tweaking a block's title shouldn't silently wipe its
+      // tags (same reasoning as `groups` above).
+      ...(existing?.addressesFocusPoints && existing.addressesFocusPoints.length > 0
+        ? { addressesFocusPoints: existing.addressesFocusPoints }
         : {}),
     };
     const next =
@@ -662,6 +759,74 @@ export default function PracticeDetailPage() {
         </div>
       </div>
 
+      {/* Things to work on — coach bullet list, fed into AI generator */}
+      <Card>
+        <CardHeader className="space-y-0">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Things to work on
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Specific weaknesses or skills the team needs reps at. The AI will design drills around these and tag each block with which ones it covers.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {localFocusPoints.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">
+              Nothing here yet — try "Bunt defense", "Reading fly balls in LF", "Leading off second base".
+            </p>
+          ) : (
+            <ul className="space-y-1.5" data-testid="list-focus-points">
+              {localFocusPoints.map((fp, idx) => (
+                <li
+                  key={`${idx}-${fp}`}
+                  className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-1.5"
+                  data-testid={`row-focus-point-${idx}`}
+                >
+                  <span className="text-sm flex-1 min-w-0 break-words">{fp}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeFocusPoint(idx)}
+                    className="p-1 rounded hover:bg-background text-muted-foreground hover:text-destructive shrink-0"
+                    aria-label="Remove"
+                    data-testid={`button-focus-point-remove-${idx}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Input
+              value={newFocusPoint}
+              onChange={(e) => setNewFocusPoint(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addFocusPoint();
+                }
+              }}
+              placeholder="Add something to work on…"
+              maxLength={200}
+              className="h-8 text-sm"
+              data-testid="input-new-focus-point"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addFocusPoint}
+              disabled={!newFocusPoint.trim() || localFocusPoints.length >= 20}
+              data-testid="button-add-focus-point"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Plan / blocks */}
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -756,6 +921,22 @@ export default function PracticeDetailPage() {
                       <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
                         {b.description}
                       </p>
+                    )}
+                    {b.addressesFocusPoints && b.addressesFocusPoints.length > 0 && (
+                      <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                          Addresses:
+                        </span>
+                        {b.addressesFocusPoints.map((fp, fi) => (
+                          <span
+                            key={`${b.id}-fp-${fi}`}
+                            className="text-[10px] px-1.5 py-0.5 rounded-full border bg-primary/5 border-primary/20 text-primary/90"
+                            data-testid={`badge-addresses-${idx}-${fi}`}
+                          >
+                            {fp}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     {b.groups && b.groups.length > 0 && (
                       <div className="mt-2 space-y-1">

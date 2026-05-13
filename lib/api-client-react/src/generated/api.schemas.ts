@@ -742,6 +742,8 @@ export interface PracticeBlock {
   focusAreas: string[];
   /** Optional player groupings (defensive drills only — emitted by AI for infield/outfield/catching/pitching blocks). */
   groups?: PracticeBlockGroupsItem[];
+  /** Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation. */
+  addressesFocusPoints?: string[];
 }
 
 export interface Practice {
@@ -751,6 +753,8 @@ export interface Practice {
   /** @nullable */
   title?: string | null;
   focusAreas: string[];
+  /** Coach-authored "things to work on" — free-text symptoms/skills the AI designs drills around. */
+  focusPoints?: string[];
   blocks: PracticeBlock[];
   /** @nullable */
   notes?: string | null;
@@ -792,6 +796,8 @@ export interface CreatePracticeBody {
    */
   title?: string | null;
   focusAreas?: string[];
+  /** @maxItems 20 */
+  focusPoints?: string[];
   /** @nullable */
   notes?: string | null;
 }
@@ -809,6 +815,11 @@ export interface UpdatePracticeBody {
    */
   title?: string | null;
   focusAreas?: string[];
+  /**
+   * Replace the practice's "things to work on" list. Pass [] to clear.
+   * @maxItems 20
+   */
+  focusPoints?: string[];
   blocks?: PracticeBlock[];
   /** @nullable */
   notes?: string | null;

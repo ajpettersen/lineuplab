@@ -62,6 +62,17 @@ export type PracticeBlockJson = {
    * the AI didn't group (warmups, hitting stations, conditioning, etc.).
    */
   groups?: { label: string; playerNames: string[] }[];
+  /**
+   * Free-text "things to work on" entries (subset of
+   * `practice.focusPoints`) that this block is designed to address.
+   * The AI tags each block with which weaknesses/skills it targets so
+   * the coach can see at a glance that "bunt defense" is being
+   * covered by the team-defense block, etc. Stored as the verbatim
+   * coach phrase (not a key) so it round-trips cleanly. Optional —
+   * undefined for manually added blocks and for AI runs where the
+   * practice has no focus points yet.
+   */
+  addressesFocusPoints?: string[];
 };
 
 export const practicesTable = pgTable(
@@ -85,6 +96,17 @@ export const practicesTable = pgTable(
      * source of truth for "what's this practice about".
      */
     focusAreas: jsonb("focus_areas").$type<string[]>().notNull().default([]),
+    /**
+     * Coach-authored "things to work on" — free-text bullet points
+     * (e.g. "Bunt defense", "Reading fly balls in LF") the AI uses to
+     * design drills around weaknesses. Different from `focusAreas`
+     * (which is structured keys like "infield"/"hitting"): focusPoints
+     * are symptoms/skills in the coach's words, focusAreas are
+     * categories. The AI tags each generated block with which
+     * focusPoints it addresses so the coach sees coverage at a glance.
+     * Capped to ~20 entries / 200 chars each at the route level.
+     */
+    focusPoints: jsonb("focus_points").$type<string[]>().notNull().default([]),
     /**
      * Time-blocked plan as a JSONB array. See `PracticeBlockJson`.
      * Empty array = unplanned (coach hasn't run AI yet or hasn't added

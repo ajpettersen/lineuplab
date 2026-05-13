@@ -1808,6 +1808,12 @@ export const ListPracticesResponseItem = zod
     durationMinutes: zod.number(),
     title: zod.string().nullish(),
     focusAreas: zod.array(zod.string()),
+    focusPoints: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        'Coach-authored \"things to work on\" — free-text symptoms\/skills the AI designs drills around.',
+      ),
     blocks: zod.array(
       zod
         .object({
@@ -1842,6 +1848,12 @@ export const ListPracticesResponseItem = zod
             .describe(
               "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
             ),
+          addressesFocusPoints: zod
+            .array(zod.string())
+            .optional()
+            .describe(
+              "Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation.",
+            ),
         })
         .describe(
           "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
@@ -1873,6 +1885,10 @@ export const createPracticeBodyDurationMinutesMax = 360;
 
 export const createPracticeBodyTitleMax = 120;
 
+export const createPracticeBodyFocusPointsItemMax = 200;
+
+export const createPracticeBodyFocusPointsMax = 20;
+
 export const CreatePracticeBody = zod.object({
   date: zod.coerce.date(),
   durationMinutes: zod
@@ -1882,6 +1898,10 @@ export const CreatePracticeBody = zod.object({
     .optional(),
   title: zod.string().max(createPracticeBodyTitleMax).nullish(),
   focusAreas: zod.array(zod.string()).optional(),
+  focusPoints: zod
+    .array(zod.string().max(createPracticeBodyFocusPointsItemMax))
+    .max(createPracticeBodyFocusPointsMax)
+    .optional(),
   notes: zod.string().nullish(),
 });
 
@@ -1903,6 +1923,12 @@ export const GetPracticeResponse = zod
     durationMinutes: zod.number(),
     title: zod.string().nullish(),
     focusAreas: zod.array(zod.string()),
+    focusPoints: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        'Coach-authored \"things to work on\" — free-text symptoms\/skills the AI designs drills around.',
+      ),
     blocks: zod.array(
       zod
         .object({
@@ -1936,6 +1962,12 @@ export const GetPracticeResponse = zod
             .optional()
             .describe(
               "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+            ),
+          addressesFocusPoints: zod
+            .array(zod.string())
+            .optional()
+            .describe(
+              "Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation.",
             ),
         })
         .describe(
@@ -1973,6 +2005,10 @@ export const updatePracticeBodyDurationMinutesMax = 360;
 
 export const updatePracticeBodyTitleMax = 120;
 
+export const updatePracticeBodyFocusPointsItemMax = 200;
+
+export const updatePracticeBodyFocusPointsMax = 20;
+
 export const updatePracticeBodyBlocksItemOrderIndexMin = 0;
 
 export const updatePracticeBodyBlocksItemDurationMinutesMax = 240;
@@ -1986,6 +2022,13 @@ export const UpdatePracticeBody = zod.object({
     .optional(),
   title: zod.string().max(updatePracticeBodyTitleMax).nullish(),
   focusAreas: zod.array(zod.string()).optional(),
+  focusPoints: zod
+    .array(zod.string().max(updatePracticeBodyFocusPointsItemMax))
+    .max(updatePracticeBodyFocusPointsMax)
+    .optional()
+    .describe(
+      'Replace the practice\'s \"things to work on\" list. Pass [] to clear.',
+    ),
   blocks: zod
     .array(
       zod
@@ -2021,6 +2064,12 @@ export const UpdatePracticeBody = zod.object({
             .describe(
               "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
             ),
+          addressesFocusPoints: zod
+            .array(zod.string())
+            .optional()
+            .describe(
+              "Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation.",
+            ),
         })
         .describe(
           "One time-block within a practice plan (warmup, drill, scrimmage, etc.)",
@@ -2040,6 +2089,12 @@ export const UpdatePracticeResponse = zod.object({
   durationMinutes: zod.number(),
   title: zod.string().nullish(),
   focusAreas: zod.array(zod.string()),
+  focusPoints: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      'Coach-authored \"things to work on\" — free-text symptoms\/skills the AI designs drills around.',
+    ),
   blocks: zod.array(
     zod
       .object({
@@ -2073,6 +2128,12 @@ export const UpdatePracticeResponse = zod.object({
           .optional()
           .describe(
             "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+          ),
+        addressesFocusPoints: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation.",
           ),
       })
       .describe(
@@ -2201,6 +2262,12 @@ export const GeneratePracticePlanResponse = zod.object({
           .optional()
           .describe(
             "Optional player groupings (defensive drills only — emitted by AI for infield\/outfield\/catching\/pitching blocks).",
+          ),
+        addressesFocusPoints: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation.",
           ),
       })
       .describe(

@@ -1899,6 +1899,11 @@ components:
             required:
               - label
               - playerNames
+        addressesFocusPoints:
+          type: array
+          description: Coach-authored focus points (verbatim strings from practice.focusPoints) this block targets. AI-tagged on generation.
+          items:
+            type: string
       required:
         - id
         - orderIndex
@@ -1922,6 +1927,11 @@ components:
           type: ["string", "null"]
         focusAreas:
           type: array
+          items:
+            type: string
+        focusPoints:
+          type: array
+          description: Coach-authored "things to work on" — free-text symptoms/skills the AI designs drills around.
           items:
             type: string
         blocks:
@@ -2012,6 +2022,12 @@ components:
           type: array
           items:
             type: string
+        focusPoints:
+          type: array
+          items:
+            type: string
+            maxLength: 200
+          maxItems: 20
         notes:
           type: ["string", "null"]
       required:
@@ -2034,6 +2050,13 @@ components:
           type: array
           items:
             type: string
+        focusPoints:
+          type: array
+          description: Replace the practice's "things to work on" list. Pass [] to clear.
+          items:
+            type: string
+            maxLength: 200
+          maxItems: 20
         blocks:
           type: array
           items:

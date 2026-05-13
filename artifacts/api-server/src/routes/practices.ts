@@ -23,6 +23,31 @@ const router: IRouter = Router();
 router.use("/practices", gateWrites("partial"));
 
 /**
+ * Trim, drop empties, dedupe, and cap a focus-points array. Centralized
+ * so POST + PATCH apply identical normalization (no surprise that
+ * "Bunt defense " and "bunt defense" become two bullets). Case-folded
+ * for dedup but original casing preserved so the coach's wording shows
+ * up in the UI exactly as they typed it. Cap matches the OpenAPI
+ * `maxItems: 20` so the route's effective limit stays the same as the
+ * client validator.
+ */
+function dedupeFocusPoints(input: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim().slice(0, 200);
+    if (trimmed.length === 0) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+/**
  * Verify a practice belongs to the calling coach. Returns the row on
  * success, or null on failure (404). Centralized because every detail/
  * mutation route below needs the same ownership gate.
@@ -105,6 +130,10 @@ router.post("/practices", async (req, res): Promise<void> => {
       durationMinutes: d.durationMinutes ?? 90,
       title: d.title ?? null,
       focusAreas: d.focusAreas ?? [],
+      // focusPoints capped + length-limited at the schema layer; we
+      // additionally trim/dedup here so two flavors of whitespace don't
+      // create dupes in the bullet list.
+      focusPoints: dedupeFocusPoints(d.focusPoints ?? []),
       blocks: [],
       notes: d.notes ?? null,
     })
@@ -160,6 +189,9 @@ router.patch("/practices/:id", async (req, res): Promise<void> => {
   if (d.durationMinutes !== undefined) updates.durationMinutes = d.durationMinutes;
   if (d.title !== undefined) updates.title = d.title;
   if (d.focusAreas !== undefined) updates.focusAreas = d.focusAreas;
+  if (d.focusPoints !== undefined) {
+    updates.focusPoints = dedupeFocusPoints(d.focusPoints);
+  }
   if (d.notes !== undefined) updates.notes = d.notes;
   if (d.blocks !== undefined) {
     // Normalize: re-derive orderIndex from array position so the saved
@@ -186,6 +218,17 @@ router.patch("/practices/:id", async (req, res): Promise<void> => {
                 .filter((n) => n.length > 0)
                 .slice(0, 30),
             })).filter((g) => g.label.length > 0 && g.playerNames.length > 0),
+          }
+        : {}),
+      // Round-trip the AI-tagged "this block addresses these focus
+      // points" array. Cap so a malformed payload can't bloat JSONB.
+      ...(Array.isArray(b.addressesFocusPoints) && b.addressesFocusPoints.length > 0
+        ? {
+            addressesFocusPoints: b.addressesFocusPoints
+              .filter((s): s is string => typeof s === "string")
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0)
+              .slice(0, 10),
           }
         : {}),
     }));

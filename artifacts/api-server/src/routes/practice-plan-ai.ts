@@ -47,13 +47,14 @@ const VALID_FOCUS_AREAS = new Set([
 
 const SYSTEM_PROMPT = `You are an assistant for a youth baseball coach designing a practice plan.
 
-Your job: given the practice DURATION (minutes), the FOCUS AREAS the coach wants to work on, the team ROSTER (with each player's preferred positions and pitcher status), optional ATTENDANCE for today's practice, any REQUIRED DRILLS the coach wants guaranteed, free-text COACH NOTES, and (when available) a digest of the COACH'S RECENT STYLE based on past practices they ran, return a time-blocked plan as a JSON object.
+Your job: given the practice DURATION (minutes), the FOCUS AREAS the coach wants to work on, the team ROSTER (with each player's preferred positions and pitcher status), optional ATTENDANCE for today's practice, any REQUIRED DRILLS the coach wants guaranteed, the coach's THINGS TO WORK ON list (specific weaknesses/skills the team needs to improve at), free-text COACH NOTES, and (when available) a digest of the COACH'S RECENT STYLE based on past practices they ran, return a time-blocked plan as a JSON object.
 
 Rules for the plan:
 - The blocks array must cover the full duration. Sum of block durationMinutes must equal the requested duration (±2 minutes is acceptable).
 - Always start with a "warmup" block (10–15 min) and end with either a brief team meeting (5 min) OR a conditioning block (5–10 min).
 - For each FOCUS AREA the coach picked, include AT LEAST one drill block that targets it. Distribute time roughly proportional to the count of focus areas.
 - REQUIRED DRILLS: every entry in the REQUIRED DRILLS list MUST appear as its own block in the plan. Use the coach's wording for the title (lightly cleaned up if needed) and write a fresh description for it. Tag the block's focusAreas appropriately — if you can't tell which focus area it belongs to, pick the closest match from the picked focus areas. Required drills count toward the duration budget, so shorten or merge other blocks to make room.
+- THINGS TO WORK ON: the coach has listed specific weaknesses/skills the team needs to improve. UNLIKE required drills, these are NOT each their own block — they are SYMPTOMS the AI must address by choosing or designing drills that target them, weaving coverage across the relevant blocks. Aim to address every entry at least once across the plan. For EACH block you emit, include an "addressesFocusPoints" array listing the verbatim focus-point strings (copied EXACTLY as the coach wrote them — don't paraphrase) that the block targets. Omit "addressesFocusPoints" entirely (don't include the key) for blocks that don't address any focus point. In the rationale, briefly note which focus points are covered where (e.g. "bunt defense covered in the team-defense block; LF reads in the outfield block").
 - Drills must be age-appropriate for youth baseball (ages 8–14). Be specific — name the drill (e.g. "4-corners infield", "tee work + soft toss combo", "pitchers' fielding practice (PFP)") and describe how to run it in 1–3 sentences with concrete coaching cues.
 - If the coach mentioned specific players in COACH NOTES, weave them into the relevant blocks (e.g. "Sarah works at catcher with Coach during this block").
 - If a COACH'S RECENT STYLE digest is provided, prefer drill names, naming conventions, and block durations the coach has used before WHEN they fit today's focus areas. Reuse 1–3 of their go-to drills where appropriate, and keep block lengths in the same ballpark as their typical pattern. Don't force drills that don't match today's focus — variety matters too. Do NOT reproduce any prior practice verbatim end-to-end; adapt the structure to today's focus areas and duration, and mix in at least one fresh drill or variation. Briefly mention in the rationale which past patterns you leaned on.
@@ -63,12 +64,12 @@ PLAYER GROUPS (defensive drills only):
 - When you emit groups, only include players from the ROSTER below. If ATTENDANCE is provided and at least one player is marked present, ONLY use players marked present (skip absent and unmarked). If no attendance is marked yet, use the full active roster.
 - Match each player to a group whose label fits their preferredPositions when possible. A player with no preferred positions can be slotted anywhere needed to balance group sizes. Keep groups roughly equal in size (±1 player). Use plain player names exactly as they appear in the roster (no jersey numbers).
 - Group labels should be short and concrete (e.g. "Infielders", "Outfielders", "Catchers w/ Coach", "Pitchers — bullpen", "Group A — corners", "Group B — middle infield"). Do NOT emit groups for warmups, hitting stations, scrimmages, conditioning, or meetings.
-- Each block has these fields exactly: title (short), durationMinutes (positive int), description (1–3 sentences), drillType (one of "warmup" | "drill" | "scrimmage" | "conditioning" | "meeting"), focusAreas (array of focus-area keys this block targets — subset of the picked focus areas), and OPTIONALLY groups (array of {label: string, playerNames: string[]}). Omit "groups" entirely for blocks that don't need it.
+- Each block has these fields exactly: title (short), durationMinutes (positive int), description (1–3 sentences), drillType (one of "warmup" | "drill" | "scrimmage" | "conditioning" | "meeting"), focusAreas (array of focus-area keys this block targets — subset of the picked focus areas), and OPTIONALLY groups (array of {label: string, playerNames: string[]}) and OPTIONALLY addressesFocusPoints (array of verbatim focus-point strings from the coach's THINGS TO WORK ON list). Omit "groups" and "addressesFocusPoints" entirely for blocks that don't need them.
 
 Return ONLY a JSON object — no markdown fences, no extra prose. Schema:
 {
   "blocks": [
-    { "title": string, "durationMinutes": integer, "description": string, "drillType": string, "focusAreas": string[], "groups"?: [{"label": string, "playerNames": string[]}] }
+    { "title": string, "durationMinutes": integer, "description": string, "drillType": string, "focusAreas": string[], "groups"?: [{"label": string, "playerNames": string[]}], "addressesFocusPoints"?: string[] }
   ],
   "rationale": string
 }`;
@@ -202,6 +203,7 @@ interface RawBlock {
   drillType?: unknown;
   focusAreas?: unknown;
   groups?: unknown;
+  addressesFocusPoints?: unknown;
 }
 interface RawGroup {
   label?: unknown;
@@ -224,7 +226,18 @@ function parseAiPlan(
   raw: string,
   pickedFocusAreas: string[],
   validPlayerNames: Set<string>,
+  validFocusPoints: string[],
 ): { blocks: PracticeBlockJson[]; rationale: string } | null {
+  // Build a case-folded map of valid focus-point strings so we can
+  // round-trip the AI's tag (which we instructed to copy verbatim) back
+  // to the coach's exact casing/punctuation. Anything outside this set
+  // is dropped silently — the model occasionally paraphrases despite
+  // instructions, and we don't want to introduce phantom focus points
+  // the coach can't recognize.
+  const focusPointByLower = new Map<string, string>();
+  for (const fp of validFocusPoints) {
+    focusPointByLower.set(fp.toLowerCase(), fp);
+  }
   const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   let obj: unknown;
   try {
@@ -290,6 +303,26 @@ function parseAiPlan(
         if (cleaned.length > 0) groups = cleaned;
       }
 
+      // Sanitize addressesFocusPoints: only allow verbatim matches (case
+      // insensitive) against the practice's focusPoints. De-dupe and cap
+      // so a hallucinated 50-item array can't bloat JSONB. Leave
+      // undefined when nothing matched so the UI's "has tags?" check
+      // stays a simple Boolean.
+      let addressesFocusPoints: string[] | undefined;
+      if (focusPointByLower.size > 0 && Array.isArray(b.addressesFocusPoints)) {
+        const seen = new Set<string>();
+        const matched: string[] = [];
+        for (const raw of b.addressesFocusPoints) {
+          if (typeof raw !== "string") continue;
+          const canonical = focusPointByLower.get(raw.trim().toLowerCase());
+          if (!canonical || seen.has(canonical)) continue;
+          seen.add(canonical);
+          matched.push(canonical);
+          if (matched.length >= 10) break;
+        }
+        if (matched.length > 0) addressesFocusPoints = matched;
+      }
+
       return {
         id: randomUUID(),
         orderIndex: i,
@@ -299,6 +332,7 @@ function parseAiPlan(
         drillType,
         focusAreas: finalFocus,
         ...(groups ? { groups } : {}),
+        ...(addressesFocusPoints ? { addressesFocusPoints } : {}),
       };
     })
     .filter((b): b is PracticeBlockJson => b !== null);
@@ -443,6 +477,18 @@ router.post(
       .filter((d) => d.length > 0)
       .slice(0, 10);
 
+    // Read focus points (a.k.a. "things to work on") directly from the
+    // practice row — single source of truth lives on the practice, not
+    // in the generate body, so a regenerate never silently disagrees
+    // with what the coach sees on the page. Already normalized by the
+    // PATCH route's dedupeFocusPoints; defensive trim/cap here in case
+    // a legacy row ever has stragglers.
+    const focusPoints = (Array.isArray(practice.focusPoints) ? practice.focusPoints : [])
+      .filter((s): s is string => typeof s === "string")
+      .map((s) => s.trim().slice(0, 200))
+      .filter((s) => s.length > 0)
+      .slice(0, 20);
+
     const attendanceLine = anyAttendanceMarked
       ? `Attendance for today: ${presentIds.size} marked present, ${absentIds.size} marked absent. ONLY use the players marked PRESENT above when emitting "groups" on defensive blocks.`
       : `Attendance for today: not marked yet. Use the full active roster (${playersForGrouping.length} players) when emitting defensive "groups".`;
@@ -459,6 +505,9 @@ ${attendanceLine}
 
 Required drills (each MUST appear as its own block):
 ${requiredDrills.length > 0 ? requiredDrills.map((d, i) => `${i + 1}. ${d}`).join("\n") : "(none)"}
+
+Things to work on (symptoms/skills the team needs to improve — design or pick drills that target these and tag each block's "addressesFocusPoints" with the verbatim entries it covers):
+${focusPoints.length > 0 ? focusPoints.map((d, i) => `${i + 1}. ${d}`).join("\n") : "(none)"}
 
 Coach notes (free text, may be empty):
 ${body.data.coachNotes?.trim() || "(none)"}
@@ -502,7 +551,7 @@ Build the time-blocked plan now.`;
       return;
     }
 
-    const parsed = parseAiPlan(raw, pickedFocusAreas, validPlayerNames);
+    const parsed = parseAiPlan(raw, pickedFocusAreas, validPlayerNames, focusPoints);
     if (!parsed) {
       req.log.warn({ raw }, "Could not parse practice plan AI response");
       res.status(502).json({ error: "Could not parse AI response" });
