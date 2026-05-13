@@ -16,49 +16,54 @@ import {
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // Each feature card renders a screenshot above the icon/title. The
-// `image` paths point at `public/feature-shots/<slug>.png` — drop a
-// real screenshot in there and it'll just show up. Until a file
-// exists, `<FeatureImage>` falls back to a stylized icon-on-gradient
+// `image` paths point at `public/feature-shots/<slug>.webp` — drop a
+// new webp in there and it'll just show up. Until a file exists,
+// `<FeatureImage>` falls back to a stylized icon-on-gradient
 // placeholder (see component below).
+//
+// We standardized on WebP (was PNG) to slash landing-page weight —
+// the six screenshots dropped from ~1.4 MB total to ~250 KB. Modern
+// Safari, Chrome, Firefox, and Edge all support it; the only thing
+// that doesn't is IE11 which we don't target.
 const FEATURES = [
   {
     icon: Sparkles,
-    image: "feature-shots/ai-lineups.png",
+    image: "feature-shots/ai-lineups.webp",
     title: "AI lineups in seconds",
     body:
       "Generate fair, balanced lineups from your roster, batting order, and fielding history — or talk to the assistant in plain English.",
   },
   {
     icon: Users,
-    image: "feature-shots/roster.png",
+    image: "feature-shots/roster.webp",
     title: "Roster + multi-coach",
     body:
       "Bulk-import players from a screenshot, share the team with assistant coaches, and give each helper exactly the access they need.",
   },
   {
     icon: ListChecks,
-    image: "feature-shots/stats.png",
+    image: "feature-shots/stats.webp",
     title: "Stats that mean something",
     body:
       "Box-score import from GameChanger screenshots, season batting and pitching aggregates, and a fairness score for playing time.",
   },
   {
     icon: CalendarDays,
-    image: "feature-shots/schedule.png",
+    image: "feature-shots/schedule.webp",
     title: "Schedule + practices",
     body:
       "Paste an iCal URL to import games, plan practices with AI-generated drill blocks, and track tournament pitching rules.",
   },
   {
     icon: ClipboardList,
-    image: "feature-shots/field-display.png",
+    image: "feature-shots/field-display.webp",
     title: "Field display for the dugout",
     body:
       "iPad-friendly view that works offline so you can adjust positions on the fence without losing your spot.",
   },
   {
     icon: Trophy,
-    image: "feature-shots/youth-coaches.png",
+    image: "feature-shots/youth-coaches.webp",
     title: "Built for youth coaches",
     body:
       "Designed around the way real coaches juggle a season — fast inputs, big tap targets, and a workflow that respects your time.",

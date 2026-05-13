@@ -44,7 +44,12 @@
       }
     </script>
 
-    <link rel="icon" type="image/png" href="/icon.png" />
+    <!-- Favicon: prefer the tiny SVG (~160 B) for tab icons; the
+         PNG master is reserved for apple-touch-icon and the PWA
+         manifest which need raster. Saves ~800 KB on every cold
+         load vs. using icon.png as the favicon. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon.png" />
     <!-- PWA / iOS Add-to-Home-Screen support. The web app manifest is
          injected by vite-plugin-pwa at build time; the apple-* tags
          below are what iOS Safari uses to render the installed app. -->

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -24,28 +24,55 @@ import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import Dashboard from "@/pages/dashboard";
-import Players from "@/pages/players";
-import PlayerDetail from "@/pages/player-detail";
-import Games from "@/pages/games";
-import NewGame from "@/pages/new-game";
-import GameDetail from "@/pages/game-detail";
-import Tournaments from "@/pages/tournaments";
-import TournamentDetail from "@/pages/tournament-detail";
-import Practices from "@/pages/practices";
-import PracticeDetail from "@/pages/practice-detail";
-import FieldDisplay from "@/pages/field-display";
-import Stats from "@/pages/stats";
-import SeasonStats from "@/pages/season-stats";
-import ArmWatch from "@/pages/arm-watch";
-import Settings from "@/pages/settings";
-import DepthChart from "@/pages/depth-chart";
-import Admin from "@/pages/admin";
-import AdminTeamDetail from "@/pages/admin-team-detail";
-import Join from "@/pages/join";
-import Landing from "@/pages/landing";
-import Onboarding from "@/pages/onboarding";
-import NotFound from "@/pages/not-found";
+
+// Route components are code-split via React.lazy so the initial JS
+// bundle only contains the app shell + whatever route the user
+// landed on. Big wins for Lighthouse / first-load metrics:
+//   - Recharts (Stats, Season Stats, Player Detail) is a chunky
+//     dep that previously shipped with every page.
+//   - dnd-kit, the lineup canvas, and the AI assistant only get
+//     downloaded when the coach actually opens a game.
+//   - The signed-out marketing landing now boots without pulling
+//     down any of the authed-app pages.
+// Layout, ErrorBoundary, and the auth surface stay eagerly imported
+// because the shell renders them on every navigation.
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Players = lazy(() => import("@/pages/players"));
+const PlayerDetail = lazy(() => import("@/pages/player-detail"));
+const Games = lazy(() => import("@/pages/games"));
+const NewGame = lazy(() => import("@/pages/new-game"));
+const GameDetail = lazy(() => import("@/pages/game-detail"));
+const Tournaments = lazy(() => import("@/pages/tournaments"));
+const TournamentDetail = lazy(() => import("@/pages/tournament-detail"));
+const Practices = lazy(() => import("@/pages/practices"));
+const PracticeDetail = lazy(() => import("@/pages/practice-detail"));
+const FieldDisplay = lazy(() => import("@/pages/field-display"));
+const Stats = lazy(() => import("@/pages/stats"));
+const SeasonStats = lazy(() => import("@/pages/season-stats"));
+const ArmWatch = lazy(() => import("@/pages/arm-watch"));
+const Settings = lazy(() => import("@/pages/settings"));
+const DepthChart = lazy(() => import("@/pages/depth-chart"));
+const Admin = lazy(() => import("@/pages/admin"));
+const AdminTeamDetail = lazy(() => import("@/pages/admin-team-detail"));
+const Join = lazy(() => import("@/pages/join"));
+const Landing = lazy(() => import("@/pages/landing"));
+const Onboarding = lazy(() => import("@/pages/onboarding"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+
+// Tiny fallback shown while a route chunk is fetching. Deliberately
+// minimal — a full skeleton would itself bloat the initial bundle
+// and most route chunks are <50 KB gzipped so this rarely lingers.
+function RouteFallback() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading"
+      className="flex min-h-[40vh] items-center justify-center"
+    >
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+    </div>
+  );
+}
 
 // gcTime must exceed the persister's max-age, otherwise React Query
 // would garbage-collect entries the persister later tries to rehydrate.
@@ -405,6 +432,9 @@ function ProtectedApp() {
       <Show when="signed-in">
         <PendingInviteRedirect />
         <OnboardingGate>
+        {/* Single Suspense around the whole authed route tree so a
+            chunk fetch shows the spinner once, not nested fallbacks. */}
+        <Suspense fallback={<RouteFallback />}>
         <Switch>
           {/*
            * Dugout / fence-iPad display renders OUTSIDE the app shell so the
@@ -454,9 +484,11 @@ function ProtectedApp() {
             </Layout>
           </Route>
         </Switch>
+        </Suspense>
         </OnboardingGate>
       </Show>
       <Show when="signed-out">
+        <Suspense fallback={<RouteFallback />}>
         <Switch>
           {/* Public marketing landing — only for the bare home route. Any
               other path stashes its destination and redirects to /sign-in
@@ -464,6 +496,7 @@ function ProtectedApp() {
           <Route path="/" component={Landing} />
           <Route component={StashAndRedirectToSignIn} />
         </Switch>
+        </Suspense>
       </Show>
     </>
   );
@@ -536,12 +569,19 @@ function ClerkProviderWithRoutes() {
         <ClerkQueryClientCacheInvalidator />
         <OnlineResumer />
         <TooltipProvider>
+          {/* Top-level Suspense covers the lazy <Join /> route below.
+              Authed and signed-out trees inside ProtectedApp have
+              their own nested boundaries so a route chunk swap shows
+              the spinner where the page would render, not over the
+              whole app. */}
+          <Suspense fallback={<RouteFallback />}>
           <Switch>
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
             <Route path="/join/:token" component={Join} />
             <Route component={ProtectedApp} />
           </Switch>
+          </Suspense>
           <Toaster />
         </TooltipProvider>
       </PersistQueryClientProvider>
