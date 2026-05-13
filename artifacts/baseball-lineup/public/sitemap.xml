@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sitemap for Lineup Lab. The app is mostly behind auth, so the only
+  page worth indexing today is the public marketing landing at "/".
+  If you ever ship more public marketing pages (pricing, features,
+  blog, etc.) add them here.
+
+  NOTE: Update the <loc> and the Sitemap: line in robots.txt if you
+  publish under a custom domain — search engines need ABSOLUTE URLs
+  matching the canonical hostname coaches actually visit.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://lineup-lab.replit.app/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
