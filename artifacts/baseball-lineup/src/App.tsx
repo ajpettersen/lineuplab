@@ -8,6 +8,7 @@ import {
   PERSIST_MAX_AGE,
   purgePersistedQueryCache,
 } from "@/lib/query-persister";
+import { registerMutationDefaults } from "@/lib/mutation-defaults";
 import {
   ClerkProvider,
   SignIn,
@@ -70,6 +71,13 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Wire up `mutationFn` defaults for the offline-allowlisted mutations
+// BEFORE PersistQueryClientProvider rehydrates, so any paused mutations
+// restored from IndexedDB find a callable function and `resumePausedMutations`
+// (fired by OnlineResumer on boot/reconnect) can actually replay them.
+// See `lib/mutation-defaults.ts` for the allowlist + rationale.
+registerMutationDefaults(queryClient);
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -490,16 +498,38 @@ function ClerkProviderWithRoutes() {
     >
       <PersistQueryClientProvider
         client={queryClient}
+        // Fires once after the persister has finished asynchronously
+        // rehydrating from IndexedDB. Any mutations restored in the
+        // `paused` state (offline writes from a prior session) are
+        // now in the MutationCache, so this is the earliest moment
+        // we can replay them. OnlineResumer's mount effect runs
+        // SYNCHRONOUSLY and would race the rehydrate, so we keep
+        // boot-time resume logic here instead.
+        onSuccess={() => {
+          if (typeof navigator !== "undefined" && navigator.onLine) {
+            void queryClient.resumePausedMutations();
+          }
+        }}
         persistOptions={{
           persister: queryPersister,
           maxAge: PERSIST_MAX_AGE,
           buster: PERSIST_BUSTER,
-          // Don't persist mutation state or in-flight queries — they
-          // can't safely resume across reloads. Successful query
-          // results (the data we want offline) are persisted by
-          // default.
+          // Persist queries (default) AND offline-paused mutations
+          // from the allowlist registered in `mutation-defaults.ts`.
+          // We only persist mutations whose state is `paused` (i.e.
+          // fired offline with the default `networkMode: "online"`),
+          // so successful / idle / pending mutations don't bloat
+          // IndexedDB. This mirrors React Query's
+          // `defaultShouldDehydrateMutation` but avoids importing it
+          // — two `@tanstack/query-core` versions exist in the tree
+          // (the persist-client package pulls an older one), and the
+          // direct import triggers a type-identity clash. Hand-rolling
+          // the predicate sidesteps that without changing semantics.
+          // After rehydrate, OnlineResumer calls `resumePausedMutations`
+          // which re-runs each paused mutation against the saved
+          // `mutationFn` default.
           dehydrateOptions: {
-            shouldDehydrateMutation: () => false,
+            shouldDehydrateMutation: (m) => m.state.isPaused,
           },
         }}
       >

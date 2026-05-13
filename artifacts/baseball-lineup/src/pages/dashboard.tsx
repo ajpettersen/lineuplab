@@ -1,7 +1,9 @@
 import { Link, useLocation } from "wouter";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListGames,
+  useListPlayers,
   useGetSeasonStats,
   useGetPlayerStats,
   useGetPreferences,
@@ -9,10 +11,12 @@ import {
   useDismissDashboardTask,
   getListDashboardTasksQueryKey,
   type DashboardTask,
+  type Game,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info } from "lucide-react";
+import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
+import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info, FileText } from "lucide-react";
 import { NextGameHero } from "@/components/next-game-hero";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
@@ -143,7 +147,7 @@ export default function Dashboard() {
 
       {/* Coaching tasks (only renders when the coach has open items, so a
           fresh account stays clean). */}
-      {tasks.length > 0 && <TasksCard tasks={tasks} />}
+      {tasks.length > 0 && <TasksCard tasks={tasks} games={actualGames} />}
 
       {/*
        * Broadcast-style stat cards. Big Roboto Mono numerals, Oswald uppercase
@@ -324,11 +328,20 @@ const TASK_LABEL: Record<DashboardTask["type"], string> = {
  * the server responds, so the card feels instant. The query refetches on
  * success to reconcile the canonical state.
  */
-function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
+function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { teamName } = useTeamSettings();
+  // Box-score import dialog state — opened inline from a `box_score`
+  // task row so coaches don't have to navigate into the game first.
+  // Players list is fetched lazily (only when a row is opened) since
+  // most dashboard sessions never touch this card.
+  const [boxScoreGameId, setBoxScoreGameId] = useState<number | null>(null);
+  // Players list is needed for the import dialog's name-matching UI;
+  // we keep the fetch always-on (cheap, already cached by other pages
+  // most of the time) so opening the dialog is instant.
+  const { data: players = [] } = useListPlayers();
 
   const dismiss = useDismissDashboardTask({
     mutation: {
@@ -395,6 +408,22 @@ function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {t.type === "box_score" && (
+                // One-tap import — opens the existing GameChanger dialog
+                // right here on the dashboard so a coach finishing a game
+                // can clear the reminder without first navigating into
+                // the game detail page.
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-8"
+                  onClick={() => setBoxScoreGameId(t.gameId)}
+                  data-testid={`button-task-import-box-score-${t.id}`}
+                >
+                  <FileText className="h-3.5 w-3.5 mr-1" />
+                  Import
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -427,6 +456,24 @@ function TasksCard({ tasks }: { tasks: DashboardTask[] }) {
           </div>
         ))}
       </CardContent>
+      {boxScoreGameId != null && (() => {
+        // Look up the game's scheduled length so the dialog's
+        // "Last inning played" picker is bounded correctly. Falls
+        // back to 6 (app default) if the game isn't in the cached
+        // list — should be vanishingly rare since `box_score` tasks
+        // are derived from the same query.
+        const innings =
+          games.find((g) => g.id === boxScoreGameId)?.innings ?? 6;
+        return (
+          <BoxScoreImportDialog
+            gameId={boxScoreGameId}
+            gameInnings={innings}
+            players={players}
+            open={boxScoreGameId != null}
+            onOpenChange={(o) => !o && setBoxScoreGameId(null)}
+          />
+        );
+      })()}
     </Card>
   );
 }

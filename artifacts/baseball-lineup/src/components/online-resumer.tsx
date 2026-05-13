@@ -65,13 +65,14 @@ export function OnlineResumer() {
     };
 
     window.addEventListener("online", handleOnline);
-    // If we boot up online with paused mutations carried over from a
-    // prior run (currently mutations aren't persisted, but if Phase 3
-    // turns that on this becomes the rehydration path), flush once.
-    // Also drain any localStorage writes left over from a prior
-    // offline session — same drain helper handles the boot case.
+    // Boot path: drain localStorage writes left over from a prior
+    // offline session. (Resuming rehydrated paused mutations is
+    // handled by PersistQueryClientProvider's `onSuccess` callback
+    // in App.tsx — that fires AFTER async IndexedDB rehydration, so
+    // it's the only place we know the MutationCache has actually
+    // been populated. Doing it here would race the rehydrate and
+    // silently no-op until the next `online` event.)
     if (typeof navigator !== "undefined" && navigator.onLine) {
-      void qc.resumePausedMutations();
       void drainOfflineWrites().then(() => {
         bumpOfflineQueueCount();
       });
