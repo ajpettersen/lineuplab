@@ -3,9 +3,18 @@ import {
   updateGame,
   saveLineup,
   dismissDashboardTask,
+  createPlayer,
+  updatePlayer,
+  deletePlayer,
+  updateTeamSettings,
+  updatePreferences,
   type UpdateGameBody,
   type SaveLineupBody,
   type DismissDashboardTaskBody,
+  type CreatePlayerBody,
+  type UpdatePlayerBody,
+  type UpdateTeamSettingsBody,
+  type UpdatePreferencesBody,
 } from "@workspace/api-client-react";
 
 /**
@@ -65,6 +74,45 @@ export function registerMutationDefaults(queryClient: QueryClient): void {
   queryClient.setMutationDefaults(["dismissDashboardTask"], {
     mutationFn: async (vars: { data: DismissDashboardTaskBody }) => {
       return dismissDashboardTask(vars.data);
+    },
+  });
+
+  // Roster edits. createPlayer is borderline (replaying it would create
+  // a duplicate row if the server already accepted it but the client
+  // never saw the 200), but the realistic offline scenario — coach
+  // adds a kid in the parking lot before practice — is one we'd
+  // rather replay than lose. updatePlayer and deletePlayer are
+  // straightforward last-writer-wins on a known id.
+  queryClient.setMutationDefaults(["createPlayer"], {
+    mutationFn: async (vars: { data: CreatePlayerBody }) => {
+      return createPlayer(vars.data);
+    },
+  });
+
+  queryClient.setMutationDefaults(["updatePlayer"], {
+    mutationFn: async (vars: { id: number; data: UpdatePlayerBody }) => {
+      return updatePlayer(vars.id, vars.data);
+    },
+  });
+
+  queryClient.setMutationDefaults(["deletePlayer"], {
+    mutationFn: async (vars: { id: number }) => {
+      return deletePlayer(vars.id);
+    },
+  });
+
+  // Settings / preferences. Both are PATCH-style replaces against a
+  // single per-coach row, so replaying a queued offline edit can
+  // never resurrect the wrong record.
+  queryClient.setMutationDefaults(["updateTeamSettings"], {
+    mutationFn: async (vars: { data: UpdateTeamSettingsBody }) => {
+      return updateTeamSettings(vars.data);
+    },
+  });
+
+  queryClient.setMutationDefaults(["updatePreferences"], {
+    mutationFn: async (vars: { data: UpdatePreferencesBody }) => {
+      return updatePreferences(vars.data);
     },
   });
 }
