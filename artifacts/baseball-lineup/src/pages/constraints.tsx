@@ -474,7 +474,7 @@ function AddPlayerRuleForm({
   players,
   onAdd,
 }: {
-  players: { id: number; name: string; number: number | null; eligiblePositions: string[] }[];
+  players: { id: number; name: string; number?: number | null; eligiblePositions: string[] }[];
   onAdd: () => void;
 }) {
   const { toast } = useToast();

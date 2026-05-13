@@ -167,7 +167,7 @@ function PctBar({ pct, color }: { pct: number; color: string }) {
 }
 
 // ---- History Import Tab ----
-function HistoryTab({ players }: { players: { id: number; name: string; number: number | null }[] }) {
+function HistoryTab({ players }: { players: { id: number; name: string; number?: number | null }[] }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: historical = [] } = useHistoricalFielding();
