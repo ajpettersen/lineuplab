@@ -3,6 +3,7 @@ import {
   db,
   gamesTable,
   pushSubscriptionsTable,
+  teamMembershipsTable,
   teamSettingsTable,
 } from "@workspace/db";
 import { sendPushToSubscription, pushEnabled } from "./push";
@@ -88,9 +89,13 @@ export async function runBoxScoreReminderTickOnce(): Promise<void> {
     );
 
     for (const c of candidates) {
-      // 2) Mark sent FIRST (single-row UPDATE with the same null guard
-      //    so a second concurrent tick can't double-send). If 0 rows
-      //    update, another worker grabbed it — skip.
+      // 2) Atomic claim: re-check EVERY eligibility predicate inside
+      //    the UPDATE so a state change between the SELECT and UPDATE
+      //    (box score imported, game cancelled or soft-deleted, team
+      //    toggled GameChanger off, gameDate edited out of the window)
+      //    cancels the send instead of firing a stale notification.
+      //    If 0 rows update, the row is no longer eligible (or another
+      //    worker grabbed it) — skip.
       const claimed = await db
         .update(gamesTable)
         .set({ boxScoreReminderSentAt: new Date() })
@@ -98,18 +103,47 @@ export async function runBoxScoreReminderTickOnce(): Promise<void> {
           and(
             eq(gamesTable.id, c.gameId),
             isNull(gamesTable.boxScoreReminderSentAt),
+            isNull(gamesTable.boxScoreImportedAt),
+            isNull(gamesTable.deletedAt),
+            ne(gamesTable.status, "cancelled"),
+            eq(gamesTable.type, "game"),
+            lte(gamesTable.gameDate, upperBound),
+            gte(gamesTable.gameDate, lowerBound),
+            // GameChanger flag re-check: EXISTS sub-query so a coach
+            // toggling it off mid-tick stops further sends.
+            sql`EXISTS (
+              SELECT 1 FROM ${teamSettingsTable}
+              WHERE ${teamSettingsTable.userId} = ${gamesTable.userId}
+                AND ${teamSettingsTable.usesGameChanger} = true
+            )`,
           ),
         )
         .returning({ id: gamesTable.id });
       if (claimed.length === 0) continue;
 
-      // 3) Fan out to every subscription registered against this team
-      //    scope. teamOwnerUserId on the subscription matches the
-      //    game's userId (which IS the owner scope).
-      const subs = await db
-        .select()
+      // 3) Fan out to subscriptions registered against this team scope,
+      //    BUT only to coaches who are still current team_memberships
+      //    rows on this team — a coach removed from the team must not
+      //    keep receiving reminders just because their stale row hasn't
+      //    been pruned yet.
+      const subRows = await db
+        .select({ sub: pushSubscriptionsTable })
         .from(pushSubscriptionsTable)
+        .innerJoin(
+          teamMembershipsTable,
+          and(
+            eq(
+              teamMembershipsTable.memberUserId,
+              pushSubscriptionsTable.userId,
+            ),
+            eq(
+              teamMembershipsTable.ownerUserId,
+              pushSubscriptionsTable.teamOwnerUserId,
+            ),
+          ),
+        )
         .where(eq(pushSubscriptionsTable.teamOwnerUserId, c.ownerUserId));
+      const subs = subRows.map((r) => r.sub);
 
       if (subs.length === 0) {
         // Nobody to notify — that's fine, mark-sent stays so we don't

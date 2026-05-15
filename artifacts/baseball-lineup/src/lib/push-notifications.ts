@@ -87,13 +87,16 @@ async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
   }
 }
 
-/** Persist a fresh PushSubscription to the server. */
+/** Persist a fresh PushSubscription to the server. Throws on non-2xx
+ * so the calling hook can surface the failure (and avoid a false
+ * "enabled" UI state when the server didn't actually accept the
+ * registration). */
 async function persistSubscription(
   authedFetch: typeof fetch,
   sub: PushSubscription,
 ): Promise<void> {
   const json = sub.toJSON();
-  await authedFetch(SUBSCRIBE_ENDPOINT, {
+  const res = await authedFetch(SUBSCRIBE_ENDPOINT, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -103,6 +106,19 @@ async function persistSubscription(
       userAgent: navigator.userAgent,
     }),
   });
+  if (!res.ok) {
+    // Drop the browser subscription so we don't end up with a half-
+    // registered state where the browser thinks we're subscribed but
+    // the server has no record.
+    try {
+      await sub.unsubscribe();
+    } catch {
+      /* ignore */
+    }
+    throw new Error(
+      `Couldn't register this device with the server (HTTP ${res.status}).`,
+    );
+  }
 }
 
 export type UsePushNotifications = {

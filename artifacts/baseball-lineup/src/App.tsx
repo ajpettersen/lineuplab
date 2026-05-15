@@ -23,6 +23,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
+import { PushNavigationListener } from "@/components/push-navigation-listener";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
 // Route components are code-split via React.lazy so the initial JS
@@ -568,6 +569,7 @@ function ClerkProviderWithRoutes() {
       >
         <ClerkQueryClientCacheInvalidator />
         <OnlineResumer />
+        <PushNavigationListener />
         <TooltipProvider>
           {/* Top-level Suspense covers the lazy <Join /> route below.
               Authed and signed-out trees inside ProtectedApp have
