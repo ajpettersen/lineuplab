@@ -1641,7 +1641,7 @@ export default function FieldDisplay() {
     // Lock the page to the viewport on tablet+ so the field, bench, and
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
-    <div className="min-h-[100dvh] max-md:portrait:h-[100dvh] max-lg:landscape:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden">
+    <div className="min-h-[100dvh] max-lg:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:overflow-hidden lg:overflow-hidden">
       {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ──
        *
        * Mobile layout note: the original single-row header packed exit +
@@ -2125,25 +2125,19 @@ export default function FieldDisplay() {
         onDragCancel={handleDragCancel}
       >
       {/* Two responsive layouts:
-       *  - Phone (portrait OR landscape): single panel at a time, with a
-       *    bottom toggle bar to switch between FIELD (defense) and ORDER
-       *    (offense). Coaches asked for this in landscape too — the prior
-       *    180–240px landscape sidebar made the batting names cramped AND
-       *    squeezed the field, and they almost always want one or the other
-       *    full-screen on a phone.
-       *  - iPad/desktop (`lg:`): full split with a 320–400px sidebar — both
-       *    panels visible at once because there's room for it.
-       *
-       *  IMPORTANT: phone-landscape rules are scoped with `max-lg:` so they
-       *  cannot apply at iPad-landscape (1024x768). In this Tailwind 4 build
-       *  the `landscape:` media query is emitted AFTER `lg:` in the
-       *  compiled CSS, so an unscoped `landscape:` rule would win against
-       *  `lg:` on iPad-landscape and collapse the iPad split. */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
+       *  - Below `lg` (phones in any orientation, iPad portrait): single
+       *    panel at a time with a bottom toggle bar to switch between
+       *    FIELD (defense) and ORDER (offense). iPad portrait used to
+       *    fall through a coverage gap — now it shares the same clean
+       *    one-thing-at-a-time UX as phones.
+       *  - iPad-landscape and desktop (`lg:`, ≥1024px): full split with
+       *    a 320–400px sidebar — both panels visible at once because
+       *    there's room for it. */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 max-lg:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
-          className={`flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden bg-[#03060a] ${
-            mobileTab !== "field" ? "max-md:portrait:hidden max-lg:landscape:hidden" : ""
+          className={`flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden bg-[#03060a] ${
+            mobileTab !== "field" ? "max-lg:hidden" : ""
           }`}
           data-testid="section-field"
         >
@@ -2152,7 +2146,7 @@ export default function FieldDisplay() {
            *  on lg, where the parent already constrains height to the
            *  viewport and the field is allowed to fill whatever's left. */}
           <div
-            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-md:portrait:min-h-0 max-lg:landscape:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.35)]"
+            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.35)]"
             style={{ background: lighting.grassGradient }}
             data-lighting={lighting.label}
             data-testid={`field-lighting-${lighting.label}`}
@@ -2362,23 +2356,18 @@ export default function FieldDisplay() {
           />
         </section>
 
-        {/* Batting panel layout per viewport:
-         *  - Phone portrait (default): a 2-column grid with a real per-row
-         *    min-height so 12+ batters render legibly under the field.
-         *    The page itself is allowed to scroll on portrait phones (root
-         *    is min-h, not h), so a deep roster falls below the fold
-         *    instead of crushing into unreadable strips.
-         *  - Phone landscape AND iPad/desktop (`lg:`): the original
-         *    equal-distribution flex column — 9 batters get tall rows, 18
-         *    batters get short ones, and the list always fills the
-         *    sidebar exactly without scrolling. `flex-1 basis-0` is left
-         *    on the items unconditionally because it's a no-op on grid
-         *    children. The "currently at bat" tracker was removed because
-         *    there's no way to know what's actually happening on the
-         *    field without GameChanger integration, and a stale at-bat
-         *    indicator was worse than no indicator. */}
-        <aside className={`border-t max-md:portrait:border-t-0 max-lg:landscape:border-t-0 lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
-          mobileTab !== "order" ? "max-md:portrait:hidden max-lg:landscape:hidden" : ""
+        {/* Batting panel layout per viewport (unified):
+         *  Single equal-distribution flex column at every viewport — 9
+         *  batters get tall comfortable rows, 18 batters get shorter
+         *  rows that still read clearly (min-h-[2.25rem] floor keeps
+         *  them tappable). The list always fills the panel height
+         *  exactly without scrolling because the parent locks to the
+         *  viewport on every breakpoint. The "currently at bat"
+         *  tracker was removed because there's no way to know real
+         *  game state without a GameChanger-style integration, and a
+         *  stale indicator was worse than no indicator. */}
+        <aside className={`max-lg:border-t-0 lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
+          mobileTab !== "order" ? "max-lg:hidden" : ""
         }`}>
           {/* Broadcast-graphic LINEUP header — Oswald uppercase with a gold
            *  underline to feel like a TV chyron */}
@@ -2387,25 +2376,26 @@ export default function FieldDisplay() {
               Lineup
             </h2>
           </div>
-          {/* In landscape and lg/desktop the batting list MUST fit the
-           *  panel without an internal scroll — the dugout iPad is
-           *  strapped to a fence and a coach glancing at it shouldn't
-           *  have to swipe to see the bottom of the order. We give the
-           *  wrapper `flex flex-col overflow-hidden` and make the <ol>
-           *  itself flex-1 + min-h-0 so it owns all leftover vertical
-           *  space, then let each <li> grow via flex-1 basis-0 so 9
-           *  batters get tall comfy rows and 18 batters get shorter
-           *  rows that still read clearly (min-h-[2rem] floor keeps
-           *  them tappable). On phone-portrait the panel uses a 2-col
-           *  grid with fixed row heights, which can grow past the
-           *  viewport — that's intentional, the page itself scrolls
-           *  in that mode (root is min-h, not h). */}
-          <div className="flex-1 min-h-0 overflow-hidden max-md:portrait:overflow-y-auto flex flex-col p-2 sm:p-3">
+          {/* The batting list MUST fit the panel without an internal
+           *  scroll — the dugout iPad is strapped to a fence and a
+           *  coach glancing at it shouldn't have to swipe to see the
+           *  bottom of the order. The wrapper is `flex flex-col
+           *  overflow-hidden`, the <ol> is `flex-1 min-h-0` so it
+           *  owns all leftover vertical space, and each <li> uses
+           *  `flex-1 basis-0` so 9 batters get tall comfy rows and
+           *  18 batters get shorter rows that still read clearly
+           *  (min-h floor keeps them tappable). */}
+          {/* Portrait sub-lg (phone portrait + iPad portrait) gets
+           *  internal scroll so a deep roster on a short viewport
+           *  isn't clipped. Landscape + desktop keep `overflow-hidden`
+           *  because their <li> flex-1 basis-0 distribution always
+           *  fits the panel exactly. */}
+          <div className="flex-1 min-h-0 overflow-hidden max-lg:portrait:overflow-y-auto flex flex-col p-2 sm:p-3">
           {battingOrder.length === 0 ? (
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
             <ol
-              className="grid grid-cols-2 gap-1 max-md:portrait:flex max-md:portrait:flex-col max-md:portrait:flex-1 max-md:portrait:min-h-0 max-md:portrait:gap-1.5 max-lg:landscape:flex max-lg:landscape:flex-col max-lg:landscape:flex-1 max-lg:landscape:min-h-0 max-lg:landscape:gap-1 lg:flex lg:flex-col lg:flex-1 lg:min-h-0 lg:gap-1"
+              className="flex flex-col flex-1 min-h-0 gap-1 max-lg:gap-1.5 lg:gap-1"
               data-testid="batting-order-list"
             >
               {battingOrder.map((r, idx) => {
@@ -2432,7 +2422,7 @@ export default function FieldDisplay() {
                 return (
                   <li
                     key={r.playerId}
-                    className={`relative flex items-stretch h-12 sm:h-14 max-lg:landscape:h-auto max-lg:landscape:flex-1 max-lg:landscape:basis-0 max-lg:landscape:min-h-[2rem] lg:h-auto lg:flex-1 lg:basis-0 lg:min-h-[2rem] overflow-hidden border border-transparent transition-all ${
+                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[2.25rem] sm:min-h-[2.5rem] overflow-hidden border border-transparent transition-all ${
                       idx % 2 === 0
                         ? "bg-slate-900/60"
                         : "bg-slate-900/30"
@@ -2504,7 +2494,7 @@ export default function FieldDisplay() {
        *  coaches can drag-and-drop between field and bench without
        *  leaving the panel. */}
       <nav
-        className="hidden max-md:portrait:flex max-lg:landscape:flex shrink-0 h-16 max-lg:landscape:h-12 bg-[#050d1a] border-t border-[#1a2a42] z-30"
+        className="hidden max-lg:flex shrink-0 h-16 max-lg:landscape:h-12 bg-[#050d1a] border-t border-[#1a2a42] z-30"
         aria-label="Field display section"
         data-testid="mobile-tab-bar"
       >
