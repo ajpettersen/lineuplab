@@ -33,7 +33,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, WifiOff, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, Trophy, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -1136,6 +1136,14 @@ export default function FieldDisplay() {
   const dimMode = brightnessMode === "dim";
   const sunlightMode = brightnessMode === "sunlight";
 
+  // Tournament splash — when the game is a tournament fixture, dial
+  // up the broadcast-graphic accents (animated gold shimmer on the
+  // header underline + the LINEUP chyron, "TOURNAMENT" pre-title with
+  // a Trophy icon). Purely visual; no behavioral changes. The
+  // tournament-specific batting-order math (top-of-order OPS, etc.)
+  // already runs upstream in the lineup generator.
+  const isTournament = game?.gameType === "tournament";
+
   // Time-of-day palette, unless the coach has flipped on Sunlight mode —
   // in which case force the brightest preset (`morning`) regardless of
   // game time, so a 7pm tournament under stadium lights still gets the
@@ -1672,7 +1680,7 @@ export default function FieldDisplay() {
        *  iPad Safari (display:contents has known quirks as a flex item
        *  in WebKit). The wrapper-free approach above sidesteps both. */}
       <header
-        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 border-b-4 border-broadcast-gold bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10"
+        className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-broadcast-gold"} bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
         style={{
           // iPad status bar (clock / WiFi / battery) sits on top of the
           // page in installed-PWA / fullscreen mode (we set
@@ -2110,6 +2118,18 @@ export default function FieldDisplay() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        {/* Tournament splash — animated gold shimmer replaces the static
+         *  gold underline so the header reads as a "this game matters
+         *  more" broadcast chyron. Absolutely positioned at the bottom
+         *  of the header so it doesn't reflow any layout vs. the
+         *  league-game border-b-4 path. */}
+        {isTournament && (
+          <div
+            aria-hidden="true"
+            className="fd-tourney-shimmer absolute inset-x-0 bottom-0 h-1 sm:h-[5px] pointer-events-none"
+            data-testid="tournament-shimmer-header"
+          />
+        )}
       </header>
 
       {/* ── Body: field on the left, batting panel on the right ──
@@ -2370,11 +2390,33 @@ export default function FieldDisplay() {
           mobileTab !== "order" ? "max-lg:hidden" : ""
         }`}>
           {/* Broadcast-graphic LINEUP header — Oswald uppercase with a gold
-           *  underline to feel like a TV chyron */}
-          <div className="shrink-0 bg-[#0f172a] border-b-2 border-broadcast-gold px-4 py-2 sm:py-3 text-center">
+           *  underline to feel like a TV chyron. Tournament games swap the
+           *  static gold underline for an animated shimmer + add a small
+           *  TROPHY pre-title above the heading so the panel reads as a
+           *  TV "tournament graphic" insert. */}
+          <div className={`relative shrink-0 bg-[#0f172a] ${isTournament ? "border-b-0" : "border-b-2 border-broadcast-gold"} px-4 py-2 sm:py-3 text-center`}>
+            {isTournament && (
+              <div
+                className="flex items-center justify-center gap-1.5 mb-1 text-broadcast-gold/90"
+                data-testid="tournament-pretitle"
+              >
+                <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                <span className="font-display text-[9px] sm:text-[10px] font-bold tracking-[0.4em] uppercase">
+                  Tournament
+                </span>
+                <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+              </div>
+            )}
             <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.3em] uppercase text-broadcast-gold leading-none">
               Lineup
             </h2>
+            {isTournament && (
+              <div
+                aria-hidden="true"
+                className="fd-tourney-shimmer absolute inset-x-0 bottom-0 h-[3px] pointer-events-none"
+                data-testid="tournament-shimmer-lineup"
+              />
+            )}
           </div>
           {/* The batting list MUST fit the panel without an internal
            *  scroll — the dugout iPad is strapped to a fence and a
