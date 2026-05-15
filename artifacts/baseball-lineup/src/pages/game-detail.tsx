@@ -4806,14 +4806,6 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.playerId,
   });
-  // See PlayerTile for the full explanation. MouseSensor's listener is
-  // `onMouseDown`, so we capture it before the spread and forward to it
-  // from inside our preventDefault wrapper — otherwise the spread would
-  // overwrite our wrapper and the page would jump on grab, OR our
-  // wrapper would overwrite the sensor and drag would never start.
-  const sensorMouseDown = (
-    listeners as { onMouseDown?: (e: React.MouseEvent) => void } | undefined
-  )?.onMouseDown;
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -4888,21 +4880,20 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
           data-testid={`drag-handle-${slot - 1}`}
           {...attributes}
           {...listeners}
-          // MUST come AFTER `{...listeners}` so this wrapper wins over
-          // MouseSensor's own onMouseDown — and we manually forward to the
-          // sensor inside so drag activation still happens.
-          //
-          // ORDER MATTERS: forward to the sensor FIRST, then
-          // preventDefault. @dnd-kit's MouseSensor bails if the native
-          // event already has `defaultPrevented === true`, so calling
-          // preventDefault before the forward silently kills drag
-          // activation (which is what users were hitting on the batting
-          // order list). preventDefault AFTER still suppresses the
-          // browser's mousedown-focus-and-scroll-into-view behavior.
-          onMouseDown={(e) => {
-            sensorMouseDown?.(e);
-            e.preventDefault();
-          }}
+          // NOTE: do NOT wrap `{...listeners}` with a custom onMouseDown
+          // here. An earlier attempt added `onMouseDown={preventDefault}`
+          // to suppress the browser's mousedown-focuses-the-button
+          // behavior, but that overwrote @dnd-kit's MouseSensor activator
+          // and silently killed drag-and-drop on desktop. A follow-up
+          // tried to forward the event to the sensor before
+          // preventDefault — but the sensor activator runs in a React
+          // SyntheticEvent context where capture/dispatch ordering made
+          // that brittle (still didn't activate reliably for users). The
+          // grip is a tiny 8×8 button on the side of the row, so the
+          // focus / scroll-into-view concern that motivated the wrapper
+          // on the bigger field chips doesn't really apply here. Leave
+          // listeners alone — this matches the field-display chip
+          // pattern, which works.
         >
           <GripVertical className="h-4 w-4" />
         </button>
