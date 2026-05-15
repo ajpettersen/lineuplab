@@ -1737,7 +1737,7 @@ export default function FieldDisplay() {
            *  engages on truly extreme names — the common case shows
            *  in full. */}
           <div className="min-w-0 flex-1">
-            <div className="font-display uppercase tracking-wide text-base sm:text-xl lg:text-2xl font-bold leading-none flex items-baseline gap-2 sm:gap-3 min-w-0">
+            <div className="font-display uppercase tracking-wide text-base sm:text-lg lg:text-2xl font-bold leading-none flex items-baseline gap-2 sm:gap-3 min-w-0">
               {/* Team-name display priority — kept consistent with the
                *  Schedule list and Game Detail header so editing the
                *  opponent on a game card updates the field display the
@@ -2884,12 +2884,12 @@ function DraggableFieldChip({
           : `${name} — tap to select, or drag`
       }
     >
-      <span className="text-broadcast-gold font-bold font-['Roboto_Mono'] pl-2.5 sm:pl-3 pr-1.5 sm:pr-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[28px] sm:min-w-[34px]">
+      <span className="text-broadcast-gold font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 lg:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px]">
         {pos}
       </span>
-      <span className="w-px h-3.5 sm:h-4 bg-broadcast-gold/50" aria-hidden />
-      <span className="pl-1.5 sm:pl-2 pr-2.5 sm:pr-3 py-1 flex items-center min-w-[64px] sm:min-w-[96px] max-w-[120px] sm:max-w-[170px]">
-        <span className="text-xs sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
+      <span className="w-px h-3 max-lg:landscape:h-3 sm:h-4 bg-broadcast-gold/50" aria-hidden />
+      <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center min-w-[52px] max-lg:landscape:min-w-[52px] sm:min-w-[96px] max-w-[96px] max-lg:landscape:max-w-[96px] sm:max-w-[170px]">
+        <span className="text-[11px] max-lg:landscape:text-[11px] sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
           {formatPlayerNameShort(name)}
         </span>
       </span>
@@ -2926,21 +2926,21 @@ function EmptyFieldChip({
       data-testid={`field-chip-${pos}-empty`}
     >
       <span
-        className={`font-bold font-['Roboto_Mono'] pl-2.5 sm:pl-3 pr-1.5 sm:pr-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[28px] sm:min-w-[34px] ${
+        className={`font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px] ${
           isOver || isSwapTarget ? "text-black" : "text-slate-400"
         }`}
       >
         {pos}
       </span>
       <span
-        className={`w-px h-3.5 sm:h-4 ${
+        className={`w-px h-3 max-lg:landscape:h-3 sm:h-4 ${
           isOver || isSwapTarget ? "bg-broadcast-gold" : "bg-white/20"
         }`}
         aria-hidden
       />
-      <span className="pl-1.5 sm:pl-2 pr-2.5 sm:pr-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
+      <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center min-w-[60px] max-lg:landscape:min-w-[60px] sm:min-w-[96px] max-w-[100px] max-lg:landscape:max-w-[100px] sm:max-w-[170px]">
         <span
-          className={`text-xs sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
+          className={`text-[11px] max-lg:landscape:text-[11px] sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
             isOver || isSwapTarget ? "text-broadcast-gold" : "text-slate-500"
           }`}
         >

@@ -2877,20 +2877,29 @@ export default function GameDetail() {
                   columns. This is the original layout. Hidden on phones
                   (where the 11-column row was wider than the screen and
                   forced a horizontal scroll). */}
+              {/* Tablet/desktop view — innings as rows, positions as
+                  columns. Column widths use `lg:` to grow back to the
+                  generous original sizing only on real desktops/iPad
+                  landscape; below `lg` (which includes phone landscape
+                  ~844px wide) the columns are tight enough for a 9-pos
+                  league lineup + bench to fit without horizontal scroll
+                  — coaches kept losing the rightmost columns on iPhone
+                  landscape. table-fixed pins the widths so an extra-long
+                  player name in a cell doesn't push the table wider. */}
               <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-sm border-separate border-spacing-y-0.5">
+                <table className="w-full text-sm border-separate border-spacing-y-0.5 table-fixed">
                   <thead>
                     <tr>
-                      <th className="text-left py-2 pr-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-16">Inning</th>
+                      <th className="text-left py-2 pr-2 text-[10px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-12 lg:w-16">Inn</th>
                       {displayPositions.map((pos) => (
-                        <th key={pos} className="text-center py-2 px-1 w-20">
-                          <span className="inline-block px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[11px] font-bold tracking-wide">
+                        <th key={pos} className="text-center py-2 px-0.5 lg:px-1 w-[58px] lg:w-20">
+                          <span className="inline-block px-1.5 lg:px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] lg:text-[11px] font-bold tracking-wide">
                             {pos}
                           </span>
                         </th>
                       ))}
-                      <th className="text-center py-2 px-1 w-28">
-                        <span className="inline-block px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[11px] font-bold tracking-wide uppercase">
+                      <th className="text-center py-2 px-1 w-20 lg:w-28">
+                        <span className="inline-block px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] lg:text-[11px] font-bold tracking-wide uppercase">
                           Bench
                         </span>
                       </th>
