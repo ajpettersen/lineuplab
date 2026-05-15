@@ -580,15 +580,13 @@
 }
 
 /* Tournament-mode splash on the Field Display.
- * A slow gold sweep across the LINEUP underline + the header bottom
- * border so a coach can tell at a glance ("oh, today's a tournament
- * game, this matters more than the regular Tuesday league game").
- * Subtle enough not to distract from the diamond/lineup at the
- * center of the screen — animation runs at 4s, opacity stays high. */
-@keyframes fd-tourney-shimmer {
-  0%   { background-position: -150% 0; }
-  100% { background-position:  250% 0; }
-}
+ * A static gold gradient bar across the header underline + the
+ * LINEUP chyron underline. Reads as a "this game matters more"
+ * broadcast graphic without animating — earlier iteration used a
+ * looping shimmer sweep but coaches reported it (a) burned extra
+ * battery on the dugout iPad and (b) pulled kids' eyes off the
+ * field/lineup. The static gold-to-white-to-gold gradient still
+ * reads as an upgraded chyron at a glance. */
 .fd-tourney-shimmer {
   background-image: linear-gradient(
     90deg,
@@ -598,10 +596,4 @@
     rgba(255, 232, 150, 1) 65%,
     rgba(245, 191, 66, 0.85) 100%
   );
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
-  animation: fd-tourney-shimmer 4s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .fd-tourney-shimmer { animation: none; }
 }
