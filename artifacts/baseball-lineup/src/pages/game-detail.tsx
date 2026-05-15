@@ -4612,9 +4612,19 @@ function PlayerTile({
       // MUST come AFTER `{...listeners}` so this wrapper wins over
       // MouseSensor's own onMouseDown — and we manually forward to the
       // sensor inside so drag activation still happens.
+      //
+      // ORDER MATTERS: forward to the sensor FIRST, then preventDefault.
+      // @dnd-kit's `bindActivatorToSensorInstantiator` bails if
+      // `nativeEvent.defaultPrevented` is true (see
+      // @dnd-kit/core/dist/core.esm.js — checks `dndKit ||
+      // defaultPrevented`). If we preventDefault before forwarding, the
+      // sensor refuses to activate and drags never start. Calling
+      // preventDefault AFTER the sensor still suppresses the browser's
+      // mousedown-focuses-the-button + scroll-into-view behavior, so
+      // both goals are achieved.
       onMouseDown={(e) => {
-        e.preventDefault();
         sensorMouseDown?.(e);
+        e.preventDefault();
       }}
     >
       {formatPlayerNameShort(entry.playerName)}
@@ -4881,9 +4891,17 @@ function SortableBattingRow({ row, slot, showStarterDivider, isContinuous, testI
           // MUST come AFTER `{...listeners}` so this wrapper wins over
           // MouseSensor's own onMouseDown — and we manually forward to the
           // sensor inside so drag activation still happens.
+          //
+          // ORDER MATTERS: forward to the sensor FIRST, then
+          // preventDefault. @dnd-kit's MouseSensor bails if the native
+          // event already has `defaultPrevented === true`, so calling
+          // preventDefault before the forward silently kills drag
+          // activation (which is what users were hitting on the batting
+          // order list). preventDefault AFTER still suppresses the
+          // browser's mousedown-focus-and-scroll-into-view behavior.
           onMouseDown={(e) => {
-            e.preventDefault();
             sensorMouseDown?.(e);
+            e.preventDefault();
           }}
         >
           <GripVertical className="h-4 w-4" />
