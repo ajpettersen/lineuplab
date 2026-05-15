@@ -692,6 +692,19 @@ export default function FieldDisplay() {
   // bench/field can mute the same player elsewhere if they show twice.
   const [activeDragEntryId, setActiveDragEntryId] = useState<number | null>(null);
 
+  // Tap-to-swap "coach mode": with one finger free (other hand on a clipboard
+  // or a glove), tap one chip to select it, then tap a destination — another
+  // chip to swap, an empty position, or anywhere on the bench — to apply.
+  // Drag-and-drop still works in parallel; tap is the in-game shortcut.
+  const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
+  // Post-drag click suppression. When a real drag ends, some browsers fire a
+  // synthetic `click` on the chip the finger lifted from — without this guard
+  // that click would route to the tap-to-swap handler and re-select the chip
+  // (or worse, trigger an unintended second swap). 300ms is the same window
+  // game-detail uses for the same problem.
+  const lastDragEndAtRef = useRef<number>(0);
+  const justFinishedDragging = () => Date.now() - lastDragEndAtRef.current < 300;
+
   // Single-flight save coordination. The dugout coach can fire off 2-3
   // drags in quick succession (e.g. Aiden ↔ Mason, then Mason ↔ Owen),
   // and a parent's phone might be editing the same lineup at the same
@@ -1447,6 +1460,7 @@ export default function FieldDisplay() {
 
   const handleDragEnd = (e: DragEndEvent) => {
     setActiveDragEntryId(null);
+    lastDragEndAtRef.current = Date.now();
     if (!e.over) return;
     const sourceId = String(e.active.id);
     if (!sourceId.startsWith("player-")) return;
@@ -1457,7 +1471,78 @@ export default function FieldDisplay() {
     if (next) saveLineupOptimistically(next);
   };
 
-  const handleDragCancel = () => setActiveDragEntryId(null);
+  const handleDragCancel = () => {
+    setActiveDragEntryId(null);
+    lastDragEndAtRef.current = Date.now();
+  };
+
+  // ── Tap-to-swap handlers ──
+  // Tapping a chip selects it (golden ring + banner). Tapping a second chip
+  // swaps the two for the current inning. Tapping the same chip again
+  // cancels the selection. Tapping an empty position or the bench (when
+  // something is selected) moves the selection there. All paths route through
+  // applyMove + saveLineupOptimistically so the offline queue / single-flight
+  // POST chain handles the persistence the same way drag does.
+  const handleChipTap = (entryId: number) => {
+    // Suppress the synthetic click that browsers fire on the source chip
+    // immediately after a drag ends — without this, every drag would also
+    // re-select its source for tap-to-swap.
+    if (justFinishedDragging()) return;
+    if (selectedEntryId === entryId) {
+      setSelectedEntryId(null);
+      return;
+    }
+    if (selectedEntryId == null) {
+      setSelectedEntryId(entryId);
+      return;
+    }
+    const tapped = lineup.find((e) => e.id === entryId);
+    if (!tapped || tapped.inning !== currentInning) {
+      // Stale/cross-inning — just shift selection to the freshly tapped chip.
+      setSelectedEntryId(entryId);
+      return;
+    }
+    const next = applyMove(selectedEntryId, {
+      kind: "tile",
+      entryId,
+      position: tapped.position,
+    });
+    if (next) saveLineupOptimistically(next);
+    setSelectedEntryId(null);
+  };
+
+  const handleEmptyFieldTap = (position: FieldPos) => {
+    if (justFinishedDragging()) return;
+    if (selectedEntryId == null) return;
+    const next = applyMove(selectedEntryId, { kind: "emptyField", position });
+    if (next) saveLineupOptimistically(next);
+    setSelectedEntryId(null);
+  };
+
+  const handleBenchAreaTap = () => {
+    if (justFinishedDragging()) return;
+    if (selectedEntryId == null) return;
+    const next = applyMove(selectedEntryId, { kind: "benchArea" });
+    if (next) saveLineupOptimistically(next);
+    setSelectedEntryId(null);
+  };
+
+  // Clear any in-progress selection when the inning changes (chips for the
+  // selected entry are no longer rendered) or when a drag begins (the drag
+  // path will own the swap).
+  useEffect(() => {
+    setSelectedEntryId(null);
+  }, [currentInning]);
+  useEffect(() => {
+    if (activeDragEntryId != null) setSelectedEntryId(null);
+  }, [activeDragEntryId]);
+
+  // Resolve the selected chip's display details for the swap-mode banner.
+  const selectedInfo = useMemo(() => {
+    if (selectedEntryId == null) return null;
+    const e = lineup.find((x) => x.id === selectedEntryId && x.inning === currentInning);
+    return e ? { name: e.playerName, position: e.position } : null;
+  }, [selectedEntryId, lineup, currentInning]);
 
   // Resolve the floating chip's player name for the DragOverlay preview.
   const activeDragInfo = useMemo(() => {
@@ -2229,15 +2314,50 @@ export default function FieldDisplay() {
                   activeDragEntryId != null &&
                   fieldByPos.get(pos)?.entryId === activeDragEntryId
                 }
+                selectedEntryId={selectedEntryId}
+                onChipTap={handleChipTap}
+                onEmptyTap={handleEmptyFieldTap}
               />
             ))}
           </div>
+
+          {/* Tap-to-swap "coach mode" banner. Appears below the field whenever
+              a chip is selected so the coach knows what to do next and can
+              cancel without hunting for the chip again. */}
+          {selectedInfo && (
+            <div
+              className="mt-2 sm:mt-3 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-broadcast-gold/15 border border-broadcast-gold rounded-md text-broadcast-gold text-xs sm:text-sm font-bold shadow-[0_2px_0_rgba(0,0,0,0.4)]"
+              data-testid="swap-mode-banner"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-broadcast-gold text-black text-[10px] font-bold shrink-0">
+                {selectedInfo.position === "Bench" ? "B" : selectedInfo.position}
+              </span>
+              <span className="flex-1 truncate">
+                {formatPlayerNameShort(selectedInfo.name)} selected — tap where to send
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedEntryId(null)}
+                className="inline-flex h-7 px-2 items-center justify-center rounded bg-broadcast-gold/20 hover:bg-broadcast-gold/30 text-broadcast-gold text-[11px] font-bold uppercase tracking-wider"
+                data-testid="button-cancel-swap"
+                aria-label="Cancel swap"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
 
           {/* Bench strip below the field — single compact line, also a drop
               zone so a fielder can be benched by dragging their chip onto it. */}
           <BenchStrip
             entries={benchEntries}
             activeDragEntryId={activeDragEntryId}
+            selectedEntryId={selectedEntryId}
+            isSwapTarget={selectedInfo != null && selectedInfo.position !== "Bench"}
+            onChipTap={handleChipTap}
+            onBenchAreaTap={handleBenchAreaTap}
           />
         </section>
 
@@ -2560,11 +2680,17 @@ export default function FieldDisplay() {
 // ─────────────────────────────────────────────────────────────────────────
 
 interface FieldPositionSlotProps {
-  pos: string;
+  pos: FieldPos;
   player: { name: string; playerId: number; entryId: number } | undefined;
   layout: { top: string; left: string };
   accent: string;
   isBeingDragged: boolean;
+  /** Currently tap-selected entry, or null. Drives the gold ring highlight. */
+  selectedEntryId: number | null;
+  /** Tap a chip — selects, deselects, or swaps with the prior selection. */
+  onChipTap: (entryId: number) => void;
+  /** Tap an empty position — only meaningful while something is selected. */
+  onEmptyTap: (pos: FieldPos) => void;
 }
 
 /**
@@ -2638,6 +2764,9 @@ function FieldPositionSlot({
   layout,
   accent,
   isBeingDragged,
+  selectedEntryId,
+  onChipTap,
+  onEmptyTap,
 }: FieldPositionSlotProps) {
   const dropData: MoveTarget = player
     ? { kind: "tile", entryId: player.entryId, position: pos }
@@ -2646,6 +2775,10 @@ function FieldPositionSlot({
     id: `field-${pos}`,
     data: dropData,
   });
+  // "Tap target" = something is selected and tapping HERE will move it.
+  // For an occupied chip that means swap (handled by onChipTap); for an
+  // empty cell it means a one-tap move.
+  const swapTargetable = selectedEntryId != null && (!player || player.entryId !== selectedEntryId);
   return (
     <div
       ref={setNodeRef}
@@ -2661,9 +2794,17 @@ function FieldPositionSlot({
           entryId={player.entryId}
           isOver={isOver}
           isBeingDragged={isBeingDragged}
+          isSelected={selectedEntryId === player.entryId}
+          isSwapTarget={swapTargetable}
+          onTap={() => onChipTap(player.entryId)}
         />
       ) : (
-        <EmptyFieldChip pos={pos} isOver={isOver} />
+        <EmptyFieldChip
+          pos={pos}
+          isOver={isOver}
+          isSwapTarget={swapTargetable}
+          onTap={() => onEmptyTap(pos)}
+        />
       )}
     </div>
   );
@@ -2676,11 +2817,16 @@ interface DraggableFieldChipProps {
   entryId: number;
   isOver: boolean;
   isBeingDragged: boolean;
+  isSelected: boolean;
+  isSwapTarget: boolean;
+  onTap: () => void;
 }
 
 /** A filled position chip — the entire visible rectangle (including the
  *  position pill above it) is the drag handle so a coach with thick
- *  fingers can grab anywhere. */
+ *  fingers can grab anywhere. Also a tap target: a quick tap (under the
+ *  5px PointerSensor / 8px TouchSensor activation distance) selects the
+ *  chip for tap-to-swap; a longer drag still works as before. */
 function DraggableFieldChip({
   pos,
   accent: _accent,
@@ -2688,6 +2834,9 @@ function DraggableFieldChip({
   entryId,
   isOver,
   isBeingDragged,
+  isSelected,
+  isSwapTarget,
+  onTap,
 }: DraggableFieldChipProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `player-${entryId}`,
@@ -2698,16 +2847,40 @@ function DraggableFieldChip({
   // chyron feel. The `_accent` prop is kept in the signature to avoid
   // changing the parent contract — color is now sourced from the
   // broadcast palette globally.
+  // Visual hierarchy of ring states (highest to lowest priority):
+  //   isSelected  → solid gold ring (the chip you picked)
+  //   isOver      → gold ring during a drag-hover
+  //   isSwapTarget→ subtle dashed gold outline (tap-here-to-swap hint)
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onClick={onTap}
+      role="button"
+      aria-pressed={isSelected}
+      aria-label={
+        isSelected
+          ? `${name} at ${pos}, selected — tap another spot to send, or tap again to cancel`
+          : isSwapTarget
+            ? `${name} at ${pos} — tap to swap`
+            : `${name} at ${pos} — tap to select, or drag to move`
+      }
       className={`relative flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_4px_0_rgba(0,0,0,0.7)] touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
-        isOver ? "ring-2 ring-broadcast-gold" : ""
+        isSelected
+          ? "ring-2 ring-broadcast-gold ring-offset-2 ring-offset-[#050d1a]"
+          : isOver
+            ? "ring-2 ring-broadcast-gold"
+            : isSwapTarget
+              ? "outline outline-1 outline-dashed outline-broadcast-gold/60 outline-offset-2"
+              : ""
       } ${hidden ? "opacity-30" : ""}`}
       data-testid={`field-chip-${pos}`}
-      title={`${name} — drag to swap with another player`}
+      title={
+        isSelected
+          ? `${name} selected — tap where to send`
+          : `${name} — tap to select, or drag`
+      }
     >
       <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px]">
         {pos}
@@ -2722,20 +2895,36 @@ function DraggableFieldChip({
 }
 
 /** Empty position cell — not draggable, but the parent slot is droppable
- *  so a chip can be dragged onto it. Highlights when something hovers. */
-function EmptyFieldChip({ pos, isOver }: { pos: string; isOver: boolean }) {
+ *  so a chip can be dragged onto it. Also a tap target while a swap is
+ *  in progress: tap-here-to-send the selected chip to this open slot. */
+function EmptyFieldChip({
+  pos,
+  isOver,
+  isSwapTarget,
+  onTap,
+}: {
+  pos: string;
+  isOver: boolean;
+  isSwapTarget: boolean;
+  onTap: () => void;
+}) {
   return (
     <div
+      onClick={isSwapTarget ? onTap : undefined}
+      role={isSwapTarget ? "button" : undefined}
+      aria-label={isSwapTarget ? `Send selected player to ${pos}` : undefined}
       className={`relative flex items-stretch border border-dashed shadow-[0_4px_0_rgba(0,0,0,0.5)] transition-colors overflow-hidden ${
         isOver
           ? "bg-broadcast-gold/20 border-broadcast-gold"
-          : "bg-[#0f172a]/70 border-white/15"
+          : isSwapTarget
+            ? "bg-broadcast-gold/10 border-broadcast-gold/70 cursor-pointer"
+            : "bg-[#0f172a]/70 border-white/15"
       }`}
       data-testid={`field-chip-${pos}-empty`}
     >
       <div
         className={`font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px] ${
-          isOver ? "bg-broadcast-gold text-black" : "bg-slate-800 text-slate-400"
+          isOver || isSwapTarget ? "bg-broadcast-gold text-black" : "bg-slate-800 text-slate-400"
         }`}
       >
         {pos}
@@ -2743,10 +2932,10 @@ function EmptyFieldChip({ pos, isOver }: { pos: string; isOver: boolean }) {
       <div className="px-2 sm:px-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
         <div
           className={`text-xs sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
-            isOver ? "text-broadcast-gold" : "text-slate-500"
+            isOver || isSwapTarget ? "text-broadcast-gold" : "text-slate-500"
           }`}
         >
-          {isOver ? "Drop here" : "Open"}
+          {isOver ? "Drop here" : isSwapTarget ? "Tap to send" : "Open"}
         </div>
       </div>
     </div>
@@ -2756,33 +2945,61 @@ function EmptyFieldChip({ pos, isOver }: { pos: string; isOver: boolean }) {
 interface BenchStripProps {
   entries: { name: string; entryId: number }[];
   activeDragEntryId: number | null;
+  selectedEntryId: number | null;
+  /** True when the selected entry is currently on the FIELD — tapping the
+   *  bench strip will send them to the bench. False when the selection is
+   *  itself a bench player (tapping bench would be a no-op). */
+  isSwapTarget: boolean;
+  onChipTap: (entryId: number) => void;
+  onBenchAreaTap: () => void;
 }
 
 /** Bench strip below the field — the whole strip is one drop zone so a
  *  fielder can be benched by dragging anywhere in the bar. Each name
  *  inside is itself draggable so a benched player can be subbed in. */
-function BenchStrip({ entries, activeDragEntryId }: BenchStripProps) {
+function BenchStrip({
+  entries,
+  activeDragEntryId,
+  selectedEntryId,
+  isSwapTarget,
+  onChipTap,
+  onBenchAreaTap,
+}: BenchStripProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: "bench-area",
     data: { kind: "benchArea" } satisfies MoveTarget,
   });
+  // Tapping anywhere in the strip background — but NOT a child chip — sends
+  // the selected fielder to the bench. We compare currentTarget vs target so
+  // taps on individual bench chips fall through to their own onClick.
+  const handleStripClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isSwapTarget) return;
+    if (e.target === e.currentTarget || (e.target as HTMLElement).closest("[data-bench-chip]") == null) {
+      onBenchAreaTap();
+    }
+  };
   return (
     <div
       ref={setNodeRef}
+      onClick={handleStripClick}
+      role={isSwapTarget ? "button" : undefined}
+      aria-label={isSwapTarget ? "Send selected player to bench" : undefined}
       className={`mt-2 sm:mt-3 border bg-[#050d1a] px-3 sm:px-6 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
         isOver
           ? "border-broadcast-gold ring-2 ring-broadcast-gold/60 bg-amber-950/20"
-          : "border-[#1a2a42]"
+          : isSwapTarget
+            ? "border-broadcast-gold/70 ring-1 ring-broadcast-gold/40 cursor-pointer"
+            : "border-[#1a2a42]"
       }`}
       data-testid="bench-strip"
     >
       <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
         <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-400 font-display font-bold">
-          Bench
+          {isSwapTarget ? "Tap to bench" : "Bench"}
         </span>
         {entries.length === 0 ? (
           <span className="text-sm text-slate-500">
-            {isOver ? "Drop here to bench" : "—"}
+            {isOver || isSwapTarget ? "Drop here to bench" : "—"}
           </span>
         ) : (
           <div className="flex gap-2 sm:gap-3 flex-wrap">
@@ -2792,6 +3009,9 @@ function BenchStrip({ entries, activeDragEntryId }: BenchStripProps) {
                 name={entry.name}
                 entryId={entry.entryId}
                 isBeingDragged={entry.entryId === activeDragEntryId}
+                isSelected={selectedEntryId === entry.entryId}
+                isSwapTarget={selectedEntryId != null && selectedEntryId !== entry.entryId}
+                onTap={() => onChipTap(entry.entryId)}
               />
             ))}
           </div>
@@ -2802,15 +3022,23 @@ function BenchStrip({ entries, activeDragEntryId }: BenchStripProps) {
 }
 
 /** A single bench player name — draggable onto any field position to sub
- *  in (the displaced fielder takes the bench seat). */
+ *  in (the displaced fielder takes the bench seat). Also a tap target for
+ *  the tap-to-swap "coach mode": tap to select, tap again to deselect, or
+ *  tap while another chip is selected to swap them. */
 function DraggableBenchChip({
   name,
   entryId,
   isBeingDragged,
+  isSelected,
+  isSwapTarget,
+  onTap,
 }: {
   name: string;
   entryId: number;
   isBeingDragged: boolean;
+  isSelected: boolean;
+  isSwapTarget: boolean;
+  onTap: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `player-${entryId}`,
@@ -2821,11 +3049,36 @@ function DraggableBenchChip({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2 sm:px-3 py-1 sm:py-1.5 bg-[#0f172a] border border-broadcast-gold/40 hover:border-broadcast-gold transition-all whitespace-nowrap tracking-wide ${
-        hidden ? "opacity-30" : ""
-      }`}
+      onClick={(e) => {
+        // Stop the parent BenchStrip's "tap-to-bench" handler from also
+        // firing for this same click — tapping a bench player should
+        // route through the chip's swap logic, not the bench-area drop.
+        e.stopPropagation();
+        onTap();
+      }}
+      role="button"
+      aria-pressed={isSelected}
+      aria-label={
+        isSelected
+          ? `${name} on bench, selected — tap a position to send`
+          : isSwapTarget
+            ? `${name} on bench — tap to swap with selected player`
+            : `${name} on bench — tap to select, or drag to a position`
+      }
+      data-bench-chip
+      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2 sm:px-3 py-1 sm:py-1.5 bg-[#0f172a] border transition-all whitespace-nowrap tracking-wide ${
+        isSelected
+          ? "border-broadcast-gold ring-2 ring-broadcast-gold ring-offset-2 ring-offset-[#050d1a]"
+          : isSwapTarget
+            ? "border-broadcast-gold outline outline-1 outline-dashed outline-broadcast-gold/60 outline-offset-2"
+            : "border-broadcast-gold/40 hover:border-broadcast-gold"
+      } ${hidden ? "opacity-30" : ""}`}
       data-testid={`bench-name-${name}`}
-      title={`${name} — drag onto a position to sub in`}
+      title={
+        isSelected
+          ? `${name} selected — tap where to send`
+          : `${name} — tap to select, or drag onto a position`
+      }
     >
       {formatPlayerNameShort(name)}
     </span>

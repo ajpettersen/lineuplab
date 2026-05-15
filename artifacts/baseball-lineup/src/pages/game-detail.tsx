@@ -81,7 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil, Settings2, ChevronDown } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil, Settings2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -283,6 +283,13 @@ export default function GameDetail() {
   const [editedLineup, setEditedLineup] = useState<typeof lineup | null>(null);
   // Click-to-swap selection: the entry id of the player picked first.
   const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
+  // Mobile defense view mode + active inning. Coaches mid-game don't want a
+  // tiny transposed grid showing every inning at once on a phone — they want
+  // to focus on ONE inning, swap a kid, then bump to the next. "single" is
+  // the phone default; "all" falls back to the original compressed grid for
+  // coaches who want the season-pacing view.
+  const [mobileDefenseView, setMobileDefenseView] = useState<"single" | "all">("single");
+  const [mobileActiveInning, setMobileActiveInning] = useState(1);
   const [completeOpen, setCompleteOpen] = useState(false);
   // Box score dialog. Auto-opens on arrival when the URL carries
   // `?openBoxScore=1` so that the field-display "End game" flow can
@@ -1806,6 +1813,13 @@ export default function GameDetail() {
   };
 
   const innings = game?.innings ?? 6;
+  // Keep the mobile single-inning picker in range when the game length
+  // changes (e.g. coach trims via "Game ended early" or removes the last
+  // inning from the grid header).
+  useEffect(() => {
+    if (mobileActiveInning > innings) setMobileActiveInning(innings);
+    if (mobileActiveInning < 1) setMobileActiveInning(1);
+  }, [innings, mobileActiveInning]);
   const displayLineup = previewLineup ?? editedLineup ?? lineup;
   // Columns to render in the lineup grid (and any per-position iteration:
   // copy-for-Sheets, batting-row defensive list, lock dropdown). Starts from
@@ -2962,12 +2976,177 @@ export default function GameDetail() {
                 </table>
               </div>
 
-              {/* Mobile view — transposed: positions as rows, innings as
-                  columns. Fits a typical 6-inning game on a phone screen
-                  without horizontal scroll, and keeps the same FieldCell /
-                  BenchArea components so drag-and-drop, click-to-select,
-                  and tap-to-add behave identically. */}
-              <div className="sm:hidden">
+              {/* Mobile view — defaults to a "coach-during-the-game"
+                  single-inning view: pick the inning, see big tappable
+                  position rows for that inning only. Fall back to the
+                  compressed transposed grid (positions as rows, innings
+                  as columns) when a coach wants the season-pacing view.
+                  Both modes use the same FieldCell / BenchArea so
+                  drag-and-drop, tap-to-swap, and tap-to-add behave
+                  identically. */}
+              <div className="sm:hidden space-y-2">
+                {/* Coach control bar: prev/next inning + view-mode pill. */}
+                <div className="flex items-center justify-between gap-2 px-1">
+                  {mobileDefenseView === "single" ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setMobileActiveInning((n) => Math.max(1, n - 1))}
+                        disabled={mobileActiveInning <= 1}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-card border border-border text-foreground hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
+                        aria-label="Previous inning"
+                        data-testid="button-mobile-prev-inning"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-primary text-primary-foreground shadow-sm">
+                        <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">
+                          Inning
+                        </span>
+                        <span
+                          className="text-base font-bold font-['Roboto_Mono'] tabular-nums"
+                          data-testid="text-mobile-active-inning"
+                        >
+                          {mobileActiveInning}
+                        </span>
+                        <span className="text-[10px] tracking-wider opacity-70">/ {innings}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMobileActiveInning((n) => Math.min(innings, n + 1))}
+                        disabled={mobileActiveInning >= innings}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-card border border-border text-foreground hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
+                        aria-label="Next inning"
+                        data-testid="button-mobile-next-inning"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground px-1">
+                      All innings
+                    </span>
+                  )}
+                  <div className="inline-flex rounded-full bg-muted p-0.5 text-[10px] font-bold uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => setMobileDefenseView("single")}
+                      className={`px-2.5 py-1 rounded-full transition-colors ${
+                        mobileDefenseView === "single"
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                      aria-pressed={mobileDefenseView === "single"}
+                      data-testid="button-mobile-view-single"
+                    >
+                      Inning
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileDefenseView("all")}
+                      className={`px-2.5 py-1 rounded-full transition-colors ${
+                        mobileDefenseView === "all"
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                      aria-pressed={mobileDefenseView === "all"}
+                      data-testid="button-mobile-view-all"
+                    >
+                      All
+                    </button>
+                  </div>
+                </div>
+
+                {/* Single-inning view: stack of large position rows for the
+                    selected inning, plus a bench row. Each row's FieldCell
+                    is the SAME component used in the all-innings grid so
+                    drag-and-drop and tap-to-swap work identically. */}
+                {mobileDefenseView === "single" && (
+                  <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="mobile-single-inning-view">
+                    {(() => {
+                      const inning = mobileActiveInning;
+                      const isHotInning =
+                        selectedEntry?.inning === inning || activeDrag?.inning === inning;
+                      const benchEntries = displayLineup.filter(
+                        (e) => e.inning === inning && e.position === "Bench",
+                      );
+                      return (
+                        <>
+                          {displayPositions.map((pos, posIdx) => {
+                            const entry = cellByInningPos[inning]?.[pos];
+                            return (
+                              <div
+                                key={pos}
+                                className={`flex items-center gap-3 px-3 py-2 ${
+                                  posIdx % 2 === 0 ? "bg-card" : "bg-muted/40"
+                                } ${posIdx > 0 ? "border-t border-border/60" : ""}`}
+                              >
+                                <span className="inline-flex items-center justify-center min-w-[44px] h-8 px-2 rounded bg-secondary text-secondary-foreground text-xs font-bold tracking-wide font-['Roboto_Mono']">
+                                  {pos}
+                                </span>
+                                <div className="flex-1 min-w-0 flex items-center justify-start">
+                                  <FieldCell
+                                    inning={inning}
+                                    position={pos}
+                                    entry={entry}
+                                    selectedEntryId={selectedEntryId}
+                                    isHotInning={isHotInning}
+                                    draggedEntryId={activeDrag?.entryId ?? null}
+                                    onTileClick={(id) =>
+                                      handleCellClick({ entryId: id, inning, position: pos })
+                                    }
+                                    onEmptyClick={() =>
+                                      handleCellClick({ inning, position: pos })
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="flex items-start gap-3 px-3 py-2 bg-muted/60 border-t border-border/60">
+                            <span className="inline-flex items-center justify-center min-w-[44px] h-8 px-2 rounded bg-muted text-muted-foreground text-[11px] font-bold tracking-wide uppercase">
+                              Bench
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <BenchArea
+                                inning={inning}
+                                entries={benchEntries}
+                                selectedEntryId={selectedEntryId}
+                                isHotInning={isHotInning}
+                                draggedEntryId={activeDrag?.entryId ?? null}
+                                onTileClick={(id) =>
+                                  handleCellClick({ entryId: id, inning, position: "Bench" })
+                                }
+                                onEmptyClick={() =>
+                                  handleCellClick({ inning, position: "Bench" })
+                                }
+                              />
+                            </div>
+                          </div>
+                          {inning === innings && innings > 1 && (
+                            <div className="flex items-center justify-end px-3 py-1.5 bg-muted/30 border-t border-border/60">
+                              <button
+                                type="button"
+                                onClick={handleRemoveLastInning}
+                                disabled={updateGame.isPending}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-destructive disabled:opacity-40"
+                                data-testid={`button-mobile-remove-inning-${inning}`}
+                              >
+                                <X className="h-3 w-3" />
+                                Remove inning {inning}
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* All-innings view: original transposed grid, kept as a
+                    deliberate fallback for coaches who use this page on a
+                    phone for season-level review (not in-game switching). */}
+                {mobileDefenseView === "all" && (
                 <table className="w-full text-xs border-separate border-spacing-y-0.5">
                   <thead>
                     <tr>
@@ -3070,6 +3249,7 @@ export default function GameDetail() {
                     </tr>
                   </tbody>
                 </table>
+                )}
               </div>
 
               {/* Portal the DragOverlay to <body> so the floating chip
