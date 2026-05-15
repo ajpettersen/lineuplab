@@ -1744,7 +1744,12 @@ export default function FieldDisplay() {
            *  whitespace-nowrap + min-w-0 means the truncate only
            *  engages on truly extreme names — the common case shows
            *  in full. */}
-          <div className="min-w-0 flex-1">
+          {/* Team-vs-opponent title is hidden on phone-landscape so the
+           *  inning + timer + score + kebab can fit on a single row.
+           *  The exit chevron above stays visible so coaches still have
+           *  the obvious "get me out" gesture. iPad portrait is sub-lg
+           *  but portrait, so it KEEPS the title (room to breathe). */}
+          <div className="min-w-0 flex-1 max-lg:landscape:hidden">
             <div className="font-display uppercase tracking-wide text-base sm:text-lg lg:text-2xl font-bold leading-none flex items-baseline gap-2 sm:gap-3 min-w-0">
               {/* Team-name display priority — kept consistent with the
                *  Schedule list and Game Detail header so editing the
@@ -1854,6 +1859,29 @@ export default function FieldDisplay() {
               <span className="hidden sm:inline">Extra</span>
             </Button>
           )}
+          {/* Phone-portrait Start/Timer placement.
+           *  On phone portrait the right cluster only has room for the
+           *  3-dot kebab, so the GameTimer (Start button → running clock)
+           *  was getting hidden behind score steppers and never seen. We
+           *  render a second GameTimer here, INSIDE the inning cluster,
+           *  visible only on phone portrait — so coaches see "Start" sit
+           *  immediately to the right of the inning chevrons where they
+           *  expect game-control buttons to live. The right-cluster
+           *  GameTimer is hidden on phone portrait via `max-sm:hidden`.
+           *  Two component instances tick independently but read the
+           *  same `startedAt` prop so the displayed time matches; cost
+           *  is one extra setInterval, acceptable for header-only UI. */}
+          <div className="sm:hidden ml-1">
+            <GameTimer
+              startedAt={game?.startedAt ?? null}
+              onStart={() =>
+                saveGamePatchOptimistically({
+                  startedAt: new Date().toISOString(),
+                })
+              }
+              onReset={() => saveGamePatchOptimistically({ startedAt: null })}
+            />
+          </div>
         </div>
 
         {/* Right cluster: live status, score, fullscreen */}
@@ -1913,15 +1941,21 @@ export default function FieldDisplay() {
             * saved locally and synced on reconnect — and parents on
             * their phones see the same elapsed time as the dugout iPad.
             * See GameTimer docblock for sync semantics. */}
-          <GameTimer
-            startedAt={game?.startedAt ?? null}
-            onStart={() =>
-              saveGamePatchOptimistically({
-                startedAt: new Date().toISOString(),
-              })
-            }
-            onReset={() => saveGamePatchOptimistically({ startedAt: null })}
-          />
+          {/* Hidden on phone portrait — duplicate GameTimer renders
+           *  inside the inning cluster above so Start sits next to the
+           *  inning chevrons. sm+ keeps this one visible in the right
+           *  cluster (the desktop layout). */}
+          <div className="hidden sm:flex">
+            <GameTimer
+              startedAt={game?.startedAt ?? null}
+              onStart={() =>
+                saveGamePatchOptimistically({
+                  startedAt: new Date().toISOString(),
+                })
+              }
+              onReset={() => saveGamePatchOptimistically({ startedAt: null })}
+            />
+          </div>
           {/* Manual scoreboard input — until GameChanger integration
             * lands. Each side: tap chevron to step ±1, OR tap the
             * number to +1, OR swipe vertically on the number to ±1.
@@ -1936,7 +1970,12 @@ export default function FieldDisplay() {
             *    "Them" placeholder. Long names truncate inside the
             *    stepper column with a tooltip showing the full text.
             * See ScoreStepper docblock for gesture details. */}
-          <div className="flex items-center gap-1 sm:gap-2">
+          {/* Score steppers — DEFAULT placement (sm+, in the right
+           *  cluster). Hidden on phone portrait; a duplicate row at the
+           *  end of the header renders the same steppers full-width and
+           *  left-aligned so the score is comfortable to read on a
+           *  phone held vertically. */}
+          <div className="hidden sm:flex items-center gap-1 sm:gap-2">
             <ScoreStepper
               value={ourScore}
               onChange={(next) =>
@@ -2118,11 +2157,40 @@ export default function FieldDisplay() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {/* Tournament splash — animated gold shimmer replaces the static
-         *  gold underline so the header reads as a "this game matters
-         *  more" broadcast chyron. Absolutely positioned at the bottom
-         *  of the header so it doesn't reflow any layout vs. the
-         *  league-game border-b-4 path. */}
+        {/* Phone-portrait score row.
+         *  Forces a row break (flex-wrap parent + basis-full child) and
+         *  renders the score steppers full-width left-aligned, so the
+         *  score sits on its own line below "inning + Start + kebab".
+         *  Hidden on sm+ where the score lives inline in the right
+         *  cluster above. */}
+        <div className="sm:hidden basis-full w-full flex items-center gap-1 justify-start pt-1" data-testid="header-score-row-portrait">
+          <ScoreStepper
+            value={ourScore}
+            onChange={(next) =>
+              saveGamePatchOptimistically({ ourScore: next })
+            }
+            ariaLabel="Our score"
+            testId="score-stepper-ours-portrait"
+            label={teamShortName || teamName || "Us"}
+          />
+          <span className="text-3xl font-bold tabular-nums text-slate-700 leading-none font-['Roboto_Mono']">
+            –
+          </span>
+          <ScoreStepper
+            value={oppScore}
+            onChange={(next) =>
+              saveGamePatchOptimistically({ opponentScore: next })
+            }
+            ariaLabel="Opponent score"
+            testId="score-stepper-opp-portrait"
+            label={formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || "Them"}
+          />
+        </div>
+        {/* Tournament splash — static gold gradient underline so the
+         *  header reads as a "this game matters more" broadcast chyron.
+         *  Absolutely positioned at the bottom of the header so it
+         *  doesn't reflow any layout vs. the league-game border-b-4
+         *  path. */}
         {isTournament && (
           <div
             aria-hidden="true"
@@ -2427,12 +2495,16 @@ export default function FieldDisplay() {
            *  `flex-1 basis-0` so 9 batters get tall comfy rows and
            *  18 batters get shorter rows that still read clearly
            *  (min-h floor keeps them tappable). */}
-          {/* Portrait sub-lg (phone portrait + iPad portrait) gets
-           *  internal scroll so a deep roster on a short viewport
-           *  isn't clipped. Landscape + desktop keep `overflow-hidden`
-           *  because their <li> flex-1 basis-0 distribution always
-           *  fits the panel exactly. */}
-          <div className="flex-1 min-h-0 overflow-hidden max-lg:portrait:overflow-y-auto flex flex-col p-2 sm:p-3">
+          {/* Sub-lg viewports (phone portrait + phone landscape + iPad
+           *  portrait) get internal scroll so a deep roster on a short
+           *  viewport isn't clipped. Earlier this was scoped to portrait
+           *  only — on phone landscape the `flex-1 basis-0` rows have a
+           *  ~2.5rem floor, and 12+ batters × 40px overflows the ~280px
+           *  of vertical space the panel actually has on a 844×390
+           *  landscape phone. Letting it scroll is the right answer.
+           *  Desktop (`lg:`) keeps overflow-hidden because the panel
+           *  always fits the viewport there. */}
+          <div className="flex-1 min-h-0 overflow-hidden max-lg:overflow-y-auto flex flex-col p-2 sm:p-3">
           {battingOrder.length === 0 ? (
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
