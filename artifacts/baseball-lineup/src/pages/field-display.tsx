@@ -2842,11 +2842,13 @@ function DraggableFieldChip({
     id: `player-${entryId}`,
   });
   const hidden = isDragging || isBeingDragged;
-  // Broadcast-graphic chip: hard-edged rectangle, gold position block
-  // abutting a navy name block, hard shadow (no blur) for that TV
-  // chyron feel. The `_accent` prop is kept in the signature to avoid
-  // changing the parent contract — color is now sourced from the
-  // broadcast palette globally.
+  // Unified-pill chip (Variant A from the canvas mockups): one continuous
+  // rounded shape — gold position label, thin gold divider, white name —
+  // instead of a yellow badge protruding from a dark name block. Removes
+  // the "staggered" look the coach flagged. Every chip now has the same
+  // silhouette so the field reads as a clean roster, not a collage.
+  // The `_accent` prop is kept in the signature to avoid changing the
+  // parent contract — color is sourced from the broadcast palette.
   // Visual hierarchy of ring states (highest to lowest priority):
   //   isSelected  → solid gold ring (the chip you picked)
   //   isOver      → gold ring during a drag-hover
@@ -2866,7 +2868,7 @@ function DraggableFieldChip({
             ? `${name} at ${pos} — tap to swap`
             : `${name} at ${pos} — tap to select, or drag to move`
       }
-      className={`relative flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_4px_0_rgba(0,0,0,0.7)] touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
+      className={`relative inline-flex items-center bg-[#0b1a35]/95 border border-white/10 rounded-full shadow-lg touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
         isSelected
           ? "ring-2 ring-broadcast-gold ring-offset-2 ring-offset-[#050d1a]"
           : isOver
@@ -2882,14 +2884,15 @@ function DraggableFieldChip({
           : `${name} — tap to select, or drag`
       }
     >
-      <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px]">
+      <span className="text-broadcast-gold font-bold font-['Roboto_Mono'] pl-2.5 sm:pl-3 pr-1.5 sm:pr-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[28px] sm:min-w-[34px]">
         {pos}
-      </div>
-      <div className="px-2 sm:px-3 py-1 flex items-center min-w-[64px] sm:min-w-[96px] max-w-[120px] sm:max-w-[170px]">
-        <div className="text-xs sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
+      </span>
+      <span className="w-px h-3.5 sm:h-4 bg-broadcast-gold/50" aria-hidden />
+      <span className="pl-1.5 sm:pl-2 pr-2.5 sm:pr-3 py-1 flex items-center min-w-[64px] sm:min-w-[96px] max-w-[120px] sm:max-w-[170px]">
+        <span className="text-xs sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
           {formatPlayerNameShort(name)}
-        </div>
-      </div>
+        </span>
+      </span>
     </div>
   );
 }
@@ -2913,31 +2916,37 @@ function EmptyFieldChip({
       onClick={isSwapTarget ? onTap : undefined}
       role={isSwapTarget ? "button" : undefined}
       aria-label={isSwapTarget ? `Send selected player to ${pos}` : undefined}
-      className={`relative flex items-stretch border border-dashed shadow-[0_4px_0_rgba(0,0,0,0.5)] transition-colors overflow-hidden ${
+      className={`relative inline-flex items-center border border-dashed rounded-full shadow-md transition-colors overflow-hidden ${
         isOver
           ? "bg-broadcast-gold/20 border-broadcast-gold"
           : isSwapTarget
             ? "bg-broadcast-gold/10 border-broadcast-gold/70 cursor-pointer"
-            : "bg-[#0f172a]/70 border-white/15"
+            : "bg-[#0b1a35]/70 border-white/15"
       }`}
       data-testid={`field-chip-${pos}-empty`}
     >
-      <div
-        className={`font-bold font-['Roboto_Mono'] px-1.5 sm:px-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[34px] sm:min-w-[40px] ${
-          isOver || isSwapTarget ? "bg-broadcast-gold text-black" : "bg-slate-800 text-slate-400"
+      <span
+        className={`font-bold font-['Roboto_Mono'] pl-2.5 sm:pl-3 pr-1.5 sm:pr-2 py-1 flex items-center justify-center text-[10px] sm:text-xs uppercase tracking-wider min-w-[28px] sm:min-w-[34px] ${
+          isOver || isSwapTarget ? "text-black" : "text-slate-400"
         }`}
       >
         {pos}
-      </div>
-      <div className="px-2 sm:px-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
-        <div
+      </span>
+      <span
+        className={`w-px h-3.5 sm:h-4 ${
+          isOver || isSwapTarget ? "bg-broadcast-gold" : "bg-white/20"
+        }`}
+        aria-hidden
+      />
+      <span className="pl-1.5 sm:pl-2 pr-2.5 sm:pr-3 py-1 flex items-center min-w-[72px] sm:min-w-[96px] max-w-[140px] sm:max-w-[170px]">
+        <span
           className={`text-xs sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
             isOver || isSwapTarget ? "text-broadcast-gold" : "text-slate-500"
           }`}
         >
           {isOver ? "Drop here" : isSwapTarget ? "Tap to send" : "Open"}
-        </div>
-      </div>
+        </span>
+      </span>
     </div>
   );
 }
@@ -3066,12 +3075,12 @@ function DraggableBenchChip({
             : `${name} on bench — tap to select, or drag to a position`
       }
       data-bench-chip
-      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2 sm:px-3 py-1 sm:py-1.5 bg-[#0f172a] border transition-all whitespace-nowrap tracking-wide ${
+      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#0b1a35]/95 border rounded-full shadow-md transition-all whitespace-nowrap tracking-wide ${
         isSelected
           ? "border-broadcast-gold ring-2 ring-broadcast-gold ring-offset-2 ring-offset-[#050d1a]"
           : isSwapTarget
             ? "border-broadcast-gold outline outline-1 outline-dashed outline-broadcast-gold/60 outline-offset-2"
-            : "border-broadcast-gold/40 hover:border-broadcast-gold"
+            : "border-white/15 hover:border-broadcast-gold"
       } ${hidden ? "opacity-30" : ""}`}
       data-testid={`bench-name-${name}`}
       title={
