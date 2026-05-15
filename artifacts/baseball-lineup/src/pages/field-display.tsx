@@ -2124,25 +2124,26 @@ export default function FieldDisplay() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-      {/* Three responsive layouts:
-       *  - Phone portrait (default): single column, page may scroll if the
-       *    batting order has too many batters to fit under the field.
-       *  - Phone landscape (`max-lg:landscape:`): split like iPad but with
-       *    a narrower 180–240px sidebar so the field stays usable on the
-       *    short side of a phone.
-       *  - iPad/desktop (`lg:`): full split with a 320–400px sidebar.
+      {/* Two responsive layouts:
+       *  - Phone (portrait OR landscape): single panel at a time, with a
+       *    bottom toggle bar to switch between FIELD (defense) and ORDER
+       *    (offense). Coaches asked for this in landscape too — the prior
+       *    180–240px landscape sidebar made the batting names cramped AND
+       *    squeezed the field, and they almost always want one or the other
+       *    full-screen on a phone.
+       *  - iPad/desktop (`lg:`): full split with a 320–400px sidebar — both
+       *    panels visible at once because there's room for it.
        *
-       *  IMPORTANT: phone-landscape rules are scoped with `max-lg:` so
-       *  they cannot apply at iPad-landscape (1024x768). In this Tailwind
-       *  4 build the `landscape:` media query happens to be emitted
-       *  AFTER `lg:` in the compiled CSS, so an unscoped `landscape:`
-       *  rule would win against `lg:` on iPad-landscape and shrink the
-       *  iPad sidebar to phone-landscape width. */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 max-md:portrait:overflow-hidden max-lg:landscape:grid-cols-[1fr_minmax(180px,240px)] max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
+       *  IMPORTANT: phone-landscape rules are scoped with `max-lg:` so they
+       *  cannot apply at iPad-landscape (1024x768). In this Tailwind 4 build
+       *  the `landscape:` media query is emitted AFTER `lg:` in the
+       *  compiled CSS, so an unscoped `landscape:` rule would win against
+       *  `lg:` on iPad-landscape and collapse the iPad split. */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
           className={`flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden bg-[#03060a] ${
-            mobileTab !== "field" ? "max-md:portrait:hidden" : ""
+            mobileTab !== "field" ? "max-md:portrait:hidden max-lg:landscape:hidden" : ""
           }`}
           data-testid="section-field"
         >
@@ -2376,8 +2377,8 @@ export default function FieldDisplay() {
          *    there's no way to know what's actually happening on the
          *    field without GameChanger integration, and a stale at-bat
          *    indicator was worse than no indicator. */}
-        <aside className={`border-t max-md:portrait:border-t-0 max-lg:landscape:border-t-0 max-lg:landscape:border-l lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
-          mobileTab !== "order" ? "max-md:portrait:hidden" : ""
+        <aside className={`border-t max-md:portrait:border-t-0 max-lg:landscape:border-t-0 lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-md:portrait:overflow-hidden max-lg:landscape:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
+          mobileTab !== "order" ? "max-md:portrait:hidden max-lg:landscape:hidden" : ""
         }`}>
           {/* Broadcast-graphic LINEUP header — Oswald uppercase with a gold
            *  underline to feel like a TV chyron */}
@@ -2487,19 +2488,23 @@ export default function FieldDisplay() {
       )}
       </DndContext>
 
-      {/* Phone-portrait bottom tab bar — only shown on phones in portrait
-       *  (max-md:portrait:). Pinned to the bottom of the viewport via the
-       *  flex column so it never scrolls away. The main grid above reserves
-       *  a 64px bottom pad on phone-portrait so the field/lineup never
-       *  hides behind it. Hidden on phone-landscape and iPad/desktop where
-       *  field + lineup are already visible side-by-side.
+      {/* Phone bottom tab bar — shown on phones in BOTH portrait and
+       *  landscape. Pinned to the bottom of the viewport via the flex
+       *  column so it never scrolls away. The main grid above is locked
+       *  to the viewport on phones (overflow-hidden) so the field/lineup
+       *  never hide behind it. Hidden on iPad/desktop where field +
+       *  lineup are already visible side-by-side.
        *
-       *  Two tabs only (FIELD and ORDER) instead of variant A's three —
-       *  the bench is intentionally kept inside the FIELD tab as the
-       *  existing BenchStrip drag-target so coaches can drag-and-drop
-       *  between field and bench without leaving the panel. */}
+       *  Landscape uses a shorter h-12 bar (vs h-16 in portrait) because
+       *  vertical space is precious on a phone in landscape — every pixel
+       *  the nav doesn't take is a pixel the field can use.
+       *
+       *  Two tabs only (FIELD and ORDER) — the bench is intentionally kept
+       *  inside the FIELD tab as the existing BenchStrip drag-target so
+       *  coaches can drag-and-drop between field and bench without
+       *  leaving the panel. */}
       <nav
-        className="hidden max-md:portrait:flex shrink-0 h-16 bg-[#050d1a] border-t border-[#1a2a42] z-30"
+        className="hidden max-md:portrait:flex max-lg:landscape:flex shrink-0 h-16 max-lg:landscape:h-12 bg-[#050d1a] border-t border-[#1a2a42] z-30"
         aria-label="Field display section"
         data-testid="mobile-tab-bar"
       >
