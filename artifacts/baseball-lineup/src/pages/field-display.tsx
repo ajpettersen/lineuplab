@@ -1977,11 +1977,11 @@ export default function FieldDisplay() {
             onClick={() => setEndGameDialogOpen(true)}
             className="hidden sm:flex items-center gap-1.5 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
             data-testid="button-end-game"
-            aria-label="End game"
-            title="End game and return to the game screen"
+            aria-label="End game or exit"
+            title="End game or exit without ending"
           >
             <Flag className="h-3.5 w-3.5" aria-hidden="true" />
-            End Game
+            End Game / Exit
           </Button>
           {/* Brightness cycle: Auto → Sunlight → Dim → Auto. One tap to
             * advance; the icon shows what mode is currently active so
@@ -2105,7 +2105,7 @@ export default function FieldDisplay() {
                 data-testid="menu-end-game"
               >
                 <Flag className="h-4 w-4 mr-2" />
-                <span>End game</span>
+                <span>End game / Exit</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
