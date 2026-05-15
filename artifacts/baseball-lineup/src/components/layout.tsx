@@ -372,15 +372,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             Falls back to 0 height in normal mobile browsers and desktop. */}
         <div style={{ height: "env(safe-area-inset-top, 0px)" }} aria-hidden />
         <div
-          className="relative flex h-14 md:h-16 items-center gap-2 md:gap-4 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]"
+          className="relative flex h-14 md:h-16 items-center gap-3 md:gap-4 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]"
         >
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-accent" />
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           <SheetTrigger asChild>
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
-              className="shrink-0 bg-primary-foreground text-primary hover:bg-primary-foreground/90 border-transparent"
+              className="shrink-0 md:hidden h-9 w-9 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
               data-testid="button-mobile-nav"
               aria-label="Open navigation menu"
             >
@@ -507,34 +507,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </SheetContent>
         </Sheet>
-        {/* Brand cluster — left-aligned next to the menu button on
-            mobile, fills remaining space (so the team switcher hugs
-            the right edge). The accent shield medallion is shown on
-            both mobile and desktop now so the brand mark balances the
-            menu button visually instead of leaving the team name
-            floating in dead space. */}
-        <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 md:flex-none md:shrink-0">
-          <div className="flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)] shrink-0">
-            <Shield className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+        {/* Brand cluster — stable across all breakpoints. Shield, team
+            name, and "Lineup Lab" eyebrow all keep the same relative
+            sizing from phone portrait → landscape → tablet → desktop
+            so rotating the device doesn't visibly rebuild the bar.
+            Pattern borrowed from ESPN/GameChanger/MLB app: one fixed
+            brand block on the left, no size jumps at breakpoints. */}
+        <div className="flex items-center gap-2.5 md:gap-3 flex-1 min-w-0 md:flex-none md:shrink-0">
+          <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.18)] shrink-0">
+            <Shield className="h-[18px] w-[18px] md:h-5 md:w-5 text-primary" />
           </div>
           <div className="flex flex-col leading-tight min-w-0">
             <h1
-              className="text-lg md:text-2xl font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-none truncate md:whitespace-nowrap"
+              className="text-base md:text-lg font-bold uppercase tracking-wider text-primary-foreground font-broadcast leading-tight truncate md:whitespace-nowrap"
               data-testid="text-team-name"
             >
               {displayTeamName}
             </h1>
-            <span className="hidden md:block eyebrow text-accent">
+            <span className="text-[10px] md:text-[11px] font-broadcast uppercase tracking-[0.16em] text-accent leading-none">
               Lineup Lab
             </span>
           </div>
         </div>
-        {/* Mobile-only team switcher (desktop is in the right cluster).
-            Hidden entirely when the user only belongs to one team —
-            TeamSwitcher returns null in that case, but we keep the
-            wrapper out of the flex flow with `contents` so it doesn't
-            create an empty gap. */}
-        <div className="md:hidden shrink-0 contents">
+        {/* Mobile-only right cluster — sits opposite the brand block
+            so the bar always has a clear two-column shape (left brand,
+            right actions) regardless of how wide the screen is. Sync
+            chip surfaces offline/queued state on phones too (used to be
+            desktop-only). TeamSwitcher returns null when the user only
+            belongs to one team, so the cluster shrinks gracefully. */}
+        <div className="md:hidden flex items-center gap-1.5 shrink-0 ml-auto">
+          <SyncStatusChip />
           <TeamSwitcher />
         </div>
         {/* Desktop right cluster: takes remaining width and scrolls
