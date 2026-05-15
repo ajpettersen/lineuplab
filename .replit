@@ -47,3 +47,5 @@ channel = "stable-25_05"
 [userenv.shared]
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_Y2FwaXRhbC1wb2xsaXdvZy02NC5jbGVyay5hY2NvdW50cy5kZXYk"
 MASTER_ADMIN_USER_IDS = "user_3D7p8XzwxuAboFS0tWspXe07Rkr,user_3D7u3FwoAKDaOD0K2yFq4fGtTmm"
+VAPID_PUBLIC_KEY = "BJwTnO-uVwTW6x0rcmdm5mbXcYKb4qmWAXZ-dcF4_ax0Mbke30QzIMDOyhevDOxJnKxnUIUVkQ8t5SsTX6pYKUU"
+VAPID_SUBJECT = "mailto:notifications@lineup-lab.app"

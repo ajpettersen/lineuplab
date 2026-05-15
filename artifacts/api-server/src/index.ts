@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startBoxScoreReminderScheduler } from "./lib/box-score-reminder-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  // Start the GameChanger box-score reminder scheduler. Safe to call
+  // when VAPID keys are missing — the scheduler will log + no-op.
+  startBoxScoreReminderScheduler();
 });

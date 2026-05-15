@@ -44,6 +44,11 @@ export default defineConfig({
       registerType: "autoUpdate",
       injectRegister: "auto",
       workbox: {
+        // Pull in our custom Web Push handler (push + notificationclick)
+        // INSIDE the Workbox-generated SW. Path is resolved against the
+        // SW's base URL — files in `public/` end up at the site root,
+        // so `push-sw.js` is the right import target.
+        importScripts: ["push-sw.js"],
         // SPA fallback — every navigation request without a real file
         // gets index.html so wouter can take over even when offline.
         navigateFallback: "index.html",

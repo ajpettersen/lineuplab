@@ -21,3 +21,4 @@ export * from "./task_dismissals";
 export * from "./ai_usage_log";
 export * from "./ai_assistant_questions";
 export * from "./coach_activity_pings";
+export * from "./push_subscriptions";

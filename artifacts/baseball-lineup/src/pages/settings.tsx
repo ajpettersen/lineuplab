@@ -31,6 +31,74 @@ import type { RestTier } from "@/lib/pitch-rulesets";
 import { useSeedDemoMutation, DEMO_SEED_ENABLED } from "@/hooks/use-demo-seeder";
 import { usePermission } from "@/hooks/use-permission";
 import Constraints from "@/pages/constraints";
+import { usePushNotifications } from "@/lib/push-notifications";
+import { Bell, BellOff } from "lucide-react";
+
+/**
+ * Settings row for opting this device into push notifications.
+ *
+ * Surfaces three states the coach actually cares about:
+ *   - Push is unsupported on this browser/device → disabled toggle +
+ *     explanation (e.g. iOS-not-installed).
+ *   - Permission is "denied" → toggle stays off, hint to re-enable
+ *     from browser site settings.
+ *   - Otherwise → on / off Switch with a busy spinner during the
+ *     subscribe / unsubscribe round-trip.
+ *
+ * Lives outside the parent Settings component so its hook (which
+ * touches Notification + ServiceWorker APIs) only runs when the row
+ * actually mounts (gated above on usesGameChanger).
+ */
+function PushReminderRow() {
+  const push = usePushNotifications();
+  const supportReason =
+    push.support && !push.support.supported ? push.support.reason : null;
+  const blocked = push.permission === "denied";
+  const Icon = push.enabled ? Bell : BellOff;
+  return (
+    <div className="flex items-center justify-between rounded-lg border p-3">
+      <div className="space-y-0.5 pr-3">
+        <Label htmlFor="pushBoxScoreReminder" className="text-sm font-medium flex items-center gap-2">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+          Box-score reminder push
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Get a notification on this device 2 hours after each scheduled
+          game so you remember to upload the GameChanger box score.
+          Only fires once per game.
+        </p>
+        {supportReason && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 pt-1">
+            {supportReason}
+          </p>
+        )}
+        {blocked && !supportReason && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 pt-1">
+            Notifications are blocked. Re-enable them from your browser
+            site settings, then turn this back on.
+          </p>
+        )}
+        {push.error && !supportReason && !blocked && (
+          <p className="text-xs text-rose-600 dark:text-rose-400 pt-1">
+            {push.error}
+          </p>
+        )}
+      </div>
+      <Switch
+        id="pushBoxScoreReminder"
+        checked={push.enabled}
+        onCheckedChange={(v) => {
+          if (v) void push.enable();
+          else void push.disable();
+        }}
+        disabled={
+          push.busy || !!supportReason || blocked || push.support === null
+        }
+        data-testid="switch-push-box-score-reminder"
+      />
+    </div>
+  );
+}
 
 /**
  * Convert "" / NaN inputs into null so the server stores "no value
@@ -582,6 +650,17 @@ export default function Settings() {
               data-testid="switch-uses-gamechanger"
             />
           </div>
+
+          {/* Push notification opt-in for the box-score reminder.
+            * Only renders if "We use GameChanger" is on, since today the
+            * only push the server fires is the box-score reminder 2h after
+            * a game's scheduled start. Browser permission state is its
+            * own state machine — this card surfaces support /
+            * permission / subscription-active flags so the coach
+            * understands what's going on without leaving Settings. */}
+          {usesGameChanger && (
+            <PushReminderRow />
+          )}
 
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="space-y-0.5 pr-3">

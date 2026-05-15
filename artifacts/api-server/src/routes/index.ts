@@ -28,6 +28,7 @@ import coachProfileRouter from "./coach-profile";
 import adminRouter from "./admin";
 import helpRouter from "./help";
 import heartbeatRouter from "./heartbeat";
+import pushRouter from "./push";
 
 const router: IRouter = Router();
 
@@ -67,5 +68,6 @@ router.use(coachProfileRouter);
 router.use(adminRouter);
 router.use(helpRouter);
 router.use(heartbeatRouter);
+router.use(pushRouter);
 
 export default router;

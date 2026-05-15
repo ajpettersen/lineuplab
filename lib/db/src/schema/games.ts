@@ -64,6 +64,23 @@ export const gamesTable = pgTable(
     // back in the import dialog ("here's what you uploaded"). Wiped
     // on DELETE /box-score; replaced on each re-import.
     boxScoreImagePaths: jsonb("box_score_image_paths").$type<string[]>(),
+    /**
+     * Set when the box-score-reminder push notification has been sent
+     * for this game (single fire per game). The scheduler only fires
+     * for games where:
+     *   - team_settings.usesGameChanger = true
+     *   - boxScoreImportedAt IS NULL
+     *   - boxScoreReminderSentAt IS NULL
+     *   - status != 'cancelled'
+     *   - now() between gameDate + 2h and gameDate + 7d
+     * The 7-day window guards against an old un-imported game suddenly
+     * spamming a coach who toggles GameChanger on weeks later.
+     * Cleared on POST /games/:id/box-score (re-import) so a future
+     * delete + re-prompt cycle works, but DELETE /box-score does NOT
+     * clear it (we don't want to re-nag for the same game after the
+     * coach explicitly removed the import).
+     */
+    boxScoreReminderSentAt: timestamp("box_score_reminder_sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // Soft-delete timestamp. Null = visible. Set by the trash action
     // so the coach can hit Undo on the toast. All read queries scope

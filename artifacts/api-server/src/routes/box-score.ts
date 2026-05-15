@@ -589,6 +589,9 @@ router.post("/games/:id/box-score", async (req, res): Promise<void> => {
     // batting lines without changing the score doesn't have to retype).
     const gameUpdate: Record<string, unknown> = {
       boxScoreImportedAt: importedAt,
+      // Clear any pending reminder so a future delete + re-prompt
+      // cycle behaves correctly (single-fire flag is per import era).
+      boxScoreReminderSentAt: null,
     };
     if (parsed.data.ourScore !== undefined) gameUpdate.ourScore = parsed.data.ourScore;
     if (parsed.data.opponentScore !== undefined) {
@@ -770,7 +773,10 @@ router.post(
             },
           });
       }
-      const upd: Record<string, unknown> = { boxScoreImportedAt: importedAt };
+      const upd: Record<string, unknown> = {
+        boxScoreImportedAt: importedAt,
+        boxScoreReminderSentAt: null,
+      };
       if (parsed.data.ourScore !== undefined) upd.ourScore = parsed.data.ourScore;
       if (parsed.data.opponentScore !== undefined) upd.opponentScore = parsed.data.opponentScore;
       if (parsed.data.imagePaths !== undefined) {
