@@ -166,17 +166,44 @@ router.get("/admin/teams", async (_req, res): Promise<void> => {
     memberCountRows.map((r) => [r.ownerUserId, Number(r.memberCount)] as const),
   );
 
-  // Game counts + last-activity per team.
+  // Game counts per team. (Last-activity is computed separately from
+  // coach_activity_pings below — it used to be `max(games.gameDate)`,
+  // but that's the SCHEDULED game date so a team with a game on the
+  // calendar next month showed up as "active in 30 days" while a team
+  // actively using the app every night with no future games on the
+  // schedule sank to the bottom of the sort. The pings table is the
+  // real "when did anyone on this team last open the app" signal.)
   const gameStatsRows = await db
     .select({
       userId: gamesTable.userId,
       gameCount: count(gamesTable.id),
-      lastActivityAt: max(gamesTable.gameDate),
     })
     .from(gamesTable)
     .where(inArray(gamesTable.userId, owners))
     .groupBy(gamesTable.userId);
   const gameStatsMap = new Map(gameStatsRows.map((r) => [r.userId, r] as const));
+
+  // Last activity per team = max bucket_minute across every coach who
+  // is a member of the team (owner row included — ensureOwnerMembership
+  // writes one). A solo-coach team collapses to "max bucket from the
+  // owner alone"; a multi-coach team rolls up across all coaches so
+  // the column reflects the most recent touch by ANYONE on the team,
+  // which is what an admin scanning the list cares about.
+  const activityRows = await db
+    .select({
+      ownerUserId: teamMembershipsTable.ownerUserId,
+      lastActivityAt: max(coachActivityPingsTable.bucketMinute),
+    })
+    .from(coachActivityPingsTable)
+    .innerJoin(
+      teamMembershipsTable,
+      eq(teamMembershipsTable.memberUserId, coachActivityPingsTable.memberUserId),
+    )
+    .where(inArray(teamMembershipsTable.ownerUserId, owners))
+    .groupBy(teamMembershipsTable.ownerUserId);
+  const lastActivityMap = new Map(
+    activityRows.map((r) => [r.ownerUserId, r.lastActivityAt] as const),
+  );
 
   // Player counts per team.
   const playerCountRows = await db
@@ -205,7 +232,7 @@ router.get("/admin/teams", async (_req, res): Promise<void> => {
       memberCount: memberCountMap.get(oid) ?? 0,
       gameCount: stats ? Number(stats.gameCount) : 0,
       playerCount: playerCountMap.get(oid) ?? 0,
-      lastActivityAt: stats?.lastActivityAt ?? null,
+      lastActivityAt: lastActivityMap.get(oid) ?? null,
     };
   });
 
