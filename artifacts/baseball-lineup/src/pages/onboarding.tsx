@@ -394,6 +394,9 @@ export default function Onboarding() {
               added={rosterAdded}
               importing={importingRoster}
               onImport={handleImportRoster}
+              onSkip={() =>
+                setStepIdx((i) => Math.min(i + 1, STEPS.length - 1))
+              }
             />
           )}
           {step.id === "invites" && (
@@ -717,12 +720,14 @@ function RosterStep({
   added,
   importing,
   onImport,
+  onSkip,
 }: {
   text: string;
   setText: (s: string) => void;
   added: number | null;
   importing: boolean;
   onImport: () => void;
+  onSkip: () => void;
 }) {
   return (
     <div>
@@ -760,6 +765,20 @@ function RosterStep({
             )}
             Add to roster
           </Button>
+        </div>
+        {/* Explicit Skip — distinct from the global Continue so coaches
+            who don't have a roster typed up don't feel like they have
+            to fake one to advance. We'll nudge them from the dashboard
+            until they actually add players. */}
+        <div className="pt-2 text-center">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+            data-testid="button-onboarding-skip-roster"
+          >
+            Skip for now — I&apos;ll add players later
+          </button>
         </div>
       </div>
     </div>

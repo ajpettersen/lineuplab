@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useRoute } from "wouter";
 import { Show, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,10 @@ import {
   XCircle,
   Shield,
   AlertTriangle,
+  Users,
+  CalendarDays,
+  Settings as SettingsIcon,
+  Trophy,
 } from "lucide-react";
 import { useInvitePreview, useAcceptInvite } from "@/hooks/use-team-context";
 import { useToast } from "@/hooks/use-toast";
@@ -89,6 +93,14 @@ function AcceptFlow({ token }: { token: string }) {
   const { toast } = useToast();
   const preview = useInvitePreview(token);
   const accept = useAcceptInvite();
+  // Once acceptance succeeds, we hand the invitee a dedicated
+  // "you're on the team" landing in-place rather than dropping them
+  // on the dashboard cold. Keeps the celebratory moment + gives them
+  // 3 obvious next-steps tailored to a brand-new assistant coach.
+  const [joinedTeam, setJoinedTeam] = useState<{
+    teamName: string;
+    teamShortName: string;
+  } | null>(null);
 
   // Clear any pending-invite redirect breadcrumb now that we've made it
   // back to the join page after sign-in.
@@ -103,12 +115,10 @@ function AcceptFlow({ token }: { token: string }) {
   const onAccept = () => {
     accept.mutate(token, {
       onSuccess: (team) => {
-        toast({
-          title: `Welcome to ${team.teamName}`,
-          description:
-            "You're in! You start with read-only access — the head coach can grant edit permission from the Coaches card.",
+        setJoinedTeam({
+          teamName: team.teamName,
+          teamShortName: team.teamShortName,
         });
-        setLocation("/");
       },
       onError: (err) => {
         toast({
@@ -119,6 +129,75 @@ function AcceptFlow({ token }: { token: string }) {
       },
     });
   };
+
+  // ── Post-accept landing ────────────────────────────────────────
+  if (joinedTeam) {
+    return (
+      <>
+        <CardHeader className="text-center">
+          <div className="mx-auto h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+            <Trophy className="h-7 w-7 text-primary" />
+          </div>
+          <div className="eyebrow text-primary/70 mb-1">You&apos;re in</div>
+          <CardTitle
+            className="font-display text-2xl"
+            data-testid="title-joined-team"
+          >
+            Welcome to {joinedTeam.teamName}
+          </CardTitle>
+          <CardDescription className="mt-2">
+            You&apos;ve joined as an assistant coach with read-only access.
+            The head coach can grant edit permission any time from the
+            Coaches card.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="grid gap-2">
+            <Link href="/players">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3"
+                data-testid="button-joined-see-roster"
+              >
+                <Users className="h-4 w-4 text-primary" />
+                <span>See the roster</span>
+              </Button>
+            </Link>
+            <Link href="/games">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3"
+                data-testid="button-joined-see-games"
+              >
+                <CalendarDays className="h-4 w-4 text-primary" />
+                <span>View upcoming games</span>
+              </Button>
+            </Link>
+            <Link href="/settings">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3"
+                data-testid="button-joined-settings"
+              >
+                <SettingsIcon className="h-4 w-4 text-primary" />
+                <span>Set your display name</span>
+              </Button>
+            </Link>
+          </div>
+          <Button
+            onClick={() => setLocation("/")}
+            className="w-full mt-2"
+            data-testid="button-joined-go-dashboard"
+          >
+            Go to the dashboard
+          </Button>
+          <p className="text-xs text-muted-foreground text-center">
+            You can leave the team any time from Settings.
+          </p>
+        </CardContent>
+      </>
+    );
+  }
 
   if (preview.isLoading) {
     return (

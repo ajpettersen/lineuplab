@@ -54,7 +54,8 @@ export default function Dashboard() {
   const { data: games = [] } = useListGames();
   const { teamName } = useTeamSettings();
   const { data: seasonStats } = useGetSeasonStats();
-  const { data: playerStats = [] } = useGetPlayerStats();
+  const { data: playerStats = [], isSuccess: playerStatsLoaded } =
+    useGetPlayerStats();
   // Default true — coaches who haven't toggled it yet see the score, matching
   // legacy behavior. While prefs are loading we err on the side of showing.
   const { data: prefs } = useGetPreferences();
@@ -143,6 +144,37 @@ export default function Dashboard() {
        */}
       {heroGame && (
         <NextGameHero game={heroGame} teamName={teamName ?? ""} />
+      )}
+
+      {/* Empty-roster nudge — auto-disappears once any active player
+          exists. Surfaces here for coaches who hit "Skip for now" on
+          the onboarding roster step (or who never got a chance to
+          import yet). No dismissal logic — adding even one player
+          drops it from the dashboard. */}
+      {playerStatsLoaded && playerStats.length === 0 && canCreateGame && (
+        <Card
+          className="border-primary/30 bg-primary/5"
+          data-testid="card-finish-roster"
+        >
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              Finish setting up your roster
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Add players so you can start building lineups. Type a list,
+              paste from a doc, or upload a screenshot.
+            </p>
+            <Link href="/players">
+              <Button size="sm" data-testid="button-finish-roster">
+                Add players
+                <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       )}
 
       {/* Coaching tasks (only renders when the coach has open items, so a

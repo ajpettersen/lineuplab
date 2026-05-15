@@ -28,6 +28,8 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  MailQuestion,
+  UserX,
 } from "lucide-react";
 import {
   useAdminMe,
@@ -35,6 +37,7 @@ import {
   useAdminUsers,
   useAdminAiUsage,
   useAdminAiQuestions,
+  useAdminOnboardingFunnel,
 } from "@/hooks/use-admin";
 import { formatDistanceToNow } from "date-fns";
 
@@ -122,6 +125,7 @@ export default function Admin() {
   const usersQuery = useAdminUsers(isAdmin);
   const aiUsageQuery = useAdminAiUsage(isAdmin);
   const aiQuestionsQuery = useAdminAiQuestions(isAdmin);
+  const funnelQuery = useAdminOnboardingFunnel(isAdmin);
   const [showEmpty, setShowEmpty] = useState(false);
 
   // Users-table sort + filter. Default sort = lastSeen desc (matches
@@ -344,6 +348,223 @@ export default function Admin() {
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="card-admin-onboarding-funnel">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MailQuestion className="h-4 w-4" />
+            Onboarding funnel
+          </CardTitle>
+          <CardDescription>
+            People who haven&apos;t made it into a team row yet — pending
+            invites and accounts that finished Clerk sign-up but never
+            opened the app deeply enough to seed a membership.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {funnelQuery.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : !funnelQuery.data ? (
+            <div className="text-sm text-muted-foreground">
+              {funnelQuery.error?.message ?? "Failed to load funnel."}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="rounded-md border p-3" data-testid="stat-pending-invites">
+                  <div className="text-[11px] uppercase text-muted-foreground tracking-wide">
+                    Pending invites
+                  </div>
+                  <div className="text-2xl font-mono tabular-nums mt-1">
+                    {funnelQuery.data.pendingInvites.length}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    not accepted, not expired
+                  </div>
+                </div>
+                <div className="rounded-md border p-3" data-testid="stat-expired-invites">
+                  <div className="text-[11px] uppercase text-muted-foreground tracking-wide">
+                    Expired invites
+                  </div>
+                  <div className="text-2xl font-mono tabular-nums mt-1">
+                    {funnelQuery.data.expiredInvites.length}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    link rotted before accept
+                  </div>
+                </div>
+                <div className="rounded-md border p-3" data-testid="stat-clerk-only">
+                  <div className="text-[11px] uppercase text-muted-foreground tracking-wide">
+                    In Clerk, not in DB
+                  </div>
+                  <div className="text-2xl font-mono tabular-nums mt-1">
+                    {funnelQuery.data.clerkOnly.rows.length}
+                    {funnelQuery.data.clerkOnly.truncated ? "+" : ""}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    of {funnelQuery.data.clerkOnly.totalKnown} total Clerk
+                    users
+                  </div>
+                </div>
+              </div>
+
+              {funnelQuery.data.pendingInvites.length > 0 && (
+                <div data-testid="section-pending-invites">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                    Pending invites
+                  </div>
+                  <div className="rounded-md border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Invited</TableHead>
+                          <TableHead>Team</TableHead>
+                          <TableHead>From</TableHead>
+                          <TableHead className="text-right">Sent</TableHead>
+                          <TableHead className="text-right">Expires</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {funnelQuery.data.pendingInvites.map((inv) => (
+                          <TableRow
+                            key={inv.id}
+                            data-testid={`row-pending-invite-${inv.id}`}
+                          >
+                            <TableCell className="font-medium">
+                              {inv.invitedEmail ?? (
+                                <span className="text-muted-foreground italic">
+                                  link only ({inv.label ?? "no label"})
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/admin/teams/${encodeURIComponent(inv.ownerUserId)}`}
+                                className="text-primary hover:underline"
+                              >
+                                {inv.teamName}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {inv.ownerName ?? inv.ownerEmail ?? inv.ownerUserId}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm">
+                              {relativeOrNever(inv.createdAt)}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm">
+                              {relativeOrNever(inv.expiresAt)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {funnelQuery.data.clerkOnly.rows.length > 0 && (
+                <div data-testid="section-clerk-only">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <UserX className="h-3 w-3" />
+                    Signed up but never opened the app
+                  </div>
+                  <div className="rounded-md border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead className="text-right">Joined Clerk</TableHead>
+                          <TableHead className="text-right">Last sign-in</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {funnelQuery.data.clerkOnly.rows.map((u) => (
+                          <TableRow
+                            key={u.userId}
+                            data-testid={`row-clerk-only-${u.userId}`}
+                          >
+                            <TableCell className="font-medium">
+                              {u.name ?? (
+                                <span className="text-muted-foreground italic">
+                                  no name
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {u.email ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm">
+                              {relativeOrNever(u.createdAt)}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm">
+                              {relativeOrNever(u.lastSignInAt)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {funnelQuery.data.clerkOnly.truncated && (
+                    <div className="text-[11px] text-muted-foreground mt-2">
+                      Showing the most-recently-created 500 — older
+                      stragglers are clipped.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {funnelQuery.data.expiredInvites.length > 0 && (
+                <details data-testid="section-expired-invites">
+                  <summary className="text-xs uppercase tracking-wide text-muted-foreground cursor-pointer">
+                    Expired invites ({funnelQuery.data.expiredInvites.length})
+                  </summary>
+                  <div className="rounded-md border overflow-hidden mt-2">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Invited</TableHead>
+                          <TableHead>Team</TableHead>
+                          <TableHead className="text-right">Expired</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {funnelQuery.data.expiredInvites.map((inv) => (
+                          <TableRow
+                            key={inv.id}
+                            data-testid={`row-expired-invite-${inv.id}`}
+                          >
+                            <TableCell>
+                              {inv.invitedEmail ?? (
+                                <span className="text-muted-foreground italic">
+                                  link only
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>{inv.teamName}</TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm">
+                              {relativeOrNever(inv.expiresAt)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </details>
+              )}
+
+              {funnelQuery.data.pendingInvites.length === 0 &&
+                funnelQuery.data.clerkOnly.rows.length === 0 &&
+                funnelQuery.data.expiredInvites.length === 0 && (
+                  <div className="text-sm text-muted-foreground italic">
+                    No one stuck right now. Everyone who&apos;s signed up has
+                    a team row.
+                  </div>
+                )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card data-testid="card-admin-ai-usage">
         <CardHeader>

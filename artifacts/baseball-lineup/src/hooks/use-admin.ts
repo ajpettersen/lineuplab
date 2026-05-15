@@ -157,6 +157,49 @@ export function useAdminUsers(enabled: boolean) {
   });
 }
 
+export interface AdminPendingInvite {
+  id: number;
+  ownerUserId: string;
+  teamName: string;
+  ownerEmail: string | null;
+  ownerName: string | null;
+  label: string | null;
+  invitedEmail: string | null;
+  sentEmailAt: string | null;
+  createdAt: string;
+  expiresAt: string;
+  expired: boolean;
+}
+
+export interface AdminClerkOnlyUser {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  createdAt: string | null;
+  lastSignInAt: string | null;
+}
+
+export interface AdminOnboardingFunnel {
+  pendingInvites: AdminPendingInvite[];
+  expiredInvites: AdminPendingInvite[];
+  clerkOnly: {
+    rows: AdminClerkOnlyUser[];
+    totalKnown: number;
+    truncated: boolean;
+  };
+}
+
+export function useAdminOnboardingFunnel(enabled: boolean) {
+  return useQuery<AdminOnboardingFunnel>({
+    queryKey: ["admin", "onboarding-funnel"],
+    queryFn: () =>
+      fetchJson<AdminOnboardingFunnel>(`${BASE}/api/admin/onboarding-funnel`),
+    enabled,
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export interface AdminAiQuestionRow {
   id: number;
   ownerUserId: string;

@@ -10,6 +10,7 @@ import {
   aiUsageLogTable,
   aiAssistantQuestionsTable,
   coachActivityPingsTable,
+  teamInvitesTable,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
 } from "@workspace/db";
@@ -455,6 +456,211 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
   });
 
   res.json(users);
+});
+
+/**
+ * GET /api/admin/onboarding-funnel — visibility into who's stuck
+ * before they ever show up in the regular Users / Teams lists.
+ *
+ * Returns three buckets:
+ *   - pendingInvites: team_invites rows that are still actionable
+ *     (acceptedAt + revokedAt both null, expiresAt in the future)
+ *   - expiredInvites: same shape but past expiry — useful to nudge
+ *     people who never got to it before the link rotted
+ *   - clerkOnly: Clerk users with NO team_membership row anywhere
+ *     in our DB (i.e. they finished Clerk sign-up but never opened
+ *     the app deeply enough to seed an owner row, or they accepted
+ *     an invite, or anything). These are the "ghost" users the
+ *     master admin's been losing — they completed sign-up but
+ *     bounced before the dashboard call hydrated their row.
+ *
+ * Capped at 500 Clerk users to keep the response bounded; the page
+ * surfaces the totals so the admin knows if the list was truncated.
+ */
+router.get("/admin/onboarding-funnel", async (_req, res): Promise<void> => {
+  const now = new Date();
+
+  // ── pending + expired invites ──────────────────────────────────
+  const inviteRows = await db
+    .select({
+      id: teamInvitesTable.id,
+      ownerUserId: teamInvitesTable.ownerUserId,
+      label: teamInvitesTable.label,
+      invitedEmail: teamInvitesTable.invitedEmail,
+      sentEmailAt: teamInvitesTable.sentEmailAt,
+      createdAt: teamInvitesTable.createdAt,
+      expiresAt: teamInvitesTable.expiresAt,
+    })
+    .from(teamInvitesTable)
+    .where(
+      and(
+        isNull(teamInvitesTable.acceptedAt),
+        isNull(teamInvitesTable.revokedAt),
+      ),
+    )
+    .orderBy(desc(teamInvitesTable.createdAt));
+
+  // Decorate with the owner's team name + Clerk profile so the admin
+  // sees "Sarah invited dad@x.com to Lightning" instead of an opaque
+  // owner_user_id.
+  const ownerIds = Array.from(new Set(inviteRows.map((r) => r.ownerUserId)));
+  const [settingsRows, ownerClerkMap] = await Promise.all([
+    ownerIds.length
+      ? db
+          .select({
+            userId: teamSettingsTable.userId,
+            teamName: teamSettingsTable.teamName,
+          })
+          .from(teamSettingsTable)
+          .where(inArray(teamSettingsTable.userId, ownerIds))
+      : Promise.resolve([]),
+    fetchClerkLiteMany(ownerIds),
+  ]);
+  const teamNameByOwner = new Map(
+    settingsRows.map((r) => [r.userId, r.teamName ?? DEFAULT_TEAM_NAME] as const),
+  );
+
+  const decorate = (
+    r: (typeof inviteRows)[number],
+    expired: boolean,
+  ) => {
+    const ownerLite = ownerClerkMap.get(r.ownerUserId) ?? {
+      email: null,
+      name: null,
+    };
+    return {
+      id: r.id,
+      ownerUserId: r.ownerUserId,
+      teamName: teamNameByOwner.get(r.ownerUserId) ?? DEFAULT_TEAM_NAME,
+      ownerEmail: ownerLite.email,
+      ownerName: ownerLite.name,
+      label: r.label,
+      invitedEmail: r.invitedEmail,
+      sentEmailAt: r.sentEmailAt
+        ? r.sentEmailAt instanceof Date
+          ? r.sentEmailAt.toISOString()
+          : new Date(r.sentEmailAt).toISOString()
+        : null,
+      createdAt:
+        r.createdAt instanceof Date
+          ? r.createdAt.toISOString()
+          : new Date(r.createdAt).toISOString(),
+      expiresAt:
+        r.expiresAt instanceof Date
+          ? r.expiresAt.toISOString()
+          : new Date(r.expiresAt).toISOString(),
+      expired,
+    };
+  };
+
+  const pendingInvites = inviteRows
+    .filter((r) => new Date(r.expiresAt).getTime() > now.getTime())
+    .map((r) => decorate(r, false));
+  const expiredInvites = inviteRows
+    .filter((r) => new Date(r.expiresAt).getTime() <= now.getTime())
+    .map((r) => decorate(r, true));
+
+  // ── Clerk users with no membership row ─────────────────────────
+  // Pull every user_id we know about (owner + member sides of every
+  // membership row, plus owners-from-players and owners-from-settings
+  // so legacy accounts without a membership row aren't false-flagged
+  // as "Clerk-only").
+  const [memberRows, ownerFromPlayersRows, ownerFromSettingsRows] =
+    await Promise.all([
+      db
+        .selectDistinct({ userId: teamMembershipsTable.memberUserId })
+        .from(teamMembershipsTable),
+      db
+        .selectDistinct({ userId: playersTable.userId })
+        .from(playersTable)
+        .where(isNull(playersTable.deletedAt)),
+      db.selectDistinct({ userId: teamSettingsTable.userId }).from(teamSettingsTable),
+    ]);
+  const knownUserIds = new Set<string>([
+    ...memberRows.map((r) => r.userId),
+    ...ownerFromPlayersRows.map((r) => r.userId),
+    ...ownerFromSettingsRows.map((r) => r.userId),
+  ]);
+
+  // Page through Clerk's user list. 500 is a generous cap — past that
+  // an admin should be looking at the funnel chart, not a per-user
+  // table. We surface `truncated: true` on the response so the UI can
+  // say "showing 500 of N+".
+  const CLERK_PAGE = 100;
+  const CLERK_CAP = 500;
+  const clerkOnly: Array<{
+    userId: string;
+    email: string | null;
+    name: string | null;
+    createdAt: string | null;
+    lastSignInAt: string | null;
+  }> = [];
+  let clerkTotal = 0;
+  let truncated = false;
+  try {
+    let offset = 0;
+    while (offset < CLERK_CAP + CLERK_PAGE) {
+      const resp = await clerkClient.users.getUserList({
+        limit: CLERK_PAGE,
+        offset,
+        orderBy: "-created_at",
+      });
+      const data = Array.isArray(resp) ? resp : resp.data;
+      const total =
+        Array.isArray(resp) ? data.length : (resp.totalCount ?? data.length);
+      if (offset === 0) clerkTotal = total;
+      if (data.length === 0) break;
+      for (const u of data) {
+        if (knownUserIds.has(u.id)) continue;
+        if (clerkOnly.length >= CLERK_CAP) {
+          truncated = true;
+          break;
+        }
+        const email =
+          u.primaryEmailAddress?.emailAddress ??
+          u.emailAddresses[0]?.emailAddress ??
+          null;
+        const name =
+          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+          u.username ||
+          null;
+        clerkOnly.push({
+          userId: u.id,
+          email,
+          name,
+          createdAt: u.createdAt
+            ? new Date(u.createdAt).toISOString()
+            : null,
+          lastSignInAt: u.lastSignInAt
+            ? new Date(u.lastSignInAt).toISOString()
+            : null,
+        });
+      }
+      if (truncated) break;
+      offset += data.length;
+      if (data.length < CLERK_PAGE) break;
+    }
+  } catch (err) {
+    // Don't fail the whole funnel response if Clerk's listing API
+    // hiccups — just return what we have so the invite buckets are
+    // still useful.
+    (_req as unknown as { log?: { warn: (o: unknown, m?: string) => void } })
+      .log?.warn?.({ err }, "admin: clerk getUserList failed in onboarding-funnel");
+  }
+
+  // Most-recently-created Clerk users surface first so the admin's
+  // attention lands on people who literally just signed up.
+  clerkOnly.sort((a, b) => {
+    const aT = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bT = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bT - aT;
+  });
+
+  res.json({
+    pendingInvites,
+    expiredInvites,
+    clerkOnly: { rows: clerkOnly, totalKnown: clerkTotal, truncated },
+  });
 });
 
 /**
