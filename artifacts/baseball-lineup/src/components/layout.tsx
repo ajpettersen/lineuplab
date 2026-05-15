@@ -88,24 +88,48 @@ function NavGroupDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<number | null>(null);
+  // Hover-intent gate: opening waits ~120 ms so the menu doesn't
+  // pop while the cursor is just *transiting* over the trigger on
+  // the way to a different top-level tab (e.g. Dashboard → Settings
+  // crosses Team / Events / Statistics). Any mouseleave/sibling
+  // hover before the timer fires cancels the pending open.
+  const openTimer = useRef<number | null>(null);
   const cancelClose = () => {
     if (closeTimer.current !== null) {
       window.clearTimeout(closeTimer.current);
       closeTimer.current = null;
     }
   };
+  const cancelOpen = () => {
+    if (openTimer.current !== null) {
+      window.clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  };
+  const scheduleOpen = () => {
+    cancelOpen();
+    openTimer.current = window.setTimeout(() => setOpen(true), 120);
+  };
   const scheduleClose = () => {
     cancelClose();
     closeTimer.current = window.setTimeout(() => setOpen(false), 140);
   };
-  useEffect(() => () => cancelClose(), []);
+  useEffect(
+    () => () => {
+      cancelClose();
+      cancelOpen();
+    },
+    [],
+  );
   // Listen for "another nav item is being hovered" and close
-  // immediately if the hovered label isn't ours.
+  // immediately if the hovered label isn't ours. Also cancels any
+  // pending open so a quick pass-through never resolves into a pop.
   useEffect(() => {
     const onHover = (e: Event) => {
       const detail = (e as CustomEvent<string | null>).detail;
       if (detail !== group.label) {
         cancelClose();
+        cancelOpen();
         setOpen(false);
       }
     };
@@ -121,11 +145,30 @@ function NavGroupDropdown({
           onMouseEnter={() => {
             cancelClose();
             dispatchNavHover(group.label);
-            setOpen(true);
+            // If the menu is already open (e.g. user moved off and
+            // back within the close-grace window), keep it open
+            // immediately. Otherwise gate the open behind 120 ms so a
+            // quick mouse transit doesn't pop it.
+            if (open) {
+              cancelOpen();
+            } else {
+              scheduleOpen();
+            }
           }}
-          onMouseLeave={scheduleClose}
+          onMouseLeave={() => {
+            cancelOpen();
+            scheduleClose();
+          }}
+          onClick={() => {
+            // Click is an explicit intent — bypass the hover-intent
+            // delay and toggle immediately. Keyboard users get the
+            // same instant response via onFocus below.
+            cancelOpen();
+            setOpen((o) => !o);
+          }}
           onFocus={() => {
             cancelClose();
+            cancelOpen();
             setOpen(true);
           }}
           className={`relative shrink-0 inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
