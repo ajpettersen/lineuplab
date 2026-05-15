@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListTournaments,
@@ -42,6 +42,7 @@ function parseOptionalInt(s: string): number | null {
 export default function Tournaments() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const { data: tournaments = [], isLoading } = useListTournaments();
   // Pull team defaults so the dialog can show "Team default: 85" hints
   // — coach inherits whenever they leave the per-tournament field blank.
@@ -272,46 +273,77 @@ export default function Tournaments() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {tournaments.map((t) => (
-            <Link key={t.id} href={`/tournaments/${t.id}`}>
-              <Card
-                className="cursor-pointer transition-colors hover:border-primary/40"
-                data-testid={`card-tournament-${t.id}`}
-              >
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Trophy className="h-4 w-4 text-purple-600 shrink-0" />
-                    <span className="truncate">{t.name}</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-1.5 text-sm">
+            // Use a click-handler + role=button instead of wrapping
+            // the Card in a <Link>, so the inline "+ Game" button can
+            // live inside the card without producing invalid nested
+            // <a> elements. stopPropagation on the inner button keeps
+            // the card-level navigate from firing when the user
+            // clicks the shortcut.
+            <Card
+              key={t.id}
+              className="cursor-pointer transition-colors hover:border-primary/40"
+              data-testid={`card-tournament-${t.id}`}
+              onClick={() => navigate(`/tournaments/${t.id}`)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/tournaments/${t.id}`);
+                }
+              }}
+            >
+              <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+                <CardTitle className="text-base flex items-center gap-2 min-w-0">
+                  <Trophy className="h-4 w-4 text-purple-600 shrink-0" />
+                  <span className="truncate">{t.name}</span>
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs shrink-0"
+                  onClick={(e) => {
+                    // Don't bubble up to the Card's navigate handler —
+                    // we want the shortcut to skip the detail page and
+                    // drop the coach straight into the new-game form.
+                    e.stopPropagation();
+                    navigate(`/games/new?tournamentId=${t.id}`);
+                  }}
+                  data-testid={`button-add-game-tournament-${t.id}`}
+                  aria-label={`Add a game to ${t.name}`}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Game
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-1.5 text-sm">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {format(tournamentDateAsLocal(t.startDate), "MMM d")}
+                    {" – "}
+                    {format(tournamentDateAsLocal(t.endDate), "MMM d, yyyy")}
+                  </span>
+                </div>
+                {t.location && (
                   <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-                    <span>
-                      {format(tournamentDateAsLocal(t.startDate), "MMM d")}
-                      {" – "}
-                      {format(tournamentDateAsLocal(t.endDate), "MMM d, yyyy")}
-                    </span>
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{t.location}</span>
                   </div>
-                  {t.location && (
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{t.location}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-3 pt-1.5 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <CalendarDays className="h-3 w-3" />
-                      {t.gameCount} game{t.gameCount === 1 ? "" : "s"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Users className="h-3 w-3" />
-                      {t.pitchersUsed} pitcher{t.pitchersUsed === 1 ? "" : "s"}
-                    </span>
-                    <span>{t.totalPitches} pitches</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
+                )}
+                <div className="flex items-center gap-3 pt-1.5 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <CalendarDays className="h-3 w-3" />
+                    {t.gameCount} game{t.gameCount === 1 ? "" : "s"}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    {t.pitchersUsed} pitcher{t.pitchersUsed === 1 ? "" : "s"}
+                  </span>
+                  <span>{t.totalPitches} pitches</span>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
