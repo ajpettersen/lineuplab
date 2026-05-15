@@ -81,7 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil, Settings2, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -230,6 +230,16 @@ export default function GameDetail() {
   // other was visually noisy and made the page feel cluttered — funneling
   // them through one CTA cleans up the lineup card header.
   const [lineupActionsOpen, setLineupActionsOpen] = useState(false);
+  // Mobile-only "Tools & insights" disclosure. Coaches reported having
+  // to scroll past AI Assistant + Position Locks + Equity Insights +
+  // Pitch budget watch + tap hint to reach the actual lineup grid on
+  // an iPhone (in both portrait AND landscape — landscape is even
+  // worse because vertical real estate is tighter). Default-collapsed
+  // on mobile lifts the grid up so editing is the first thing in
+  // view; coaches who want the secondary tools can tap once to expand.
+  // Desktop / tablet (`sm:` and up) renders everything inline as
+  // before — these tools have plenty of room there.
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   // Active tab among the four "what do you want to look at for this game"
   // panels: defensive lineup grid, batting order, innings tally, pitch
   // counts. Defaults to defense; deep-links from the dashboard's pitch
@@ -2316,8 +2326,33 @@ export default function GameDetail() {
         />
       )}
 
+      {/* Mobile-only "Tools & insights" toggle. Hidden on sm+ where the
+          tools render inline as ever. The four blocks below
+          (AI Assistant, Position Locks, Equity Insights, Pitch budget
+          watch, tap hint) each carry a `max-sm:hidden` class that the
+          state-driven className strips when expanded. Banners for
+          unsaved changes are NOT collapsed — those are critical
+          alerts and stay visible. */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setMobileToolsOpen((o) => !o)}
+        className="sm:hidden w-full justify-between"
+        data-testid="button-mobile-tools-toggle"
+        aria-expanded={mobileToolsOpen}
+      >
+        <span className="flex items-center gap-2">
+          <Settings2 className="h-4 w-4" />
+          Tools & insights
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${mobileToolsOpen ? "rotate-180" : ""}`}
+        />
+      </Button>
+
       {/* AI Assistant search bar */}
-      <Card>
+      <Card className={mobileToolsOpen ? "" : "max-sm:hidden"}>
         <CardContent className="p-3">
           <form
             className="flex items-center gap-2"
@@ -2393,7 +2428,11 @@ export default function GameDetail() {
           by the "always lock P/C" prompt so "Set locks first" can scroll the
           coach straight here. */}
       {game.status !== "cancelled" && (
-        <Card id="position-locks-card" data-testid="card-locks">
+        <Card
+          id="position-locks-card"
+          data-testid="card-locks"
+          className={mobileToolsOpen ? "" : "max-sm:hidden"}
+        >
           <CardHeader className="flex-row items-start justify-between space-y-0 gap-3 pb-3">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
@@ -2479,7 +2518,7 @@ export default function GameDetail() {
           save. Coaches can also turn these off entirely in Settings. */}
       {(prefs?.showEquitySuggestions ?? true) && !equityDismissed && equityInsights.items.length > 0 && (
         <div
-          className="rounded-lg border border-blue-200 bg-blue-50 p-3 print:hidden"
+          className={`rounded-lg border border-blue-200 bg-blue-50 p-3 print:hidden ${mobileToolsOpen ? "" : "max-sm:hidden"}`}
           data-testid="equity-insights"
         >
           <div className="flex items-start justify-between gap-3">
@@ -2543,7 +2582,7 @@ export default function GameDetail() {
           if (items.length === 0) return null;
           return (
             <div
-              className="rounded-lg border border-purple-200 bg-purple-50 p-3 print:hidden"
+              className={`rounded-lg border border-purple-200 bg-purple-50 p-3 print:hidden ${mobileToolsOpen ? "" : "max-sm:hidden"}`}
               data-testid="tournament-pitch-callout"
             >
               <div className="flex items-start gap-2">
@@ -2607,7 +2646,7 @@ export default function GameDetail() {
         canEditLineup &&
         displayLineup.length > 0 && (
           <div
-            className="rounded-lg border border-sky-200 bg-sky-50 p-3 print:hidden"
+            className={`rounded-lg border border-sky-200 bg-sky-50 p-3 print:hidden ${mobileToolsOpen ? "" : "max-sm:hidden"}`}
             data-testid="banner-tap-to-swap-hint"
           >
             <div className="flex items-start gap-2">

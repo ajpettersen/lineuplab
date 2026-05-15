@@ -33,7 +33,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, WifiOff, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -1606,14 +1606,38 @@ export default function FieldDisplay() {
       >
         {/* Left cluster: exit + team vs opponent */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
+          {/* Mobile Exit (back chevron). The earlier iteration removed
+           *  this on the theory that the right-side End Game button
+           *  was the single source of truth — but on phones the
+           *  right-side button is gone (it collapses into the kebab),
+           *  so coaches lost the obvious "get me out of here" gesture
+           *  AND had to hunt for End Game inside a 3-item dropdown
+           *  packed into the header's right edge near the safe-area.
+           *  This back-chevron sits in the conventional top-left
+           *  position, has a real 44×44 touch target, and opens the
+           *  SAME EndGameDialog as everything else (so the score-entry
+           *  + Just exit / Mark complete prompt still gates the bounce
+           *  back to game-detail). Desktop is unchanged.
+           */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEndGameDialogOpen(true)}
+            className="sm:hidden h-11 w-11 p-0 shrink-0 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 rounded-md"
+            data-testid="button-mobile-exit"
+            aria-label="Exit field display"
+            title="Exit field display"
+            style={{ touchAction: "manipulation" }}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
           {/* Team-vs-opponent title.
-           *  (The standalone "Exit" button that used to live here was
-           *  removed — coaches reported it was duplicative with the
-           *  top-right "End Game" button since both opened the SAME
-           *  end-game dialog. Now there's a single way out: the
-           *  End Game button on desktop, or the kebab → End game on
-           *  mobile. Both lead to the same "is this game complete?"
-           *  prompt with score-entry + Mark complete / Just exit.)
+           *  (The desktop standalone "Exit" button was removed —
+           *  coaches reported it was duplicative with the top-right
+           *  "End Game" button since both opened the SAME end-game
+           *  dialog. On desktop the End Game button is right there
+           *  inline. On mobile we put the back-chevron above so the
+           *  exit affordance isn't buried in the kebab.)
            *
            *  Sized down from the original text-4xl on lg because the
            *  header carries a lot of fixed-width siblings (inning chip,
