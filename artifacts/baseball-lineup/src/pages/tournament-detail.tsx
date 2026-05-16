@@ -130,25 +130,48 @@ export default function TournamentDetail() {
     [allGames, linkedGameIds],
   );
 
-  // Roll up per-game pitch totals from the per-pitcher outings the
-  // tournament endpoint already ships. The Games card uses this to
-  // show "X pitches across Y pitchers" per linked game so a coach
-  // doesn't have to drill into each game to see usage.
+  // Roll up per-game pitch totals + per-pitcher breakdown from the
+  // outings the tournament endpoint already ships. The Games card
+  // shows "Pitcher: N" chips per linked game plus a tournament total
+  // footer so a coach doesn't have to drill into each game.
   const pitchesByGame = useMemo(() => {
     const map = new Map<
       number,
-      { totalPitches: number; pitcherCount: number }
+      {
+        totalPitches: number;
+        perPitcher: {
+          playerId: number;
+          playerName: string;
+          playerNumber: number | null;
+          pitches: number;
+        }[];
+      }
     >();
     for (const p of tournament?.pitcherAvailability ?? []) {
       for (const o of p.outings) {
-        const cur = map.get(o.gameId) ?? { totalPitches: 0, pitcherCount: 0 };
+        const cur = map.get(o.gameId) ?? { totalPitches: 0, perPitcher: [] };
         cur.totalPitches += o.pitches;
-        cur.pitcherCount += 1;
+        cur.perPitcher.push({
+          playerId: p.playerId,
+          playerName: p.playerName,
+          playerNumber: p.playerNumber ?? null,
+          pitches: o.pitches,
+        });
         map.set(o.gameId, cur);
       }
     }
+    // Sort each game's breakdown high-to-low so the workhorse appears first.
+    for (const v of map.values()) {
+      v.perPitcher.sort((a, b) => b.pitches - a.pitches);
+    }
     return map;
   }, [tournament?.pitcherAvailability]);
+
+  const tournamentPitchTotal = useMemo(() => {
+    let total = 0;
+    for (const v of pitchesByGame.values()) total += v.totalPitches;
+    return total;
+  }, [pitchesByGame]);
 
   if (isLoading) {
     return (
@@ -385,45 +408,67 @@ export default function TournamentDetail() {
                 return (
                 <li
                   key={g.id}
-                  className="py-2.5 flex items-center justify-between gap-3"
+                  className="py-3 flex items-start justify-between gap-3"
                   data-testid={`row-tournament-game-${g.id}`}
                 >
-                  <div className="min-w-0">
-                    <Link
-                      href={`/games/${g.id}`}
-                      className="font-medium hover:underline"
-                    >
-                      vs {g.opponent}
-                    </Link>
-                    <div className="text-xs text-muted-foreground">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link
+                        href={`/games/${g.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        vs {g.opponent}
+                      </Link>
+                      {usage && usage.totalPitches > 0 ? (
+                        <Badge
+                          variant="secondary"
+                          className="text-xs font-mono"
+                          data-testid={`badge-game-pitches-${g.id}`}
+                        >
+                          {usage.totalPitches} pitches
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-xs text-muted-foreground"
+                          data-testid={`badge-game-pitches-${g.id}`}
+                        >
+                          No pitches logged
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
                       {format(new Date(g.gameDate), "EEE, MMM d · h:mm a")}
                       {g.location ? ` · ${g.location}` : ""}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {usage && usage.totalPitches > 0 ? (
-                      <Badge
-                        variant="outline"
-                        className="text-xs whitespace-nowrap font-mono"
-                        data-testid={`badge-game-pitches-${g.id}`}
-                        title={`${usage.totalPitches} pitches across ${usage.pitcherCount} pitcher${usage.pitcherCount === 1 ? "" : "s"}`}
+                    {usage && usage.perPitcher.length > 0 && (
+                      <div
+                        className="mt-2 flex flex-wrap gap-1.5"
+                        data-testid={`pitcher-breakdown-${g.id}`}
                       >
-                        {usage.totalPitches} P
-                        {usage.pitcherCount > 1 ? ` · ${usage.pitcherCount} pitchers` : ""}
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="text-xs text-muted-foreground whitespace-nowrap"
-                        data-testid={`badge-game-pitches-${g.id}`}
-                      >
-                        No pitches logged
-                      </Badge>
+                        {usage.perPitcher.map((pp) => (
+                          <Badge
+                            key={pp.playerId}
+                            variant="outline"
+                            className="text-xs font-normal"
+                            data-testid={`chip-game-${g.id}-pitcher-${pp.playerId}`}
+                          >
+                            <span className="truncate max-w-[10rem]">
+                              {pp.playerNumber != null ? `#${pp.playerNumber} ` : ""}
+                              {pp.playerName}
+                            </span>
+                            <span className="ml-1.5 font-mono tabular-nums text-foreground">
+                              {pp.pitches}
+                            </span>
+                          </Badge>
+                        ))}
+                      </div>
                     )}
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600 shrink-0"
                     onClick={() =>
                       updateGame.mutate({ id: g.id, data: { tournamentId: null } })
                     }
@@ -432,11 +477,26 @@ export default function TournamentDetail() {
                   >
                     <X className="h-4 w-4" />
                   </Button>
-                  </div>
                 </li>
                 );
               })}
             </ul>
+          )}
+          {tournament.games.length > 0 && (
+            <div
+              className="mt-3 pt-3 border-t flex items-center justify-between text-sm"
+              data-testid="tournament-pitch-total"
+            >
+              <span className="text-muted-foreground">
+                Tournament total
+                {tournament.effectiveTournamentMax != null
+                  ? ` · cap ${tournament.effectiveTournamentMax}`
+                  : ""}
+              </span>
+              <span className="font-mono tabular-nums font-semibold">
+                {tournamentPitchTotal} pitches
+              </span>
+            </div>
           )}
         </CardContent>
       </Card>
