@@ -23,23 +23,24 @@ import { useToast } from "@/hooks/use-toast";
  *     409s on optimistic-lock failure. This listener picks them up
  *     automatically — no per-call wiring needed.
  *
- * Toast behavior:
- *   - "Keep theirs" (default): invalidate every query so the UI
- *     refreshes to the server's current version. The coach's
- *     attempted edit is discarded.
- *   - "Try again": invalidate (so the optimistic UI snaps back to
- *     the server's version), then the coach can re-apply their
- *     edit on top of the fresh state.
+ * Toast behavior (current):
+ *   - Single destructive toast informing the coach their edit was
+ *     rejected. No action button — we simply invalidate every
+ *     query so the UI refreshes to the server's current version.
+ *     The coach's attempted edit is discarded and they can
+ *     re-apply on top of the fresh state if they still want it.
  *
- * Why those two actions and not a full diff/merge UI:
+ * Why no diff/merge UI:
  *   - This is a youth-baseball coaching tool, not a Git client.
  *     A surprised coach in the dugout needs to know "my change
- *     didn't stick" plus a one-tap way back to a known-good state,
- *     not a three-way merge.
+ *     didn't stick" plus an obvious path forward, not a
+ *     three-way merge.
  *   - The deeper Phase 3 work registers per-domain resolvers
  *     (e.g. attendance MERGES across devices instead of conflicting
- *     at all); this generic listener is the safe fallback for the
- *     long tail of mutations.
+ *     at all) and may add a richer "pick which version to keep"
+ *     two-action toast once there's a known winning UX. This
+ *     generic listener is the safe fallback for the long tail of
+ *     mutations until then.
  *
  * Mounted once inside PersistQueryClientProvider so it shares the
  * same QueryClient instance.
