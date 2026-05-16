@@ -625,9 +625,50 @@ tournament cap is configured.
   outings: PitcherAvailabilityOutingsItem[];
 }
 
+export type GamePitcherSuggestionPitchersItemRole =
+  (typeof GamePitcherSuggestionPitchersItemRole)[keyof typeof GamePitcherSuggestionPitchersItemRole];
+
+export const GamePitcherSuggestionPitchersItemRole = {
+  starter: "starter",
+  backup: "backup",
+} as const;
+
+export type GamePitcherSuggestionPitchersItemRestingUntil = null | {
+  availableOn: string;
+  fromOutingDate: string;
+  fromOutingPitches: number;
+  daysRest: number;
+};
+
+export type GamePitcherSuggestionPitchersItem = {
+  playerId: number;
+  playerName: string;
+  /** @nullable */
+  playerNumber?: number | null;
+  /** 1-indexed position in the "P" depth chart. */
+  depthRank: number;
+  role: GamePitcherSuggestionPitchersItemRole;
+  /** @nullable */
+  pitchesAvailableToday: number | null;
+  /** @nullable */
+  pitchesAvailableInTournament: number | null;
+  restingUntil?: GamePitcherSuggestionPitchersItemRestingUntil;
+};
+
+export interface GamePitcherSuggestion {
+  gameId: number;
+  pitchers: GamePitcherSuggestionPitchersItem[];
+}
+
 export type TournamentDetail = Tournament & {
   games: Game[];
   pitcherAvailability: PitcherAvailability[];
+  /** Per-game suggested pitchers (starter + up to 2 backups) drawn
+from the team's "P" depth chart, projected against each game's
+date. Empty `pitchers` array means either the game already has
+outings logged, is in the past, or no eligible pitchers remain.
+ */
+  gameSuggestions: GamePitcherSuggestion[];
   /**
    * Resolved per-pitcher daily cap (tournament > team default > null).
    * @nullable

@@ -1378,6 +1378,39 @@ export const GetTournamentResponse = zod
             "Per-player pitch totals + remaining-today availability for a tournament.",
           ),
       ),
+      gameSuggestions: zod
+        .array(
+          zod.object({
+            gameId: zod.number(),
+            pitchers: zod.array(
+              zod.object({
+                playerId: zod.number(),
+                playerName: zod.string(),
+                playerNumber: zod.number().nullish(),
+                depthRank: zod
+                  .number()
+                  .describe('1-indexed position in the \"P\" depth chart.'),
+                role: zod.enum(["starter", "backup"]),
+                pitchesAvailableToday: zod.number().nullable(),
+                pitchesAvailableInTournament: zod.number().nullable(),
+                restingUntil: zod
+                  .union([
+                    zod.null(),
+                    zod.object({
+                      availableOn: zod.coerce.date(),
+                      fromOutingDate: zod.coerce.date(),
+                      fromOutingPitches: zod.number(),
+                      daysRest: zod.number(),
+                    }),
+                  ])
+                  .optional(),
+              }),
+            ),
+          }),
+        )
+        .describe(
+          "Per-game suggested pitchers (starter + up to 2 backups) drawn\nfrom the team's \"P\" depth chart, projected against each game's\ndate. Empty `pitchers` array means either the game already has\noutings logged, is in the past, or no eligible pitchers remain.\n",
+        ),
       effectiveDailyMax: zod
         .number()
         .nullable()

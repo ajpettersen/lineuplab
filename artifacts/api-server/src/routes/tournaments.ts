@@ -237,10 +237,133 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     };
   });
 
+  // ---- Per-game pitcher suggestions ----
+  // Walks the team's "P" depth chart (auto-seeded with canPitch players
+  // not yet in the saved order, sorted by name) and for each FUTURE game
+  // with no outings logged yet emits up to 3 candidates: starter +
+  // 2 backups. Availability is projected AT the game's date using only
+  // outings on/before that date — so logging pitches for game 1 today
+  // automatically reshuffles suggestions for tomorrow's game 2.
+  // Games already in progress (any outings logged) or already past are
+  // skipped — the existing per-game pitcher chips show what actually
+  // happened.
+  const savedOrder: number[] = Array.isArray(settings?.depthChart?.P)
+    ? (settings!.depthChart!.P as number[])
+    : [];
+  const pitcherById = new Map(pitchers.map((p) => [p.id, p]));
+  const orderedIds: number[] = [];
+  const seen = new Set<number>();
+  for (const id of savedOrder) {
+    if (pitcherById.has(id) && !seen.has(id)) {
+      orderedIds.push(id);
+      seen.add(id);
+    }
+  }
+  // Append any canPitch players not in the saved order (alphabetical),
+  // mirroring how /depth-chart auto-seeds new pitchers.
+  const remaining = pitchers
+    .filter((p) => !seen.has(p.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const p of remaining) orderedIds.push(p.id);
+
+  const pitchesByGameByPlayer = new Map<number, number>();
+  for (const c of counts) {
+    pitchesByGameByPlayer.set(c.gameId, (pitchesByGameByPlayer.get(c.gameId) ?? 0) + c.pitches);
+  }
+
+  // Simulated outings: when we suggest a starter for game N, we credit
+  // them with an estimated outing at that game's date so the projection
+  // for game N+1 reflects "if you actually start them, they'll be
+  // tired/resting for the next one". Backups get a smaller estimate
+  // (they may or may not enter). Without this, the depth-chart-#1 arm
+  // would be re-suggested as starter for every game until pitches are
+  // logged.
+  const ASSUMED_STARTER_PITCHES = 50;
+  const ASSUMED_BACKUP_PITCHES = 15;
+  const simulatedOutings = new Map<number, { date: Date; pitches: number }[]>();
+
+  // Walk games chronologically so simulated outings from earlier games
+  // shape availability for later ones. `games` is already ordered by
+  // gameDate from the query above.
+  const gameSuggestions = games.map((g) => {
+    const gameDate = new Date(g.gameDate);
+    const alreadyHasPitches = (pitchesByGameByPlayer.get(g.id) ?? 0) > 0;
+    // Suggest only for upcoming games that haven't started logging
+    // outings. Once a coach starts logging, the suggestion is stale and
+    // the actual chips below tell the real story.
+    if (alreadyHasPitches || gameDate.getTime() < now.getTime()) {
+      return { gameId: g.id, pitchers: [] };
+    }
+    const candidates: Array<{
+      playerId: number;
+      playerName: string;
+      playerNumber: number | null;
+      depthRank: number;
+      role: "starter" | "backup";
+      pitchesAvailableToday: number | null;
+      pitchesAvailableInTournament: number | null;
+      restingUntil: ReturnType<typeof computePitcherAvailability>["restingUntil"];
+    }> = [];
+    for (let i = 0; i < orderedIds.length; i++) {
+      const pid = orderedIds[i];
+      const p = pitcherById.get(pid)!;
+      const realOutings = outingsByPlayer.get(pid) ?? [];
+      const simOutings = simulatedOutings.get(pid) ?? [];
+      // Project using real outings + any simulated outings from earlier
+      // suggestions in this same response. Only count things on/before
+      // the projected game's date.
+      const outingsThroughGame = [...realOutings, ...simOutings].filter(
+        (o) => new Date(o.date).getTime() <= gameDate.getTime(),
+      );
+      const avail = computePitcherAvailability({
+        dailyMax: effectiveDailyMax,
+        tournamentMax: effectiveTournamentMax,
+        restTiers: effectiveRestTiers.length > 0 ? effectiveRestTiers : null,
+        outings: outingsThroughGame,
+        now: gameDate,
+      });
+      // Skip resting pitchers + anyone with zero capacity (either daily
+      // or tournament). A null cap means "no limit" so it passes.
+      if (avail.restingUntil) continue;
+      if (avail.pitchesAvailableToday !== Infinity && avail.pitchesAvailableToday <= 0) continue;
+      if (avail.pitchesAvailableInTournament !== Infinity && avail.pitchesAvailableInTournament <= 0) continue;
+      candidates.push({
+        playerId: pid,
+        playerName: p.name,
+        playerNumber: p.number,
+        depthRank: i + 1,
+        role: candidates.length === 0 ? "starter" : "backup",
+        pitchesAvailableToday:
+          avail.pitchesAvailableToday === Infinity ? null : avail.pitchesAvailableToday,
+        pitchesAvailableInTournament:
+          avail.pitchesAvailableInTournament === Infinity ? null : avail.pitchesAvailableInTournament,
+        restingUntil: avail.restingUntil,
+      });
+      if (candidates.length >= 3) break;
+    }
+    // Record simulated outings so they shape projections for later
+    // games in this same response. Cap the simulated pitch count by
+    // what the pitcher actually has available (so we don't double-count
+    // past their daily/tournament limit).
+    for (const c of candidates) {
+      const estimate = c.role === "starter" ? ASSUMED_STARTER_PITCHES : ASSUMED_BACKUP_PITCHES;
+      const capped =
+        c.pitchesAvailableToday != null
+          ? Math.min(estimate, c.pitchesAvailableToday)
+          : estimate;
+      if (capped <= 0) continue;
+      const list = simulatedOutings.get(c.playerId) ?? [];
+      list.push({ date: gameDate, pitches: capped });
+      simulatedOutings.set(c.playerId, list);
+    }
+    return { gameId: g.id, pitchers: candidates };
+  });
+
   res.json({
     ...tournament,
     games,
     pitcherAvailability,
+    gameSuggestions,
     effectiveDailyMax,
     effectiveTournamentMax,
     effectiveRestTiers,

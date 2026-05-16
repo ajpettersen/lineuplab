@@ -407,6 +407,9 @@ export default function TournamentDetail() {
             <ul className="divide-y">
               {tournament.games.map((g) => {
                 const usage = pitchesByGame.get(g.id);
+                const suggestion = tournament.gameSuggestions.find(
+                  (s) => s.gameId === g.id,
+                );
                 return (
                 <li
                   key={g.id}
@@ -464,6 +467,49 @@ export default function TournamentDetail() {
                             </span>
                           </Badge>
                         ))}
+                      </div>
+                    )}
+                    {suggestion && suggestion.pitchers.length > 0 && (
+                      <div
+                        className="mt-2"
+                        data-testid={`suggested-pitchers-${g.id}`}
+                      >
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                          Suggested from depth chart
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {suggestion.pitchers.map((sp) => {
+                            const isStarter = sp.role === "starter";
+                            const remaining =
+                              sp.pitchesAvailableToday != null
+                                ? `${sp.pitchesAvailableToday} today`
+                                : "no cap";
+                            return (
+                              <Badge
+                                key={sp.playerId}
+                                variant="outline"
+                                className={
+                                  "text-xs font-normal " +
+                                  (isStarter
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                                    : "")
+                                }
+                                data-testid={`chip-suggested-game-${g.id}-pitcher-${sp.playerId}`}
+                              >
+                                <span className="font-medium mr-1">
+                                  {isStarter ? "Start" : `#${sp.depthRank}`}
+                                </span>
+                                <span className="truncate max-w-[10rem]">
+                                  {sp.playerNumber != null ? `#${sp.playerNumber} ` : ""}
+                                  {sp.playerName}
+                                </span>
+                                <span className="ml-1.5 font-mono tabular-nums text-muted-foreground">
+                                  {remaining}
+                                </span>
+                              </Badge>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
