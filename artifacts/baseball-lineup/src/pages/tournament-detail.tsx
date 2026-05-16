@@ -130,6 +130,26 @@ export default function TournamentDetail() {
     [allGames, linkedGameIds],
   );
 
+  // Roll up per-game pitch totals from the per-pitcher outings the
+  // tournament endpoint already ships. The Games card uses this to
+  // show "X pitches across Y pitchers" per linked game so a coach
+  // doesn't have to drill into each game to see usage.
+  const pitchesByGame = useMemo(() => {
+    const map = new Map<
+      number,
+      { totalPitches: number; pitcherCount: number }
+    >();
+    for (const p of tournament?.pitcherAvailability ?? []) {
+      for (const o of p.outings) {
+        const cur = map.get(o.gameId) ?? { totalPitches: 0, pitcherCount: 0 };
+        cur.totalPitches += o.pitches;
+        cur.pitcherCount += 1;
+        map.set(o.gameId, cur);
+      }
+    }
+    return map;
+  }, [tournament?.pitcherAvailability]);
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -360,7 +380,9 @@ export default function TournamentDetail() {
             </p>
           ) : (
             <ul className="divide-y">
-              {tournament.games.map((g) => (
+              {tournament.games.map((g) => {
+                const usage = pitchesByGame.get(g.id);
+                return (
                 <li
                   key={g.id}
                   className="py-2.5 flex items-center justify-between gap-3"
@@ -378,6 +400,26 @@ export default function TournamentDetail() {
                       {g.location ? ` · ${g.location}` : ""}
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    {usage && usage.totalPitches > 0 ? (
+                      <Badge
+                        variant="outline"
+                        className="text-xs whitespace-nowrap font-mono"
+                        data-testid={`badge-game-pitches-${g.id}`}
+                        title={`${usage.totalPitches} pitches across ${usage.pitcherCount} pitcher${usage.pitcherCount === 1 ? "" : "s"}`}
+                      >
+                        {usage.totalPitches} P
+                        {usage.pitcherCount > 1 ? ` · ${usage.pitcherCount} pitchers` : ""}
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-xs text-muted-foreground whitespace-nowrap"
+                        data-testid={`badge-game-pitches-${g.id}`}
+                      >
+                        No pitches logged
+                      </Badge>
+                    )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -390,8 +432,10 @@ export default function TournamentDetail() {
                   >
                     <X className="h-4 w-4" />
                   </Button>
+                  </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </CardContent>
