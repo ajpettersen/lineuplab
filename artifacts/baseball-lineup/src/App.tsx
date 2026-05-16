@@ -23,6 +23,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
+import { ConflictListener } from "@/components/conflict-listener";
 import { PushNavigationListener } from "@/components/push-navigation-listener";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
@@ -569,6 +570,7 @@ function ClerkProviderWithRoutes() {
       >
         <ClerkQueryClientCacheInvalidator />
         <OnlineResumer />
+        <ConflictListener />
         <PushNavigationListener />
         <TooltipProvider>
           {/* Top-level Suspense covers the lazy <Join /> route below.
