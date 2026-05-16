@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal } from "@/lib/tournament-date";
+import { PoolPlayCard } from "@/components/pool-play-card";
 
 function parseOptionalInt(s: string): number | null {
   const t = s.trim();
@@ -379,6 +380,12 @@ export default function TournamentDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PoolPlayCard
+        tournamentId={tournamentId}
+        poolPlay={tournament.poolPlay ?? null}
+        analysis={tournament.poolPlayAnalysis ?? null}
+      />
 
       <Card data-testid="card-tournament-games">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-3">

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import { simulatePoolPlay } from "../lib/pool-play-simulator";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
@@ -359,6 +360,15 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     return { gameId: g.id, pitchers: candidates };
   });
 
+  // Pool play: data is stored on the tournament row; the scenario
+  // analysis is fully derived, so we recompute it on every GET. Cheap
+  // (≤16k scenarios, microseconds) and keeps edits feeling instant —
+  // saving the games re-projects on the next refetch with no extra
+  // round-trip.
+  const poolPlayAnalysis = tournament.poolPlay
+    ? simulatePoolPlay(tournament.poolPlay)
+    : null;
+
   res.json({
     ...tournament,
     games,
@@ -367,6 +377,8 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     effectiveDailyMax,
     effectiveTournamentMax,
     effectiveRestTiers,
+    poolPlay: tournament.poolPlay ?? null,
+    poolPlayAnalysis,
   });
 });
 

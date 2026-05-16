@@ -520,6 +520,99 @@ paths:
         "404":
           description: Not found
 
+  /tournaments/{id}/pool-play/extract:
+    post:
+      operationId: extractTournamentPoolPlay
+      tags: [tournaments]
+      summary: Extract pool-play standings + games from uploaded screenshots
+      description: |
+        Upload 1-3 phone screenshots of the tournament's published
+        pool-play standings and/or schedule. The AI returns a parsed
+        preview (teams + games with scores if visible). The preview is
+        NOT persisted — the client edits it inline then PUTs the final
+        version to `/tournaments/{id}/pool-play`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  maxItems: 3
+              required: [files]
+      responses:
+        "200":
+          description: Parsed pool-play preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedPoolPlay"
+        "400":
+          description: Bad request (no files, too many, etc.)
+        "404":
+          description: Tournament not found
+
+  /tournaments/{id}/pool-play:
+    put:
+      operationId: saveTournamentPoolPlay
+      tags: [tournaments]
+      summary: Save (or replace) the pool-play data for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoolPlay"
+      responses:
+        "200":
+          description: Updated pool-play + freshly computed analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  poolPlay:
+                    $ref: "#/components/schemas/PoolPlay"
+                  poolPlayAnalysis:
+                    $ref: "#/components/schemas/PoolPlayAnalysis"
+                required: [poolPlay, poolPlayAnalysis]
+        "400":
+          description: Validation error
+        "404":
+          description: Tournament not found
+    delete:
+      operationId: clearTournamentPoolPlay
+      tags: [tournaments]
+      summary: Clear the pool-play data for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          description: Tournament not found
+
   /games/{id}/pitch-counts:
     get:
       operationId: getGamePitchCounts
@@ -1665,6 +1758,16 @@ components:
               items:
                 $ref: "#/components/schemas/RestTier"
               description: Resolved rest tiers (empty array = no rest enforcement).
+            poolPlay:
+              oneOf:
+                - type: "null"
+                - $ref: "#/components/schemas/PoolPlay"
+              description: Saved pool-play data (null until the coach imports it).
+            poolPlayAnalysis:
+              oneOf:
+                - type: "null"
+                - $ref: "#/components/schemas/PoolPlayAnalysis"
+              description: Freshly computed scenarios (null when `poolPlay` is null).
           required:
             - games
             - pitcherAvailability
@@ -1672,6 +1775,8 @@ components:
             - effectiveDailyMax
             - effectiveTournamentMax
             - effectiveRestTiers
+            - poolPlay
+            - poolPlayAnalysis
 
     GamePitcherSuggestion:
       type: object
@@ -1906,6 +2011,199 @@ components:
         - pitchesAvailableInTournament
         - dailyMax
         - outings
+
+    PoolPlayTeam:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required: [name]
+
+    PoolPlayGame:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Stable client-generated UUID so edits round-trip.
+          minLength: 1
+          maxLength: 64
+        home:
+          type: string
+          minLength: 1
+          maxLength: 80
+        away:
+          type: string
+          minLength: 1
+          maxLength: 80
+        homeScore:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 99
+        awayScore:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 99
+        final:
+          type: boolean
+      required: [id, home, away, homeScore, awayScore, final]
+
+    PoolPlay:
+      type: object
+      description: Saved pool-play import for a tournament.
+      properties:
+        ourTeamName:
+          type: string
+          description: Which team in the pool is the coach's. Highlighted in the UI.
+        teams:
+          type: array
+          minItems: 2
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/PoolPlayTeam"
+        games:
+          type: array
+          maxItems: 64
+          items:
+            $ref: "#/components/schemas/PoolPlayGame"
+        tiebreaker:
+          type: string
+          enum: [winPct_h2h_runDiff, winPct_runDiff_h2h, winPct_h2h]
+          description: Tiebreaker chain applied after Win %.
+        advanceCount:
+          type: integer
+          minimum: 1
+          maximum: 8
+          description: How many teams advance from the pool (default 2).
+        updatedAt:
+          type: string
+      required:
+        - ourTeamName
+        - teams
+        - games
+        - tiebreaker
+        - advanceCount
+        - updatedAt
+
+    ExtractedPoolPlay:
+      type: object
+      description: Best-effort AI-extracted preview. May be incomplete; the coach edits before saving.
+      properties:
+        ourTeamGuess:
+          type: ["string", "null"]
+          description: Best guess at which team belongs to the coach (may be null if no signal).
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolPlayTeam"
+        games:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolPlayGame"
+        tiebreakerNote:
+          type: ["string", "null"]
+          description: Free-text tiebreaker rules visible on the screenshot (informational only).
+      required: [teams, games]
+
+    PoolPlayTeamRecord:
+      type: object
+      properties:
+        teamName:
+          type: string
+        wins:
+          type: integer
+        losses:
+          type: integer
+        ties:
+          type: integer
+        gamesPlayed:
+          type: integer
+        runsFor:
+          type: integer
+        runsAgainst:
+          type: integer
+        runDiff:
+          type: integer
+        winPct:
+          type: number
+      required:
+        - teamName
+        - wins
+        - losses
+        - ties
+        - gamesPlayed
+        - runsFor
+        - runsAgainst
+        - runDiff
+        - winPct
+
+    PoolPlayTeamProjection:
+      type: object
+      properties:
+        teamName:
+          type: string
+        finishProbs:
+          type: array
+          description: Index = finishing position (0 = 1st place). Fraction of scenarios.
+          items:
+            type: number
+        clinchedFirst:
+          type: boolean
+        clinchedAdvance:
+          type: boolean
+        eliminatedFirst:
+          type: boolean
+        eliminatedAdvance:
+          type: boolean
+        firstProb:
+          type: number
+        advanceProb:
+          type: number
+      required:
+        - teamName
+        - finishProbs
+        - clinchedFirst
+        - clinchedAdvance
+        - eliminatedFirst
+        - eliminatedAdvance
+        - firstProb
+        - advanceProb
+
+    PoolPlayAnalysis:
+      type: object
+      properties:
+        scenarioCount:
+          type: integer
+        truncated:
+          type: boolean
+        remainingGamesCap:
+          type: integer
+        remainingGames:
+          type: integer
+        advanceCount:
+          type: integer
+        standingsToday:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolPlayTeamRecord"
+        projections:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolPlayTeamProjection"
+        ourTeamInsights:
+          type: array
+          items:
+            type: string
+      required:
+        - scenarioCount
+        - truncated
+        - remainingGamesCap
+        - remainingGames
+        - advanceCount
+        - standingsToday
+        - projections
+        - ourTeamInsights
 
     UpdatePreferencesBody:
       type: object

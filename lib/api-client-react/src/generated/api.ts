@@ -25,7 +25,9 @@ import type {
   DashboardTask,
   DismissDashboardTaskBody,
   ExtractBoxScoreBody,
+  ExtractTournamentPoolPlayBody,
   ExtractedBoxScore,
+  ExtractedPoolPlay,
   Game,
   GenerateLineupBody,
   GeneratePracticePlanBody,
@@ -35,6 +37,7 @@ import type {
   PitchCount,
   Player,
   PlayerStats,
+  PoolPlay,
   Practice,
   PracticeAttendance,
   PracticeDetail,
@@ -43,6 +46,7 @@ import type {
   SaveBoxScoreBody,
   SaveBoxScoreResponse,
   SaveLineupBody,
+  SaveTournamentPoolPlay200,
   SeasonStats,
   TeamSettings,
   Tournament,
@@ -2196,6 +2200,278 @@ export const useDeleteTournament = <
   TContext
 > => {
   return useMutation(getDeleteTournamentMutationOptions(options));
+};
+
+/**
+ * Upload 1-3 phone screenshots of the tournament's published
+pool-play standings and/or schedule. The AI returns a parsed
+preview (teams + games with scores if visible). The preview is
+NOT persisted — the client edits it inline then PUTs the final
+version to `/tournaments/{id}/pool-play`.
+
+ * @summary Extract pool-play standings + games from uploaded screenshots
+ */
+export const getExtractTournamentPoolPlayUrl = (id: number) => {
+  return `/api/tournaments/${id}/pool-play/extract`;
+};
+
+export const extractTournamentPoolPlay = async (
+  id: number,
+  extractTournamentPoolPlayBody: ExtractTournamentPoolPlayBody,
+  options?: RequestInit,
+): Promise<ExtractedPoolPlay> => {
+  const formData = new FormData();
+  extractTournamentPoolPlayBody.files.forEach((value) =>
+    formData.append(`files`, value),
+  );
+
+  return customFetch<ExtractedPoolPlay>(getExtractTournamentPoolPlayUrl(id), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getExtractTournamentPoolPlayMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractTournamentPoolPlay>>,
+    TError,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractTournamentPoolPlay>>,
+  TError,
+  { id: number; data: BodyType<ExtractTournamentPoolPlayBody> },
+  TContext
+> => {
+  const mutationKey = ["extractTournamentPoolPlay"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractTournamentPoolPlay>>,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return extractTournamentPoolPlay(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractTournamentPoolPlayMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractTournamentPoolPlay>>
+>;
+export type ExtractTournamentPoolPlayMutationBody =
+  BodyType<ExtractTournamentPoolPlayBody>;
+export type ExtractTournamentPoolPlayMutationError = ErrorType<void>;
+
+/**
+ * @summary Extract pool-play standings + games from uploaded screenshots
+ */
+export const useExtractTournamentPoolPlay = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractTournamentPoolPlay>>,
+    TError,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractTournamentPoolPlay>>,
+  TError,
+  { id: number; data: BodyType<ExtractTournamentPoolPlayBody> },
+  TContext
+> => {
+  return useMutation(getExtractTournamentPoolPlayMutationOptions(options));
+};
+
+/**
+ * @summary Save (or replace) the pool-play data for a tournament
+ */
+export const getSaveTournamentPoolPlayUrl = (id: number) => {
+  return `/api/tournaments/${id}/pool-play`;
+};
+
+export const saveTournamentPoolPlay = async (
+  id: number,
+  poolPlay: PoolPlay,
+  options?: RequestInit,
+): Promise<SaveTournamentPoolPlay200> => {
+  return customFetch<SaveTournamentPoolPlay200>(
+    getSaveTournamentPoolPlayUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(poolPlay),
+    },
+  );
+};
+
+export const getSaveTournamentPoolPlayMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveTournamentPoolPlay>>,
+    TError,
+    { id: number; data: BodyType<PoolPlay> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveTournamentPoolPlay>>,
+  TError,
+  { id: number; data: BodyType<PoolPlay> },
+  TContext
+> => {
+  const mutationKey = ["saveTournamentPoolPlay"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveTournamentPoolPlay>>,
+    { id: number; data: BodyType<PoolPlay> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return saveTournamentPoolPlay(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveTournamentPoolPlayMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveTournamentPoolPlay>>
+>;
+export type SaveTournamentPoolPlayMutationBody = BodyType<PoolPlay>;
+export type SaveTournamentPoolPlayMutationError = ErrorType<void>;
+
+/**
+ * @summary Save (or replace) the pool-play data for a tournament
+ */
+export const useSaveTournamentPoolPlay = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveTournamentPoolPlay>>,
+    TError,
+    { id: number; data: BodyType<PoolPlay> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveTournamentPoolPlay>>,
+  TError,
+  { id: number; data: BodyType<PoolPlay> },
+  TContext
+> => {
+  return useMutation(getSaveTournamentPoolPlayMutationOptions(options));
+};
+
+/**
+ * @summary Clear the pool-play data for a tournament
+ */
+export const getClearTournamentPoolPlayUrl = (id: number) => {
+  return `/api/tournaments/${id}/pool-play`;
+};
+
+export const clearTournamentPoolPlay = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getClearTournamentPoolPlayUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getClearTournamentPoolPlayMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearTournamentPoolPlay>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clearTournamentPoolPlay>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["clearTournamentPoolPlay"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clearTournamentPoolPlay>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return clearTournamentPoolPlay(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClearTournamentPoolPlayMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clearTournamentPoolPlay>>
+>;
+
+export type ClearTournamentPoolPlayMutationError = ErrorType<void>;
+
+/**
+ * @summary Clear the pool-play data for a tournament
+ */
+export const useClearTournamentPoolPlay = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clearTournamentPoolPlay>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clearTournamentPoolPlay>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getClearTournamentPoolPlayMutationOptions(options));
 };
 
 /**

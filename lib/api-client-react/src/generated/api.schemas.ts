@@ -660,6 +660,117 @@ export interface GamePitcherSuggestion {
   pitchers: GamePitcherSuggestionPitchersItem[];
 }
 
+export interface PoolPlayTeam {
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  name: string;
+}
+
+export interface PoolPlayGame {
+  /**
+   * Stable client-generated UUID so edits round-trip.
+   * @minLength 1
+   * @maxLength 64
+   */
+  id: string;
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  home: string;
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  away: string;
+  /**
+   * @minimum 0
+   * @maximum 99
+   * @nullable
+   */
+  homeScore: number | null;
+  /**
+   * @minimum 0
+   * @maximum 99
+   * @nullable
+   */
+  awayScore: number | null;
+  final: boolean;
+}
+
+/**
+ * Tiebreaker chain applied after Win %.
+ */
+export type PoolPlayTiebreaker =
+  (typeof PoolPlayTiebreaker)[keyof typeof PoolPlayTiebreaker];
+
+export const PoolPlayTiebreaker = {
+  winPct_h2h_runDiff: "winPct_h2h_runDiff",
+  winPct_runDiff_h2h: "winPct_runDiff_h2h",
+  winPct_h2h: "winPct_h2h",
+} as const;
+
+/**
+ * Saved pool-play import for a tournament.
+ */
+export interface PoolPlay {
+  /** Which team in the pool is the coach's. Highlighted in the UI. */
+  ourTeamName: string;
+  /**
+   * @minItems 2
+   * @maxItems 16
+   */
+  teams: PoolPlayTeam[];
+  /** @maxItems 64 */
+  games: PoolPlayGame[];
+  /** Tiebreaker chain applied after Win %. */
+  tiebreaker: PoolPlayTiebreaker;
+  /**
+   * How many teams advance from the pool (default 2).
+   * @minimum 1
+   * @maximum 8
+   */
+  advanceCount: number;
+  updatedAt: string;
+}
+
+export interface PoolPlayTeamRecord {
+  teamName: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  gamesPlayed: number;
+  runsFor: number;
+  runsAgainst: number;
+  runDiff: number;
+  winPct: number;
+}
+
+export interface PoolPlayTeamProjection {
+  teamName: string;
+  /** Index = finishing position (0 = 1st place). Fraction of scenarios. */
+  finishProbs: number[];
+  clinchedFirst: boolean;
+  clinchedAdvance: boolean;
+  eliminatedFirst: boolean;
+  eliminatedAdvance: boolean;
+  firstProb: number;
+  advanceProb: number;
+}
+
+export interface PoolPlayAnalysis {
+  scenarioCount: number;
+  truncated: boolean;
+  remainingGamesCap: number;
+  remainingGames: number;
+  advanceCount: number;
+  standingsToday: PoolPlayTeamRecord[];
+  projections: PoolPlayTeamProjection[];
+  ourTeamInsights: string[];
+}
+
 export type TournamentDetail = Tournament & {
   games: Game[];
   pitcherAvailability: PitcherAvailability[];
@@ -681,6 +792,10 @@ outings logged, is in the past, or no eligible pitchers remain.
   effectiveTournamentMax: number | null;
   /** Resolved rest tiers (empty array = no rest enforcement). */
   effectiveRestTiers: RestTier[];
+  /** Saved pool-play data (null until the coach imports it). */
+  poolPlay: null | PoolPlay;
+  /** Freshly computed scenarios (null when `poolPlay` is null). */
+  poolPlayAnalysis: null | PoolPlayAnalysis;
 };
 
 export interface CreateTournamentBody {
@@ -741,6 +856,24 @@ export interface UpsertPitchCountBody {
   pitches: number;
   /** @nullable */
   notes?: string | null;
+}
+
+/**
+ * Best-effort AI-extracted preview. May be incomplete; the coach edits before saving.
+ */
+export interface ExtractedPoolPlay {
+  /**
+   * Best guess at which team belongs to the coach (may be null if no signal).
+   * @nullable
+   */
+  ourTeamGuess?: string | null;
+  teams: PoolPlayTeam[];
+  games: PoolPlayGame[];
+  /**
+   * Free-text tiebreaker rules visible on the screenshot (informational only).
+   * @nullable
+   */
+  tiebreakerNote?: string | null;
 }
 
 export interface UpdatePreferencesBody {
@@ -1031,6 +1164,16 @@ export interface BoxScoreState {
   batting: BoxScoreStateBattingItem[];
   pitching: PitchCount[];
 }
+
+export type ExtractTournamentPoolPlayBody = {
+  /** @maxItems 3 */
+  files: Blob[];
+};
+
+export type SaveTournamentPoolPlay200 = {
+  poolPlay: PoolPlay;
+  poolPlayAnalysis: PoolPlayAnalysis;
+};
 
 export type ExtractBoxScoreBody = {
   /** 1–4 image (PNG/JPEG/WebP) or PDF files, ≤6 MB each */

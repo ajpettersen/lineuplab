@@ -1215,6 +1215,27 @@ export const getTournamentResponseTwoEffectiveRestTiersItemMaxPitchesMin = 0;
 
 export const getTournamentResponseTwoEffectiveRestTiersItemDaysRestMin = 0;
 
+export const getTournamentResponseTwoPoolPlayTwoTeamsItemNameMax = 80;
+
+export const getTournamentResponseTwoPoolPlayTwoTeamsMin = 2;
+export const getTournamentResponseTwoPoolPlayTwoTeamsMax = 16;
+
+export const getTournamentResponseTwoPoolPlayTwoGamesItemIdMax = 64;
+
+export const getTournamentResponseTwoPoolPlayTwoGamesItemHomeMax = 80;
+
+export const getTournamentResponseTwoPoolPlayTwoGamesItemAwayMax = 80;
+
+export const getTournamentResponseTwoPoolPlayTwoGamesItemHomeScoreMin = 0;
+export const getTournamentResponseTwoPoolPlayTwoGamesItemHomeScoreMax = 99;
+
+export const getTournamentResponseTwoPoolPlayTwoGamesItemAwayScoreMin = 0;
+export const getTournamentResponseTwoPoolPlayTwoGamesItemAwayScoreMax = 99;
+
+export const getTournamentResponseTwoPoolPlayTwoGamesMax = 64;
+
+export const getTournamentResponseTwoPoolPlayTwoAdvanceCountMax = 8;
+
 export const GetTournamentResponse = zod
   .object({
     id: zod.number(),
@@ -1445,6 +1466,126 @@ export const GetTournamentResponse = zod
             ),
         )
         .describe("Resolved rest tiers (empty array = no rest enforcement)."),
+      poolPlay: zod
+        .union([
+          zod.null(),
+          zod
+            .object({
+              ourTeamName: zod
+                .string()
+                .describe(
+                  "Which team in the pool is the coach's. Highlighted in the UI.",
+                ),
+              teams: zod
+                .array(
+                  zod.object({
+                    name: zod
+                      .string()
+                      .min(1)
+                      .max(getTournamentResponseTwoPoolPlayTwoTeamsItemNameMax),
+                  }),
+                )
+                .min(getTournamentResponseTwoPoolPlayTwoTeamsMin)
+                .max(getTournamentResponseTwoPoolPlayTwoTeamsMax),
+              games: zod
+                .array(
+                  zod.object({
+                    id: zod
+                      .string()
+                      .min(1)
+                      .max(getTournamentResponseTwoPoolPlayTwoGamesItemIdMax)
+                      .describe(
+                        "Stable client-generated UUID so edits round-trip.",
+                      ),
+                    home: zod
+                      .string()
+                      .min(1)
+                      .max(getTournamentResponseTwoPoolPlayTwoGamesItemHomeMax),
+                    away: zod
+                      .string()
+                      .min(1)
+                      .max(getTournamentResponseTwoPoolPlayTwoGamesItemAwayMax),
+                    homeScore: zod
+                      .number()
+                      .min(
+                        getTournamentResponseTwoPoolPlayTwoGamesItemHomeScoreMin,
+                      )
+                      .max(
+                        getTournamentResponseTwoPoolPlayTwoGamesItemHomeScoreMax,
+                      )
+                      .nullable(),
+                    awayScore: zod
+                      .number()
+                      .min(
+                        getTournamentResponseTwoPoolPlayTwoGamesItemAwayScoreMin,
+                      )
+                      .max(
+                        getTournamentResponseTwoPoolPlayTwoGamesItemAwayScoreMax,
+                      )
+                      .nullable(),
+                    final: zod.boolean(),
+                  }),
+                )
+                .max(getTournamentResponseTwoPoolPlayTwoGamesMax),
+              tiebreaker: zod
+                .enum([
+                  "winPct_h2h_runDiff",
+                  "winPct_runDiff_h2h",
+                  "winPct_h2h",
+                ])
+                .describe("Tiebreaker chain applied after Win %."),
+              advanceCount: zod
+                .number()
+                .min(1)
+                .max(getTournamentResponseTwoPoolPlayTwoAdvanceCountMax)
+                .describe("How many teams advance from the pool (default 2)."),
+              updatedAt: zod.string(),
+            })
+            .describe("Saved pool-play import for a tournament."),
+        ])
+        .describe("Saved pool-play data (null until the coach imports it)."),
+      poolPlayAnalysis: zod
+        .union([
+          zod.null(),
+          zod.object({
+            scenarioCount: zod.number(),
+            truncated: zod.boolean(),
+            remainingGamesCap: zod.number(),
+            remainingGames: zod.number(),
+            advanceCount: zod.number(),
+            standingsToday: zod.array(
+              zod.object({
+                teamName: zod.string(),
+                wins: zod.number(),
+                losses: zod.number(),
+                ties: zod.number(),
+                gamesPlayed: zod.number(),
+                runsFor: zod.number(),
+                runsAgainst: zod.number(),
+                runDiff: zod.number(),
+                winPct: zod.number(),
+              }),
+            ),
+            projections: zod.array(
+              zod.object({
+                teamName: zod.string(),
+                finishProbs: zod
+                  .array(zod.number())
+                  .describe(
+                    "Index = finishing position (0 = 1st place). Fraction of scenarios.",
+                  ),
+                clinchedFirst: zod.boolean(),
+                clinchedAdvance: zod.boolean(),
+                eliminatedFirst: zod.boolean(),
+                eliminatedAdvance: zod.boolean(),
+                firstProb: zod.number(),
+                advanceProb: zod.number(),
+              }),
+            ),
+            ourTeamInsights: zod.array(zod.string()),
+          }),
+        ])
+        .describe("Freshly computed scenarios (null when `poolPlay` is null)."),
     }),
   );
 
@@ -1552,6 +1693,311 @@ export const UpdateTournamentResponse = zod.object({
  * @summary Delete a tournament (linked games are detached, not deleted)
  */
 export const DeleteTournamentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * Upload 1-3 phone screenshots of the tournament's published
+pool-play standings and/or schedule. The AI returns a parsed
+preview (teams + games with scores if visible). The preview is
+NOT persisted — the client edits it inline then PUTs the final
+version to `/tournaments/{id}/pool-play`.
+
+ * @summary Extract pool-play standings + games from uploaded screenshots
+ */
+export const ExtractTournamentPoolPlayParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const extractTournamentPoolPlayBodyFilesMax = 3;
+
+export const ExtractTournamentPoolPlayBody = zod.object({
+  files: zod
+    .array(zod.instanceof(File))
+    .max(extractTournamentPoolPlayBodyFilesMax),
+});
+
+export const extractTournamentPoolPlayResponseTeamsItemNameMax = 80;
+
+export const extractTournamentPoolPlayResponseGamesItemIdMax = 64;
+
+export const extractTournamentPoolPlayResponseGamesItemHomeMax = 80;
+
+export const extractTournamentPoolPlayResponseGamesItemAwayMax = 80;
+
+export const extractTournamentPoolPlayResponseGamesItemHomeScoreMin = 0;
+export const extractTournamentPoolPlayResponseGamesItemHomeScoreMax = 99;
+
+export const extractTournamentPoolPlayResponseGamesItemAwayScoreMin = 0;
+export const extractTournamentPoolPlayResponseGamesItemAwayScoreMax = 99;
+
+export const ExtractTournamentPoolPlayResponse = zod
+  .object({
+    ourTeamGuess: zod
+      .string()
+      .nullish()
+      .describe(
+        "Best guess at which team belongs to the coach (may be null if no signal).",
+      ),
+    teams: zod.array(
+      zod.object({
+        name: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayResponseTeamsItemNameMax),
+      }),
+    ),
+    games: zod.array(
+      zod.object({
+        id: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayResponseGamesItemIdMax)
+          .describe("Stable client-generated UUID so edits round-trip."),
+        home: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayResponseGamesItemHomeMax),
+        away: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayResponseGamesItemAwayMax),
+        homeScore: zod
+          .number()
+          .min(extractTournamentPoolPlayResponseGamesItemHomeScoreMin)
+          .max(extractTournamentPoolPlayResponseGamesItemHomeScoreMax)
+          .nullable(),
+        awayScore: zod
+          .number()
+          .min(extractTournamentPoolPlayResponseGamesItemAwayScoreMin)
+          .max(extractTournamentPoolPlayResponseGamesItemAwayScoreMax)
+          .nullable(),
+        final: zod.boolean(),
+      }),
+    ),
+    tiebreakerNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Free-text tiebreaker rules visible on the screenshot (informational only).",
+      ),
+  })
+  .describe(
+    "Best-effort AI-extracted preview. May be incomplete; the coach edits before saving.",
+  );
+
+/**
+ * @summary Save (or replace) the pool-play data for a tournament
+ */
+export const SaveTournamentPoolPlayParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const saveTournamentPoolPlayBodyTeamsItemNameMax = 80;
+
+export const saveTournamentPoolPlayBodyTeamsMin = 2;
+export const saveTournamentPoolPlayBodyTeamsMax = 16;
+
+export const saveTournamentPoolPlayBodyGamesItemIdMax = 64;
+
+export const saveTournamentPoolPlayBodyGamesItemHomeMax = 80;
+
+export const saveTournamentPoolPlayBodyGamesItemAwayMax = 80;
+
+export const saveTournamentPoolPlayBodyGamesItemHomeScoreMin = 0;
+export const saveTournamentPoolPlayBodyGamesItemHomeScoreMax = 99;
+
+export const saveTournamentPoolPlayBodyGamesItemAwayScoreMin = 0;
+export const saveTournamentPoolPlayBodyGamesItemAwayScoreMax = 99;
+
+export const saveTournamentPoolPlayBodyGamesMax = 64;
+
+export const saveTournamentPoolPlayBodyAdvanceCountMax = 8;
+
+export const SaveTournamentPoolPlayBody = zod
+  .object({
+    ourTeamName: zod
+      .string()
+      .describe(
+        "Which team in the pool is the coach's. Highlighted in the UI.",
+      ),
+    teams: zod
+      .array(
+        zod.object({
+          name: zod
+            .string()
+            .min(1)
+            .max(saveTournamentPoolPlayBodyTeamsItemNameMax),
+        }),
+      )
+      .min(saveTournamentPoolPlayBodyTeamsMin)
+      .max(saveTournamentPoolPlayBodyTeamsMax),
+    games: zod
+      .array(
+        zod.object({
+          id: zod
+            .string()
+            .min(1)
+            .max(saveTournamentPoolPlayBodyGamesItemIdMax)
+            .describe("Stable client-generated UUID so edits round-trip."),
+          home: zod
+            .string()
+            .min(1)
+            .max(saveTournamentPoolPlayBodyGamesItemHomeMax),
+          away: zod
+            .string()
+            .min(1)
+            .max(saveTournamentPoolPlayBodyGamesItemAwayMax),
+          homeScore: zod
+            .number()
+            .min(saveTournamentPoolPlayBodyGamesItemHomeScoreMin)
+            .max(saveTournamentPoolPlayBodyGamesItemHomeScoreMax)
+            .nullable(),
+          awayScore: zod
+            .number()
+            .min(saveTournamentPoolPlayBodyGamesItemAwayScoreMin)
+            .max(saveTournamentPoolPlayBodyGamesItemAwayScoreMax)
+            .nullable(),
+          final: zod.boolean(),
+        }),
+      )
+      .max(saveTournamentPoolPlayBodyGamesMax),
+    tiebreaker: zod
+      .enum(["winPct_h2h_runDiff", "winPct_runDiff_h2h", "winPct_h2h"])
+      .describe("Tiebreaker chain applied after Win %."),
+    advanceCount: zod
+      .number()
+      .min(1)
+      .max(saveTournamentPoolPlayBodyAdvanceCountMax)
+      .describe("How many teams advance from the pool (default 2)."),
+    updatedAt: zod.string(),
+  })
+  .describe("Saved pool-play import for a tournament.");
+
+export const saveTournamentPoolPlayResponsePoolPlayTeamsItemNameMax = 80;
+
+export const saveTournamentPoolPlayResponsePoolPlayTeamsMin = 2;
+export const saveTournamentPoolPlayResponsePoolPlayTeamsMax = 16;
+
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemIdMax = 64;
+
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemHomeMax = 80;
+
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemAwayMax = 80;
+
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemHomeScoreMin = 0;
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemHomeScoreMax = 99;
+
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemAwayScoreMin = 0;
+export const saveTournamentPoolPlayResponsePoolPlayGamesItemAwayScoreMax = 99;
+
+export const saveTournamentPoolPlayResponsePoolPlayGamesMax = 64;
+
+export const saveTournamentPoolPlayResponsePoolPlayAdvanceCountMax = 8;
+
+export const SaveTournamentPoolPlayResponse = zod.object({
+  poolPlay: zod
+    .object({
+      ourTeamName: zod
+        .string()
+        .describe(
+          "Which team in the pool is the coach's. Highlighted in the UI.",
+        ),
+      teams: zod
+        .array(
+          zod.object({
+            name: zod
+              .string()
+              .min(1)
+              .max(saveTournamentPoolPlayResponsePoolPlayTeamsItemNameMax),
+          }),
+        )
+        .min(saveTournamentPoolPlayResponsePoolPlayTeamsMin)
+        .max(saveTournamentPoolPlayResponsePoolPlayTeamsMax),
+      games: zod
+        .array(
+          zod.object({
+            id: zod
+              .string()
+              .min(1)
+              .max(saveTournamentPoolPlayResponsePoolPlayGamesItemIdMax)
+              .describe("Stable client-generated UUID so edits round-trip."),
+            home: zod
+              .string()
+              .min(1)
+              .max(saveTournamentPoolPlayResponsePoolPlayGamesItemHomeMax),
+            away: zod
+              .string()
+              .min(1)
+              .max(saveTournamentPoolPlayResponsePoolPlayGamesItemAwayMax),
+            homeScore: zod
+              .number()
+              .min(saveTournamentPoolPlayResponsePoolPlayGamesItemHomeScoreMin)
+              .max(saveTournamentPoolPlayResponsePoolPlayGamesItemHomeScoreMax)
+              .nullable(),
+            awayScore: zod
+              .number()
+              .min(saveTournamentPoolPlayResponsePoolPlayGamesItemAwayScoreMin)
+              .max(saveTournamentPoolPlayResponsePoolPlayGamesItemAwayScoreMax)
+              .nullable(),
+            final: zod.boolean(),
+          }),
+        )
+        .max(saveTournamentPoolPlayResponsePoolPlayGamesMax),
+      tiebreaker: zod
+        .enum(["winPct_h2h_runDiff", "winPct_runDiff_h2h", "winPct_h2h"])
+        .describe("Tiebreaker chain applied after Win %."),
+      advanceCount: zod
+        .number()
+        .min(1)
+        .max(saveTournamentPoolPlayResponsePoolPlayAdvanceCountMax)
+        .describe("How many teams advance from the pool (default 2)."),
+      updatedAt: zod.string(),
+    })
+    .describe("Saved pool-play import for a tournament."),
+  poolPlayAnalysis: zod.object({
+    scenarioCount: zod.number(),
+    truncated: zod.boolean(),
+    remainingGamesCap: zod.number(),
+    remainingGames: zod.number(),
+    advanceCount: zod.number(),
+    standingsToday: zod.array(
+      zod.object({
+        teamName: zod.string(),
+        wins: zod.number(),
+        losses: zod.number(),
+        ties: zod.number(),
+        gamesPlayed: zod.number(),
+        runsFor: zod.number(),
+        runsAgainst: zod.number(),
+        runDiff: zod.number(),
+        winPct: zod.number(),
+      }),
+    ),
+    projections: zod.array(
+      zod.object({
+        teamName: zod.string(),
+        finishProbs: zod
+          .array(zod.number())
+          .describe(
+            "Index = finishing position (0 = 1st place). Fraction of scenarios.",
+          ),
+        clinchedFirst: zod.boolean(),
+        clinchedAdvance: zod.boolean(),
+        eliminatedFirst: zod.boolean(),
+        eliminatedAdvance: zod.boolean(),
+        firstProb: zod.number(),
+        advanceProb: zod.number(),
+      }),
+    ),
+    ourTeamInsights: zod.array(zod.string()),
+  }),
+});
+
+/**
+ * @summary Clear the pool-play data for a tournament
+ */
+export const ClearTournamentPoolPlayParams = zod.object({
   id: zod.coerce.number(),
 });
 
