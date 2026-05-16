@@ -598,13 +598,24 @@ export interface PitcherAvailability {
   totalPitchesInTournament: number;
   pitchesToday: number;
   /**
-   * Pitches the pitcher may still throw today under the resolved daily cap.
-Null when no daily cap is configured (unlimited) — the UI should render
-this as "—" / "no cap" rather than zero. Otherwise an integer >= 0.
+   * Pitches the pitcher may still throw today under the resolved daily cap,
+also clamped by what's left in the tournament cap (so a 75-pitch daily
+cap shrinks to 53 when the pitcher has 47 tournament-pitches on the
+books and the tournament cap is 100). Null when neither cap is
+configured — UI renders as "—" / "no cap" rather than zero. Otherwise
+an integer >= 0.
 
    * @nullable
    */
   pitchesAvailableToday: number | null;
+  /**
+   * Pitches the pitcher may still throw across the rest of this tournament
+(tournament cap minus what's already been thrown). Null when no
+tournament cap is configured.
+
+   * @nullable
+   */
+  pitchesAvailableInTournament: number | null;
   /**
    * Resolved daily cap for this tournament. Null = no cap configured.
    * @nullable

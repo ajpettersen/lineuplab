@@ -42,8 +42,21 @@ export type PitcherOuting = {
 export type PitcherAvailability = {
   /** Pitches thrown today already (for awareness). */
   pitchesToday: number;
-  /** Pitches still available within today's daily max. */
+  /**
+   * Pitches still available today. This is the daily cap MINUS what's
+   * been thrown today, ALSO clamped by the tournament cap remaining
+   * (so a 75-pitch daily cap shrinks to 53 when the pitcher has 47
+   * tournament-pitches already on the books and the tournament cap
+   * is 100). Infinity when neither cap is configured.
+   */
   pitchesAvailableToday: number;
+  /**
+   * Pitches still available across the whole tournament (cap minus
+   * what's already been thrown). Infinity when no tournament cap is
+   * configured. Mirrors `pitchesAvailableToday`'s semantics for the
+   * tournament horizon.
+   */
+  pitchesAvailableInTournament: number;
   /** Daily max actually applied. Null = no cap configured. */
   dailyMax: number | null;
   /**
@@ -76,23 +89,37 @@ export type PitcherAvailability = {
  * the daily-cap math (`pitchesAvailableToday` will be `Infinity` —
  * callers should treat null `dailyMax` as "no cap configured" and not
  * render the X/Y meter). Null/empty `restTiers` skips rest enforcement.
+ *
+ * `tournamentMax` is the optional tournament-wide pitch cap. When set,
+ * the daily-remaining computation is also clamped by what's left in
+ * the tournament: a coach with a 100-pitch tournament cap who has
+ * already thrown 47 pitches in earlier games sees `pitchesAvailableToday`
+ * of 53 today even if the daily cap is 75 — the tournament cap is
+ * the tighter constraint. The helper expects ALL outings (prior days
+ * plus today) in `outings` and derives the prior-day total itself,
+ * so callers don't double-subtract today.
  */
 export function computePitcherAvailability({
   dailyMax,
+  tournamentMax = null,
   restTiers,
   outings,
   now,
 }: {
   dailyMax: number | null;
+  tournamentMax?: number | null;
   restTiers: RestTier[] | null;
   outings: PitcherOuting[];
   now: Date;
 }): PitcherAvailability {
   const todayKey = dayKey(now);
   let pitchesToday = 0;
+  let pitchesPriorDays = 0;
   for (const o of outings) {
     if (dayKey(o.date) === todayKey) pitchesToday += o.pitches;
+    else pitchesPriorDays += o.pitches;
   }
+  const pitchesInTournament = pitchesToday + pitchesPriorDays;
 
   // Find the most-restrictive prior-day outing — the one whose
   // required rest extends furthest into the future. If any such
@@ -120,18 +147,32 @@ export function computePitcherAvailability({
     }
   }
 
+  // Tournament-remaining is independent of rest/daily logic — it's
+  // simply "cap minus everything already thrown in this tournament".
+  // Infinity when no cap is configured so callers can JSON-coerce to
+  // null. Never negative even if a coach blows past the cap.
+  const pitchesAvailableInTournament =
+    tournamentMax == null ? Infinity : Math.max(0, tournamentMax - pitchesInTournament);
+
   let pitchesAvailableToday: number;
   if (restingUntil) {
     pitchesAvailableToday = 0;
-  } else if (dailyMax == null) {
-    pitchesAvailableToday = Infinity;
   } else {
-    pitchesAvailableToday = Math.max(0, dailyMax - pitchesToday);
+    // Effective daily ceiling = min(daily cap, tournament-prior-days
+    // remaining). Either can be "no cap" (null/Infinity) in which case
+    // the other dominates. If both are uncapped, today is unlimited.
+    const dailyCeil = dailyMax == null ? Infinity : dailyMax;
+    const tournamentCeil =
+      tournamentMax == null ? Infinity : Math.max(0, tournamentMax - pitchesPriorDays);
+    const effective = Math.min(dailyCeil, tournamentCeil);
+    pitchesAvailableToday =
+      effective === Infinity ? Infinity : Math.max(0, effective - pitchesToday);
   }
 
   return {
     pitchesToday,
     pitchesAvailableToday,
+    pitchesAvailableInTournament,
     dailyMax,
     restingUntil,
   };

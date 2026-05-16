@@ -1341,7 +1341,13 @@ export const GetTournamentResponse = zod
               .number()
               .nullable()
               .describe(
-                'Pitches the pitcher may still throw today under the resolved daily cap.\nNull when no daily cap is configured (unlimited) — the UI should render\nthis as \"—\" \/ \"no cap\" rather than zero. Otherwise an integer >= 0.\n',
+                'Pitches the pitcher may still throw today under the resolved daily cap,\nalso clamped by what\'s left in the tournament cap (so a 75-pitch daily\ncap shrinks to 53 when the pitcher has 47 tournament-pitches on the\nbooks and the tournament cap is 100). Null when neither cap is\nconfigured — UI renders as \"—\" \/ \"no cap\" rather than zero. Otherwise\nan integer >= 0.\n',
+              ),
+            pitchesAvailableInTournament: zod
+              .number()
+              .nullable()
+              .describe(
+                "Pitches the pitcher may still throw across the rest of this tournament\n(tournament cap minus what's already been thrown). Null when no\ntournament cap is configured.\n",
               ),
             dailyMax: zod
               .number()

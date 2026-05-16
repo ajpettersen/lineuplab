@@ -288,8 +288,8 @@ export default function TournamentDetail() {
                   <tr className="text-muted-foreground text-xs">
                     <th className="text-left py-2 pr-3 font-medium">Pitcher</th>
                     <th className="text-right py-2 px-2 font-medium">Today</th>
-                    <th className="text-right py-2 px-2 font-medium">Available</th>
-                    <th className="text-right py-2 px-2 font-medium">Tournament</th>
+                    <th className="text-right py-2 px-2 font-medium">Remaining today</th>
+                    <th className="text-right py-2 px-2 font-medium">Remaining tournament</th>
                     <th className="text-left py-2 pl-3 font-medium">Status</th>
                   </tr>
                 </thead>
@@ -327,7 +327,6 @@ export default function TournamentDetail() {
                           </td>
                           <td className={`text-right py-2 px-2 tabular-nums ${exceeded ? "text-red-600 font-semibold" : ""}`}>
                             {p.pitchesToday}
-                            {p.dailyMax != null ? ` / ${p.dailyMax}` : ""}
                           </td>
                           <td className="text-right py-2 px-2 tabular-nums">
                             {p.pitchesAvailableToday == null ? (
@@ -339,10 +338,13 @@ export default function TournamentDetail() {
                             )}
                           </td>
                           <td className="text-right py-2 px-2 tabular-nums">
-                            {p.totalPitchesInTournament}
-                            {tournament.effectiveTournamentMax != null
-                              ? ` / ${tournament.effectiveTournamentMax}`
-                              : ""}
+                            {p.pitchesAvailableInTournament == null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <span className={p.pitchesAvailableInTournament === 0 ? "text-muted-foreground" : "font-semibold"}>
+                                {p.pitchesAvailableInTournament}
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 pl-3">
                             {resting ? (

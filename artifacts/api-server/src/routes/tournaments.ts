@@ -209,6 +209,7 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     const total = outings.reduce((s, o) => s + o.pitches, 0);
     const avail = computePitcherAvailability({
       dailyMax: effectiveDailyMax,
+      tournamentMax: effectiveTournamentMax,
       restTiers: effectiveRestTiers.length > 0 ? effectiveRestTiers : null,
       outings,
       now,
@@ -226,6 +227,10 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
         avail.pitchesAvailableToday === Infinity
           ? null
           : avail.pitchesAvailableToday,
+      pitchesAvailableInTournament:
+        avail.pitchesAvailableInTournament === Infinity
+          ? null
+          : avail.pitchesAvailableInTournament,
       dailyMax: avail.dailyMax,
       restingUntil: avail.restingUntil,
       outings,
