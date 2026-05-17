@@ -2090,6 +2090,15 @@ components:
           maximum: 99
         final:
           type: boolean
+        scheduledAt:
+          type: ["string", "null"]
+          format: date-time
+          description: |
+            Scheduled first-pitch time (ISO 8601 with timezone). Optional —
+            extracted from schedule screenshots when visible, or copied
+            from the linked real game's date on the live-merge path.
+            Drives the "awaiting score" warning when the time has
+            passed but the score hasn't been entered.
       required: [id, home, away, homeScore, awayScore, final]
 
     PoolPlayTiebreakerKey:

@@ -698,6 +698,16 @@ export interface PoolPlayGame {
    */
   awayScore: number | null;
   final: boolean;
+  /**
+   * Scheduled first-pitch time (ISO 8601 with timezone). Optional —
+extracted from schedule screenshots when visible, or copied
+from the linked real game's date on the live-merge path.
+Drives the "awaiting score" warning when the time has
+passed but the score hasn't been entered.
+
+   * @nullable
+   */
+  scheduledAt?: string | null;
 }
 
 /**

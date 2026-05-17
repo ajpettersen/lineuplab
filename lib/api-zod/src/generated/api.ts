@@ -1529,6 +1529,12 @@ export const GetTournamentResponse = zod
                       )
                       .nullable(),
                     final: zod.boolean(),
+                    scheduledAt: zod.coerce
+                      .date()
+                      .nullish()
+                      .describe(
+                        "Scheduled first-pitch time (ISO 8601 with timezone). Optional —\nextracted from schedule screenshots when visible, or copied\nfrom the linked real game's date on the live-merge path.\nDrives the \"awaiting score\" warning when the time has\npassed but the score hasn't been entered.\n",
+                      ),
                   }),
                 )
                 .max(getTournamentResponseTwoPoolPlayTwoGamesMax),
@@ -1841,6 +1847,12 @@ export const ExtractTournamentPoolPlayResponse = zod
           .max(extractTournamentPoolPlayResponseGamesItemAwayScoreMax)
           .nullable(),
         final: zod.boolean(),
+        scheduledAt: zod.coerce
+          .date()
+          .nullish()
+          .describe(
+            "Scheduled first-pitch time (ISO 8601 with timezone). Optional —\nextracted from schedule screenshots when visible, or copied\nfrom the linked real game's date on the live-merge path.\nDrives the \"awaiting score\" warning when the time has\npassed but the score hasn't been entered.\n",
+          ),
       }),
     ),
     tiebreakerNote: zod
@@ -2010,6 +2022,12 @@ export const SaveTournamentPoolPlayBody = zod
             .max(saveTournamentPoolPlayBodyGamesItemAwayScoreMax)
             .nullable(),
           final: zod.boolean(),
+          scheduledAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              "Scheduled first-pitch time (ISO 8601 with timezone). Optional —\nextracted from schedule screenshots when visible, or copied\nfrom the linked real game's date on the live-merge path.\nDrives the \"awaiting score\" warning when the time has\npassed but the score hasn't been entered.\n",
+            ),
         }),
       )
       .max(saveTournamentPoolPlayBodyGamesMax),
@@ -2127,6 +2145,12 @@ export const SaveTournamentPoolPlayResponse = zod.object({
               .max(saveTournamentPoolPlayResponsePoolPlayGamesItemAwayScoreMax)
               .nullable(),
             final: zod.boolean(),
+            scheduledAt: zod.coerce
+              .date()
+              .nullish()
+              .describe(
+                "Scheduled first-pitch time (ISO 8601 with timezone). Optional —\nextracted from schedule screenshots when visible, or copied\nfrom the linked real game's date on the live-merge path.\nDrives the \"awaiting score\" warning when the time has\npassed but the score hasn't been entered.\n",
+              ),
           }),
         )
         .max(saveTournamentPoolPlayResponsePoolPlayGamesMax),

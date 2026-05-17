@@ -30,6 +30,14 @@ export const PoolPlayGameJson = z.object({
   homeScore: z.number().int().min(0).max(99).nullable(),
   awayScore: z.number().int().min(0).max(99).nullable(),
   final: z.boolean(),
+  /**
+   * Scheduled wall-clock first-pitch time (ISO 8601, with timezone).
+   * Optional — extracted from the schedule screenshot when visible,
+   * or copied from the linked real `games.gameDate` on the live-merge
+   * path. Used to flag "this game should be done by now but has no
+   * score yet" in the UI. null when unknown.
+   */
+  scheduledAt: z.string().datetime({ offset: true }).nullable().optional(),
 });
 export type PoolPlayGameJson = z.infer<typeof PoolPlayGameJson>;
 

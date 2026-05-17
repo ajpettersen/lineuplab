@@ -99,6 +99,9 @@ function mergeRealGamesIntoPool(
         homeScore: ourScore ?? null,
         awayScore: oppScore ?? null,
         final: bothSet,
+        // Copy the real schedule timestamp so the "awaiting score"
+        // surface knows when this game was supposed to start.
+        scheduledAt: g.gameDate ? new Date(g.gameDate).toISOString() : null,
       });
     }
   }

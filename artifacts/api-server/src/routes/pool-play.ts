@@ -108,19 +108,20 @@ router.post(
    - home / away team names (use the schedule order if shown; otherwise pick one — coach can correct).
    - homeScore / awayScore: integers if a final score is visible; null if the game has not been played.
    - final: true iff a final score is visible AND the game is shown as completed (not "in progress").
+   - scheduledAt: the scheduled first-pitch wall-clock time as an ISO-8601 string with timezone. Build it from the tournament's startDate (${tournament.startDate.toISOString()}) for the date portion when only a time is visible on the schedule. If the screenshot shows the date too, prefer that. Use the tournament's local timezone offset if visible (default to "${tournament.startDate.toISOString().slice(-6) === "+00:00" ? "Z" : tournament.startDate.toISOString().slice(-6)}"). null if no time is visible.
 3. TIEBREAKER NOTE: free-form text of any tiebreaker rules visible on the page (e.g. "Tiebreakers: H2H, then run diff, then runs allowed"). null if not shown.
 4. OUR TEAM GUESS: which team in the pool is the coach's. Common signals: row highlighted in screenshot, a "you" or "your team" marker, the tournament name including the team name. null if no clear signal.
 
 Only include teams + games visible across the uploaded images. Do NOT invent games to "complete" a round-robin. Do NOT carry information from your training data — only what's on screen.${existingHint}
 
-Tournament context: "${tournament.name}"${tournament.location ? `, ${tournament.location}` : ""}.
+Tournament context: "${tournament.name}"${tournament.location ? `, ${tournament.location}` : ""}. Runs ${tournament.startDate.toISOString().slice(0, 10)} to ${tournament.endDate.toISOString().slice(0, 10)}.
 
 Return RAW JSON only, no markdown, no commentary:
 {
   "ourTeamGuess": "<string or null>",
   "teams": [{ "name": "<string>" }, ...],
   "games": [
-    { "home": "<string>", "away": "<string>", "homeScore": <int|null>, "awayScore": <int|null>, "final": <bool> },
+    { "home": "<string>", "away": "<string>", "homeScore": <int|null>, "awayScore": <int|null>, "final": <bool>, "scheduledAt": "<ISO-8601 string or null>" },
     ...
   ],
   "tiebreakerNote": "<string or null>"
@@ -206,6 +207,24 @@ Return RAW JSON only, no markdown, no commentary:
         const awayScore = intOrNull(o.awayScore);
         const final = Boolean(o.final) && homeScore != null && awayScore != null;
         if (!home || !away || home.toLowerCase() === away.toLowerCase()) return null;
+        // Validate scheduledAt: must parse as a real date AND fall
+        // within ±14 days of the tournament window (guards against the
+        // model hallucinating times in a different year or returning
+        // "today" by accident).
+        let scheduledAt: string | null = null;
+        const rawSched = o.scheduledAt;
+        if (typeof rawSched === "string" && rawSched.length > 0) {
+          const parsed = new Date(rawSched);
+          if (!Number.isNaN(parsed.getTime())) {
+            const tMs = parsed.getTime();
+            const winMs = 14 * 24 * 60 * 60 * 1000;
+            const lo = tournament.startDate.getTime() - winMs;
+            const hi = tournament.endDate.getTime() + winMs;
+            if (tMs >= lo && tMs <= hi) {
+              scheduledAt = parsed.toISOString();
+            }
+          }
+        }
         gid++;
         return {
           id: `ext-${Date.now()}-${gid}`,
@@ -214,6 +233,7 @@ Return RAW JSON only, no markdown, no commentary:
           homeScore: final ? homeScore : null,
           awayScore: final ? awayScore : null,
           final,
+          scheduledAt,
         };
       })
       .filter((g): g is NonNullable<typeof g> => g !== null)

@@ -219,6 +219,9 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
         </div>
       )}
 
+      <AwaitingScoreBanner poolPlay={poolPlay} />
+
+
       <div>
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
           Standings today
@@ -303,6 +306,79 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
       </div>
     </div>
   );
+}
+
+/**
+ * Surfaces games whose scheduled first-pitch time has passed but no
+ * score has been entered yet. Helps coaches spot "missing" pool games
+ * after walking off the field. Hidden when nothing is overdue — the
+ * standings already say "N games remaining" for everything else.
+ *
+ * `scheduledAt` is optional per game (extracted from schedule
+ * screenshots or copied from the linked real game's gameDate on
+ * server-side merge), so most pool games will have it once the
+ * tournament is set up.
+ */
+function AwaitingScoreBanner({ poolPlay }: { poolPlay: PoolPlay }) {
+  const now = Date.now();
+  // 30-minute grace so a game that just started doesn't immediately
+  // get flagged as "missing a score."
+  const cutoff = now - 30 * 60 * 1000;
+  const overdue = poolPlay.games.filter((g) => {
+    if (g.final) return false;
+    if (!g.scheduledAt) return false;
+    const t = new Date(g.scheduledAt).getTime();
+    if (Number.isNaN(t)) return false;
+    return t <= cutoff;
+  });
+  if (overdue.length === 0) return null;
+  return (
+    <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-2.5 space-y-1.5">
+      <div className="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+        Awaiting score ({overdue.length})
+      </div>
+      <ul className="space-y-0.5 text-xs text-amber-950 dark:text-amber-100">
+        {overdue.map((g) => (
+          <li key={g.id} className="flex items-baseline gap-2">
+            <span className="font-mono text-[11px] text-amber-800/80 dark:text-amber-200/80 shrink-0">
+              {formatScheduleTime(g.scheduledAt!)}
+            </span>
+            <span>
+              {g.away} @ {g.home}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Short local-time format like "Sat 9:00 AM" for the awaiting list. */
+function formatScheduleTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** Convert ISO → "YYYY-MM-DDTHH:MM" in local time for datetime-local inputs. */
+function isoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Convert datetime-local input value (local wall-clock) → ISO UTC. */
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
 }
 
 function StatusBadge({ p }: { p: PoolPlayAnalysis["projections"][number] }) {
@@ -1325,6 +1401,13 @@ function GameRow({
         />
         Final
       </label>
+      <Input
+        type="datetime-local"
+        value={isoToLocalInput(game.scheduledAt)}
+        onChange={(e) => onChange({ scheduledAt: localInputToIso(e.target.value) })}
+        className="h-7 text-xs w-[160px] px-1.5 ml-1"
+        title="Scheduled first pitch (optional)"
+      />
       <div className="flex-1" />
       <Button size="icon" variant="ghost" onClick={onRemove} className="h-7 w-7 shrink-0">
         <X className="h-3.5 w-3.5" />
