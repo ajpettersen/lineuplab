@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import confetti from "canvas-confetti";
 import { useRoute, useLocation } from "wouter";
 import {
   useGetGame,
@@ -35,7 +36,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sun, SunDim, Trophy, WifiOff, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -1074,6 +1075,59 @@ export default function FieldDisplay() {
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
   const oppScore = game?.opponentScore ?? 0;
+
+  // ── Take-the-lead celebration 🎆 ─────────────────────────────────
+  // Fire confetti whenever the team flips from tied-or-behind to
+  // ahead. The ref carries the previously-observed margin so we can
+  // detect a transition (margin <= 0 → margin > 0) instead of merely
+  // a positive margin (which would fire on every render while ahead).
+  //
+  // Guarded against three false positives:
+  //   1. Initial mount — ref starts unset; first observation just
+  //      seeds it without firing.
+  //   2. Game already finished — no celebration after the final out.
+  //   3. Quick toggles — a 600ms cooldown so a coach who taps the
+  //      stepper a couple times to fix a typo doesn't get spammed.
+  //
+  // Coaches can mute via the kebab menu (persisted to localStorage).
+  const CELEBRATE_KEY = "fd-celebrate-take-lead";
+  const [celebrate, setCelebrate] = useState<boolean>(() => {
+    try {
+      if (typeof window === "undefined") return true;
+      const v = localStorage.getItem(CELEBRATE_KEY);
+      return v == null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(CELEBRATE_KEY, celebrate ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  }, [celebrate]);
+
+  const prevMarginRef = useRef<number | null>(null);
+  const lastCelebrationAtRef = useRef<number>(0);
+  useEffect(() => {
+    if (!game) return;
+    const margin = ourScore - oppScore;
+    const prev = prevMarginRef.current;
+    prevMarginRef.current = margin;
+    if (prev == null) return; // seeding read
+    if (!celebrate) return;
+    // Treat completed/cancelled games as locked — no fireworks for
+    // a stat-keeper retroactively editing yesterday's final score.
+    const status = (game as { status?: string }).status;
+    if (status === "completed" || status === "cancelled") return;
+    if (prev <= 0 && margin > 0) {
+      const now = Date.now();
+      if (now - lastCelebrationAtRef.current < 600) return;
+      lastCelebrationAtRef.current = now;
+      void fireTakeTheLeadCelebration();
+    }
+  }, [game, ourScore, oppScore, celebrate]);
 
   // Sync the End Game dialog's score editors from the live game state
   // every time the dialog opens — the coach may have tapped the
@@ -2198,6 +2252,20 @@ export default function FieldDisplay() {
                   </span>
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setCelebrate((v) => !v);
+                }}
+                data-testid="menu-celebrate-take-lead"
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                <span>
+                  {celebrate
+                    ? "Mute take-lead fireworks"
+                    : "Take-lead fireworks: on"}
+                </span>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-broadcast-gold focus:text-amber-200"
@@ -3276,6 +3344,86 @@ function DraggableBenchChip({
 // Re-export BASE so unused-import cleanup doesn't strip it; reserved for a
 // future "share via QR code" feature on this screen.
 export const __FIELD_DISPLAY_BASE = BASE;
+
+/**
+ * Multi-burst "we took the lead" celebration. Uses canvas-confetti to
+ * paint a ~2.5s sequence of:
+ *   1. A wide center burst (the "WOO!" moment)
+ *   2. Alternating left/right edge fountains every ~250ms for ~1.8s
+ *      (the "fireworks" feel — two launchers, like the foul poles)
+ *   3. A final golden cannon from below
+ *
+ * Colors lean on the broadcast-gold palette so it reads as on-brand
+ * rather than a generic party-favor confetti. Respects
+ * prefers-reduced-motion by falling back to a single small burst.
+ */
+function fireTakeTheLeadCelebration() {
+  if (typeof window === "undefined") return;
+  const GOLD = ["#f5b800", "#ffd24c", "#fff2b8"];
+  const NAVY = ["#1c3d7a", "#2e5fb3", "#7aa9ff"];
+  const ALL = [...GOLD, ...NAVY, "#ffffff"];
+
+  const reduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (reduced) {
+    void confetti({
+      particleCount: 60,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ALL,
+    });
+    return;
+  }
+
+  // 1. Big center pop.
+  void confetti({
+    particleCount: 140,
+    spread: 95,
+    startVelocity: 55,
+    origin: { x: 0.5, y: 0.55 },
+    colors: ALL,
+    zIndex: 9999,
+    disableForReducedMotion: true,
+  });
+
+  // 2. Side fountains alternating like foul-pole fireworks.
+  const endAt = Date.now() + 1800;
+  let tick = 0;
+  const launcher = window.setInterval(() => {
+    if (Date.now() > endAt) {
+      window.clearInterval(launcher);
+      return;
+    }
+    const fromLeft = tick % 2 === 0;
+    tick++;
+    void confetti({
+      particleCount: 40,
+      angle: fromLeft ? 60 : 120,
+      spread: 55,
+      startVelocity: 60,
+      origin: { x: fromLeft ? 0 : 1, y: 0.7 },
+      colors: fromLeft ? GOLD : NAVY,
+      zIndex: 9999,
+      disableForReducedMotion: true,
+    });
+  }, 240);
+
+  // 3. Final golden "boom" from the bottom.
+  window.setTimeout(() => {
+    void confetti({
+      particleCount: 90,
+      spread: 110,
+      startVelocity: 70,
+      origin: { x: 0.5, y: 0.95 },
+      colors: GOLD,
+      scalar: 1.2,
+      zIndex: 9999,
+      disableForReducedMotion: true,
+    });
+  }, 1900);
+}
 
 type TPAvailability = {
   playerId: number;
