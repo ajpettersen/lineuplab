@@ -349,11 +349,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       label: "Team",
       icon: Users,
       children: [
-        // Roster + Depth Chart are tabs on a single page now — the
-        // depth-chart route still mounts the same page (just with
-        // the Depth Chart tab pre-selected) so old links still work.
+        // Depth Chart lives as a tab inside the Roster page now, so
+        // it's reachable from /players directly. The /depth-chart
+        // route still mounts the same page (Depth Chart tab pre-
+        // selected) so old links keep working — we just don't show
+        // it as its own nav item.
         { href: "/players", label: "Roster", icon: Users },
-        { href: "/depth-chart", label: "Depth Chart", icon: ListOrdered },
         { href: "/arm-watch", label: "Arm Watch", icon: Shield },
       ],
     },
