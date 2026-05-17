@@ -563,6 +563,49 @@ paths:
         "404":
           description: Tournament not found
 
+  /tournaments/{id}/pool-play/format-extract:
+    post:
+      operationId: extractTournamentPoolPlayFormat
+      tags: [tournaments]
+      summary: Extract seeding/tiebreaker format from a rules screenshot
+      description: |
+        Upload 1-2 screenshots of the tournament's posted seeding /
+        tiebreaker rules (e.g. "Top 2 advance, byes for top seed,
+        tiebreakers: head-to-head, then run differential"). The AI
+        returns a parsed format preview — the coach confirms before it
+        is applied to the saved pool play.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  maxItems: 2
+              required: [files]
+      responses:
+        "200":
+          description: Parsed format preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedPoolPlayFormat"
+        "400":
+          description: Bad request (no files, too many, etc.)
+        "404":
+          description: Tournament not found
+
   /tournaments/{id}/pool-play:
     put:
       operationId: saveTournamentPoolPlay
@@ -2049,6 +2092,15 @@ components:
           type: boolean
       required: [id, home, away, homeScore, awayScore, final]
 
+    PoolPlayTiebreakerKey:
+      type: string
+      enum: [winPct, h2h, runDiff, runsAllowed, runsScored, coinFlip]
+      description: |
+        Ordered tiebreaker step. `runsAllowed` is inverted internally
+        (fewer runs against ranks higher). `coinFlip` is deterministic
+        in projections but flagged in the UI so coaches know a real
+        coin flip resolves it on game day.
+
     PoolPlay:
       type: object
       description: Saved pool-play import for a tournament.
@@ -2070,21 +2122,72 @@ components:
         tiebreaker:
           type: string
           enum: [winPct_h2h_runDiff, winPct_runDiff_h2h, winPct_h2h]
-          description: Tiebreaker chain applied after Win %.
+          description: |
+            LEGACY tiebreaker enum, kept optional so old rows still
+            round-trip. New writes should send `tiebreakers` instead.
+        tiebreakers:
+          type: array
+          minItems: 1
+          maxItems: 8
+          description: |
+            Ordered tiebreaker chain. First entry is the primary sort;
+            subsequent entries break ties within equal-primary subgroups.
+            Required on new writes.
+          items:
+            $ref: "#/components/schemas/PoolPlayTiebreakerKey"
         advanceCount:
           type: integer
           minimum: 1
           maximum: 8
           description: How many teams advance from the pool (default 2).
+        byeCount:
+          type: integer
+          minimum: 0
+          maximum: 8
+          description: |
+            How many of the advancing teams earn a bracket bye (default 0).
+            Capped by `advanceCount`.
         updatedAt:
           type: string
       required:
         - ourTeamName
         - teams
         - games
-        - tiebreaker
+        - tiebreakers
         - advanceCount
+        - byeCount
         - updatedAt
+
+    ExtractedPoolPlayFormat:
+      type: object
+      description: |
+        AI-parsed seeding/tiebreaker rules from a screenshot of the
+        tournament's posted rules. All fields nullable — the coach
+        confirms before the format is applied to the saved pool play.
+      properties:
+        advanceCount:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 8
+        byeCount:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 8
+        teamCount:
+          type: ["integer", "null"]
+          minimum: 2
+          maximum: 16
+          description: Total teams in the pool/bracket, if visible.
+        tiebreakers:
+          type: ["array", "null"]
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/PoolPlayTiebreakerKey"
+        notes:
+          type: ["string", "null"]
+          description: Free-form summary of anything the AI noticed but couldn't structure.
+      required: [advanceCount, byeCount, teamCount, tiebreakers, notes]
 
     ExtractedPoolPlay:
       type: object
@@ -2152,6 +2255,9 @@ components:
           type: boolean
         clinchedAdvance:
           type: boolean
+        clinchedBye:
+          type: boolean
+          description: True in EVERY enumerated scenario the team is in the top byeCount.
         eliminatedFirst:
           type: boolean
         eliminatedAdvance:
@@ -2160,15 +2266,20 @@ components:
           type: number
         advanceProb:
           type: number
+        byeProb:
+          type: number
+          description: Probability of earning a bye (top byeCount). 0 when byeCount=0.
       required:
         - teamName
         - finishProbs
         - clinchedFirst
         - clinchedAdvance
+        - clinchedBye
         - eliminatedFirst
         - eliminatedAdvance
         - firstProb
         - advanceProb
+        - byeProb
 
     PoolPlayAnalysis:
       type: object
@@ -2183,6 +2294,14 @@ components:
           type: integer
         advanceCount:
           type: integer
+        byeCount:
+          type: integer
+          description: Mirrored from PoolPlay.byeCount for client convenience.
+        tiebreakers:
+          type: array
+          description: Effective ordered tiebreaker chain (post-legacy-normalization).
+          items:
+            $ref: "#/components/schemas/PoolPlayTiebreakerKey"
         standingsToday:
           type: array
           items:
@@ -2201,6 +2320,8 @@ components:
         - remainingGamesCap
         - remainingGames
         - advanceCount
+        - byeCount
+        - tiebreakers
         - standingsToday
         - projections
         - ourTeamInsights

@@ -26,8 +26,10 @@ import type {
   DismissDashboardTaskBody,
   ExtractBoxScoreBody,
   ExtractTournamentPoolPlayBody,
+  ExtractTournamentPoolPlayFormatBody,
   ExtractedBoxScore,
   ExtractedPoolPlay,
+  ExtractedPoolPlayFormat,
   Game,
   GenerateLineupBody,
   GeneratePracticePlanBody,
@@ -2298,6 +2300,109 @@ export const useExtractTournamentPoolPlay = <
   TContext
 > => {
   return useMutation(getExtractTournamentPoolPlayMutationOptions(options));
+};
+
+/**
+ * Upload 1-2 screenshots of the tournament's posted seeding /
+tiebreaker rules (e.g. "Top 2 advance, byes for top seed,
+tiebreakers: head-to-head, then run differential"). The AI
+returns a parsed format preview — the coach confirms before it
+is applied to the saved pool play.
+
+ * @summary Extract seeding/tiebreaker format from a rules screenshot
+ */
+export const getExtractTournamentPoolPlayFormatUrl = (id: number) => {
+  return `/api/tournaments/${id}/pool-play/format-extract`;
+};
+
+export const extractTournamentPoolPlayFormat = async (
+  id: number,
+  extractTournamentPoolPlayFormatBody: ExtractTournamentPoolPlayFormatBody,
+  options?: RequestInit,
+): Promise<ExtractedPoolPlayFormat> => {
+  const formData = new FormData();
+  extractTournamentPoolPlayFormatBody.files.forEach((value) =>
+    formData.append(`files`, value),
+  );
+
+  return customFetch<ExtractedPoolPlayFormat>(
+    getExtractTournamentPoolPlayFormatUrl(id),
+    {
+      ...options,
+      method: "POST",
+      body: formData,
+    },
+  );
+};
+
+export const getExtractTournamentPoolPlayFormatMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractTournamentPoolPlayFormat>>,
+    TError,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayFormatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractTournamentPoolPlayFormat>>,
+  TError,
+  { id: number; data: BodyType<ExtractTournamentPoolPlayFormatBody> },
+  TContext
+> => {
+  const mutationKey = ["extractTournamentPoolPlayFormat"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractTournamentPoolPlayFormat>>,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayFormatBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return extractTournamentPoolPlayFormat(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractTournamentPoolPlayFormatMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractTournamentPoolPlayFormat>>
+>;
+export type ExtractTournamentPoolPlayFormatMutationBody =
+  BodyType<ExtractTournamentPoolPlayFormatBody>;
+export type ExtractTournamentPoolPlayFormatMutationError = ErrorType<void>;
+
+/**
+ * @summary Extract seeding/tiebreaker format from a rules screenshot
+ */
+export const useExtractTournamentPoolPlayFormat = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractTournamentPoolPlayFormat>>,
+    TError,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayFormatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractTournamentPoolPlayFormat>>,
+  TError,
+  { id: number; data: BodyType<ExtractTournamentPoolPlayFormatBody> },
+  TContext
+> => {
+  return useMutation(
+    getExtractTournamentPoolPlayFormatMutationOptions(options),
+  );
 };
 
 /**

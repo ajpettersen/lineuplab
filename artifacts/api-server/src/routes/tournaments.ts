@@ -10,6 +10,10 @@ import {
   playersTable,
   teamSettingsTable,
   computePitcherAvailability,
+  normalizePoolPlay,
+  type Game,
+  type PoolPlayJson,
+  type PoolPlayGameJson,
   type Tournament,
   type RestTier,
 } from "@workspace/db";
@@ -23,6 +27,83 @@ import {
 
 const router: IRouter = Router();
 router.use("/tournaments", gateWrites("full"));
+
+/**
+ * Merge real `games` rows for a tournament into the saved pool-play
+ * games list as synthetic `real-<gameId>` entries.
+ *
+ *  - Idempotent: every existing `real-*` entry is dropped first, then
+ *    the current schedule is re-projected. Coach-entered (non-real)
+ *    games are untouched.
+ *  - Match by exact opponent name against pool team names — we do NOT
+ *    fuzz-match. If the schedule calls them "Sluggers" but the pool
+ *    says "Plymouth Sluggers", the game is silently skipped (the
+ *    coach can rename either side to bring them into agreement).
+ *  - "Our" team is always the home team in the synthetic entry, so
+ *    homeScore = our score and awayScore = opponent score.
+ *  - `final` is set when BOTH scores are recorded — that's the gate
+ *    for a game to count toward standings/tiebreakers.
+ */
+function mergeRealGamesIntoPool(
+  pool: PoolPlayJson,
+  games: Game[],
+  teamName: string | null,
+): PoolPlayJson {
+  if (!teamName) return pool;
+  const poolTeams = new Set(pool.teams.map((t) => t.name));
+  if (!poolTeams.has(teamName)) return pool;
+  // Strip prior real-* entries; manualGames represent the coach's
+  // intended pool schedule (one row per pool game).
+  const manualGames = pool.games.filter((g) => !g.id.startsWith("real-"));
+
+  // Pool play is typically a single round-robin against each pool
+  // opponent (sometimes a double-RR). Bracket / playoff games against
+  // a former pool opponent must NOT count toward pool standings.
+  // Heuristic: per opponent, the QUOTA is `max(manualPoolGamesVsOpponent, 1)`.
+  // We merge up to that many real games per opponent, earliest by
+  // gameDate first (the pool round happens before the bracket).
+  const quotaByOpp = new Map<string, number>();
+  for (const g of manualGames) {
+    const opp = g.home === teamName ? g.away : g.away === teamName ? g.home : null;
+    if (!opp || !poolTeams.has(opp)) continue;
+    quotaByOpp.set(opp, (quotaByOpp.get(opp) ?? 0) + 1);
+  }
+
+  // Group real games by opponent, sort each group ascending by date.
+  const realByOpp = new Map<string, Game[]>();
+  for (const g of games) {
+    if (!g.opponent || !poolTeams.has(g.opponent)) continue;
+    const list = realByOpp.get(g.opponent) ?? [];
+    list.push(g);
+    realByOpp.set(g.opponent, list);
+  }
+  for (const list of realByOpp.values()) {
+    list.sort((a, b) => {
+      const da = a.gameDate ? new Date(a.gameDate).getTime() : 0;
+      const db = b.gameDate ? new Date(b.gameDate).getTime() : 0;
+      return da - db;
+    });
+  }
+
+  const syntheticGames: PoolPlayGameJson[] = [];
+  for (const [opp, list] of realByOpp) {
+    const quota = quotaByOpp.get(opp) ?? 1;
+    for (const g of list.slice(0, quota)) {
+      const ourScore = g.ourScore;
+      const oppScore = g.opponentScore;
+      const bothSet = ourScore != null && oppScore != null;
+      syntheticGames.push({
+        id: `real-${g.id}`,
+        home: teamName,
+        away: g.opponent!,
+        homeScore: ourScore ?? null,
+        awayScore: oppScore ?? null,
+        final: bothSet,
+      });
+    }
+  }
+  return { ...pool, games: [...manualGames, ...syntheticGames] };
+}
 
 router.get("/tournaments", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
@@ -365,8 +446,19 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
   // (≤16k scenarios, microseconds) and keeps edits feeling instant —
   // saving the games re-projects on the next refetch with no extra
   // round-trip.
-  const poolPlayAnalysis = tournament.poolPlay
-    ? simulatePoolPlay(tournament.poolPlay)
+  //
+  // Live games sync: we merge any REAL `games` rows whose tournamentId
+  // matches and whose opponent name appears in the pool. They become
+  // synthetic `real-<gameId>` entries (idempotent — we strip any
+  // existing real-* entries first). Coach scores entered for a real
+  // game thus drive pool standings without a separate import step.
+  // Saved manual pool entries with non-real ids are untouched.
+  const normalizedPool = normalizePoolPlay(tournament.poolPlay);
+  const livePool = normalizedPool
+    ? mergeRealGamesIntoPool(normalizedPool, games, settings?.teamName ?? null)
+    : null;
+  const poolPlayAnalysis = livePool
+    ? simulatePoolPlay(livePool)
     : null;
 
   res.json({
@@ -377,7 +469,11 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
     effectiveDailyMax,
     effectiveTournamentMax,
     effectiveRestTiers,
-    poolPlay: tournament.poolPlay ?? null,
+    // Send the live-merged pool back so the client's games table
+    // reflects rows synced from the real schedule. The saved DB row
+    // only contains coach-entered games; real-* rows are re-derived
+    // on every GET.
+    poolPlay: livePool ?? tournament.poolPlay ?? null,
     poolPlayAnalysis,
   });
 });

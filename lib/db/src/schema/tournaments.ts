@@ -33,24 +33,116 @@ export const PoolPlayGameJson = z.object({
 });
 export type PoolPlayGameJson = z.infer<typeof PoolPlayGameJson>;
 
+/**
+ * Ordered tiebreaker keys. The first key is the primary sort; subsequent
+ * keys break ties within equal-primary groups, recursively.
+ *
+ *  - `winPct`       — wins / (wins + losses); ties don't count toward pct.
+ *  - `h2h`          — head-to-head record vs the tied subgroup (final games).
+ *  - `runDiff`      — runsFor − runsAgainst across all played pool games.
+ *  - `runsAllowed`  — total runs against (LESS is better — coach wants
+ *                     the team that gave up fewer runs on top).
+ *  - `runsScored`   — total runs for (more is better).
+ *  - `coinFlip`     — deterministic alphabetical fallback in projections;
+ *                     UI flags it so coaches know a real coin flip resolves
+ *                     it on game day.
+ */
+export const POOL_PLAY_TIEBREAKER_KEYS = [
+  "winPct",
+  "h2h",
+  "runDiff",
+  "runsAllowed",
+  "runsScored",
+  "coinFlip",
+] as const;
+export const PoolPlayTiebreakerKey = z.enum(POOL_PLAY_TIEBREAKER_KEYS);
+export type PoolPlayTiebreakerKey = z.infer<typeof PoolPlayTiebreakerKey>;
+
+/**
+ * Map the legacy `tiebreaker` enum (3 fixed options) to the new ordered
+ * chain. Used for backward compatibility on pool-play rows saved before
+ * the flexible-tiebreaker upgrade — old rows have `tiebreaker` but not
+ * `tiebreakers`, so the route normalizes them on read.
+ */
+export function tiebreakersFromLegacy(
+  legacy: "winPct_h2h_runDiff" | "winPct_runDiff_h2h" | "winPct_h2h" | null | undefined,
+): PoolPlayTiebreakerKey[] {
+  switch (legacy) {
+    case "winPct_runDiff_h2h":
+      return ["winPct", "runDiff", "h2h"];
+    case "winPct_h2h":
+      return ["winPct", "h2h"];
+    case "winPct_h2h_runDiff":
+    default:
+      return ["winPct", "h2h", "runDiff"];
+  }
+}
+
 export const PoolPlayJson = z.object({
   // Which team in `teams` is the coach's own. Used to highlight
   // "you" rows in the UI and to compute self-focused clinch lines.
   ourTeamName: z.string().min(1),
   teams: z.array(PoolPlayTeamJson).min(2).max(16),
   games: z.array(PoolPlayGameJson).max(64),
+  /**
+   * LEGACY — kept optional so old rows still parse. New writes set
+   * `tiebreakers` (ordered list); the simulator reads from
+   * `tiebreakers` and falls back to mapping this enum when absent.
+   */
   tiebreaker: z
     .enum(["winPct_h2h_runDiff", "winPct_runDiff_h2h", "winPct_h2h"])
-    .default("winPct_h2h_runDiff"),
+    .optional(),
+  /**
+   * Ordered tiebreaker chain. First key is the primary sort, subsequent
+   * keys break ties within equal-primary subgroups. Required on new
+   * writes; the read path normalizes legacy rows by mapping
+   * `tiebreaker` → `tiebreakers` if this is absent.
+   */
+  tiebreakers: z.array(PoolPlayTiebreakerKey).min(1).max(8),
   // How many teams advance from the pool (default 2 — most tournaments
   // take the top two from each pool into bracket play).
   advanceCount: z.number().int().min(1).max(8).default(2),
+  /**
+   * How many of the advancing teams skip the first bracket round (a
+   * "bye"). 0 means everyone plays the same round. Capped by
+   * `advanceCount` — you can't grant more byes than advancing seeds.
+   */
+  byeCount: z.number().int().min(0).max(8).default(0),
   updatedAt: z.string(),
-}).refine((v) => v.advanceCount <= v.teams.length, {
-  message: "advanceCount cannot exceed the number of teams",
-  path: ["advanceCount"],
-});
+})
+  .refine((v) => v.advanceCount <= v.teams.length, {
+    message: "advanceCount cannot exceed the number of teams",
+    path: ["advanceCount"],
+  })
+  .refine((v) => v.byeCount <= v.advanceCount, {
+    message: "byeCount cannot exceed advanceCount",
+    path: ["byeCount"],
+  });
 export type PoolPlayJson = z.infer<typeof PoolPlayJson>;
+
+/**
+ * Normalize a pool-play record loaded from the database: backfill
+ * `tiebreakers` from the legacy `tiebreaker` enum when missing, and
+ * default `byeCount` to 0. Safe to call repeatedly. Returns a new
+ * object — does NOT mutate the input.
+ *
+ * The DB column is `$type<PoolPlayJson>()` which is a compile-time
+ * cast only, so older rows (pre-byes / pre-flexible-tiebreakers) will
+ * be missing fields at runtime. Routes call this before handing the
+ * data to the simulator.
+ */
+export function normalizePoolPlay(raw: PoolPlayJson | null | undefined): PoolPlayJson | null {
+  if (!raw) return null;
+  const tiebreakers =
+    Array.isArray(raw.tiebreakers) && raw.tiebreakers.length > 0
+      ? raw.tiebreakers
+      : tiebreakersFromLegacy(raw.tiebreaker);
+  return {
+    ...raw,
+    tiebreakers,
+    byeCount: typeof raw.byeCount === "number" ? raw.byeCount : 0,
+  };
+}
 
 /**
  * A coach-named container for a multi-game tournament weekend (e.g.

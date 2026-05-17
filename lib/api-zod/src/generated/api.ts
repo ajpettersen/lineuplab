@@ -1234,7 +1234,12 @@ export const getTournamentResponseTwoPoolPlayTwoGamesItemAwayScoreMax = 99;
 
 export const getTournamentResponseTwoPoolPlayTwoGamesMax = 64;
 
+export const getTournamentResponseTwoPoolPlayTwoTiebreakersMax = 8;
+
 export const getTournamentResponseTwoPoolPlayTwoAdvanceCountMax = 8;
+
+export const getTournamentResponseTwoPoolPlayTwoByeCountMin = 0;
+export const getTournamentResponseTwoPoolPlayTwoByeCountMax = 8;
 
 export const GetTournamentResponse = zod
   .object({
@@ -1533,12 +1538,42 @@ export const GetTournamentResponse = zod
                   "winPct_runDiff_h2h",
                   "winPct_h2h",
                 ])
-                .describe("Tiebreaker chain applied after Win %."),
+                .optional()
+                .describe(
+                  "LEGACY tiebreaker enum, kept optional so old rows still\nround-trip. New writes should send `tiebreakers` instead.\n",
+                ),
+              tiebreakers: zod
+                .array(
+                  zod
+                    .enum([
+                      "winPct",
+                      "h2h",
+                      "runDiff",
+                      "runsAllowed",
+                      "runsScored",
+                      "coinFlip",
+                    ])
+                    .describe(
+                      "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+                    ),
+                )
+                .min(1)
+                .max(getTournamentResponseTwoPoolPlayTwoTiebreakersMax)
+                .describe(
+                  "Ordered tiebreaker chain. First entry is the primary sort;\nsubsequent entries break ties within equal-primary subgroups.\nRequired on new writes.\n",
+                ),
               advanceCount: zod
                 .number()
                 .min(1)
                 .max(getTournamentResponseTwoPoolPlayTwoAdvanceCountMax)
                 .describe("How many teams advance from the pool (default 2)."),
+              byeCount: zod
+                .number()
+                .min(getTournamentResponseTwoPoolPlayTwoByeCountMin)
+                .max(getTournamentResponseTwoPoolPlayTwoByeCountMax)
+                .describe(
+                  "How many of the advancing teams earn a bracket bye (default 0).\nCapped by `advanceCount`.\n",
+                ),
               updatedAt: zod.string(),
             })
             .describe("Saved pool-play import for a tournament."),
@@ -1553,6 +1588,29 @@ export const GetTournamentResponse = zod
             remainingGamesCap: zod.number(),
             remainingGames: zod.number(),
             advanceCount: zod.number(),
+            byeCount: zod
+              .number()
+              .describe(
+                "Mirrored from PoolPlay.byeCount for client convenience.",
+              ),
+            tiebreakers: zod
+              .array(
+                zod
+                  .enum([
+                    "winPct",
+                    "h2h",
+                    "runDiff",
+                    "runsAllowed",
+                    "runsScored",
+                    "coinFlip",
+                  ])
+                  .describe(
+                    "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+                  ),
+              )
+              .describe(
+                "Effective ordered tiebreaker chain (post-legacy-normalization).",
+              ),
             standingsToday: zod.array(
               zod.object({
                 teamName: zod.string(),
@@ -1576,10 +1634,20 @@ export const GetTournamentResponse = zod
                   ),
                 clinchedFirst: zod.boolean(),
                 clinchedAdvance: zod.boolean(),
+                clinchedBye: zod
+                  .boolean()
+                  .describe(
+                    "True in EVERY enumerated scenario the team is in the top byeCount.",
+                  ),
                 eliminatedFirst: zod.boolean(),
                 eliminatedAdvance: zod.boolean(),
                 firstProb: zod.number(),
                 advanceProb: zod.number(),
+                byeProb: zod
+                  .number()
+                  .describe(
+                    "Probability of earning a bye (top byeCount). 0 when byeCount=0.",
+                  ),
               }),
             ),
             ourTeamInsights: zod.array(zod.string()),
@@ -1787,6 +1855,84 @@ export const ExtractTournamentPoolPlayResponse = zod
   );
 
 /**
+ * Upload 1-2 screenshots of the tournament's posted seeding /
+tiebreaker rules (e.g. "Top 2 advance, byes for top seed,
+tiebreakers: head-to-head, then run differential"). The AI
+returns a parsed format preview — the coach confirms before it
+is applied to the saved pool play.
+
+ * @summary Extract seeding/tiebreaker format from a rules screenshot
+ */
+export const ExtractTournamentPoolPlayFormatParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const extractTournamentPoolPlayFormatBodyFilesMax = 2;
+
+export const ExtractTournamentPoolPlayFormatBody = zod.object({
+  files: zod
+    .array(zod.instanceof(File))
+    .max(extractTournamentPoolPlayFormatBodyFilesMax),
+});
+
+export const extractTournamentPoolPlayFormatResponseAdvanceCountMax = 8;
+
+export const extractTournamentPoolPlayFormatResponseByeCountMin = 0;
+export const extractTournamentPoolPlayFormatResponseByeCountMax = 8;
+
+export const extractTournamentPoolPlayFormatResponseTeamCountMin = 2;
+export const extractTournamentPoolPlayFormatResponseTeamCountMax = 16;
+
+export const extractTournamentPoolPlayFormatResponseTiebreakersMax = 8;
+
+export const ExtractTournamentPoolPlayFormatResponse = zod
+  .object({
+    advanceCount: zod
+      .number()
+      .min(1)
+      .max(extractTournamentPoolPlayFormatResponseAdvanceCountMax)
+      .nullable(),
+    byeCount: zod
+      .number()
+      .min(extractTournamentPoolPlayFormatResponseByeCountMin)
+      .max(extractTournamentPoolPlayFormatResponseByeCountMax)
+      .nullable(),
+    teamCount: zod
+      .number()
+      .min(extractTournamentPoolPlayFormatResponseTeamCountMin)
+      .max(extractTournamentPoolPlayFormatResponseTeamCountMax)
+      .nullable()
+      .describe("Total teams in the pool\/bracket, if visible."),
+    tiebreakers: zod
+      .array(
+        zod
+          .enum([
+            "winPct",
+            "h2h",
+            "runDiff",
+            "runsAllowed",
+            "runsScored",
+            "coinFlip",
+          ])
+          .describe(
+            "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+          ),
+      )
+      .min(1)
+      .max(extractTournamentPoolPlayFormatResponseTiebreakersMax)
+      .nullable(),
+    notes: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form summary of anything the AI noticed but couldn't structure.",
+      ),
+  })
+  .describe(
+    "AI-parsed seeding\/tiebreaker rules from a screenshot of the\ntournament's posted rules. All fields nullable — the coach\nconfirms before the format is applied to the saved pool play.\n",
+  );
+
+/**
  * @summary Save (or replace) the pool-play data for a tournament
  */
 export const SaveTournamentPoolPlayParams = zod.object({
@@ -1812,7 +1958,12 @@ export const saveTournamentPoolPlayBodyGamesItemAwayScoreMax = 99;
 
 export const saveTournamentPoolPlayBodyGamesMax = 64;
 
+export const saveTournamentPoolPlayBodyTiebreakersMax = 8;
+
 export const saveTournamentPoolPlayBodyAdvanceCountMax = 8;
+
+export const saveTournamentPoolPlayBodyByeCountMin = 0;
+export const saveTournamentPoolPlayBodyByeCountMax = 8;
 
 export const SaveTournamentPoolPlayBody = zod
   .object({
@@ -1864,12 +2015,42 @@ export const SaveTournamentPoolPlayBody = zod
       .max(saveTournamentPoolPlayBodyGamesMax),
     tiebreaker: zod
       .enum(["winPct_h2h_runDiff", "winPct_runDiff_h2h", "winPct_h2h"])
-      .describe("Tiebreaker chain applied after Win %."),
+      .optional()
+      .describe(
+        "LEGACY tiebreaker enum, kept optional so old rows still\nround-trip. New writes should send `tiebreakers` instead.\n",
+      ),
+    tiebreakers: zod
+      .array(
+        zod
+          .enum([
+            "winPct",
+            "h2h",
+            "runDiff",
+            "runsAllowed",
+            "runsScored",
+            "coinFlip",
+          ])
+          .describe(
+            "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+          ),
+      )
+      .min(1)
+      .max(saveTournamentPoolPlayBodyTiebreakersMax)
+      .describe(
+        "Ordered tiebreaker chain. First entry is the primary sort;\nsubsequent entries break ties within equal-primary subgroups.\nRequired on new writes.\n",
+      ),
     advanceCount: zod
       .number()
       .min(1)
       .max(saveTournamentPoolPlayBodyAdvanceCountMax)
       .describe("How many teams advance from the pool (default 2)."),
+    byeCount: zod
+      .number()
+      .min(saveTournamentPoolPlayBodyByeCountMin)
+      .max(saveTournamentPoolPlayBodyByeCountMax)
+      .describe(
+        "How many of the advancing teams earn a bracket bye (default 0).\nCapped by `advanceCount`.\n",
+      ),
     updatedAt: zod.string(),
   })
   .describe("Saved pool-play import for a tournament.");
@@ -1893,7 +2074,12 @@ export const saveTournamentPoolPlayResponsePoolPlayGamesItemAwayScoreMax = 99;
 
 export const saveTournamentPoolPlayResponsePoolPlayGamesMax = 64;
 
+export const saveTournamentPoolPlayResponsePoolPlayTiebreakersMax = 8;
+
 export const saveTournamentPoolPlayResponsePoolPlayAdvanceCountMax = 8;
+
+export const saveTournamentPoolPlayResponsePoolPlayByeCountMin = 0;
+export const saveTournamentPoolPlayResponsePoolPlayByeCountMax = 8;
 
 export const SaveTournamentPoolPlayResponse = zod.object({
   poolPlay: zod
@@ -1946,12 +2132,42 @@ export const SaveTournamentPoolPlayResponse = zod.object({
         .max(saveTournamentPoolPlayResponsePoolPlayGamesMax),
       tiebreaker: zod
         .enum(["winPct_h2h_runDiff", "winPct_runDiff_h2h", "winPct_h2h"])
-        .describe("Tiebreaker chain applied after Win %."),
+        .optional()
+        .describe(
+          "LEGACY tiebreaker enum, kept optional so old rows still\nround-trip. New writes should send `tiebreakers` instead.\n",
+        ),
+      tiebreakers: zod
+        .array(
+          zod
+            .enum([
+              "winPct",
+              "h2h",
+              "runDiff",
+              "runsAllowed",
+              "runsScored",
+              "coinFlip",
+            ])
+            .describe(
+              "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+            ),
+        )
+        .min(1)
+        .max(saveTournamentPoolPlayResponsePoolPlayTiebreakersMax)
+        .describe(
+          "Ordered tiebreaker chain. First entry is the primary sort;\nsubsequent entries break ties within equal-primary subgroups.\nRequired on new writes.\n",
+        ),
       advanceCount: zod
         .number()
         .min(1)
         .max(saveTournamentPoolPlayResponsePoolPlayAdvanceCountMax)
         .describe("How many teams advance from the pool (default 2)."),
+      byeCount: zod
+        .number()
+        .min(saveTournamentPoolPlayResponsePoolPlayByeCountMin)
+        .max(saveTournamentPoolPlayResponsePoolPlayByeCountMax)
+        .describe(
+          "How many of the advancing teams earn a bracket bye (default 0).\nCapped by `advanceCount`.\n",
+        ),
       updatedAt: zod.string(),
     })
     .describe("Saved pool-play import for a tournament."),
@@ -1961,6 +2177,27 @@ export const SaveTournamentPoolPlayResponse = zod.object({
     remainingGamesCap: zod.number(),
     remainingGames: zod.number(),
     advanceCount: zod.number(),
+    byeCount: zod
+      .number()
+      .describe("Mirrored from PoolPlay.byeCount for client convenience."),
+    tiebreakers: zod
+      .array(
+        zod
+          .enum([
+            "winPct",
+            "h2h",
+            "runDiff",
+            "runsAllowed",
+            "runsScored",
+            "coinFlip",
+          ])
+          .describe(
+            "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+          ),
+      )
+      .describe(
+        "Effective ordered tiebreaker chain (post-legacy-normalization).",
+      ),
     standingsToday: zod.array(
       zod.object({
         teamName: zod.string(),
@@ -1984,10 +2221,20 @@ export const SaveTournamentPoolPlayResponse = zod.object({
           ),
         clinchedFirst: zod.boolean(),
         clinchedAdvance: zod.boolean(),
+        clinchedBye: zod
+          .boolean()
+          .describe(
+            "True in EVERY enumerated scenario the team is in the top byeCount.",
+          ),
         eliminatedFirst: zod.boolean(),
         eliminatedAdvance: zod.boolean(),
         firstProb: zod.number(),
         advanceProb: zod.number(),
+        byeProb: zod
+          .number()
+          .describe(
+            "Probability of earning a bye (top byeCount). 0 when byeCount=0.",
+          ),
       }),
     ),
     ourTeamInsights: zod.array(zod.string()),

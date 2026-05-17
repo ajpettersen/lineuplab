@@ -2,13 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useExtractTournamentPoolPlay,
+  useExtractTournamentPoolPlayFormat,
   useSaveTournamentPoolPlay,
   useClearTournamentPoolPlay,
   getGetTournamentQueryKey,
   type PoolPlay,
   type PoolPlayAnalysis,
   type PoolPlayGame,
+  type PoolPlayTiebreakerKey,
   type ExtractedPoolPlay,
+  type ExtractedPoolPlayFormat,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,6 +53,10 @@ import {
   Sparkles,
   Pencil,
   X,
+  ArrowUp,
+  ArrowDown,
+  Award,
+  Camera,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -73,6 +80,15 @@ export function PoolPlayCard({
 }) {
   const [importOpen, setImportOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
+  // Held when the coach extracts a format via rules-photo while no
+  // pool exists yet — the next opened Import/Edit dialog will seed
+  // its defaults from this so the format isn't lost.
+  const [pendingFormat, setPendingFormat] = useState<{
+    advanceCount?: number;
+    byeCount?: number;
+    tiebreakers?: PoolPlayTiebreakerKey[];
+  } | null>(null);
 
   return (
     <Card>
@@ -81,7 +97,13 @@ export function PoolPlayCard({
           <ListChecks className="h-5 w-5 text-purple-600" />
           Pool Play Scenarios
         </CardTitle>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          {poolPlay && (
+            <Button size="sm" variant="outline" onClick={() => setFormatOpen(true)}>
+              <Camera className="h-3.5 w-3.5 mr-1.5" />
+              Rules photo
+            </Button>
+          )}
           {poolPlay && (
             <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
@@ -96,7 +118,10 @@ export function PoolPlayCard({
       </CardHeader>
       <CardContent>
         {!poolPlay || !analysis ? (
-          <EmptyState onImport={() => setImportOpen(true)} />
+          <EmptyState
+            onImport={() => setImportOpen(true)}
+            onSetFormat={() => setFormatOpen(true)}
+          />
         ) : (
           <PoolPlayBody poolPlay={poolPlay} analysis={analysis} />
         )}
@@ -106,7 +131,11 @@ export function PoolPlayCard({
         <ImportDialog
           tournamentId={tournamentId}
           existing={poolPlay}
-          onClose={() => setImportOpen(false)}
+          seedFormat={pendingFormat}
+          onClose={() => {
+            setImportOpen(false);
+            setPendingFormat(null);
+          }}
         />
       )}
       {editOpen && poolPlay && (
@@ -116,11 +145,31 @@ export function PoolPlayCard({
           onClose={() => setEditOpen(false)}
         />
       )}
+      {formatOpen && (
+        <FormatExtractDialog
+          tournamentId={tournamentId}
+          existing={poolPlay}
+          onClose={() => setFormatOpen(false)}
+          onSeedFormat={(fmt) => {
+            // No pool exists yet — stash the extracted format and chain
+            // into the Import flow so the coach can add teams next.
+            setPendingFormat(fmt);
+            setFormatOpen(false);
+            setImportOpen(true);
+          }}
+        />
+      )}
     </Card>
   );
 }
 
-function EmptyState({ onImport }: { onImport: () => void }) {
+function EmptyState({
+  onImport,
+  onSetFormat,
+}: {
+  onImport: () => void;
+  onSetFormat: () => void;
+}) {
   return (
     <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground space-y-3">
       <ListChecks className="h-8 w-8 mx-auto opacity-50" />
@@ -128,10 +177,16 @@ function EmptyState({ onImport }: { onImport: () => void }) {
         Upload screenshots of the tournament's pool-play standings and schedule
         to project how the standings could finish.
       </div>
-      <Button size="sm" onClick={onImport} className="mt-1">
-        <UploadCloud className="h-4 w-4 mr-1.5" />
-        Import screenshots
-      </Button>
+      <div className="flex gap-2 justify-center mt-1 flex-wrap">
+        <Button size="sm" onClick={onImport}>
+          <UploadCloud className="h-4 w-4 mr-1.5" />
+          Import screenshots
+        </Button>
+        <Button size="sm" variant="outline" onClick={onSetFormat}>
+          <Camera className="h-4 w-4 mr-1.5" />
+          Set format from rules photo
+        </Button>
+      </div>
     </div>
   );
 }
@@ -240,8 +295,10 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
       </div>
 
       <div className="text-[11px] text-muted-foreground">
-        Tiebreaker: {tiebreakerLabel(poolPlay.tiebreaker)} • Pool of{" "}
-        {poolPlay.teams.length} teams • {analysis.remainingGames}{" "}
+        Tiebreakers: {tiebreakerChainLabel(analysis.tiebreakers)} • Pool of{" "}
+        {poolPlay.teams.length} teams • Top {analysis.advanceCount} advance
+        {analysis.byeCount > 0 ? ` (top ${analysis.byeCount} get a bye)` : ""} •{" "}
+        {analysis.remainingGames}{" "}
         {analysis.remainingGames === 1 ? "game" : "games"} remaining
       </div>
     </div>
@@ -254,6 +311,14 @@ function StatusBadge({ p }: { p: PoolPlayAnalysis["projections"][number] }) {
       <Badge className="bg-green-600 hover:bg-green-600">
         <Trophy className="h-3 w-3 mr-1" />
         Clinched 1st
+      </Badge>
+    );
+  }
+  if (p.clinchedBye) {
+    return (
+      <Badge className="bg-amber-500 hover:bg-amber-500 text-amber-950">
+        <Award className="h-3 w-3 mr-1" />
+        Clinched bye
       </Badge>
     );
   }
@@ -290,29 +355,39 @@ function pct(n: number): string {
   return `${Math.round(v)}%`;
 }
 
-function tiebreakerLabel(t: PoolPlay["tiebreaker"]): string {
-  switch (t) {
-    case "winPct_runDiff_h2h":
-      return "Win % → Run diff → H2H";
-    case "winPct_h2h":
-      return "Win % → Head-to-head";
-    case "winPct_h2h_runDiff":
-    default:
-      return "Win % → Head-to-head → Run diff";
-  }
+const TIEBREAKER_LABELS: Record<PoolPlayTiebreakerKey, string> = {
+  winPct: "Win %",
+  h2h: "Head-to-head",
+  runDiff: "Run diff",
+  runsAllowed: "Fewest runs allowed",
+  runsScored: "Most runs scored",
+  coinFlip: "Coin flip",
+};
+
+function tiebreakerChainLabel(keys: PoolPlayTiebreakerKey[]): string {
+  if (!keys || keys.length === 0) return "Win %";
+  return keys.map((k) => TIEBREAKER_LABELS[k] ?? k).join(" → ");
 }
 
 // ---------------------------------------------------------------------------
 // Import dialog: upload → preview → save
 // ---------------------------------------------------------------------------
 
+type SeededFormat = {
+  advanceCount?: number;
+  byeCount?: number;
+  tiebreakers?: PoolPlayTiebreakerKey[];
+} | null;
+
 function ImportDialog({
   tournamentId,
   existing,
+  seedFormat,
   onClose,
 }: {
   tournamentId: number;
   existing: PoolPlay | null;
+  seedFormat?: SeededFormat;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -407,6 +482,7 @@ function ImportDialog({
             tournamentId={tournamentId}
             preview={preview}
             existing={existing}
+            seedFormat={seedFormat}
             onClose={onClose}
             onSaved={() => {
               qc.invalidateQueries({ queryKey: getGetTournamentQueryKey(tournamentId) });
@@ -477,6 +553,7 @@ function PreviewEditor({
   tournamentId,
   preview,
   existing,
+  seedFormat,
   onClose,
   onSaved,
   showClear,
@@ -484,6 +561,7 @@ function PreviewEditor({
   tournamentId: number;
   preview: ExtractedPoolPlay;
   existing: PoolPlay | null;
+  seedFormat?: SeededFormat;
   onClose: () => void;
   onSaved: () => void;
   showClear?: boolean;
@@ -495,10 +573,21 @@ function PreviewEditor({
   const [ourTeam, setOurTeam] = useState<string>(
     preview.ourTeamGuess ?? existing?.ourTeamName ?? preview.teams[0]?.name ?? "",
   );
-  const [tiebreaker, setTiebreaker] = useState<PoolPlay["tiebreaker"]>(
-    existing?.tiebreaker ?? "winPct_h2h_runDiff",
+  // Precedence: existing saved values > seedFormat (from rules-photo
+  // extraction in an empty-state flow) > hardcoded defaults.
+  const [tiebreakers, setTiebreakers] = useState<PoolPlayTiebreakerKey[]>(
+    existing?.tiebreakers && existing.tiebreakers.length > 0
+      ? existing.tiebreakers
+      : seedFormat?.tiebreakers && seedFormat.tiebreakers.length > 0
+        ? seedFormat.tiebreakers
+        : ["winPct", "h2h", "runDiff"],
   );
-  const [advanceCount, setAdvanceCount] = useState<number>(existing?.advanceCount ?? 2);
+  const [advanceCount, setAdvanceCount] = useState<number>(
+    existing?.advanceCount ?? seedFormat?.advanceCount ?? 2,
+  );
+  const [byeCount, setByeCount] = useState<number>(
+    existing?.byeCount ?? seedFormat?.byeCount ?? 0,
+  );
 
   // Keep ourTeam in sync when the team list shrinks below it.
   useEffect(() => {
@@ -610,16 +699,47 @@ function PreviewEditor({
           ? g
           : { ...g, homeScore: null, awayScore: null },
       );
+    if (tiebreakers.length === 0) {
+      toast({ title: "Add at least one tiebreaker", variant: "destructive" });
+      return;
+    }
+    if (byeCount > advanceCount) {
+      toast({
+        title: "Bye count can't exceed advance count",
+        variant: "destructive",
+      });
+      return;
+    }
     const body: PoolPlay = {
       ourTeamName: ourTeam,
       teams: normalizedTeams,
       games: normalizedGames,
-      tiebreaker,
+      tiebreakers,
       advanceCount,
+      byeCount,
       updatedAt: new Date().toISOString(),
     };
     save.mutate({ id: tournamentId, data: body });
   }
+
+  function moveTiebreaker(idx: number, delta: -1 | 1) {
+    setTiebreakers((prev) => {
+      const next = [...prev];
+      const swap = idx + delta;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  }
+  function removeTiebreaker(idx: number) {
+    setTiebreakers((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  }
+  function addTiebreaker(key: PoolPlayTiebreakerKey) {
+    setTiebreakers((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  }
+  const availableTiebreakers = (Object.keys(TIEBREAKER_LABELS) as PoolPlayTiebreakerKey[]).filter(
+    (k) => !tiebreakers.includes(k),
+  );
 
   return (
     <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto pr-1">
@@ -675,22 +795,6 @@ function PreviewEditor({
           </Select>
         </div>
         <div>
-          <Label className="text-xs">Tiebreaker</Label>
-          <Select
-            value={tiebreaker}
-            onValueChange={(v) => setTiebreaker(v as PoolPlay["tiebreaker"])}
-          >
-            <SelectTrigger className="h-8 mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="winPct_h2h_runDiff">Win % → H2H → Run diff</SelectItem>
-              <SelectItem value="winPct_runDiff_h2h">Win % → Run diff → H2H</SelectItem>
-              <SelectItem value="winPct_h2h">Win % → H2H</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
           <Label className="text-xs">Advance from pool</Label>
           <Input
             type="number"
@@ -704,6 +808,91 @@ function PreviewEditor({
             className="h-8 mt-1"
           />
         </div>
+        <div>
+          <Label className="text-xs">Byes (top N)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={advanceCount}
+            value={byeCount}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if (Number.isFinite(n) && n >= 0 && n <= 8) setByeCount(n);
+            }}
+            className="h-8 mt-1"
+          />
+        </div>
+      </section>
+
+      {/* Tiebreaker chain */}
+      <section>
+        <div className="flex items-center justify-between mb-1.5">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tiebreakers (in order)
+          </Label>
+        </div>
+        <div className="space-y-1">
+          {tiebreakers.map((key, idx) => (
+            <div
+              key={key}
+              className="flex items-center gap-2 rounded-md border bg-muted/30 p-1.5"
+            >
+              <span className="font-mono text-[11px] text-muted-foreground w-5 text-center">
+                {idx + 1}
+              </span>
+              <span className="text-sm flex-1">{TIEBREAKER_LABELS[key]}</span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                disabled={idx === 0}
+                onClick={() => moveTiebreaker(idx, -1)}
+                title="Move up"
+              >
+                <ArrowUp className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                disabled={idx === tiebreakers.length - 1}
+                onClick={() => moveTiebreaker(idx, 1)}
+                title="Move down"
+              >
+                <ArrowDown className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                disabled={tiebreakers.length <= 1}
+                onClick={() => removeTiebreaker(idx)}
+                title="Remove"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+        {availableTiebreakers.length > 0 && (
+          <div className="mt-2">
+            <Select
+              value=""
+              onValueChange={(v) => addTiebreaker(v as PoolPlayTiebreakerKey)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="+ Add tiebreaker…" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableTiebreakers.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {TIEBREAKER_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </section>
 
       {/* Games */}
@@ -766,6 +955,285 @@ function PreviewEditor({
         </Button>
       </DialogFooter>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FormatExtractDialog — upload a screenshot of the tournament's posted
+// seeding/tiebreaker rules; AI returns {advanceCount?, byeCount?,
+// tiebreakers?, teamCount?}; coach picks which fields to apply.
+//
+// If a pool already exists, applying merges into it. Otherwise it
+// seeds a fresh pool stub (teams empty, coach fills in via Edit /
+// Import screenshots next).
+// ---------------------------------------------------------------------------
+
+function FormatExtractDialog({
+  tournamentId,
+  existing,
+  onClose,
+  onSeedFormat,
+}: {
+  tournamentId: number;
+  existing: PoolPlay | null;
+  onClose: () => void;
+  // Called when there's no existing pool yet — parent stashes the
+  // extracted format and chains into the Import flow so the coach
+  // can add teams next without losing the extracted values.
+  onSeedFormat: (fmt: {
+    advanceCount?: number;
+    byeCount?: number;
+    tiebreakers?: PoolPlayTiebreakerKey[];
+  }) => void;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [parsed, setParsed] = useState<ExtractedPoolPlayFormat | null>(null);
+  // Per-field "apply this one" toggles — coach can opt out of any
+  // single field the AI guessed wrong.
+  const [applyAdvance, setApplyAdvance] = useState(true);
+  const [applyBye, setApplyBye] = useState(true);
+  const [applyTiebreakers, setApplyTiebreakers] = useState(true);
+
+  const extract = useExtractTournamentPoolPlayFormat({
+    mutation: {
+      onSuccess: (data) => {
+        setParsed(data);
+        setApplyAdvance(data.advanceCount != null);
+        setApplyBye(data.byeCount != null);
+        setApplyTiebreakers(!!data.tiebreakers && data.tiebreakers.length > 0);
+      },
+      onError: (e) => {
+        toast({
+          title: "Couldn't read the rules screenshot",
+          description: (e as Error)?.message ?? "Try a clearer photo or enter manually via Edit.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+  const save = useSaveTournamentPoolPlay({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Format applied" });
+        qc.invalidateQueries({ queryKey: getGetTournamentQueryKey(tournamentId) });
+        onClose();
+      },
+      onError: (e) => {
+        toast({
+          title: "Save failed",
+          description: (e as Error)?.message ?? "Try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  function onPickFiles(ev: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(ev.target.files ?? []);
+    if (picked.length === 0) return;
+    if (picked.length > 2) {
+      toast({ title: "Pick at most 2 screenshots", variant: "destructive" });
+      return;
+    }
+    setFiles(picked);
+    extract.mutate({ id: tournamentId, data: { files: picked } });
+  }
+
+  function handleApply() {
+    if (!parsed) return;
+    const nextAdvance =
+      applyAdvance && parsed.advanceCount != null
+        ? parsed.advanceCount
+        : (existing?.advanceCount ?? 2);
+    const nextBye = (() => {
+      const candidate =
+        applyBye && parsed.byeCount != null
+          ? parsed.byeCount
+          : (existing?.byeCount ?? 0);
+      // Clamp to advanceCount — server would reject otherwise.
+      return Math.min(candidate, nextAdvance);
+    })();
+    const nextTbs: PoolPlayTiebreakerKey[] =
+      applyTiebreakers && parsed.tiebreakers && parsed.tiebreakers.length > 0
+        ? parsed.tiebreakers
+        : (existing?.tiebreakers && existing.tiebreakers.length > 0
+            ? existing.tiebreakers
+            : ["winPct", "h2h", "runDiff"]);
+
+    if (!existing) {
+      // Server requires ≥2 teams, so we can't persist the format
+      // alone. Hand the extracted format back to the parent so it
+      // can stash + chain into the Import dialog with seedFormat
+      // wired into PreviewEditor's defaults.
+      toast({
+        title: "Format saved — now add teams",
+        description: "Upload pool screenshots or add teams to finish.",
+      });
+      onSeedFormat({
+        advanceCount: applyAdvance ? (parsed.advanceCount ?? undefined) : undefined,
+        byeCount: applyBye ? (parsed.byeCount ?? undefined) : undefined,
+        tiebreakers:
+          applyTiebreakers && parsed.tiebreakers && parsed.tiebreakers.length > 0
+            ? parsed.tiebreakers
+            : undefined,
+      });
+      return;
+    }
+    const body: PoolPlay = {
+      ourTeamName: existing.ourTeamName,
+      teams: existing.teams,
+      // Drop synthetic real-* entries before saving — they get
+      // re-derived on the next GET from the live `games` table.
+      games: existing.games.filter((g) => !g.id.startsWith("real-")),
+      tiebreakers: nextTbs,
+      advanceCount: nextAdvance,
+      byeCount: nextBye,
+      updatedAt: new Date().toISOString(),
+    };
+    save.mutate({ id: tournamentId, data: body });
+  }
+
+  const isExtracting = extract.isPending;
+  const anyParsed =
+    parsed != null &&
+    (parsed.advanceCount != null ||
+      parsed.byeCount != null ||
+      (parsed.tiebreakers && parsed.tiebreakers.length > 0) ||
+      parsed.teamCount != null);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Set format from rules photo</DialogTitle>
+          <DialogDescription>
+            Upload 1-2 photos of the tournament's posted seeding rules
+            (how many advance, byes, tiebreaker order). The AI extracts
+            just the format — review before applying.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!parsed ? (
+          <div className="space-y-3 py-2">
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            <div
+              className="rounded-lg border border-dashed py-10 text-center cursor-pointer hover:bg-muted/40 transition"
+              onClick={() => inputRef.current?.click()}
+            >
+              {isExtracting ? (
+                <>
+                  <Loader2 className="h-10 w-10 mx-auto animate-spin text-muted-foreground" />
+                  <div className="text-sm text-muted-foreground mt-3">
+                    Reading {files.length} {files.length === 1 ? "photo" : "photos"}…
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Camera className="h-10 w-10 mx-auto text-muted-foreground" />
+                  <div className="mt-2 text-sm font-medium">Tap to choose photos</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    PNG, JPEG, or WebP. Up to 2 photos.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 py-2">
+            {!anyParsed && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                We couldn't make out any format details from those photos.
+                {parsed.notes ? (
+                  <div className="mt-1 text-xs italic">"{parsed.notes}"</div>
+                ) : null}
+              </div>
+            )}
+            {parsed.advanceCount != null && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={applyAdvance}
+                  onChange={(e) => setApplyAdvance(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Top <strong>{parsed.advanceCount}</strong> advance
+                </span>
+              </label>
+            )}
+            {parsed.byeCount != null && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={applyBye}
+                  onChange={(e) => setApplyBye(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Top <strong>{parsed.byeCount}</strong>{" "}
+                  {parsed.byeCount === 1 ? "team gets a bye" : "teams get byes"}
+                </span>
+              </label>
+            )}
+            {parsed.tiebreakers && parsed.tiebreakers.length > 0 && (
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={applyTiebreakers}
+                  onChange={(e) => setApplyTiebreakers(e.target.checked)}
+                  className="h-4 w-4 mt-0.5"
+                />
+                <span>
+                  Tiebreakers:{" "}
+                  <strong>{tiebreakerChainLabel(parsed.tiebreakers)}</strong>
+                </span>
+              </label>
+            )}
+            {parsed.teamCount != null && (
+              <div className="text-xs text-muted-foreground">
+                Photo mentions {parsed.teamCount} teams — add them via Import or Edit.
+              </div>
+            )}
+            {parsed.notes && anyParsed && (
+              <div className="text-[11px] text-muted-foreground italic">
+                Note from photo: "{parsed.notes}"
+              </div>
+            )}
+            {!existing && anyParsed && (
+              <div className="rounded-md border border-purple-200 bg-purple-50 p-2.5 text-xs text-purple-900">
+                You don't have any pool data yet. After applying the format,
+                use "Import screenshots" or "Edit" to add your pool teams.
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          {parsed && (
+            <Button
+              onClick={handleApply}
+              disabled={!anyParsed || save.isPending}
+            >
+              {save.isPending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {existing ? "Apply to pool play" : "Save format"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

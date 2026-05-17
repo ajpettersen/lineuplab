@@ -701,7 +701,9 @@ export interface PoolPlayGame {
 }
 
 /**
- * Tiebreaker chain applied after Win %.
+ * LEGACY tiebreaker enum, kept optional so old rows still
+round-trip. New writes should send `tiebreakers` instead.
+
  */
 export type PoolPlayTiebreaker =
   (typeof PoolPlayTiebreaker)[keyof typeof PoolPlayTiebreaker];
@@ -710,6 +712,25 @@ export const PoolPlayTiebreaker = {
   winPct_h2h_runDiff: "winPct_h2h_runDiff",
   winPct_runDiff_h2h: "winPct_runDiff_h2h",
   winPct_h2h: "winPct_h2h",
+} as const;
+
+/**
+ * Ordered tiebreaker step. `runsAllowed` is inverted internally
+(fewer runs against ranks higher). `coinFlip` is deterministic
+in projections but flagged in the UI so coaches know a real
+coin flip resolves it on game day.
+
+ */
+export type PoolPlayTiebreakerKey =
+  (typeof PoolPlayTiebreakerKey)[keyof typeof PoolPlayTiebreakerKey];
+
+export const PoolPlayTiebreakerKey = {
+  winPct: "winPct",
+  h2h: "h2h",
+  runDiff: "runDiff",
+  runsAllowed: "runsAllowed",
+  runsScored: "runsScored",
+  coinFlip: "coinFlip",
 } as const;
 
 /**
@@ -725,14 +746,33 @@ export interface PoolPlay {
   teams: PoolPlayTeam[];
   /** @maxItems 64 */
   games: PoolPlayGame[];
-  /** Tiebreaker chain applied after Win %. */
-  tiebreaker: PoolPlayTiebreaker;
+  /** LEGACY tiebreaker enum, kept optional so old rows still
+round-trip. New writes should send `tiebreakers` instead.
+ */
+  tiebreaker?: PoolPlayTiebreaker;
+  /**
+   * Ordered tiebreaker chain. First entry is the primary sort;
+subsequent entries break ties within equal-primary subgroups.
+Required on new writes.
+
+   * @minItems 1
+   * @maxItems 8
+   */
+  tiebreakers: PoolPlayTiebreakerKey[];
   /**
    * How many teams advance from the pool (default 2).
    * @minimum 1
    * @maximum 8
    */
   advanceCount: number;
+  /**
+   * How many of the advancing teams earn a bracket bye (default 0).
+Capped by `advanceCount`.
+
+   * @minimum 0
+   * @maximum 8
+   */
+  byeCount: number;
   updatedAt: string;
 }
 
@@ -754,10 +794,14 @@ export interface PoolPlayTeamProjection {
   finishProbs: number[];
   clinchedFirst: boolean;
   clinchedAdvance: boolean;
+  /** True in EVERY enumerated scenario the team is in the top byeCount. */
+  clinchedBye: boolean;
   eliminatedFirst: boolean;
   eliminatedAdvance: boolean;
   firstProb: number;
   advanceProb: number;
+  /** Probability of earning a bye (top byeCount). 0 when byeCount=0. */
+  byeProb: number;
 }
 
 export interface PoolPlayAnalysis {
@@ -766,6 +810,10 @@ export interface PoolPlayAnalysis {
   remainingGamesCap: number;
   remainingGames: number;
   advanceCount: number;
+  /** Mirrored from PoolPlay.byeCount for client convenience. */
+  byeCount: number;
+  /** Effective ordered tiebreaker chain (post-legacy-normalization). */
+  tiebreakers: PoolPlayTiebreakerKey[];
   standingsToday: PoolPlayTeamRecord[];
   projections: PoolPlayTeamProjection[];
   ourTeamInsights: string[];
@@ -856,6 +904,45 @@ export interface UpsertPitchCountBody {
   pitches: number;
   /** @nullable */
   notes?: string | null;
+}
+
+/**
+ * AI-parsed seeding/tiebreaker rules from a screenshot of the
+tournament's posted rules. All fields nullable — the coach
+confirms before the format is applied to the saved pool play.
+
+ */
+export interface ExtractedPoolPlayFormat {
+  /**
+   * @minimum 1
+   * @maximum 8
+   * @nullable
+   */
+  advanceCount: number | null;
+  /**
+   * @minimum 0
+   * @maximum 8
+   * @nullable
+   */
+  byeCount: number | null;
+  /**
+   * Total teams in the pool/bracket, if visible.
+   * @minimum 2
+   * @maximum 16
+   * @nullable
+   */
+  teamCount: number | null;
+  /**
+   * @minItems 1
+   * @maxItems 8
+   * @nullable
+   */
+  tiebreakers: PoolPlayTiebreakerKey[] | null;
+  /**
+   * Free-form summary of anything the AI noticed but couldn't structure.
+   * @nullable
+   */
+  notes: string | null;
 }
 
 /**
@@ -1167,6 +1254,11 @@ export interface BoxScoreState {
 
 export type ExtractTournamentPoolPlayBody = {
   /** @maxItems 3 */
+  files: Blob[];
+};
+
+export type ExtractTournamentPoolPlayFormatBody = {
+  /** @maxItems 2 */
   files: Blob[];
 };
 

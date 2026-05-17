@@ -6,7 +6,9 @@ import {
   db,
   tournamentsTable,
   PoolPlayJson,
+  POOL_PLAY_TIEBREAKER_KEYS,
   type PoolPlayJson as PoolPlayJsonType,
+  type PoolPlayTiebreakerKey,
 } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { gateWrites } from "../lib/permissions";
@@ -233,6 +235,141 @@ Return RAW JSON only, no markdown, no commentary:
       teams: uniqueTeams,
       games,
       tiebreakerNote,
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /tournaments/:id/pool-play/format-extract — parse a rules screenshot
+//
+// Coach uploads 1-2 photos of the tournament's posted seeding /
+// tiebreaker rules. We ask the AI to return only the structured fields
+// (advanceCount, byeCount, ordered tiebreakers, teamCount). The coach
+// confirms in the UI before they're applied to the saved pool play.
+// ---------------------------------------------------------------------------
+
+router.post(
+  "/tournaments/:id/pool-play/format-extract",
+  upload.array("files", 2),
+  async (req, res): Promise<void> => {
+    const userId = req.ownerUserId!;
+    const params = IdParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const tournament = await getOwnedTournament(params.data.id, userId);
+    if (!tournament) {
+      res.status(404).json({ error: "Tournament not found" });
+      return;
+    }
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (files.length === 0) {
+      res.status(400).json({ error: "Upload at least one screenshot" });
+      return;
+    }
+    if (files.length > 2) {
+      res.status(400).json({ error: "Upload at most 2 screenshots" });
+      return;
+    }
+
+    const charge = await chargeAiCall(req, "pool-play-format-extract", files.length);
+    if (!charge.ok) {
+      res.status(charge.status).json({ error: charge.error });
+      return;
+    }
+
+    const allowedTiebreakers = POOL_PLAY_TIEBREAKER_KEYS.join(" | ");
+    const systemPrompt = `You are a baseball/softball tournament seeding-rule extractor. The user uploaded screenshots of a tournament's posted seeding/tiebreaker rules. Extract ONLY the structured format — do NOT extract team names or games.
+
+Return EXACTLY this JSON shape (no markdown, no commentary):
+{
+  "advanceCount": <integer 1-8 | null>,   // how many teams advance from the pool
+  "byeCount":     <integer 0-8 | null>,   // how many advancing teams get a bracket bye
+  "teamCount":    <integer 2-16 | null>,  // total teams in the pool
+  "tiebreakers":  ["${POOL_PLAY_TIEBREAKER_KEYS.join('","')}", ...] | null,  // ORDERED list, most-important first
+  "notes":        "<short free-text summary of anything you noticed but couldn't structure>" | null
+}
+
+Rules for "tiebreakers" — map English phrases to these keys (use ONLY these, in the order the rules state):
+  ${allowedTiebreakers}
+Common mappings:
+  - "record" / "win-loss record" / "winning percentage" → "winPct"
+  - "head to head" / "h2h" / "head-to-head" → "h2h"
+  - "run differential" / "run diff" / "run +/-" → "runDiff"
+  - "runs allowed" / "fewest runs against" / "runs against" / "defensive runs" → "runsAllowed"
+  - "runs scored" / "most runs for" → "runsScored"
+  - "coin flip" / "coin toss" / "draw" / "random" → "coinFlip"
+
+If a rule isn't visible in the screenshot, return null for that field — do NOT guess from your training data.
+
+Tournament context: "${tournament.name}"${tournament.location ? `, ${tournament.location}` : ""}.`;
+
+    const content: Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } }
+    > = [{ type: "text", text: systemPrompt }];
+    for (const f of files) {
+      content.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${f.mimetype || "image/png"};base64,${f.buffer.toString("base64")}`,
+        },
+      });
+    }
+
+    let parsed: unknown;
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 1000,
+        reasoning_effort: "minimal",
+        messages: [{ role: "user", content }],
+      });
+      const text = response.choices[0]?.message?.content ?? "";
+      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      req.log.error({ err: e }, "pool-play format-extract failed");
+      res.status(502).json({ error: "Couldn't read the rules screenshot — try a clearer photo or enter manually." });
+      return;
+    }
+
+    // Best-effort coercion. The coach confirms before applying.
+    const obj = (parsed ?? {}) as Record<string, unknown>;
+    const intInRange = (v: unknown, lo: number, hi: number): number | null => {
+      if (typeof v !== "number" || !Number.isFinite(v)) return null;
+      const n = Math.round(v);
+      if (n < lo || n > hi) return null;
+      return n;
+    };
+    const allowedSet = new Set<string>(POOL_PLAY_TIEBREAKER_KEYS);
+    const rawTb = obj.tiebreakers;
+    let tiebreakers: PoolPlayTiebreakerKey[] | null = null;
+    if (Array.isArray(rawTb)) {
+      const seen = new Set<string>();
+      const list: PoolPlayTiebreakerKey[] = [];
+      for (const k of rawTb) {
+        if (typeof k !== "string") continue;
+        if (!allowedSet.has(k)) continue;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        list.push(k as PoolPlayTiebreakerKey);
+        if (list.length >= 8) break;
+      }
+      if (list.length > 0) tiebreakers = list;
+    }
+    const notes =
+      typeof obj.notes === "string" && obj.notes.trim().length > 0
+        ? obj.notes.trim().slice(0, 400)
+        : null;
+
+    res.json({
+      advanceCount: intInRange(obj.advanceCount, 1, 8),
+      byeCount: intInRange(obj.byeCount, 0, 8),
+      teamCount: intInRange(obj.teamCount, 2, 16),
+      tiebreakers,
+      notes,
     });
   },
 );
