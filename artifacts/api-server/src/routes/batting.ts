@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
 import multer from "multer";
-import { db, battingStatsTable, playersTable } from "@workspace/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { db, battingStatsTable, gameBattingLinesTable, playersTable } from "@workspace/db";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getOwnedPlayer } from "../lib/ownership";
@@ -93,20 +93,79 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
   const parsed = BattingRowSchema.safeParse({ ...req.body, playerId });
   if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() }); return; }
 
-  const rates = computeRates(parsed.data);
+  // The numbers the UI shows (and pre-fills the edit form with) are
+  // the UNIONED season totals — manual `batting_stats` row + summed
+  // `game_batting_lines`. If we wrote the incoming totals directly
+  // into the manual row, the next GET would re-add the per-game lines
+  // on top and the stat would appear to double. So before writing,
+  // we subtract the per-game contribution and store only the manual
+  // DELTA. Mental model for callers: "save what you see" still works.
+  const perGameRows = await db
+    .select({
+      ab: sql<number>`coalesce(sum(${gameBattingLinesTable.ab}), 0)::int`,
+      hits: sql<number>`coalesce(sum(${gameBattingLinesTable.hits}), 0)::int`,
+      doubles: sql<number>`coalesce(sum(${gameBattingLinesTable.doubles}), 0)::int`,
+      triples: sql<number>`coalesce(sum(${gameBattingLinesTable.triples}), 0)::int`,
+      hr: sql<number>`coalesce(sum(${gameBattingLinesTable.hr}), 0)::int`,
+      rbi: sql<number>`coalesce(sum(${gameBattingLinesTable.rbi}), 0)::int`,
+      bb: sql<number>`coalesce(sum(${gameBattingLinesTable.bb}), 0)::int`,
+      k: sql<number>`coalesce(sum(${gameBattingLinesTable.k}), 0)::int`,
+      hbp: sql<number>`coalesce(sum(${gameBattingLinesTable.hbp}), 0)::int`,
+      sac: sql<number>`coalesce(sum(${gameBattingLinesTable.sac}), 0)::int`,
+      sb: sql<number>`coalesce(sum(${gameBattingLinesTable.sb}), 0)::int`,
+    })
+    .from(gameBattingLinesTable)
+    .where(
+      and(
+        eq(gameBattingLinesTable.userId, userId),
+        eq(gameBattingLinesTable.playerId, playerId),
+      ),
+    );
+  const pg = perGameRows[0] ?? {
+    ab: 0, hits: 0, doubles: 0, triples: 0, hr: 0, rbi: 0,
+    bb: 0, k: 0, hbp: 0, sac: 0, sb: 0,
+  };
+
+  // Reject impossible totals (incoming < per-game sum) up front rather
+  // than silently clamping to zero, so the coach knows the box score
+  // is the source of truth and they should edit it there instead.
+  const COUNT_KEYS = [
+    "ab", "hits", "doubles", "triples", "hr", "rbi",
+    "bb", "k", "hbp", "sac", "sb",
+  ] as const;
+  for (const key of COUNT_KEYS) {
+    if (parsed.data[key] < pg[key]) {
+      res.status(400).json({
+        error: `${key.toUpperCase()} (${parsed.data[key]}) is below the recorded box-score total (${pg[key]}). Edit the box score for the relevant game instead of lowering the season total.`,
+      });
+      return;
+    }
+  }
+
+  // Subtract the per-game contribution to derive the manual delta.
+  const manual = { ...parsed.data };
+  for (const key of COUNT_KEYS) {
+    manual[key] = parsed.data[key] - pg[key];
+  }
+
+  // Rates we store on the manual row are best-effort and not what the
+  // UI ultimately renders — `getBattingTotals` recomputes them from
+  // the unioned counts. Keep the column populated so legacy callers
+  // that read the row directly still see sensible numbers.
+  const rates = computeRates(manual);
   const existing = await db.select().from(battingStatsTable).where(eq(battingStatsTable.playerId, playerId));
 
   if (existing.length > 0) {
     const [updated] = await db
       .update(battingStatsTable)
-      .set({ ...parsed.data, ...rates, updatedAt: new Date() })
+      .set({ ...manual, ...rates, updatedAt: new Date() })
       .where(eq(battingStatsTable.playerId, playerId))
       .returning();
     res.json(updated);
   } else {
     const [created] = await db
       .insert(battingStatsTable)
-      .values({ ...parsed.data, ...rates })
+      .values({ ...manual, ...rates })
       .returning();
     res.status(201).json(created);
   }
