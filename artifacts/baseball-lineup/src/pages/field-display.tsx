@@ -36,7 +36,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, WifiOff, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, Volume2, VolumeX, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -1079,10 +1079,23 @@ export default function FieldDisplay() {
   //
   // Coaches can mute via the kebab menu (persisted to localStorage).
   const CELEBRATE_KEY = "fd-celebrate-take-lead";
+  const SOUND_KEY = "fd-celebrate-sound";
   const [celebrate, setCelebrate] = useState<boolean>(() => {
     try {
       if (typeof window === "undefined") return true;
       const v = localStorage.getItem(CELEBRATE_KEY);
+      return v == null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+  // Sound is OPT-OUT but loud-by-default would be rude in a quiet
+  // dugout — we still default it ON because the user explicitly
+  // asked for sound. They can mute from the kebab.
+  const [celebrateSound, setCelebrateSound] = useState<boolean>(() => {
+    try {
+      if (typeof window === "undefined") return true;
+      const v = localStorage.getItem(SOUND_KEY);
       return v == null ? true : v === "1";
     } catch {
       return true;
@@ -1095,6 +1108,48 @@ export default function FieldDisplay() {
       /* private mode */
     }
   }, [celebrate]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SOUND_KEY, celebrateSound ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  }, [celebrateSound]);
+
+  // Web Audio context — created lazily on first user gesture (iOS
+  // Safari requires the unlock to happen during a touch/click handler,
+  // and the score-stepper clicks themselves satisfy that). We attach
+  // a one-shot pointerdown listener so a coach who taps ANYWHERE in
+  // the page also primes the context, even if the first event they
+  // trigger is the take-lead show via a teammate's tap.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    const ensure = () => {
+      if (audioCtxRef.current) return;
+      try {
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctor) return;
+        audioCtxRef.current = new Ctor();
+      } catch {
+        /* audio unavailable */
+      }
+    };
+    const onGesture = () => {
+      ensure();
+      if (audioCtxRef.current?.state === "suspended") {
+        void audioCtxRef.current.resume();
+      }
+    };
+    window.addEventListener("pointerdown", onGesture, { passive: true });
+    window.addEventListener("keydown", onGesture);
+    return () => {
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
+  }, []);
 
   // Dedicated full-viewport canvas the celebration paints into. We
   // mount it ourselves (rather than letting canvas-confetti auto-
@@ -1155,6 +1210,7 @@ export default function FieldDisplay() {
         confettiFireRef.current,
         celebrateFlashRef.current,
       );
+      if (celebrateSound) playFanfareSound(audioCtxRef.current);
       return;
     }
 
@@ -1164,8 +1220,9 @@ export default function FieldDisplay() {
       if (now - lastRunCheerAtRef.current < 600) return;
       lastRunCheerAtRef.current = now;
       void fireScoredRunCheer(confettiFireRef.current);
+      if (celebrateSound) playRunCheerSound(audioCtxRef.current);
     }
-  }, [game, ourScore, oppScore, celebrate]);
+  }, [game, ourScore, oppScore, celebrate, celebrateSound]);
 
   // Sync the End Game dialog's score editors from the live game state
   // every time the dialog opens — the coach may have tapped the
@@ -2347,6 +2404,42 @@ export default function FieldDisplay() {
                     : "Take-lead fireworks: on"}
                 </span>
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setCelebrateSound((v) => !v);
+                  // Prime the audio context on this gesture so the
+                  // very next celebration can play without waiting for
+                  // another tap.
+                  if (!audioCtxRef.current) {
+                    try {
+                      const Ctor =
+                        window.AudioContext ||
+                        (
+                          window as unknown as {
+                            webkitAudioContext?: typeof AudioContext;
+                          }
+                        ).webkitAudioContext;
+                      if (Ctor) audioCtxRef.current = new Ctor();
+                    } catch {
+                      /* audio unavailable */
+                    }
+                  }
+                  void audioCtxRef.current?.resume();
+                }}
+                data-testid="menu-celebrate-sound"
+              >
+                {celebrateSound ? (
+                  <Volume2 className="h-4 w-4 mr-2" />
+                ) : (
+                  <VolumeX className="h-4 w-4 mr-2" />
+                )}
+                <span>
+                  {celebrateSound
+                    ? "Mute celebration sounds"
+                    : "Celebration sounds: on"}
+                </span>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-broadcast-gold focus:text-amber-200"
@@ -3446,6 +3539,101 @@ export const __FIELD_DISPLAY_BASE = BASE;
  * Honors prefers-reduced-motion (single modest burst, no flash).
  */
 type ConfettiFire = ReturnType<typeof confetti.create>;
+
+/**
+ * Synthesized "scored a run" chirp — a quick three-note ascending
+ * arpeggio (C5 → E5 → G5) using triangle oscillators with a fast
+ * attack and ~140ms decay. No asset files needed; everything happens
+ * via the Web Audio API. Respects prefers-reduced-motion by quieting
+ * the master gain.
+ *
+ * The caller passes an already-unlocked AudioContext (created during
+ * a user gesture). If absent or unavailable the function bails out
+ * silently — sound is a nice-to-have, never a crash surface.
+ */
+function playRunCheerSound(ctx: AudioContext | null) {
+  if (!ctx) return;
+  if (ctx.state === "suspended") void ctx.resume();
+  const reduced =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const masterGain = reduced ? 0.07 : 0.18;
+  // C5, E5, G5 — a happy major triad.
+  const notes = [523.25, 659.25, 783.99];
+  const now = ctx.currentTime;
+  notes.forEach((freq, i) => {
+    const start = now + i * 0.08;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(masterGain, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.2);
+  });
+}
+
+/**
+ * Synthesized "we took the lead" fanfare — three-note brass-y stab
+ * (G4 → C5 → E5) followed by a sustained C5/E5/G5 chord and a final
+ * higher pop (C6). Sawtooth oscillators run through a softly low-
+ * passed gain envelope to sound trumpet-like without sounding harsh.
+ * Total run time ~1.4s, mixed under the master gain of the run-cheer
+ * by design (it's already very dramatic visually).
+ */
+function playFanfareSound(ctx: AudioContext | null) {
+  if (!ctx) return;
+  if (ctx.state === "suspended") void ctx.resume();
+  const reduced =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const masterGain = reduced ? 0.08 : 0.22;
+
+  const playNote = (
+    freq: number,
+    startOffset: number,
+    duration: number,
+    type: OscillatorType = "sawtooth",
+    peak = masterGain,
+  ) => {
+    const start = ctx.currentTime + startOffset;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    osc.type = type;
+    osc.frequency.value = freq;
+    filter.type = "lowpass";
+    filter.frequency.value = 2400;
+    filter.Q.value = 0.6;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(peak, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + duration + 0.05);
+  };
+
+  // Stab: G4, C5, E5 each ~140ms apart.
+  playNote(392.0, 0.0, 0.22);
+  playNote(523.25, 0.14, 0.22);
+  playNote(659.25, 0.28, 0.32);
+
+  // Sustained chord at 0.42s — C5, E5, G5 layered triangles, quieter.
+  playNote(523.25, 0.42, 0.7, "triangle", masterGain * 0.55);
+  playNote(659.25, 0.42, 0.7, "triangle", masterGain * 0.5);
+  playNote(783.99, 0.42, 0.7, "triangle", masterGain * 0.45);
+
+  // Final high pop at 1.1s — C6.
+  playNote(1046.5, 1.1, 0.35, "triangle", masterGain * 0.8);
+}
 
 /**
  * Short "we scored a run!" cheer — much smaller than the take-the-
