@@ -2574,7 +2574,7 @@ export default function FieldDisplay() {
          * for the desktop / iPad-landscape layout where both columns
          * are visible at once. */}
         {showTournamentPitches && tournamentId != null && (
-          <div className={mobileTab === "order" ? "" : "max-lg:hidden"}>
+          <div className={mobileTab === "order" ? "" : "max-md:hidden"}>
             <TournamentPitchesPanel
               availability={tournament?.pitcherAvailability ?? []}
               dailyMax={tournament?.effectiveDailyMax ?? null}

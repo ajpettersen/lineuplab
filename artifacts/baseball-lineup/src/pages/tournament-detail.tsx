@@ -44,7 +44,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
-import { tournamentDateAsLocal } from "@/lib/tournament-date";
+import { tournamentDateAsLocal, safeFormatDate } from "@/lib/tournament-date";
 import { PoolPlayCard } from "@/components/pool-play-card";
 
 function parseOptionalInt(s: string): number | null {
@@ -350,7 +350,7 @@ export default function TournamentDetail() {
                           <td className="py-2 pl-3">
                             {resting ? (
                               <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-900">
-                                Rest until {format(new Date(resting.availableOn), "EEE M/d")}
+                                Rest until {safeFormatDate(resting.availableOn, "EEE M/d", "soon")}
                               </Badge>
                             ) : exceeded ? (
                               <Badge variant="destructive" className="text-xs">
@@ -450,7 +450,7 @@ export default function TournamentDetail() {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {format(new Date(g.gameDate), "EEE, MMM d · h:mm a")}
+                      {safeFormatDate(g.gameDate, "EEE, MMM d · h:mm a", "Date TBD")}
                       {g.location ? ` · ${g.location}` : ""}
                     </div>
                     {usage && usage.perPitcher.length > 0 && (
@@ -604,7 +604,7 @@ export default function TournamentDetail() {
                     <div className="min-w-0">
                       <div className="font-medium truncate">vs {g.opponent}</div>
                       <div className="text-xs text-muted-foreground">
-                        {format(new Date(g.gameDate), "EEE, MMM d · h:mm a")}
+                        {safeFormatDate(g.gameDate, "EEE, MMM d · h:mm a", "Date TBD")}
                       </div>
                     </div>
                     <Button
