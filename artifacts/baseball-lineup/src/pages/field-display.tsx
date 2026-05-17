@@ -947,22 +947,10 @@ export default function FieldDisplay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online, hasUnsyncedChanges]);
 
-  // "Backlog drained" toast. When the queue clears AFTER having had at
-  // least one pending write, give the coach an explicit confirmation
-  // so they know it's safe to put the iPad down. Uses a ref so we
-  // don't toast on the initial render (when hasUnsyncedChanges is
-  // already false).
-  const wasUnsyncedRef = useRef(false);
-  useEffect(() => {
-    if (hasUnsyncedChanges) {
-      wasUnsyncedRef.current = true;
-      return;
-    }
-    if (wasUnsyncedRef.current && online) {
-      wasUnsyncedRef.current = false;
-      toast({ title: "All changes saved", duration: 2500 });
-    }
-  }, [hasUnsyncedChanges, online, toast]);
+  // (Removed the "All changes saved" success toast — coaches found it
+  // noisy on the score steppers since every +1 tap that drained the
+  // pending queue popped a confirmation. The header's <SyncStatusChip>
+  // already shows "Syncing N" → hidden when idle, which is enough.)
 
   // Subscribe to the module-level quota-error listener so we can warn
   // the coach exactly once if localStorage refuses a write (private
