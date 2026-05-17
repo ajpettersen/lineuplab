@@ -2564,15 +2564,25 @@ export default function FieldDisplay() {
          * Only renders when (a) game has a tournamentId, (b) the coach
          * toggled it on from the kebab menu, and (c) the GET resolved.
          * Same `pitcherAvailability[]` source that powers PitchCountsCard
-         * so the numbers always match the pitching tab. */}
+         * so the numbers always match the pitching tab.
+         *
+         * Mobile placement: on phones (sub-lg) we ONLY show this when
+         * the coach is viewing the Order tab — otherwise it stole 70-
+         * 90px of vertical space from the Field tab on small viewports
+         * and the field diagram had nothing left to render in. The
+         * panel is duplicated below the right-sidebar (Order panel)
+         * for the desktop / iPad-landscape layout where both columns
+         * are visible at once. */}
         {showTournamentPitches && tournamentId != null && (
-          <TournamentPitchesPanel
-            availability={tournament?.pitcherAvailability ?? []}
-            dailyMax={tournament?.effectiveDailyMax ?? null}
-            tournamentMax={tournament?.effectiveTournamentMax ?? null}
-            loading={!tournament}
-            onClose={() => setShowTournamentPitches(false)}
-          />
+          <div className={mobileTab === "order" ? "" : "max-lg:hidden"}>
+            <TournamentPitchesPanel
+              availability={tournament?.pitcherAvailability ?? []}
+              dailyMax={tournament?.effectiveDailyMax ?? null}
+              tournamentMax={tournament?.effectiveTournamentMax ?? null}
+              loading={!tournament}
+              onClose={() => setShowTournamentPitches(false)}
+            />
+          </div>
         )}
       </header>
 
@@ -3933,12 +3943,22 @@ function TournamentPitchesPanel({
   loading: boolean;
   onClose: () => void;
 }) {
+  // Sort by fewest pitches LEFT today, ascending — coaches asked
+  // for "who's about to hit their limit" at a glance, so the most
+  // urgent (lowest remaining, including resting pitchers) lands at
+  // the front of the row. Pitchers with no recorded daily cap get
+  // pushed to the end (treated as +Infinity remaining) since we
+  // genuinely don't know how much gas they have.
+  //
+  // Resting pitchers count as 0 remaining today and sort to the
+  // very front so a coach scanning the panel sees who's unavailable
+  // before anything else.
   const sorted = [...availability].sort((a, b) => {
-    const aTodayLeft = a.pitchesAvailableToday ?? Number.POSITIVE_INFINITY;
-    const bTodayLeft = b.pitchesAvailableToday ?? Number.POSITIVE_INFINITY;
-    if (aTodayLeft !== bTodayLeft) return bTodayLeft - aTodayLeft;
-    // Tiebreak: fewer pitches thrown so far in the tournament = fresher.
-    return a.totalPitchesInTournament - b.totalPitchesInTournament;
+    const aRest = a.restingUntil ? 0 : (a.pitchesAvailableToday ?? Number.POSITIVE_INFINITY);
+    const bRest = b.restingUntil ? 0 : (b.pitchesAvailableToday ?? Number.POSITIVE_INFINITY);
+    if (aRest !== bRest) return aRest - bRest;
+    // Tiebreak: more pitches thrown today = more urgent / closer to cap.
+    return b.pitchesToday - a.pitchesToday;
   });
 
   return (
