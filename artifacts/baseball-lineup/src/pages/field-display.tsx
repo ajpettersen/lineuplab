@@ -36,7 +36,7 @@ import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, Volume2, VolumeX, WifiOff, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crown, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, Volume2, VolumeX, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -366,9 +366,13 @@ interface ScoreStepperProps {
   // mark the two steppers as "US" and "THEM" so kids glancing at the
   // dugout iPad don't mistake which column is theirs.
   label?: string;
+  // When true, the number gets the championship-mode glow treatment
+  // (animated text-shadow + brighter color). Pure visual; gestures
+  // and accessibility are unchanged.
+  championship?: boolean;
 }
 
-function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreStepperProps) {
+function ScoreStepper({ value, onChange, ariaLabel, testId, label, championship }: ScoreStepperProps) {
   // Y coord at gesture start; null when no gesture is in progress.
   const startYRef = useRef<number | null>(null);
   const SWIPE_THRESHOLD = 24;
@@ -458,7 +462,9 @@ function ScoreStepper({ value, onChange, ariaLabel, testId, label }: ScoreSteppe
         onPointerCancel={() => {
           startYRef.current = null;
         }}
-        className="text-3xl sm:text-4xl lg:text-5xl font-bold tabular-nums text-broadcast-gold font-['Roboto_Mono'] px-2 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-broadcast-gold/60 leading-none"
+        className={`text-3xl sm:text-4xl lg:text-5xl font-bold tabular-nums text-broadcast-gold font-['Roboto_Mono'] px-2 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-broadcast-gold/60 leading-none ${
+          championship ? "fd-champ-score" : ""
+        }`}
       >
         {value}
       </div>
@@ -1115,6 +1121,33 @@ export default function FieldDisplay() {
       /* private mode */
     }
   }, [celebrateSound]);
+
+  // Championship Mode — opt-in "pump up the kids" treatment for big
+  // tournament games. Adds a pulsing gold frame glow, animated rainbow
+  // chyron shimmer, glowing scoreboard numerals, and CROWN icons on
+  // the tournament pre-title. The field/lineup themselves stay static
+  // (no rotation, no chip movement) so the coach reading the iPad
+  // isn't distracted — only the chrome around them gets cranked up.
+  // Persisted per-device so a team that uses it for the championship
+  // game on a Sunday doesn't have to re-enable it every restart.
+  // Only meaningful for tournament games; the kebab toggle is hidden
+  // for league fixtures.
+  const CHAMP_MODE_KEY = "fd-championship-mode";
+  const [championshipMode, setChampionshipMode] = useState<boolean>(() => {
+    try {
+      if (typeof window === "undefined") return false;
+      return localStorage.getItem(CHAMP_MODE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAMP_MODE_KEY, championshipMode ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  }, [championshipMode]);
 
   // Web Audio context — created lazily on first user gesture (iOS
   // Safari requires the unlock to happen during a touch/click handler,
@@ -1844,7 +1877,12 @@ export default function FieldDisplay() {
     // Lock the page to the viewport on tablet+ so the field, bench, and
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
-    <div className="min-h-[100dvh] max-lg:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:overflow-hidden lg:overflow-hidden">
+    <div
+      className={`min-h-[100dvh] max-lg:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:overflow-hidden lg:overflow-hidden ${
+        isTournament && championshipMode ? "fd-championship" : ""
+      }`}
+      data-championship={isTournament && championshipMode ? "true" : undefined}
+    >
       {/* Take-the-lead celebration overlay — portaled to document.body
        *  so it can't be clipped by any ancestor stacking context (the
        *  iPad layout has several full-viewport overlays for dim mode,
@@ -2222,6 +2260,7 @@ export default function FieldDisplay() {
               ariaLabel="Our score"
               testId="score-stepper-ours"
               label={teamShortName || teamName || "Us"}
+              championship={isTournament && championshipMode}
             />
             {/* Center-aligned dash so it sits at the same y as the
               * score numbers (which are now centered within their
@@ -2237,6 +2276,7 @@ export default function FieldDisplay() {
               ariaLabel="Opponent score"
               testId="score-stepper-opp"
               label={formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || "Them"}
+              championship={isTournament && championshipMode}
             />
           </div>
           {/* End Game.
@@ -2396,6 +2436,22 @@ export default function FieldDisplay() {
                   </span>
                 </DropdownMenuItem>
               )}
+              {isTournament && (
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setChampionshipMode((v) => !v);
+                  }}
+                  data-testid="menu-championship-mode"
+                >
+                  <Crown className="h-4 w-4 mr-2 text-broadcast-gold" />
+                  <span>
+                    {championshipMode
+                      ? "Exit Championship Mode"
+                      : "Championship Mode"}
+                  </span>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onSelect={(e) => {
                   e.preventDefault();
@@ -2476,6 +2532,7 @@ export default function FieldDisplay() {
             ariaLabel="Our score"
             testId="score-stepper-ours-portrait"
             label={teamShortName || teamName || "Us"}
+            championship={isTournament && championshipMode}
           />
           <span className="text-3xl font-bold tabular-nums text-slate-700 leading-none font-['Roboto_Mono']">
             –
@@ -2488,6 +2545,7 @@ export default function FieldDisplay() {
             ariaLabel="Opponent score"
             testId="score-stepper-opp-portrait"
             label={formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || "Them"}
+            championship={isTournament && championshipMode}
           />
         </div>
         {/* Tournament splash — static gold gradient underline so the
@@ -2498,7 +2556,7 @@ export default function FieldDisplay() {
         {isTournament && (
           <div
             aria-hidden="true"
-            className="fd-tourney-shimmer absolute inset-x-0 bottom-0 h-1 sm:h-[5px] pointer-events-none"
+            className={`${championshipMode ? "fd-champ-chyron" : "fd-tourney-shimmer"} absolute inset-x-0 bottom-0 h-1 sm:h-[5px] pointer-events-none`}
             data-testid="tournament-shimmer-header"
           />
         )}
@@ -2786,11 +2844,19 @@ export default function FieldDisplay() {
                 className="flex items-center justify-center gap-1.5 mb-1 text-broadcast-gold/90"
                 data-testid="tournament-pretitle"
               >
-                <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                {championshipMode ? (
+                  <Crown className="h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
+                ) : (
+                  <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                )}
                 <span className="font-display text-[9px] sm:text-[10px] font-bold tracking-[0.4em] uppercase">
-                  Tournament
+                  {championshipMode ? "Championship" : "Tournament"}
                 </span>
-                <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                {championshipMode ? (
+                  <Crown className="h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
+                ) : (
+                  <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                )}
               </div>
             )}
             <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.3em] uppercase text-broadcast-gold leading-none">
@@ -2799,7 +2865,7 @@ export default function FieldDisplay() {
             {isTournament && (
               <div
                 aria-hidden="true"
-                className="fd-tourney-shimmer absolute inset-x-0 bottom-0 h-[3px] pointer-events-none"
+                className={`${championshipMode ? "fd-champ-chyron" : "fd-tourney-shimmer"} absolute inset-x-0 bottom-0 h-[3px] pointer-events-none`}
                 data-testid="tournament-shimmer-lineup"
               />
             )}
