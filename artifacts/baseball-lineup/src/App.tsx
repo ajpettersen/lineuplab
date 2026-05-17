@@ -53,7 +53,10 @@ const Stats = lazy(() => import("@/pages/stats"));
 const SeasonStats = lazy(() => import("@/pages/season-stats"));
 const ArmWatch = lazy(() => import("@/pages/arm-watch"));
 const Settings = lazy(() => import("@/pages/settings"));
-const DepthChart = lazy(() => import("@/pages/depth-chart"));
+// /depth-chart now mounts the combined Roster+Depth Chart page (it
+// detects the path and opens to the Depth Chart tab). Keeps old
+// bookmarks + the nav link working without a separate component.
+const DepthChart = lazy(() => import("@/pages/players"));
 const Admin = lazy(() => import("@/pages/admin"));
 const AdminTeamDetail = lazy(() => import("@/pages/admin-team-detail"));
 const Join = lazy(() => import("@/pages/join"));

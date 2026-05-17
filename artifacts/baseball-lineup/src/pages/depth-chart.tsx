@@ -106,28 +106,42 @@ export default function DepthChart() {
   // roster's preferredPositions (alpha) so the coach has a starting
   // list to reorder rather than an empty column. Configured positions
   // are kept as-is and stale playerIds are filtered out.
+  // Stable hash so an identity-only refetch from React Query doesn't
+  // clobber the coach's in-progress drag. We only re-run hydration
+  // when the set of player IDs or preferred-position assignments
+  // actually CHANGES on the server.
+  const playersFingerprint = useMemo(
+    () =>
+      (players as PlayerRow[])
+        .map((p) => `${p.id}:${p.preferredPositions.join(",")}`)
+        .sort()
+        .join("|"),
+    [players],
+  );
+
   useEffect(() => {
     if (!settingsQuery.data || playersLoading) return;
     const saved = (settingsQuery.data.depthChart ?? {}) as Record<string, number[]>;
     const validIds = new Set(players.map((p) => p.id));
     const next: Record<string, number[]> = {};
     for (const pos of activeFieldPositions) {
-      const savedRow = saved[pos];
-      if (savedRow && savedRow.length > 0) {
-        next[pos] = savedRow.filter((id) => validIds.has(id));
-      } else {
-        // Seed: any player whose preferredPositions includes this slot,
-        // alphabetised by display name. Coach can still add others later.
-        const seeded = (players as PlayerRow[])
-          .filter((p) => p.preferredPositions.includes(pos))
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((p) => p.id);
-        next[pos] = seeded;
-      }
+      // Start from saved order (filtered to live players). Then APPEND
+      // any preferred-position player not yet on the list. This is the
+      // "update a player's preferred position → they show up in the
+      // depth chart" behavior the coach expects. Newcomers land at the
+      // bottom; the coach can drag them up. We do NOT auto-persist
+      // (would fight the coach when they remove someone on purpose).
+      const savedRow = (saved[pos] ?? []).filter((id) => validIds.has(id));
+      const inRow = new Set(savedRow);
+      const preferredExtras = (players as PlayerRow[])
+        .filter((p) => p.preferredPositions.includes(pos) && !inRow.has(p.id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((p) => p.id);
+      next[pos] = [...savedRow, ...preferredExtras];
     }
     setChart(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsQuery.data, players.length, activeFieldPositions.join(",")]);
+  }, [settingsQuery.data, playersFingerprint, activeFieldPositions.join(",")]);
 
   const playerById = useMemo(() => {
     const m = new Map<number, PlayerRow>();
@@ -456,19 +470,18 @@ export function DepthChartReference({ topN = 3 }: { topN?: number }) {
   const validIds = new Set(players.map((p) => p.id));
 
   const rows = activeFieldPositions.map((pos) => {
-    const list = saved[pos] ?? [];
-    const filtered = list.filter((id) => validIds.has(id));
-    // Fall back to alpha-sorted preferred-position players if the
-    // coach hasn't curated this slot yet — keeps the panel useful
-    // immediately after install.
-    const seeded =
-      filtered.length > 0
-        ? filtered
-        : (players as PlayerRow[])
-            .filter((p) => p.preferredPositions.includes(pos))
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((p) => p.id);
-    return { pos, ids: seeded.slice(0, topN), seeded: filtered.length === 0 };
+    const filtered = (saved[pos] ?? []).filter((id) => validIds.has(id));
+    const inRow = new Set(filtered);
+    // Append any preferred-position player that hasn't been ranked
+    // yet — keeps this reference panel in sync with players the coach
+    // just marked as preferring this slot, without requiring a trip to
+    // the Depth Chart editor first.
+    const preferredExtras = (players as PlayerRow[])
+      .filter((p) => p.preferredPositions.includes(pos) && !inRow.has(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => p.id);
+    const merged = [...filtered, ...preferredExtras];
+    return { pos, ids: merged.slice(0, topN), seeded: filtered.length === 0 };
   });
 
   const anyConfigured = rows.some((r) => !r.seeded);

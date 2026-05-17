@@ -417,7 +417,12 @@ export default function TournamentDetail() {
             <ul className="divide-y">
               {tournament.games.map((g) => {
                 const usage = pitchesByGame.get(g.id);
-                const suggestion = tournament.gameSuggestions.find(
+                // Defensive `?? []`: an old persisted cache rehydrated
+                // from IndexedDB can be missing newly-added fields like
+                // `gameSuggestions`. Without the guard, the first render
+                // after rehydrate throws and trips the ErrorBoundary
+                // until the coach hits "Reload".
+                const suggestion = (tournament.gameSuggestions ?? []).find(
                   (s) => s.gameId === g.id,
                 );
                 return (

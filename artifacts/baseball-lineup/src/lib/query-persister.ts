@@ -55,6 +55,6 @@ export async function purgePersistedQueryCache(): Promise<void> {
 // Bumping this string invalidates ALL persisted caches across users
 // (e.g. when we change a query shape that would otherwise crash on
 // rehydrate). Keep in sync with breaking changes to query payloads.
-export const PERSIST_BUSTER = "v1.1.0";
+export const PERSIST_BUSTER = "v1.2.0";
 
 export const PERSIST_MAX_AGE = 1000 * 60 * 60 * 24 * 14; // 14 days

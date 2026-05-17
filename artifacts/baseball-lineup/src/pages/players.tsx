@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import DepthChart from "@/pages/depth-chart";
 import {
   useListPlayers,
   useCreatePlayer,
@@ -33,7 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X, AlertTriangle, Info, ShieldCheck } from "lucide-react";
+import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X, AlertTriangle, Info, ShieldCheck, Users, ListOrdered } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import {
@@ -872,6 +874,24 @@ export default function Players() {
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  // Roster + Depth Chart used to be separate top-level pages, but
+  // coaches asked for them in one spot — and to see new preferred
+  // positions show up on the depth chart automatically. We now host
+  // both behind a tab strip. The `/depth-chart` route still mounts
+  // this same page (so old bookmarks/links keep working) and just
+  // opens with the Depth Chart tab pre-selected.
+  const [location, setLocation] = useLocation();
+  const initialTab = location.startsWith("/depth-chart") ? "depth" : "roster";
+  const [tab, setTab] = useState<"roster" | "depth">(initialTab);
+  const onTabChange = (next: string) => {
+    const v = next === "depth" ? "depth" : "roster";
+    setTab(v);
+    // Keep URL in sync so refreshes / share-links land on the same
+    // tab. Avoid pushing if we're already on the matching path so
+    // we don't add empty history entries on every click.
+    const target = v === "depth" ? "/depth-chart" : "/players";
+    if (!location.startsWith(target)) setLocation(target);
+  };
 
   const handleDelete = () => {
     if (!deleteId) return;
@@ -902,16 +922,23 @@ export default function Players() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <div className="eyebrow text-primary/70">Team</div>
-          <h1 className="page-title text-foreground mt-1">Roster</h1>
-          <p className="text-muted-foreground mt-2 text-sm">{players.length} players</p>
+          <h1 className="page-title text-foreground mt-1">
+            {tab === "depth" ? "Depth Chart" : "Roster"}
+          </h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {tab === "depth"
+              ? "Rank your best players at each position. New preferred-position players are added automatically."
+              : `${players.length} players`}
+          </p>
         </div>
         {/* Add/import are roster mutations — hidden from non-full
             tiers. View-only and partial coaches can still browse the
-            roster, just not edit it. */}
-        {canEditRoster && (
+            roster, just not edit it. Hidden on the Depth Chart tab
+            because they aren't relevant there. */}
+        {canEditRoster && tab === "roster" && (
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="button-open-import">
               <Sparkles className="h-4 w-4 mr-2" />
@@ -924,6 +951,29 @@ export default function Players() {
           </div>
         )}
       </div>
+
+      <Tabs value={tab} onValueChange={onTabChange} className="w-full">
+        <TabsList className="grid grid-cols-2 w-full max-w-xs">
+          <TabsTrigger value="roster" data-testid="tab-roster">
+            <Users className="h-4 w-4 mr-1.5" />
+            Roster
+          </TabsTrigger>
+          <TabsTrigger value="depth" data-testid="tab-depth-chart">
+            <ListOrdered className="h-4 w-4 mr-1.5" />
+            Depth Chart
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="depth" className="mt-6">
+          {/* Re-uses the existing DepthChart page component so the
+              editor behavior stays in one place. Its own page
+              title/intro is intentionally kept — slightly redundant
+              with the tab header but harmless and avoids forking the
+              component. */}
+          <DepthChart />
+        </TabsContent>
+
+        <TabsContent value="roster" className="mt-6 flex flex-col gap-6">
 
       {!isLoading && players.length >= 1 && (
         <PositionCoveragePanel players={players} />
@@ -1046,6 +1096,8 @@ export default function Players() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
