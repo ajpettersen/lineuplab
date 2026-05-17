@@ -1096,6 +1096,34 @@ export default function FieldDisplay() {
     }
   }, [celebrate]);
 
+  // Dedicated full-viewport canvas the celebration paints into. We
+  // mount it ourselves (rather than letting canvas-confetti auto-
+  // create one on document.body) for two reasons:
+  //   1. We can pin z-index to the max so it always sits ABOVE the
+  //      iPad-only fullscreen / dim overlays. The library's default
+  //      canvas has no z-index and was being painted under the
+  //      sidebar/header stacking contexts on iPad — coaches saw
+  //      nothing on the big screen even though it worked on phones.
+  //   2. We can drive a coordinated CSS screen-flash on top of the
+  //      same overlay (see celebrateFlashRef below).
+  const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const confettiFireRef = useRef<ReturnType<
+    typeof confetti.create
+  > | null>(null);
+  useEffect(() => {
+    const c = confettiCanvasRef.current;
+    if (!c) return;
+    confettiFireRef.current = confetti.create(c, {
+      resize: true,
+      useWorker: true,
+    });
+    return () => {
+      confettiFireRef.current?.reset();
+      confettiFireRef.current = null;
+    };
+  }, []);
+  const celebrateFlashRef = useRef<HTMLDivElement | null>(null);
+
   const prevMarginRef = useRef<number | null>(null);
   const lastCelebrationAtRef = useRef<number>(0);
   useEffect(() => {
@@ -1113,7 +1141,10 @@ export default function FieldDisplay() {
       const now = Date.now();
       if (now - lastCelebrationAtRef.current < 600) return;
       lastCelebrationAtRef.current = now;
-      void fireTakeTheLeadCelebration();
+      void fireTakeTheLeadCelebration(
+        confettiFireRef.current,
+        celebrateFlashRef.current,
+      );
     }
   }, [game, ourScore, oppScore, celebrate]);
 
@@ -1732,6 +1763,49 @@ export default function FieldDisplay() {
     // sidebar all fit without scrolling. On phones (sub-lg) we relax the
     // height so the stacked layout can grow naturally.
     <div className="min-h-[100dvh] max-lg:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:overflow-hidden lg:overflow-hidden">
+      {/* Take-the-lead celebration overlay — portaled to document.body
+       *  so it can't be clipped by any ancestor stacking context (the
+       *  iPad layout has several full-viewport overlays for dim mode,
+       *  fullscreen letterboxing, etc. that were sitting on top of the
+       *  library's auto-created canvas). Pointer-events none so it
+       *  never eats taps. zIndex set on the parent element wrapper. */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 2147483646,
+              pointerEvents: "none",
+            }}
+          >
+            <canvas
+              ref={confettiCanvasRef}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+              }}
+            />
+            <div
+              ref={celebrateFlashRef}
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(circle at 50% 45%, rgba(255,210,76,0.55) 0%, rgba(255,210,76,0.25) 30%, rgba(28,61,122,0) 70%)",
+                opacity: 0,
+                transition: "opacity 220ms ease-out",
+                pointerEvents: "none",
+                mixBlendMode: "screen",
+              }}
+            />
+          </div>,
+          document.body,
+        )}
       {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ──
        *
        * Mobile layout note: the original single-row header packed exit +
@@ -3334,21 +3408,37 @@ function DraggableBenchChip({
 export const __FIELD_DISPLAY_BASE = BASE;
 
 /**
- * Multi-burst "we took the lead" celebration. Uses canvas-confetti to
- * paint a ~2.5s sequence of:
- *   1. A wide center burst (the "WOO!" moment)
- *   2. Alternating left/right edge fountains every ~250ms for ~1.8s
- *      (the "fireworks" feel — two launchers, like the foul poles)
- *   3. A final golden cannon from below
+ * Big "we took the lead" celebration. Paints into a caller-supplied
+ * canvas (so we control the stacking context above any iPad full-
+ * screen / dim overlays — the library's auto-created body canvas
+ * was getting clipped on iPad) and pulses a coordinated screen-flash
+ * div for an extra "WOO!" wallop.
  *
- * Colors lean on the broadcast-gold palette so it reads as on-brand
- * rather than a generic party-favor confetti. Respects
- * prefers-reduced-motion by falling back to a single small burst.
+ * Sequence (~4 seconds, scaled up from v1 which barely registered on
+ * larger displays):
+ *   0.0s  Massive center boom (220 particles, big scalar)
+ *   0.0s  Golden screen-flash pulse fades over 700ms
+ *   0.0s  Two-pole foul-pole cannons alternate every 220ms for ~2s
+ *   0.0s  Ticker-tape RAIN from the top edges for ~1.8s
+ *   2.2s  Encore center boom + secondary flash
+ *   3.2s  Final golden bottom cannon for the curtain
+ *
+ * Colors lean on broadcast-gold + deep-navy so it reads as on-brand.
+ * Honors prefers-reduced-motion (single modest burst, no flash).
  */
-function fireTakeTheLeadCelebration() {
+type ConfettiFire = ReturnType<typeof confetti.create>;
+function fireTakeTheLeadCelebration(
+  fire: ConfettiFire | null,
+  flashEl: HTMLDivElement | null,
+) {
   if (typeof window === "undefined") return;
-  const GOLD = ["#f5b800", "#ffd24c", "#fff2b8"];
-  const NAVY = ["#1c3d7a", "#2e5fb3", "#7aa9ff"];
+  // Fall back to the library's default canvas if our scoped one isn't
+  // mounted yet (shouldn't happen in practice — the effect mounts on
+  // first render — but keeps the function safe to call standalone).
+  const shoot = fire ?? confetti;
+
+  const GOLD = ["#f5b800", "#ffd24c", "#fff2b8", "#ffae00"];
+  const NAVY = ["#1c3d7a", "#2e5fb3", "#7aa9ff", "#cfe0ff"];
   const ALL = [...GOLD, ...NAVY, "#ffffff"];
 
   const reduced =
@@ -3356,61 +3446,109 @@ function fireTakeTheLeadCelebration() {
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   if (reduced) {
-    void confetti({
-      particleCount: 60,
-      spread: 70,
-      origin: { y: 0.6 },
+    void shoot({
+      particleCount: 80,
+      spread: 80,
+      origin: { y: 0.55 },
       colors: ALL,
     });
     return;
   }
 
-  // 1. Big center pop.
-  void confetti({
-    particleCount: 140,
-    spread: 95,
-    startVelocity: 55,
+  const pulseFlash = (peak: number, fadeMs: number) => {
+    if (!flashEl) return;
+    flashEl.style.transition = "opacity 120ms ease-out";
+    flashEl.style.opacity = String(peak);
+    window.setTimeout(() => {
+      if (!flashEl) return;
+      flashEl.style.transition = `opacity ${fadeMs}ms ease-out`;
+      flashEl.style.opacity = "0";
+    }, 140);
+  };
+
+  // 1. Massive center boom + screen flash.
+  pulseFlash(0.85, 700);
+  void shoot({
+    particleCount: 220,
+    spread: 110,
+    startVelocity: 65,
+    scalar: 1.25,
+    ticks: 240,
     origin: { x: 0.5, y: 0.55 },
     colors: ALL,
-    zIndex: 9999,
-    disableForReducedMotion: true,
   });
 
-  // 2. Side fountains alternating like foul-pole fireworks.
-  const endAt = Date.now() + 1800;
-  let tick = 0;
-  const launcher = window.setInterval(() => {
-    if (Date.now() > endAt) {
-      window.clearInterval(launcher);
+  // 2. Two-pole foul-pole cannons, alternating, for 2s.
+  const polesEndAt = Date.now() + 2000;
+  let polesTick = 0;
+  const polesLauncher = window.setInterval(() => {
+    if (Date.now() > polesEndAt) {
+      window.clearInterval(polesLauncher);
       return;
     }
-    const fromLeft = tick % 2 === 0;
-    tick++;
-    void confetti({
-      particleCount: 40,
+    const fromLeft = polesTick % 2 === 0;
+    polesTick++;
+    void shoot({
+      particleCount: 70,
       angle: fromLeft ? 60 : 120,
-      spread: 55,
-      startVelocity: 60,
-      origin: { x: fromLeft ? 0 : 1, y: 0.7 },
+      spread: 65,
+      startVelocity: 75,
+      scalar: 1.1,
+      ticks: 260,
+      origin: { x: fromLeft ? 0.05 : 0.95, y: 0.85 },
       colors: fromLeft ? GOLD : NAVY,
-      zIndex: 9999,
-      disableForReducedMotion: true,
     });
-  }, 240);
+  }, 220);
 
-  // 3. Final golden "boom" from the bottom.
+  // 3. Ticker-tape rain from the top edges.
+  const rainEndAt = Date.now() + 1800;
+  let rainTick = 0;
+  const rainLauncher = window.setInterval(() => {
+    if (Date.now() > rainEndAt) {
+      window.clearInterval(rainLauncher);
+      return;
+    }
+    const fromTopLeft = rainTick % 2 === 0;
+    rainTick++;
+    void shoot({
+      particleCount: 50,
+      angle: fromTopLeft ? -70 : -110,
+      spread: 90,
+      startVelocity: 40,
+      gravity: 0.9,
+      scalar: 0.95,
+      ticks: 320,
+      origin: { x: fromTopLeft ? 0.15 : 0.85, y: -0.05 },
+      colors: ALL,
+    });
+  }, 260);
+
+  // 4. Encore boom + secondary flash.
   window.setTimeout(() => {
-    void confetti({
-      particleCount: 90,
-      spread: 110,
-      startVelocity: 70,
+    pulseFlash(0.45, 600);
+    void shoot({
+      particleCount: 180,
+      spread: 130,
+      startVelocity: 60,
+      scalar: 1.15,
+      ticks: 240,
+      origin: { x: 0.5, y: 0.5 },
+      colors: ALL,
+    });
+  }, 2200);
+
+  // 5. Final golden bottom cannon for the curtain.
+  window.setTimeout(() => {
+    void shoot({
+      particleCount: 140,
+      spread: 140,
+      startVelocity: 80,
+      scalar: 1.3,
+      ticks: 280,
       origin: { x: 0.5, y: 0.95 },
       colors: GOLD,
-      scalar: 1.2,
-      zIndex: 9999,
-      disableForReducedMotion: true,
     });
-  }, 1900);
+  }, 3200);
 }
 
 type TPAvailability = {
