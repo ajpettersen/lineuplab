@@ -1643,24 +1643,31 @@ components:
       properties:
         id:
           type: string
-          description: Stable composite key — `<gameId>:<taskType>`.
+          description: Stable composite key — `<gameId|tournamentId>:<taskType>`.
         type:
           type: string
-          enum: [score, pitch_counts, box_score]
+          enum: [score, pitch_counts, box_score, tournament_network]
         gameId:
           type: integer
+          nullable: true
+          description: Present for game-scoped tasks (score / pitch_counts / box_score). Null for tournament-scoped tasks.
+        tournamentId:
+          type: integer
+          nullable: true
+          description: Present for tournament-scoped tasks (tournament_network).
         gameDate:
           type: string
           format: date-time
+          description: Game date for game tasks, tournament start date for tournament tasks.
         opponent:
           type: string
+          description: Opponent for game tasks; the tournament name for tournament tasks.
         link:
           type: string
           description: Relative path the Open button should navigate to (already includes any deep-link hash).
       required:
         - id
         - type
-        - gameId
         - gameDate
         - opponent
         - link

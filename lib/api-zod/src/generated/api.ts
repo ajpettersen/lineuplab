@@ -3409,11 +3409,35 @@ coach has triaged.
  */
 export const ListDashboardTasksResponseItem = zod
   .object({
-    id: zod.string().describe("Stable composite key — `<gameId>:<taskType>`."),
-    type: zod.enum(["score", "pitch_counts", "box_score"]),
-    gameId: zod.number(),
-    gameDate: zod.coerce.date(),
-    opponent: zod.string(),
+    id: zod
+      .string()
+      .describe("Stable composite key — `<gameId|tournamentId>:<taskType>`."),
+    type: zod.enum([
+      "score",
+      "pitch_counts",
+      "box_score",
+      "tournament_network",
+    ]),
+    gameId: zod
+      .number()
+      .nullish()
+      .describe(
+        "Present for game-scoped tasks (score \/ pitch_counts \/ box_score). Null for tournament-scoped tasks.",
+      ),
+    tournamentId: zod
+      .number()
+      .nullish()
+      .describe("Present for tournament-scoped tasks (tournament_network)."),
+    gameDate: zod.coerce
+      .date()
+      .describe(
+        "Game date for game tasks, tournament start date for tournament tasks.",
+      ),
+    opponent: zod
+      .string()
+      .describe(
+        "Opponent for game tasks; the tournament name for tournament tasks.",
+      ),
     link: zod
       .string()
       .describe(

@@ -9,6 +9,7 @@ import {
   useGetPreferences,
   useListDashboardTasks,
   useDismissDashboardTask,
+  useDismissTournamentNetworkSuggestions,
   getListDashboardTasksQueryKey,
   type DashboardTask,
   type Game,
@@ -371,6 +372,7 @@ const TASK_LABEL: Record<DashboardTask["type"], string> = {
   score: "Score not logged",
   pitch_counts: "Pitch counts not logged",
   box_score: "Box score not imported",
+  tournament_network: "Other coaches added this tournament",
 };
 
 /**
@@ -397,6 +399,11 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
   // most of the time) so opening the dialog is instant.
   const { data: players = [] } = useListPlayers();
 
+  // Tournament-network task rows dismiss through the per-tournament
+  // network dismiss endpoint, not the shared dashboard dismiss (which
+  // is gameId-scoped). Both share the same optimistic-remove pattern.
+  const dismissTournamentNetwork = useDismissTournamentNetworkSuggestions();
+
   const dismiss = useDismissDashboardTask({
     mutation: {
       onMutate: async (vars) => {
@@ -409,7 +416,7 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
           (old) =>
             (old ?? []).filter(
               (t) =>
-                !(t.gameId === vars.data.gameId && t.type === vars.data.taskType),
+                !(t.gameId != null && t.gameId === vars.data.gameId && t.type === vars.data.taskType),
             ),
         );
         return { prev };
@@ -452,7 +459,18 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
           >
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium truncate" title={t.opponent ?? undefined}>
-                {shortenTeamName(teamName) || teamName || "Team"} vs. {formatOpponentForMatchup(t.opponent, teamName) || t.opponent}
+                {/* Tournament-network rows reuse the `opponent` field to
+                    carry the tournament name — render it bare instead
+                    of the "<team> vs. <opponent>" format used for game
+                    tasks. */}
+                {t.type === "tournament_network" ? (
+                  <>{t.opponent}</>
+                ) : (
+                  <>
+                    {shortenTeamName(teamName) || teamName || "Team"} vs.{" "}
+                    {formatOpponentForMatchup(t.opponent, teamName) || t.opponent}
+                  </>
+                )}
                 <span className="text-xs text-muted-foreground font-normal ml-2">
                   {format(new Date(t.gameDate), "MMM d, yyyy")}
                 </span>
@@ -471,7 +489,7 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
                   size="sm"
                   variant="default"
                   className="h-8"
-                  onClick={() => setBoxScoreGameId(t.gameId)}
+                  onClick={() => t.gameId != null && setBoxScoreGameId(t.gameId)}
                   data-testid={`button-task-import-box-score-${t.id}`}
                 >
                   <FileText className="h-3.5 w-3.5 mr-1" />
@@ -494,12 +512,28 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
                 size="sm"
                 variant="ghost"
                 className="h-8 px-2 text-muted-foreground hover:text-foreground"
-                onClick={() =>
-                  dismiss.mutate({
-                    data: { gameId: t.gameId, taskType: t.type },
-                  })
-                }
-                disabled={dismiss.isPending}
+                onClick={() => {
+                  if (t.type === "tournament_network" && t.tournamentId != null) {
+                    // Tournament tasks dismiss through the network
+                    // endpoint (stamps `networkPromptDismissedAt` on
+                    // the tournament row) — task_dismissals is gameId-
+                    // scoped and can't represent these.
+                    dismissTournamentNetwork.mutate(
+                      { id: t.tournamentId },
+                      {
+                        onSuccess: () =>
+                          void qc.invalidateQueries({
+                            queryKey: getListDashboardTasksQueryKey(),
+                          }),
+                      },
+                    );
+                  } else if (t.gameId != null && t.type !== "tournament_network") {
+                    dismiss.mutate({
+                      data: { gameId: t.gameId, taskType: t.type },
+                    });
+                  }
+                }}
+                disabled={dismiss.isPending || dismissTournamentNetwork.isPending}
                 title="Hide this task permanently"
                 data-testid={`button-task-ignore-${t.id}`}
               >

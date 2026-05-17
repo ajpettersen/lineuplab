@@ -7,6 +7,8 @@ import {
   pitchCountsTable,
   taskDismissalsTable,
   teamSettingsTable,
+  tournamentsTable,
+  tournamentNetworkMembersTable,
 } from "@workspace/db";
 import { DismissDashboardTaskBody } from "@workspace/api-zod";
 
@@ -129,8 +131,12 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
 
   type Task = {
     id: string;
-    type: "score" | "pitch_counts" | "box_score";
-    gameId: number;
+    type: "score" | "pitch_counts" | "box_score" | "tournament_network";
+    // Game tasks set gameId; tournament tasks set tournamentId. Exactly
+    // one is populated per row (the client renders + dismisses based on
+    // `type`, so the foreign-key column is purely informational).
+    gameId: number | null;
+    tournamentId: number | null;
     gameDate: string;
     opponent: string;
     link: string;
@@ -150,6 +156,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
           id: key,
           type: "score",
           gameId: g.id,
+          tournamentId: null,
           gameDate: g.gameDate.toISOString(),
           opponent: g.opponent,
           link: `/games/${g.id}`,
@@ -167,6 +174,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
           id: key,
           type: "box_score",
           gameId: g.id,
+          tournamentId: null,
           gameDate: g.gameDate.toISOString(),
           opponent: g.opponent,
           link: `/games/${g.id}#box-score-card`,
@@ -182,6 +190,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
           id: key,
           type: "pitch_counts",
           gameId: g.id,
+          tournamentId: null,
           gameDate: g.gameDate.toISOString(),
           opponent: g.opponent,
           // Anchor takes the coach straight to the pitch-counts card on
@@ -192,6 +201,84 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
     }
 
     if (tasks.length >= MAX_TASKS) break;
+  }
+
+  // Tournament-network suggestion tasks. We surface ONE task per
+  // tournament owned by this coach that:
+  //   - has a fingerprint
+  //   - hasn't been dismissed (`networkPromptDismissedAt IS NULL`)
+  //   - isn't already in a network (no membership row)
+  //   - has at least one OTHER coach's tournament with the same
+  //     fingerprint to actually join
+  // Dismissal lives on the tournament row itself (the network card's
+  // X button), so we don't go through `task_dismissals` here. The
+  // client routes "Ignore" through POST /tournaments/:id/network/dismiss.
+  if (tasks.length < MAX_TASKS) {
+    const myCandidates = await db
+      .select({
+        id: tournamentsTable.id,
+        name: tournamentsTable.name,
+        startDate: tournamentsTable.startDate,
+        fingerprint: tournamentsTable.networkFingerprint,
+      })
+      .from(tournamentsTable)
+      .leftJoin(
+        tournamentNetworkMembersTable,
+        eq(tournamentNetworkMembersTable.tournamentId, tournamentsTable.id),
+      )
+      .where(
+        and(
+          eq(tournamentsTable.userId, userId),
+          isNull(tournamentsTable.deletedAt),
+          isNull(tournamentsTable.networkPromptDismissedAt),
+          isNull(tournamentNetworkMembersTable.id),
+          sql`${tournamentsTable.networkFingerprint} is not null`,
+        ),
+      )
+      .orderBy(desc(tournamentsTable.startDate));
+
+    if (myCandidates.length > 0) {
+      // Find which fingerprints have at least one matching tournament
+      // owned by a DIFFERENT coach. Do it in one query and bucket by
+      // fingerprint client-side so we avoid an N+1.
+      const fps = myCandidates
+        .map((t) => t.fingerprint)
+        .filter((f): f is string => !!f);
+      const matchRows = await db
+        .select({ fingerprint: tournamentsTable.networkFingerprint })
+        .from(tournamentsTable)
+        .where(
+          and(
+            inArray(tournamentsTable.networkFingerprint, fps),
+            isNull(tournamentsTable.deletedAt),
+            // Only count OTHER coaches' tournaments — joining our own
+            // wouldn't be a network.
+            sql`${tournamentsTable.userId} <> ${userId}`,
+          ),
+        );
+      const fpsWithPeers = new Set(
+        matchRows.map((r) => r.fingerprint).filter((f): f is string => !!f),
+      );
+
+      for (const t of myCandidates) {
+        if (!t.fingerprint || !fpsWithPeers.has(t.fingerprint)) continue;
+        const key = `${t.id}:tournament_network`;
+        tasks.push({
+          id: key,
+          type: "tournament_network",
+          gameId: null,
+          tournamentId: t.id,
+          gameDate: t.startDate.toISOString(),
+          // Re-use `opponent` as the display label so the existing
+          // task row layout works without a schema fork — the client
+          // renders this as the tournament name (it's not actually an
+          // opponent).
+          opponent: t.name,
+          link: `/tournaments/${t.id}`,
+        });
+        if (tasks.length >= MAX_TASKS) break;
+      }
+    }
   }
 
   res.json(tasks.slice(0, MAX_TASKS));

@@ -298,17 +298,23 @@ export const DashboardTaskType = {
   score: "score",
   pitch_counts: "pitch_counts",
   box_score: "box_score",
+  tournament_network: "tournament_network",
 } as const;
 
 /**
  * An open coaching task surfaced on the dashboard.
  */
 export interface DashboardTask {
-  /** Stable composite key — `<gameId>:<taskType>`. */
+  /** Stable composite key — `<gameId|tournamentId>:<taskType>`. */
   id: string;
   type: DashboardTaskType;
-  gameId: number;
+  /** Present for game-scoped tasks (score / pitch_counts / box_score). Null for tournament-scoped tasks. */
+  gameId?: number | null;
+  /** Present for tournament-scoped tasks (tournament_network). */
+  tournamentId?: number | null;
+  /** Game date for game tasks, tournament start date for tournament tasks. */
   gameDate: string;
+  /** Opponent for game tasks; the tournament name for tournament tasks. */
   opponent: string;
   /** Relative path the Open button should navigate to (already includes any deep-link hash). */
   link: string;
