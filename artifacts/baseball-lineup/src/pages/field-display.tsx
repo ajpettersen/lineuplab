@@ -1125,26 +1125,45 @@ export default function FieldDisplay() {
   const celebrateFlashRef = useRef<HTMLDivElement | null>(null);
 
   const prevMarginRef = useRef<number | null>(null);
+  const prevOurScoreRef = useRef<number | null>(null);
   const lastCelebrationAtRef = useRef<number>(0);
+  const lastRunCheerAtRef = useRef<number>(0);
   useEffect(() => {
     if (!game) return;
     const margin = ourScore - oppScore;
-    const prev = prevMarginRef.current;
+    const prevMargin = prevMarginRef.current;
+    const prevOurs = prevOurScoreRef.current;
     prevMarginRef.current = margin;
-    if (prev == null) return; // seeding read
+    prevOurScoreRef.current = ourScore;
+    if (prevMargin == null || prevOurs == null) return; // seeding read
     if (!celebrate) return;
-    // Treat completed/cancelled games as locked — no fireworks for
+    // Treat completed/cancelled games as locked — no celebration for
     // a stat-keeper retroactively editing yesterday's final score.
     const status = (game as { status?: string }).status;
     if (status === "completed" || status === "cancelled") return;
-    if (prev <= 0 && margin > 0) {
+
+    const tookLead = prevMargin <= 0 && margin > 0;
+    const scoredRun = ourScore > prevOurs;
+
+    if (tookLead) {
       const now = Date.now();
       if (now - lastCelebrationAtRef.current < 600) return;
       lastCelebrationAtRef.current = now;
+      // Big show wins — skip the small "scored a run" cheer this tick
+      // so we don't double-fire on the same stepper tap.
       void fireTakeTheLeadCelebration(
         confettiFireRef.current,
         celebrateFlashRef.current,
       );
+      return;
+    }
+
+    if (scoredRun) {
+      const now = Date.now();
+      // Coalesce rapid +1 taps (typo-fix) into a single cheer.
+      if (now - lastRunCheerAtRef.current < 600) return;
+      lastRunCheerAtRef.current = now;
+      void fireScoredRunCheer(confettiFireRef.current);
     }
   }, [game, ourScore, oppScore, celebrate]);
 
@@ -3427,6 +3446,66 @@ export const __FIELD_DISPLAY_BASE = BASE;
  * Honors prefers-reduced-motion (single modest burst, no flash).
  */
 type ConfettiFire = ReturnType<typeof confetti.create>;
+
+/**
+ * Short "we scored a run!" cheer — much smaller than the take-the-
+ * lead show. Fires every time ourScore increases (unless that same
+ * +1 ALSO flips the lead, in which case the big celebration wins).
+ * One quick center pop + two side flicks, totals ~700ms.
+ */
+function fireScoredRunCheer(fire: ConfettiFire | null) {
+  if (typeof window === "undefined") return;
+  const shoot = fire ?? confetti;
+  const GOLD = ["#f5b800", "#ffd24c", "#fff2b8", "#ffae00"];
+  const ALL = [...GOLD, "#ffffff", "#7aa9ff"];
+
+  const reduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (reduced) {
+    void shoot({
+      particleCount: 30,
+      spread: 60,
+      origin: { y: 0.6 },
+      colors: ALL,
+    });
+    return;
+  }
+
+  // Quick center pop.
+  void shoot({
+    particleCount: 90,
+    spread: 80,
+    startVelocity: 50,
+    scalar: 1.05,
+    ticks: 180,
+    origin: { x: 0.5, y: 0.6 },
+    colors: ALL,
+  });
+  // Two small side flicks 120ms later for a one-two punch.
+  window.setTimeout(() => {
+    void shoot({
+      particleCount: 30,
+      angle: 60,
+      spread: 50,
+      startVelocity: 55,
+      ticks: 200,
+      origin: { x: 0.05, y: 0.85 },
+      colors: GOLD,
+    });
+    void shoot({
+      particleCount: 30,
+      angle: 120,
+      spread: 50,
+      startVelocity: 55,
+      ticks: 200,
+      origin: { x: 0.95, y: 0.85 },
+      colors: GOLD,
+    });
+  }, 120);
+}
+
 function fireTakeTheLeadCelebration(
   fire: ConfettiFire | null,
   flashEl: HTMLDivElement | null,
