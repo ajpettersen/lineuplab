@@ -1296,6 +1296,70 @@ export interface BoxScoreState {
   pitching: PitchCount[];
 }
 
+/**
+ * Cross-coach network row keyed on tournament fingerprint.
+ */
+export interface TournamentNetwork {
+  id: number;
+  fingerprint: string;
+  displayName: string;
+  createdAt: string;
+}
+
+/**
+ * A tournament's membership in a network. One row per tournament.
+ */
+export interface TournamentNetworkMember {
+  id: number;
+  networkId: number;
+  tournamentId: number;
+  userId: string;
+  /** Coach opted to show team name to other members. Default false. */
+  visible: boolean;
+  /** Coach is sharing scored games with the network. Default true. */
+  shareScores: boolean;
+  joinedAt: string;
+}
+
+/**
+ * Public view of a network member surfaced to other coaches.
+ */
+export interface TournamentNetworkMemberSummary {
+  tournamentId: number;
+  visible: boolean;
+  shareScores: boolean;
+  /**
+   * Null when the member has not opted in to be visible.
+   * @nullable
+   */
+  teamName?: string | null;
+  isYou: boolean;
+}
+
+/**
+ * A matching tournament owned by another coach who hasn't joined yet.
+ */
+export interface TournamentNetworkSuggestion {
+  tournamentId: number;
+  name: string;
+  /** @nullable */
+  teamName?: string | null;
+  /** @nullable */
+  networkId?: number | null;
+}
+
+export interface TournamentNetworkResponse {
+  network?: TournamentNetwork | null;
+  membership?: TournamentNetworkMember | null;
+  members: TournamentNetworkMemberSummary[];
+  suggestions: TournamentNetworkSuggestion[];
+}
+
+export interface UpdateTournamentNetworkMembershipBody {
+  visible?: boolean;
+  shareScores?: boolean;
+}
+
 export type ExtractTournamentPoolPlayBody = {
   /** @maxItems 3 */
   files: Blob[];
@@ -1309,6 +1373,16 @@ export type ExtractTournamentPoolPlayFormatBody = {
 export type SaveTournamentPoolPlay200 = {
   poolPlay: PoolPlay;
   poolPlayAnalysis: PoolPlayAnalysis;
+};
+
+export type JoinTournamentNetwork200 = {
+  network: TournamentNetwork;
+  membership: TournamentNetworkMember;
+};
+
+export type JoinTournamentNetwork201 = {
+  network: TournamentNetwork;
+  membership: TournamentNetworkMember;
 };
 
 export type ExtractBoxScoreBody = {

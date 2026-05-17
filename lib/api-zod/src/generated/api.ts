@@ -2383,6 +2383,166 @@ export const ClearTournamentPoolPlayParams = zod.object({
 });
 
 /**
+ * @summary Get tournament network state + join suggestions
+ */
+export const GetTournamentNetworkParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetTournamentNetworkResponse = zod.object({
+  network: zod
+    .union([
+      zod
+        .object({
+          id: zod.number(),
+          fingerprint: zod.string(),
+          displayName: zod.string(),
+          createdAt: zod.coerce.date(),
+        })
+        .describe("Cross-coach network row keyed on tournament fingerprint."),
+      zod.null(),
+    ])
+    .optional(),
+  membership: zod
+    .union([
+      zod
+        .object({
+          id: zod.number(),
+          networkId: zod.number(),
+          tournamentId: zod.number(),
+          userId: zod.string(),
+          visible: zod
+            .boolean()
+            .describe(
+              "Coach opted to show team name to other members. Default false.",
+            ),
+          shareScores: zod
+            .boolean()
+            .describe(
+              "Coach is sharing scored games with the network. Default true.",
+            ),
+          joinedAt: zod.coerce.date(),
+        })
+        .describe(
+          "A tournament's membership in a network. One row per tournament.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
+  members: zod.array(
+    zod
+      .object({
+        tournamentId: zod.number(),
+        visible: zod.boolean(),
+        shareScores: zod.boolean(),
+        teamName: zod
+          .string()
+          .nullish()
+          .describe("Null when the member has not opted in to be visible."),
+        isYou: zod.boolean(),
+      })
+      .describe("Public view of a network member surfaced to other coaches."),
+  ),
+  suggestions: zod.array(
+    zod
+      .object({
+        tournamentId: zod.number(),
+        name: zod.string(),
+        teamName: zod.string().nullish(),
+        networkId: zod.number().nullish(),
+      })
+      .describe(
+        "A matching tournament owned by another coach who hasn't joined yet.",
+      ),
+  ),
+});
+
+/**
+ * @summary Toggle visibility / score-sharing for this tournament's membership
+ */
+export const UpdateTournamentNetworkMembershipParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateTournamentNetworkMembershipBody = zod.object({
+  visible: zod.boolean().optional(),
+  shareScores: zod.boolean().optional(),
+});
+
+export const UpdateTournamentNetworkMembershipResponse = zod
+  .object({
+    id: zod.number(),
+    networkId: zod.number(),
+    tournamentId: zod.number(),
+    userId: zod.string(),
+    visible: zod
+      .boolean()
+      .describe(
+        "Coach opted to show team name to other members. Default false.",
+      ),
+    shareScores: zod
+      .boolean()
+      .describe(
+        "Coach is sharing scored games with the network. Default true.",
+      ),
+    joinedAt: zod.coerce.date(),
+  })
+  .describe("A tournament's membership in a network. One row per tournament.");
+
+/**
+ * @summary Join (or create) the network for this tournament's fingerprint
+ */
+export const JoinTournamentNetworkParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const JoinTournamentNetworkResponse = zod.object({
+  network: zod
+    .object({
+      id: zod.number(),
+      fingerprint: zod.string(),
+      displayName: zod.string(),
+      createdAt: zod.coerce.date(),
+    })
+    .describe("Cross-coach network row keyed on tournament fingerprint."),
+  membership: zod
+    .object({
+      id: zod.number(),
+      networkId: zod.number(),
+      tournamentId: zod.number(),
+      userId: zod.string(),
+      visible: zod
+        .boolean()
+        .describe(
+          "Coach opted to show team name to other members. Default false.",
+        ),
+      shareScores: zod
+        .boolean()
+        .describe(
+          "Coach is sharing scored games with the network. Default true.",
+        ),
+      joinedAt: zod.coerce.date(),
+    })
+    .describe(
+      "A tournament's membership in a network. One row per tournament.",
+    ),
+});
+
+/**
+ * @summary Leave the network for this tournament
+ */
+export const LeaveTournamentNetworkParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Dismiss current network join suggestions for this tournament
+ */
+export const DismissTournamentNetworkSuggestionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Get all pitch counts recorded for a game
  */
 export const GetGamePitchCountsParams = zod.object({

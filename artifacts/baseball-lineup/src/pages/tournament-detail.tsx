@@ -46,6 +46,7 @@ import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal, safeFormatDate } from "@/lib/tournament-date";
 import { PoolPlayCard } from "@/components/pool-play-card";
+import { TournamentNetworkCard } from "@/components/tournament-network-card";
 
 function parseOptionalInt(s: string): number | null {
   const t = s.trim();
@@ -380,6 +381,8 @@ export default function TournamentDetail() {
           )}
         </CardContent>
       </Card>
+
+      <TournamentNetworkCard tournamentId={tournamentId} />
 
       <PoolPlayCard
         tournamentId={tournamentId}

@@ -24,6 +24,8 @@ import {
   UpdateTournamentBody,
   DeleteTournamentParams,
 } from "@workspace/api-zod";
+import { computeTournamentFingerprint } from "../lib/tournament-fingerprint";
+import { mergeNetworkGamesIntoPool } from "../lib/tournament-network-merge";
 
 const router: IRouter = Router();
 router.use("/tournaments", gateWrites("full"));
@@ -186,6 +188,11 @@ router.post("/tournaments", async (req, res): Promise<void> => {
     return;
   }
   const d = parsed.data;
+  // Fingerprint for cross-coach network discovery. Computed from
+  // (normalized name, start, end) — empty string when any of those
+  // are missing, in which case we store NULL so the suggestion query
+  // doesn't collide everyone with blank metadata.
+  const fp = computeTournamentFingerprint(d.name, d.startDate, d.endDate);
   const [inserted] = await db
     .insert(tournamentsTable)
     .values({
@@ -198,6 +205,7 @@ router.post("/tournaments", async (req, res): Promise<void> => {
       dailyPitchMax: d.dailyPitchMax ?? null,
       tournamentPitchMax: d.tournamentPitchMax ?? null,
       restTiers: (d.restTiers ?? null) as RestTier[] | null,
+      networkFingerprint: fp || null,
     })
     .returning();
   res.status(201).json(inserted);
@@ -457,8 +465,15 @@ router.get("/tournaments/:id", async (req, res): Promise<void> => {
   // game thus drive pool standings without a separate import step.
   // Saved manual pool entries with non-real ids are untouched.
   const normalizedPool = normalizePoolPlay(tournament.poolPlay);
-  const livePool = normalizedPool
+  const localMerged = normalizedPool
     ? mergeRealGamesIntoPool(normalizedPool, games, settings?.teamName ?? null)
+    : null;
+  // Layer network games on top of local games. If this tournament is
+  // in a network, every other member's scored real game vs a pool
+  // team becomes a `network-<userId>-<gameId>` synthetic entry. Same
+  // idempotency rules as real-* — replaced on every read.
+  const livePool = localMerged
+    ? await mergeNetworkGamesIntoPool(localMerged, tournament.id)
     : null;
   const poolPlayAnalysis = livePool
     ? simulatePoolPlay(livePool)
@@ -504,6 +519,32 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
   if (d.tournamentPitchMax !== undefined)
     updates.tournamentPitchMax = d.tournamentPitchMax;
   if (d.restTiers !== undefined) updates.restTiers = d.restTiers;
+
+  // If name or dates changed, recompute the network fingerprint.
+  // We need the current row to fill in the unchanged side of the
+  // (name, start, end) triple. Cheap one-row lookup.
+  if (d.name !== undefined || d.startDate !== undefined || d.endDate !== undefined) {
+    const [current] = await db
+      .select({
+        name: tournamentsTable.name,
+        startDate: tournamentsTable.startDate,
+        endDate: tournamentsTable.endDate,
+      })
+      .from(tournamentsTable)
+      .where(
+        and(
+          eq(tournamentsTable.id, params.data.id),
+          eq(tournamentsTable.userId, userId),
+        ),
+      );
+    if (current) {
+      const nextName = d.name ?? current.name;
+      const nextStart = d.startDate ? new Date(d.startDate) : current.startDate;
+      const nextEnd = d.endDate ? new Date(d.endDate) : current.endDate;
+      const fp = computeTournamentFingerprint(nextName, nextStart, nextEnd);
+      updates.networkFingerprint = fp || null;
+    }
+  }
 
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No fields provided" });

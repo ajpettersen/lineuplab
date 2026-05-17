@@ -35,6 +35,8 @@ import type {
   GeneratePracticePlanBody,
   GeneratedPracticePlan,
   HealthStatus,
+  JoinTournamentNetwork200,
+  JoinTournamentNetwork201,
   LineupEntry,
   PitchCount,
   Player,
@@ -55,6 +57,8 @@ import type {
   TeamSettings,
   Tournament,
   TournamentDetail,
+  TournamentNetworkMember,
+  TournamentNetworkResponse,
   TournamentSummary,
   UpdateGameBody,
   UpdatePlayerBody,
@@ -62,6 +66,7 @@ import type {
   UpdatePreferencesBody,
   UpdateTeamSettingsBody,
   UpdateTournamentBody,
+  UpdateTournamentNetworkMembershipBody,
   UpsertPitchCountBody,
   UserPreferences,
 } from "./api.schemas";
@@ -2677,6 +2682,448 @@ export const useClearTournamentPoolPlay = <
   TContext
 > => {
   return useMutation(getClearTournamentPoolPlayMutationOptions(options));
+};
+
+/**
+ * @summary Get tournament network state + join suggestions
+ */
+export const getGetTournamentNetworkUrl = (id: number) => {
+  return `/api/tournaments/${id}/network`;
+};
+
+export const getTournamentNetwork = async (
+  id: number,
+  options?: RequestInit,
+): Promise<TournamentNetworkResponse> => {
+  return customFetch<TournamentNetworkResponse>(
+    getGetTournamentNetworkUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetTournamentNetworkQueryKey = (id: number) => {
+  return [`/api/tournaments/${id}/network`] as const;
+};
+
+export const getGetTournamentNetworkQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTournamentNetwork>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTournamentNetwork>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTournamentNetworkQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTournamentNetwork>>
+  > = ({ signal }) => getTournamentNetwork(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTournamentNetwork>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTournamentNetworkQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTournamentNetwork>>
+>;
+export type GetTournamentNetworkQueryError = ErrorType<void>;
+
+/**
+ * @summary Get tournament network state + join suggestions
+ */
+
+export function useGetTournamentNetwork<
+  TData = Awaited<ReturnType<typeof getTournamentNetwork>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTournamentNetwork>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTournamentNetworkQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Toggle visibility / score-sharing for this tournament's membership
+ */
+export const getUpdateTournamentNetworkMembershipUrl = (id: number) => {
+  return `/api/tournaments/${id}/network`;
+};
+
+export const updateTournamentNetworkMembership = async (
+  id: number,
+  updateTournamentNetworkMembershipBody: UpdateTournamentNetworkMembershipBody,
+  options?: RequestInit,
+): Promise<TournamentNetworkMember> => {
+  return customFetch<TournamentNetworkMember>(
+    getUpdateTournamentNetworkMembershipUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateTournamentNetworkMembershipBody),
+    },
+  );
+};
+
+export const getUpdateTournamentNetworkMembershipMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTournamentNetworkMembership>>,
+    TError,
+    { id: number; data: BodyType<UpdateTournamentNetworkMembershipBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTournamentNetworkMembership>>,
+  TError,
+  { id: number; data: BodyType<UpdateTournamentNetworkMembershipBody> },
+  TContext
+> => {
+  const mutationKey = ["updateTournamentNetworkMembership"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTournamentNetworkMembership>>,
+    { id: number; data: BodyType<UpdateTournamentNetworkMembershipBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateTournamentNetworkMembership(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTournamentNetworkMembershipMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTournamentNetworkMembership>>
+>;
+export type UpdateTournamentNetworkMembershipMutationBody =
+  BodyType<UpdateTournamentNetworkMembershipBody>;
+export type UpdateTournamentNetworkMembershipMutationError = ErrorType<void>;
+
+/**
+ * @summary Toggle visibility / score-sharing for this tournament's membership
+ */
+export const useUpdateTournamentNetworkMembership = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTournamentNetworkMembership>>,
+    TError,
+    { id: number; data: BodyType<UpdateTournamentNetworkMembershipBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTournamentNetworkMembership>>,
+  TError,
+  { id: number; data: BodyType<UpdateTournamentNetworkMembershipBody> },
+  TContext
+> => {
+  return useMutation(
+    getUpdateTournamentNetworkMembershipMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Join (or create) the network for this tournament's fingerprint
+ */
+export const getJoinTournamentNetworkUrl = (id: number) => {
+  return `/api/tournaments/${id}/network/join`;
+};
+
+export const joinTournamentNetwork = async (
+  id: number,
+  options?: RequestInit,
+): Promise<JoinTournamentNetwork200 | JoinTournamentNetwork201> => {
+  return customFetch<JoinTournamentNetwork200 | JoinTournamentNetwork201>(
+    getJoinTournamentNetworkUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getJoinTournamentNetworkMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof joinTournamentNetwork>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof joinTournamentNetwork>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["joinTournamentNetwork"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof joinTournamentNetwork>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return joinTournamentNetwork(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JoinTournamentNetworkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof joinTournamentNetwork>>
+>;
+
+export type JoinTournamentNetworkMutationError = ErrorType<void>;
+
+/**
+ * @summary Join (or create) the network for this tournament's fingerprint
+ */
+export const useJoinTournamentNetwork = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof joinTournamentNetwork>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof joinTournamentNetwork>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getJoinTournamentNetworkMutationOptions(options));
+};
+
+/**
+ * @summary Leave the network for this tournament
+ */
+export const getLeaveTournamentNetworkUrl = (id: number) => {
+  return `/api/tournaments/${id}/network/leave`;
+};
+
+export const leaveTournamentNetwork = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getLeaveTournamentNetworkUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLeaveTournamentNetworkMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leaveTournamentNetwork>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leaveTournamentNetwork>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["leaveTournamentNetwork"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leaveTournamentNetwork>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return leaveTournamentNetwork(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeaveTournamentNetworkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leaveTournamentNetwork>>
+>;
+
+export type LeaveTournamentNetworkMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Leave the network for this tournament
+ */
+export const useLeaveTournamentNetwork = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leaveTournamentNetwork>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leaveTournamentNetwork>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getLeaveTournamentNetworkMutationOptions(options));
+};
+
+/**
+ * @summary Dismiss current network join suggestions for this tournament
+ */
+export const getDismissTournamentNetworkSuggestionsUrl = (id: number) => {
+  return `/api/tournaments/${id}/network/dismiss`;
+};
+
+export const dismissTournamentNetworkSuggestions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDismissTournamentNetworkSuggestionsUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDismissTournamentNetworkSuggestionsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissTournamentNetworkSuggestions>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissTournamentNetworkSuggestions>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["dismissTournamentNetworkSuggestions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissTournamentNetworkSuggestions>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dismissTournamentNetworkSuggestions(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissTournamentNetworkSuggestionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissTournamentNetworkSuggestions>>
+>;
+
+export type DismissTournamentNetworkSuggestionsMutationError =
+  ErrorType<unknown>;
+
+/**
+ * @summary Dismiss current network join suggestions for this tournament
+ */
+export const useDismissTournamentNetworkSuggestions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissTournamentNetworkSuggestions>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissTournamentNetworkSuggestions>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(
+    getDismissTournamentNetworkSuggestionsMutationOptions(options),
+  );
 };
 
 /**

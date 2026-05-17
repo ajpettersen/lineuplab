@@ -13,6 +13,7 @@ export * from "./team_memberships";
 export * from "./team_invites";
 export * from "./user_active_team";
 export * from "./tournaments";
+export * from "./tournament_networks";
 export * from "./pitch_counts";
 export * from "./pitch-rules";
 export * from "./practices";

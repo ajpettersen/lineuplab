@@ -198,12 +198,29 @@ export const tournamentsTable = pgTable(
      * every GET so editing games re-projects immediately.
      */
     poolPlay: jsonb("pool_play").$type<PoolPlayJson>(),
+    /**
+     * SHA1 fingerprint of (normalized name, startDate, endDate). Used to
+     * detect when two coaches added the same real-world tournament and
+     * suggest they share data. Backfilled lazily — null on legacy rows
+     * and recomputed on insert/update. See `lib/tournament-fingerprint.ts`.
+     */
+    networkFingerprint: text("network_fingerprint"),
+    /**
+     * When set, this coach has dismissed all current join suggestions
+     * for this tournament — we won't re-prompt them about coaches who
+     * were already suggesting at this time. New fingerprint matches
+     * (different tournament added later) still surface.
+     */
+    networkPromptDismissedAt: timestamp("network_prompt_dismissed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // Soft-delete timestamp. Null = visible. Reads filter
     // `deletedAt IS NULL`; the restore endpoint clears it.
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
-  (table) => [index("tournaments_user_id_idx").on(table.userId)],
+  (table) => [
+    index("tournaments_user_id_idx").on(table.userId),
+    index("tournaments_network_fingerprint_idx").on(table.networkFingerprint),
+  ],
 );
 
 export const insertTournamentSchema = createInsertSchema(tournamentsTable).omit({
