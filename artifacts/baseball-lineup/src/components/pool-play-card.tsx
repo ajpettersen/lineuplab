@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useExtractTournamentPoolPlay,
+  useExtractTournamentPoolPlayFromUrl,
   useExtractTournamentPoolPlayFormat,
   useSaveTournamentPoolPlay,
   useClearTournamentPoolPlay,
@@ -58,6 +59,7 @@ import {
   Award,
   Camera,
   MessageCircle,
+  Link2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TournamentFormatChatDialog } from "@/components/tournament-format-chat-dialog";
@@ -557,6 +559,11 @@ function ImportDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<ExtractedPoolPlay | null>(null);
+  // Two import sources tab. SportsEngine Tourney / TourneyMachine /
+  // GameChanger publish public bracket URLs — paste-and-go is faster
+  // for coaches than screenshotting their own phones.
+  const [source, setSource] = useState<"screenshots" | "url">("screenshots");
+  const [url, setUrl] = useState("");
 
   const extract = useExtractTournamentPoolPlay({
     mutation: {
@@ -572,7 +579,29 @@ function ImportDialog({
       },
     },
   });
-  const isExtracting = extract.isPending;
+  const extractUrl = useExtractTournamentPoolPlayFromUrl({
+    mutation: {
+      onSuccess: (data) => {
+        setPreview(data);
+      },
+      onError: (e) => {
+        toast({
+          title: "Couldn't read that page",
+          description:
+            (e as Error)?.message ??
+            "Check the link is public and try again, or upload screenshots instead.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+  const isExtracting = extract.isPending || extractUrl.isPending;
+
+  function onSubmitUrl() {
+    const trimmed = url.trim();
+    if (trimmed.length === 0) return;
+    extractUrl.mutate({ id: tournamentId, data: { url: trimmed } });
+  }
 
   function onPickFiles(ev: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(ev.target.files ?? []);
@@ -595,44 +624,110 @@ function ImportDialog({
         <DialogHeader>
           <DialogTitle>Import pool play</DialogTitle>
           <DialogDescription>
-            Upload 1-3 screenshots of the standings or schedule. The AI will extract
-            teams and games — you can edit before saving.
+            Paste a SportsEngine Tourney / TourneyMachine link, or upload screenshots.
+            The AI will extract teams and games — you can edit before saving.
           </DialogDescription>
         </DialogHeader>
 
         {!preview ? (
           <div className="space-y-4 py-2">
-            <input
-              ref={inputRef}
-              type="file"
-              multiple
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={onPickFiles}
-            />
-            <div
-              className="rounded-lg border border-dashed py-12 text-center cursor-pointer hover:bg-muted/40 transition"
-              onClick={() => inputRef.current?.click()}
-            >
-              {isExtracting ? (
-                <>
-                  <Loader2 className="h-10 w-10 mx-auto animate-spin text-muted-foreground" />
-                  <div className="text-sm text-muted-foreground mt-3">
-                    Reading {files.length} {files.length === 1 ? "screenshot" : "screenshots"}…
-                  </div>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="h-10 w-10 mx-auto text-muted-foreground" />
-                  <div className="mt-2 text-sm font-medium">
-                    Tap to choose screenshots
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    PNG, JPEG, or WebP. Up to 3 images, 8 MB each.
-                  </div>
-                </>
-              )}
+            <div className="inline-flex rounded-md border bg-muted/30 p-0.5 text-sm">
+              <button
+                type="button"
+                className={`px-3 py-1.5 rounded ${source === "screenshots" ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}
+                onClick={() => setSource("screenshots")}
+                disabled={isExtracting}
+              >
+                <Camera className="h-3.5 w-3.5 mr-1.5 inline" />
+                Screenshots
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-1.5 rounded ${source === "url" ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}
+                onClick={() => setSource("url")}
+                disabled={isExtracting}
+              >
+                <Link2 className="h-3.5 w-3.5 mr-1.5 inline" />
+                From link
+              </button>
             </div>
+
+            {source === "screenshots" ? (
+              <>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={onPickFiles}
+                />
+                <div
+                  className="rounded-lg border border-dashed py-12 text-center cursor-pointer hover:bg-muted/40 transition"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  {isExtracting ? (
+                    <>
+                      <Loader2 className="h-10 w-10 mx-auto animate-spin text-muted-foreground" />
+                      <div className="text-sm text-muted-foreground mt-3">
+                        Reading {files.length} {files.length === 1 ? "screenshot" : "screenshots"}…
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="h-10 w-10 mx-auto text-muted-foreground" />
+                      <div className="mt-2 text-sm font-medium">
+                        Tap to choose screenshots
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        PNG, JPEG, or WebP. Up to 3 images, 8 MB each.
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <Label htmlFor="pool-play-url">Tournament page link</Label>
+                <Input
+                  id="pool-play-url"
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://tourneymachine.com/Public/Results/Tournament.aspx?…"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isExtracting) {
+                      e.preventDefault();
+                      onSubmitUrl();
+                    }
+                  }}
+                  disabled={isExtracting}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Works with SportsEngine Tourney, TourneyMachine, GameChanger, and most public
+                  league pages. The page must be publicly viewable — no login.
+                </p>
+                <Button
+                  type="button"
+                  onClick={onSubmitUrl}
+                  disabled={isExtracting || url.trim().length === 0}
+                >
+                  {isExtracting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      Reading page…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                      Read pool play
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
             {existing && (
               <div className="text-xs text-muted-foreground">
                 Existing pool data will be used as context — re-importing won't lose your edits unless the AI returns conflicting data, which you'll review next.

@@ -27,6 +27,7 @@ import type {
   ExtractBoxScoreBody,
   ExtractTournamentPoolPlayBody,
   ExtractTournamentPoolPlayFormatBody,
+  ExtractTournamentPoolPlayFromUrlBody,
   ExtractedBoxScore,
   ExtractedPoolPlay,
   ExtractedPoolPlayFormat,
@@ -2307,6 +2308,105 @@ export const useExtractTournamentPoolPlay = <
   TContext
 > => {
   return useMutation(getExtractTournamentPoolPlayMutationOptions(options));
+};
+
+/**
+ * Server-side fetch of a public tournament page (e.g. SportsEngine
+Tourney bracket, TourneyMachine, GameChanger) parsed via the
+same AI extractor as screenshots. Returns the same preview
+shape — the client edits inline then PUTs to
+`/tournaments/{id}/pool-play`.
+
+ * @summary Extract pool-play standings + games from a public tournament URL
+ */
+export const getExtractTournamentPoolPlayFromUrlUrl = (id: number) => {
+  return `/api/tournaments/${id}/pool-play/extract-url`;
+};
+
+export const extractTournamentPoolPlayFromUrl = async (
+  id: number,
+  extractTournamentPoolPlayFromUrlBody: ExtractTournamentPoolPlayFromUrlBody,
+  options?: RequestInit,
+): Promise<ExtractedPoolPlay> => {
+  return customFetch<ExtractedPoolPlay>(
+    getExtractTournamentPoolPlayFromUrlUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(extractTournamentPoolPlayFromUrlBody),
+    },
+  );
+};
+
+export const getExtractTournamentPoolPlayFromUrlMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractTournamentPoolPlayFromUrl>>,
+    TError,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayFromUrlBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractTournamentPoolPlayFromUrl>>,
+  TError,
+  { id: number; data: BodyType<ExtractTournamentPoolPlayFromUrlBody> },
+  TContext
+> => {
+  const mutationKey = ["extractTournamentPoolPlayFromUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractTournamentPoolPlayFromUrl>>,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayFromUrlBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return extractTournamentPoolPlayFromUrl(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractTournamentPoolPlayFromUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractTournamentPoolPlayFromUrl>>
+>;
+export type ExtractTournamentPoolPlayFromUrlMutationBody =
+  BodyType<ExtractTournamentPoolPlayFromUrlBody>;
+export type ExtractTournamentPoolPlayFromUrlMutationError = ErrorType<void>;
+
+/**
+ * @summary Extract pool-play standings + games from a public tournament URL
+ */
+export const useExtractTournamentPoolPlayFromUrl = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractTournamentPoolPlayFromUrl>>,
+    TError,
+    { id: number; data: BodyType<ExtractTournamentPoolPlayFromUrlBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractTournamentPoolPlayFromUrl>>,
+  TError,
+  { id: number; data: BodyType<ExtractTournamentPoolPlayFromUrlBody> },
+  TContext
+> => {
+  return useMutation(
+    getExtractTournamentPoolPlayFromUrlMutationOptions(options),
+  );
 };
 
 /**

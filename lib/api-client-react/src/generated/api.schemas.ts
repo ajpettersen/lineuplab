@@ -1365,6 +1365,11 @@ export type ExtractTournamentPoolPlayBody = {
   files: Blob[];
 };
 
+export type ExtractTournamentPoolPlayFromUrlBody = {
+  /** @maxLength 2048 */
+  url: string;
+};
+
 export type ExtractTournamentPoolPlayFormatBody = {
   /** @maxItems 2 */
   files: Blob[];

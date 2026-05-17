@@ -260,6 +260,422 @@ Return RAW JSON only, no markdown, no commentary:
 );
 
 // ---------------------------------------------------------------------------
+// POST /tournaments/:id/pool-play/extract-url — fetch a public tournament
+// page (e.g. SportsEngine Tourney bracket / TourneyMachine) and parse it
+// via the same gpt-5.2 extraction schema as screenshots. The coach
+// reviews/edits the preview before persisting, identical to the
+// screenshot flow.
+// ---------------------------------------------------------------------------
+
+const ExtractUrlBody = z.object({
+  url: z.string().url().max(2048),
+});
+
+/**
+ * Returns true iff an IP literal lies in a loopback, private,
+ * link-local, CGNAT, or IPv6 ULA/link-local range. Anything we don't
+ * recognize is treated as public (rangelist is conservative; the URL
+ * parse + dns.lookup upstream guarantees we only ever feed real IPs).
+ */
+function isPrivateIp(ip: string): boolean {
+  return (
+    /^127\./.test(ip) ||
+    /^10\./.test(ip) ||
+    /^192\.168\./.test(ip) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ||
+    /^169\.254\./.test(ip) ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip) ||
+    ip === "0.0.0.0" ||
+    ip === "::1" ||
+    ip === "::" ||
+    /^fe80:/i.test(ip) ||
+    /^f[cd][0-9a-f]{2}:/i.test(ip)
+  );
+}
+
+type ResolvedHost = { url: URL; ip: string; family: 4 | 6 };
+
+/**
+ * SSRF guard. Refuse non-http(s). Resolve hostname; refuse if ANY
+ * returned address is private (so dual-stack mixed records can't
+ * smuggle a private IP). Returns the first allowed address so the
+ * caller can PIN the socket to that exact IP via a custom undici
+ * dispatcher — this is what defeats DNS-rebinding (a second lookup at
+ * connect time would otherwise let an attacker swap the public IP for
+ * 127.0.0.1 between check and fetch).
+ */
+async function assertPublicHttpUrl(raw: string): Promise<ResolvedHost> {
+  const u = new URL(raw);
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error("Only http(s) URLs are allowed.");
+  }
+  const dns = await import("node:dns");
+  const net = await import("node:net");
+  let addrs: Array<{ address: string; family: number }>;
+  try {
+    addrs = await dns.promises.lookup(u.hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error("Couldn't resolve that hostname.");
+  }
+  if (addrs.length === 0) throw new Error("Couldn't resolve that hostname.");
+  for (const a of addrs) {
+    if (net.isIP(a.address) === 0 || isPrivateIp(a.address)) {
+      throw new Error("That URL points to a private network address.");
+    }
+  }
+  const first = addrs[0]!;
+  return { url: u, ip: first.address, family: first.family === 6 ? 6 : 4 };
+}
+
+/**
+ * SSRF-safe fetch: pins the socket to the IP we already validated
+ * (defeats DNS rebinding) and follows redirects MANUALLY, re-running
+ * `assertPublicHttpUrl` on each hop (so a public URL can't redirect to
+ * `http://127.0.0.1/...`). Streams the body with a hard byte cap so a
+ * 1 GB response can't OOM the server. Returns the decoded text.
+ */
+async function safeHttpFetchText(
+  initial: ResolvedHost,
+  opts: { maxBytes: number; timeoutMs: number; maxRedirects: number },
+): Promise<{ text: string; contentType: string }> {
+  // undici ships with Node 24 but isn't a typed workspace dep, so we
+  // grab it via the runtime require to bypass tsc module resolution.
+  // We only need `new Agent({ connect: { lookup } })`.
+  const { createRequire } = await import("node:module");
+  const nodeRequire = createRequire(import.meta.url);
+  const undici = nodeRequire("undici") as {
+    Agent: new (opts: {
+      connect: {
+        lookup: (
+          host: string,
+          options: unknown,
+          cb: (err: Error | null, addr: string, family: number) => void,
+        ) => void;
+      };
+    }) => unknown;
+  };
+  let hop = initial;
+  for (let i = 0; i <= opts.maxRedirects; i++) {
+    // Per-hop dispatcher pins this connection's DNS to the IP we
+    // already vetted. SNI/Host still uses hop.url.hostname so HTTPS
+    // certs validate normally.
+    const dispatcher = new undici.Agent({
+      connect: {
+        lookup: (_host, _options, cb) => cb(null, hop.ip, hop.family),
+      },
+    });
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+    let r: Response;
+    try {
+      r = await fetch(hop.url.toString(), {
+        method: "GET",
+        signal: ctrl.signal,
+        redirect: "manual",
+        headers: {
+          "user-agent": "LineupLab/1.0 (+https://lineuplab.app)",
+          accept: "text/html,application/xhtml+xml",
+        },
+        // Node's global fetch accepts an undici Dispatcher even though
+        // the lib.dom RequestInit type doesn't declare it.
+        ...({ dispatcher } as object),
+      });
+    } finally {
+      clearTimeout(to);
+    }
+
+    if (r.status >= 300 && r.status < 400) {
+      const loc = r.headers.get("location");
+      if (!loc) throw new Error("Got a redirect with no Location header.");
+      const next = new URL(loc, hop.url);
+      hop = await assertPublicHttpUrl(next.toString());
+      // Drain the (likely empty) redirect body so the socket can close.
+      try {
+        await r.body?.cancel();
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+    if (!r.ok) {
+      throw new Error(`HTTP ${r.status}`);
+    }
+    const contentType = r.headers.get("content-type") ?? "";
+
+    // Stream the body, abort when we cross the cap. arrayBuffer() would
+    // buffer the full payload first, which is the OOM hole.
+    const reader = r.body?.getReader();
+    if (!reader) throw new Error("Empty response body.");
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > opts.maxBytes) {
+          await reader.cancel();
+          throw new Error("That page is too large to read.");
+        }
+        chunks.push(value);
+      }
+    }
+    const buf = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) {
+      buf.set(c, off);
+      off += c.byteLength;
+    }
+    return { text: new TextDecoder("utf-8").decode(buf), contentType };
+  }
+  throw new Error("Too many redirects.");
+}
+
+/**
+ * Strip HTML to text the LLM can reason about. We keep <a href> URLs
+ * out (waste of tokens), drop <script>/<style>, and collapse runs of
+ * whitespace. Truncate to ~60 KB of text — plenty for a tournament
+ * standings/schedule page and well under gpt-5.2's context budget.
+ */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60_000);
+}
+
+router.post(
+  "/tournaments/:id/pool-play/extract-url",
+  async (req, res): Promise<void> => {
+    const userId = req.ownerUserId!;
+    const params = IdParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = ExtractUrlBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const tournament = await getOwnedTournament(params.data.id, userId);
+    if (!tournament) {
+      res.status(404).json({ error: "Tournament not found" });
+      return;
+    }
+
+    let initialHost: ResolvedHost;
+    try {
+      initialHost = await assertPublicHttpUrl(body.data.url);
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+      return;
+    }
+
+    // Fetch BEFORE charging — a failed fetch shouldn't burn the
+    // coach's AI budget.
+    let pageText: string;
+    try {
+      const { text, contentType } = await safeHttpFetchText(initialHost, {
+        maxBytes: 4 * 1024 * 1024,
+        timeoutMs: 15_000,
+        maxRedirects: 5,
+      });
+      if (!/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+        res.status(400).json({ error: "That URL didn't return an HTML page." });
+        return;
+      }
+      pageText = htmlToText(text);
+    } catch (e) {
+      req.log.warn(
+        { err: e, url: initialHost.url.toString() },
+        "pool-play url fetch failed",
+      );
+      const msg = (e as Error)?.message ?? "";
+      if (msg === "That page is too large to read.") {
+        res.status(400).json({ error: msg });
+        return;
+      }
+      if (msg.startsWith("That URL points to a private")) {
+        res.status(400).json({ error: msg });
+        return;
+      }
+      res.status(502).json({ error: "Couldn't load that page — check the link and try again." });
+      return;
+    }
+    if (pageText.length < 50) {
+      res.status(400).json({ error: "That page didn't contain any readable schedule text." });
+      return;
+    }
+
+    // Page fetched & non-empty — NOW charge the AI call.
+    const charge = await chargeAiCall(req, "pool-play-extract", 1);
+    if (!charge.ok) {
+      res.status(charge.status).json({ error: charge.error });
+      return;
+    }
+
+    const existingHint = tournament.poolPlay
+      ? `\n\nThe coach already has this pool data saved — prefer reconciling rather than inventing new teams or games:\n${JSON.stringify(
+          {
+            teams: tournament.poolPlay.teams,
+            games: tournament.poolPlay.games.map((g) => ({
+              home: g.home,
+              away: g.away,
+              homeScore: g.homeScore,
+              awayScore: g.awayScore,
+              final: g.final,
+            })),
+          },
+        )}`
+      : "";
+
+    const systemPrompt = `You are a baseball/softball tournament pool-play extractor. The user pasted a link to a published tournament page (commonly SportsEngine Tourney / TourneyMachine, GameChanger, or a league site). The page's visible text is provided below between <PAGE> tags. Extract:
+
+1. TEAMS in the coach's pool (their names exactly as written; trim whitespace; preserve case and any colors/numbers in the name). If the page lists multiple pools/divisions, pick the one that matches "${tournament.name}" or the coach's tournament location best; if ambiguous, prefer the FIRST pool/division shown.
+2. GAMES between those teams. For each game:
+   - home / away team names.
+   - homeScore / awayScore: integers if a final score is shown; null otherwise.
+   - final: true iff a final score is shown AND the game is marked complete (not "in progress" / "scheduled" / TBD).
+   - scheduledAt: scheduled first-pitch ISO-8601 with timezone. Fall back to the tournament startDate (${tournament.startDate.toISOString()}) for the date portion when only a time is visible. null if no time is shown.
+3. TIEBREAKER NOTE: free-form text of any tiebreaker rules visible on the page. null if not shown.
+4. OUR TEAM GUESS: which team in the pool is the coach's. The team often appears in the tournament name "${tournament.name}". null if no clear signal.
+
+Only include teams + games visible on the page. Do NOT invent games to "complete" a round-robin. Do NOT carry information from your training data — only what's on the page.${existingHint}
+
+Tournament context: "${tournament.name}"${tournament.location ? `, ${tournament.location}` : ""}. Runs ${tournament.startDate.toISOString().slice(0, 10)} to ${tournament.endDate.toISOString().slice(0, 10)}.
+
+Return RAW JSON only, no markdown, no commentary:
+{
+  "ourTeamGuess": "<string or null>",
+  "teams": [{ "name": "<string>" }, ...],
+  "games": [
+    { "home": "<string>", "away": "<string>", "homeScore": <int|null>, "awayScore": <int|null>, "final": <bool>, "scheduledAt": "<ISO-8601 string or null>" },
+    ...
+  ],
+  "tiebreakerNote": "<string or null>"
+}
+
+<PAGE>
+${pageText}
+</PAGE>`;
+
+    let parsed: unknown;
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 4000,
+        reasoning_effort: "minimal",
+        messages: [{ role: "user", content: systemPrompt }],
+      });
+      const text = response.choices[0]?.message?.content ?? "";
+      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      req.log.error({ err: e }, "pool-play url extract failed");
+      res.status(502).json({ error: "Couldn't read that page — try a different link or upload screenshots instead." });
+      return;
+    }
+
+    // Reuse identical shape coercion as the screenshot path.
+    const safeStr = (v: unknown, max = 80) =>
+      typeof v === "string" ? v.trim().slice(0, max) : "";
+    const intOrNull = (v: unknown): number | null => {
+      if (typeof v !== "number" || !Number.isFinite(v)) return null;
+      const n = Math.round(v);
+      if (n < 0 || n > 99) return null;
+      return n;
+    };
+    const rawTeams = Array.isArray((parsed as { teams?: unknown }).teams)
+      ? ((parsed as { teams: unknown[] }).teams as unknown[])
+      : [];
+    const rawGames = Array.isArray((parsed as { games?: unknown }).games)
+      ? ((parsed as { games: unknown[] }).games as unknown[])
+      : [];
+
+    const teams = rawTeams
+      .map((t) => ({ name: safeStr((t as { name?: unknown })?.name) }))
+      .filter((t) => t.name.length > 0)
+      .slice(0, 16);
+
+    const seenTeam = new Set<string>();
+    const uniqueTeams = teams.filter((t) => {
+      const k = t.name.toLowerCase();
+      if (seenTeam.has(k)) return false;
+      seenTeam.add(k);
+      return true;
+    });
+    const teamLookup = new Map(uniqueTeams.map((t) => [t.name.toLowerCase(), t.name]));
+
+    let gid = 0;
+    const games = rawGames
+      .map((g) => {
+        const o = g as Record<string, unknown>;
+        const home = teamLookup.get(safeStr(o.home).toLowerCase()) ?? safeStr(o.home);
+        const away = teamLookup.get(safeStr(o.away).toLowerCase()) ?? safeStr(o.away);
+        const homeScore = intOrNull(o.homeScore);
+        const awayScore = intOrNull(o.awayScore);
+        const final = Boolean(o.final) && homeScore != null && awayScore != null;
+        if (!home || !away || home.toLowerCase() === away.toLowerCase()) return null;
+        let scheduledAt: string | null = null;
+        const rawSched = o.scheduledAt;
+        if (typeof rawSched === "string" && rawSched.length > 0) {
+          const parsedDate = new Date(rawSched);
+          if (!Number.isNaN(parsedDate.getTime())) {
+            const tMs = parsedDate.getTime();
+            const winMs = 14 * 24 * 60 * 60 * 1000;
+            const lo = tournament.startDate.getTime() - winMs;
+            const hi = tournament.endDate.getTime() + winMs;
+            if (tMs >= lo && tMs <= hi) {
+              scheduledAt = parsedDate.toISOString();
+            }
+          }
+        }
+        gid++;
+        return {
+          id: `ext-${Date.now()}-${gid}`,
+          home,
+          away,
+          homeScore: final ? homeScore : null,
+          awayScore: final ? awayScore : null,
+          final,
+          scheduledAt,
+        };
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null)
+      .slice(0, 64);
+
+    const ourTeamGuessRaw = safeStr((parsed as { ourTeamGuess?: unknown }).ourTeamGuess);
+    const ourTeamGuess =
+      ourTeamGuessRaw && teamLookup.get(ourTeamGuessRaw.toLowerCase())
+        ? teamLookup.get(ourTeamGuessRaw.toLowerCase())!
+        : null;
+    const tiebreakerNoteRaw = (parsed as { tiebreakerNote?: unknown }).tiebreakerNote;
+    const tiebreakerNote =
+      typeof tiebreakerNoteRaw === "string" && tiebreakerNoteRaw.trim().length > 0
+        ? tiebreakerNoteRaw.trim().slice(0, 400)
+        : null;
+
+    res.json({
+      ourTeamGuess,
+      teams: uniqueTeams,
+      games,
+      tiebreakerNote,
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
 // POST /tournaments/:id/pool-play/format-extract — parse a rules screenshot
 //
 // Coach uploads 1-2 photos of the tournament's posted seeding /

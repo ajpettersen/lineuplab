@@ -1867,6 +1867,100 @@ export const ExtractTournamentPoolPlayResponse = zod
   );
 
 /**
+ * Server-side fetch of a public tournament page (e.g. SportsEngine
+Tourney bracket, TourneyMachine, GameChanger) parsed via the
+same AI extractor as screenshots. Returns the same preview
+shape — the client edits inline then PUTs to
+`/tournaments/{id}/pool-play`.
+
+ * @summary Extract pool-play standings + games from a public tournament URL
+ */
+export const ExtractTournamentPoolPlayFromUrlParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const extractTournamentPoolPlayFromUrlBodyUrlMax = 2048;
+
+export const ExtractTournamentPoolPlayFromUrlBody = zod.object({
+  url: zod.string().url().max(extractTournamentPoolPlayFromUrlBodyUrlMax),
+});
+
+export const extractTournamentPoolPlayFromUrlResponseTeamsItemNameMax = 80;
+
+export const extractTournamentPoolPlayFromUrlResponseGamesItemIdMax = 64;
+
+export const extractTournamentPoolPlayFromUrlResponseGamesItemHomeMax = 80;
+
+export const extractTournamentPoolPlayFromUrlResponseGamesItemAwayMax = 80;
+
+export const extractTournamentPoolPlayFromUrlResponseGamesItemHomeScoreMin = 0;
+export const extractTournamentPoolPlayFromUrlResponseGamesItemHomeScoreMax = 99;
+
+export const extractTournamentPoolPlayFromUrlResponseGamesItemAwayScoreMin = 0;
+export const extractTournamentPoolPlayFromUrlResponseGamesItemAwayScoreMax = 99;
+
+export const ExtractTournamentPoolPlayFromUrlResponse = zod
+  .object({
+    ourTeamGuess: zod
+      .string()
+      .nullish()
+      .describe(
+        "Best guess at which team belongs to the coach (may be null if no signal).",
+      ),
+    teams: zod.array(
+      zod.object({
+        name: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayFromUrlResponseTeamsItemNameMax),
+      }),
+    ),
+    games: zod.array(
+      zod.object({
+        id: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayFromUrlResponseGamesItemIdMax)
+          .describe("Stable client-generated UUID so edits round-trip."),
+        home: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayFromUrlResponseGamesItemHomeMax),
+        away: zod
+          .string()
+          .min(1)
+          .max(extractTournamentPoolPlayFromUrlResponseGamesItemAwayMax),
+        homeScore: zod
+          .number()
+          .min(extractTournamentPoolPlayFromUrlResponseGamesItemHomeScoreMin)
+          .max(extractTournamentPoolPlayFromUrlResponseGamesItemHomeScoreMax)
+          .nullable(),
+        awayScore: zod
+          .number()
+          .min(extractTournamentPoolPlayFromUrlResponseGamesItemAwayScoreMin)
+          .max(extractTournamentPoolPlayFromUrlResponseGamesItemAwayScoreMax)
+          .nullable(),
+        final: zod.boolean(),
+        scheduledAt: zod.coerce
+          .date()
+          .nullish()
+          .describe(
+            "Scheduled first-pitch time (ISO 8601 with timezone). Optional —\nextracted from schedule screenshots when visible, or copied\nfrom the linked real game's date on the live-merge path.\nDrives the \"awaiting score\" warning when the time has\npassed but the score hasn't been entered.\n",
+          ),
+      }),
+    ),
+    tiebreakerNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Free-text tiebreaker rules visible on the screenshot (informational only).",
+      ),
+  })
+  .describe(
+    "Best-effort AI-extracted preview. May be incomplete; the coach edits before saving.",
+  );
+
+/**
  * Upload 1-2 screenshots of the tournament's posted seeding /
 tiebreaker rules (e.g. "Top 2 advance, byes for top seed,
 tiebreakers: head-to-head, then run differential"). The AI

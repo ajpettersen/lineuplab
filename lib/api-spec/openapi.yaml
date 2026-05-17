@@ -563,6 +563,49 @@ paths:
         "404":
           description: Tournament not found
 
+  /tournaments/{id}/pool-play/extract-url:
+    post:
+      operationId: extractTournamentPoolPlayFromUrl
+      tags: [tournaments]
+      summary: Extract pool-play standings + games from a public tournament URL
+      description: |
+        Server-side fetch of a public tournament page (e.g. SportsEngine
+        Tourney bracket, TourneyMachine, GameChanger) parsed via the
+        same AI extractor as screenshots. Returns the same preview
+        shape — the client edits inline then PUTs to
+        `/tournaments/{id}/pool-play`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  maxLength: 2048
+              required: [url]
+      responses:
+        "200":
+          description: Parsed pool-play preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedPoolPlay"
+        "400":
+          description: Bad request (bad URL, private host, non-HTML response, page too large)
+        "404":
+          description: Tournament not found
+        "502":
+          description: Failed to fetch or parse the page
+
   /tournaments/{id}/pool-play/format-extract:
     post:
       operationId: extractTournamentPoolPlayFormat
