@@ -268,17 +268,39 @@ export default function Dashboard() {
             ) : (
               <div className="flex flex-col gap-3">
                 {upcomingGames.slice(0, 4).map((g) => (
-                  <Link key={g.id} href={`/games/${g.id}`}>
-                    <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer border border-border/50">
-                      <div>
-                        <div className="font-medium text-sm truncate" title={g.opponent ?? undefined}>{shortenTeamName(teamName) || teamName || "Team"} vs. {formatOpponentForMatchup(g.opponent, teamName) || g.opponent}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {format(new Date(g.gameDate), "EEE, MMM d")} {g.location ? `· ${g.location}` : ""}
-                        </div>
+                  <div
+                    key={g.id}
+                    className="flex items-center gap-2 p-3 rounded-lg hover:bg-accent/50 transition-colors border border-border/50"
+                  >
+                    <Link
+                      href={`/games/${g.id}`}
+                      className="flex-1 min-w-0 cursor-pointer"
+                    >
+                      <div className="font-medium text-sm truncate" title={g.opponent ?? undefined}>{shortenTeamName(teamName) || teamName || "Team"} vs. {formatOpponentForMatchup(g.opponent, teamName) || g.opponent}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {format(new Date(g.gameDate), "EEE, MMM d")} {g.location ? `· ${g.location}` : ""}
                       </div>
-                      <div className="text-xs text-muted-foreground">{g.innings} inn.</div>
-                    </div>
-                  </Link>
+                    </Link>
+                    <div className="text-xs text-muted-foreground hidden sm:block shrink-0">{g.innings} inn.</div>
+                    {/* Quick Field Display launcher — opens the live dugout
+                     *  display in a new tab without leaving the dashboard.
+                     *  Sibling to (not nested in) the Link so the click
+                     *  doesn't navigate to /games/:id first. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 h-8 px-2 text-muted-foreground hover:text-broadcast-navy"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(`${BASE}/games/${g.id}/display`, "_blank", "noopener");
+                      }}
+                      data-testid={`button-upcoming-field-display-${g.id}`}
+                      title="Open Field Display in a new tab"
+                      aria-label="Open Field Display"
+                    >
+                      <Tv className="h-4 w-4" />
+                    </Button>
+                  </div>
                 ))}
               </div>
             )}
