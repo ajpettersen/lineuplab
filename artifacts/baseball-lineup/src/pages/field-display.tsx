@@ -1308,13 +1308,19 @@ export default function FieldDisplay() {
   // without having to navigate to the tournament page. Preference
   // persists per-device so a coach who likes it on keeps it on across
   // innings/games.
+  //
+  // Defaults to ON for tournament games — coaches told us it's the
+  // whole point of opening Field Display during a tournament weekend
+  // and they kept missing the kebab toggle. Hiding it stays a single
+  // tap away in the kebab.
   const TOURNEY_PITCHES_KEY = "fd-show-tournament-pitches";
   const [showTournamentPitches, setShowTournamentPitches] = useState<boolean>(() => {
     try {
-      if (typeof window === "undefined") return false;
-      return localStorage.getItem(TOURNEY_PITCHES_KEY) === "1";
+      if (typeof window === "undefined") return true;
+      const v = localStorage.getItem(TOURNEY_PITCHES_KEY);
+      return v == null ? true : v === "1";
     } catch {
-      return false;
+      return true;
     }
   });
   useEffect(() => {
