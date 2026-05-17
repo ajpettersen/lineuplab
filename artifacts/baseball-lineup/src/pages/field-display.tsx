@@ -3995,7 +3995,18 @@ function TournamentPitchesPanel({
           No pitchers on the roster.
         </div>
       ) : (
-        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+        <div
+          /* `touch-action: pan-x` keeps the horizontal swipe gesture
+           * attached to this strip on mobile. Without it the parent
+           * scroll container (the Order tab on phones) claims the
+           * touch as a vertical pan the moment your finger moves at
+           * all, so the pitcher chips off the right edge become
+           * unreachable. Pairing it with `overscroll-behavior-x:
+           * contain` prevents the swipe from triggering a browser
+           * back-gesture once you scroll past the last chip. */
+          className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 overscroll-x-contain"
+          style={{ touchAction: "pan-x" }}
+        >
           {sorted.map((p) => (
             <PitcherChip key={p.playerId} p={p} />
           ))}
