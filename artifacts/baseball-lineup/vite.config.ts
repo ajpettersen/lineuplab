@@ -132,6 +132,80 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Manual vendor chunking — before this, the entry bundle was
+    // ~546KB (164KB gzip) because every third-party SDK (React,
+    // Clerk, React Query, Radix, date-fns, lucide-react) got mashed
+    // into `index.js` alongside the App shell. The browser had to
+    // download + parse the whole thing before the first route could
+    // mount.
+    //
+    // Splitting by vendor does three useful things at once:
+    //  1. The browser parallelizes downloads (HTTP/2 multiplexes
+    //     these over one connection, so 6 small chunks arrive faster
+    //     than one 540KB chunk).
+    //  2. Vendor chunks hash separately from app code, so a code-
+    //     only deploy doesn't bust the cached `react-vendor.js` and
+    //     `clerk-vendor.js` — return visitors only re-download what
+    //     actually changed.
+    //  3. Parse/compile is cheaper on smaller chunks; Safari in
+    //     particular blocks paint on the main thread while parsing
+    //     a single huge bundle.
+    //
+    // Each `manualChunks` predicate must return a stable bucket
+    // name; anything that doesn't match falls into the default
+    // `index` chunk (App.tsx + providers + shared lib/utils).
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return undefined;
+          // React core + scheduler — frozen across the app, biggest
+          // single benefit of being its own chunk because every page
+          // depends on it but it almost never changes.
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/scheduler/") ||
+            id.includes("/node_modules/react/jsx-runtime")
+          ) {
+            return "react-vendor";
+          }
+          // Clerk SDK — bulky auth runtime, used on every page via
+          // the providers in App.tsx.
+          if (id.includes("/node_modules/@clerk/")) {
+            return "clerk-vendor";
+          }
+          // React Query + persister + IDB driver — all loaded on
+          // boot by App.tsx.
+          if (
+            id.includes("/node_modules/@tanstack/react-query") ||
+            id.includes("/node_modules/idb-keyval/")
+          ) {
+            return "query-vendor";
+          }
+          // Radix UI primitives — many small packages but together
+          // they're chunky. Group as one vendor bundle so the
+          // browser caches them as a unit.
+          if (id.includes("/node_modules/@radix-ui/")) {
+            return "radix-vendor";
+          }
+          // Lucide icons — tree-shakes but the per-icon files still
+          // add up across the app. Isolating them keeps icon-only
+          // changes from busting the main bundle.
+          if (id.includes("/node_modules/lucide-react/")) {
+            return "icons-vendor";
+          }
+          // Date math — used by schedule, dashboard, game detail.
+          if (id.includes("/node_modules/date-fns/")) {
+            return "date-vendor";
+          }
+          // Default: leave everything else in the entry chunk so
+          // small one-off deps don't fragment the cache. Recharts,
+          // dnd-kit, framer-motion are only imported by lazy route
+          // chunks, so they stay there and load on demand.
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     port,
