@@ -7,6 +7,12 @@ import type {
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
+// Radix's own default is 5000ms, which coaches were finding too long —
+// a "Saved" toast appearing at top:0 on phone-portrait often overlapped
+// the very save/back button they wanted to tap next. 2500ms still gives
+// plenty of read time without parking a panel over the header.
+// Individual callers can still pass `duration` to override this.
+const DEFAULT_TOAST_DURATION = 2500
 
 type ToasterToast = ToastProps & {
   id: string
@@ -152,6 +158,7 @@ function toast({ ...props }: Toast) {
   dispatch({
     type: "ADD_TOAST",
     toast: {
+      duration: DEFAULT_TOAST_DURATION,
       ...props,
       id,
       open: true,

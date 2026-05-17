@@ -6,10 +6,12 @@ import {
   useGetGameLineup,
   useSaveLineup,
   useUpdateGame,
+  useGetTournament,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
   getGetSeasonStatsQueryKey,
   getGetPlayerStatsQueryKey,
+  getGetTournamentQueryKey,
   type LineupEntry,
   type Game,
   type UpdateGameBody,
@@ -822,6 +824,21 @@ export default function FieldDisplay() {
       initialDataUpdatedAt: 0,
     },
   });
+  // Tournament metadata (rolling pitcher availability). Only fires when
+  // the game is part of a tournament — most league fixtures aren't, so
+  // the GET is skipped. We don't gate on the overlay toggle so the data
+  // is already warm the moment the coach flips it on. Re-fetches
+  // alongside the lineup poll so a stat-keeper adding pitch counts in
+  // another tab reflects here within ~5s.
+  const tournamentId = game?.tournamentId ?? null;
+  const { data: tournament } = useGetTournament(tournamentId ?? 0, {
+    query: {
+      enabled: tournamentId != null,
+      queryKey: getGetTournamentQueryKey(tournamentId ?? 0),
+      refetchInterval: POLL_MS,
+      refetchIntervalInBackground: true,
+    },
+  });
 
   // Persist successful query data to localStorage so a Safari refresh
   // while offline still has something to render. Only writes when data
@@ -1135,6 +1152,29 @@ export default function FieldDisplay() {
     );
   const dimMode = brightnessMode === "dim";
   const sunlightMode = brightnessMode === "sunlight";
+
+  // ── Tournament pitches overlay ──
+  // When the active game belongs to a tournament, coaches asked for a
+  // quick in-game peek at "who's still got pitches left this weekend"
+  // without having to navigate to the tournament page. Preference
+  // persists per-device so a coach who likes it on keeps it on across
+  // innings/games.
+  const TOURNEY_PITCHES_KEY = "fd-show-tournament-pitches";
+  const [showTournamentPitches, setShowTournamentPitches] = useState<boolean>(() => {
+    try {
+      if (typeof window === "undefined") return false;
+      return localStorage.getItem(TOURNEY_PITCHES_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(TOURNEY_PITCHES_KEY, showTournamentPitches ? "1" : "0");
+    } catch {
+      // Private mode — silent.
+    }
+  }, [showTournamentPitches]);
 
   // Tournament splash — when the game is a tournament fixture, dial
   // up the broadcast-graphic accents (animated gold shimmer on the
@@ -2142,6 +2182,22 @@ export default function FieldDisplay() {
                 <Maximize2 className="h-4 w-4 mr-2" />
                 <span>Toggle fullscreen</span>
               </DropdownMenuItem>
+              {tournamentId != null && (
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setShowTournamentPitches((v) => !v);
+                  }}
+                  data-testid="menu-tournament-pitches"
+                >
+                  <Trophy className="h-4 w-4 mr-2" />
+                  <span>
+                    {showTournamentPitches
+                      ? "Hide tournament pitches"
+                      : "Show tournament pitches"}
+                  </span>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-broadcast-gold focus:text-amber-200"
@@ -2196,6 +2252,20 @@ export default function FieldDisplay() {
             aria-hidden="true"
             className="fd-tourney-shimmer absolute inset-x-0 bottom-0 h-1 sm:h-[5px] pointer-events-none"
             data-testid="tournament-shimmer-header"
+          />
+        )}
+        {/* Tournament pitches panel — compact "still available" board.
+         * Only renders when (a) game has a tournamentId, (b) the coach
+         * toggled it on from the kebab menu, and (c) the GET resolved.
+         * Same `pitcherAvailability[]` source that powers PitchCountsCard
+         * so the numbers always match the pitching tab. */}
+        {showTournamentPitches && tournamentId != null && (
+          <TournamentPitchesPanel
+            availability={tournament?.pitcherAvailability ?? []}
+            dailyMax={tournament?.effectiveDailyMax ?? null}
+            tournamentMax={tournament?.effectiveTournamentMax ?? null}
+            loading={!tournament}
+            onClose={() => setShowTournamentPitches(false)}
           />
         )}
       </header>
@@ -3206,3 +3276,150 @@ function DraggableBenchChip({
 // Re-export BASE so unused-import cleanup doesn't strip it; reserved for a
 // future "share via QR code" feature on this screen.
 export const __FIELD_DISPLAY_BASE = BASE;
+
+type TPAvailability = {
+  playerId: number;
+  playerName: string;
+  totalPitchesInTournament: number;
+  pitchesToday: number;
+  pitchesAvailableToday: number | null;
+  pitchesAvailableInTournament: number | null;
+  restingUntil?:
+    | null
+    | {
+        availableOn: string;
+        fromOutingDate: string;
+        fromOutingPitches: number;
+        daysRest: number;
+      };
+};
+
+/**
+ * Compact "still available" board that drops in under the field-display
+ * header when the active game belongs to a tournament. Shows each
+ * pitcher's remaining-today + remaining-in-tournament budget, color-coded
+ * so the dugout can scan it at a glance. Resting pitchers show their
+ * "available on" date instead of a number so the coach doesn't burn a
+ * called pitcher on a no-go.
+ *
+ * Sorted by descending "still has gas today" so the most-available arms
+ * float to the top — the order a coach actually scans during a pitching
+ * change. Players with no pitches recorded all weekend drop to the
+ * bottom (still shown, since they're often the freshest option).
+ */
+function TournamentPitchesPanel({
+  availability,
+  dailyMax,
+  tournamentMax,
+  loading,
+  onClose,
+}: {
+  availability: TPAvailability[];
+  dailyMax: number | null;
+  tournamentMax: number | null;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  const sorted = [...availability].sort((a, b) => {
+    const aTodayLeft = a.pitchesAvailableToday ?? Number.POSITIVE_INFINITY;
+    const bTodayLeft = b.pitchesAvailableToday ?? Number.POSITIVE_INFINITY;
+    if (aTodayLeft !== bTodayLeft) return bTodayLeft - aTodayLeft;
+    // Tiebreak: fewer pitches thrown so far in the tournament = fresher.
+    return a.totalPitchesInTournament - b.totalPitchesInTournament;
+  });
+
+  return (
+    <div
+      className="relative w-full bg-[#06101f] border-t border-broadcast-gold/40 px-2 sm:px-4 py-2 sm:py-2.5"
+      data-testid="tournament-pitches-panel"
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-broadcast-gold">
+          <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+          Tournament Pitches
+          {(dailyMax != null || tournamentMax != null) && (
+            <span className="text-slate-400 normal-case tracking-normal font-sans text-[10px]">
+              {dailyMax != null ? `daily ${dailyMax}` : ""}
+              {dailyMax != null && tournamentMax != null ? " · " : ""}
+              {tournamentMax != null ? `tournament ${tournamentMax}` : ""}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Hide tournament pitches"
+          className="text-slate-400 hover:text-white p-1 -mr-1"
+          data-testid="button-close-tournament-pitches"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {loading ? (
+        <div className="text-[11px] text-slate-400 py-2">Loading availability…</div>
+      ) : sorted.length === 0 ? (
+        <div className="text-[11px] text-slate-400 py-2">
+          No pitchers on the roster.
+        </div>
+      ) : (
+        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+          {sorted.map((p) => (
+            <PitcherChip key={p.playerId} p={p} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PitcherChip({ p }: { p: TPAvailability }) {
+  const resting = p.restingUntil ?? null;
+  const todayLeft = p.pitchesAvailableToday;
+  // Tone: red when zero left today (or resting), amber when ≤15, green
+  // otherwise. Slate when no cap is configured so we don't misleadingly
+  // green-light an un-quantified pitcher.
+  let tone = "border-slate-600 text-slate-200 bg-[#0b1a35]/80";
+  if (resting || (todayLeft != null && todayLeft <= 0)) {
+    tone = "border-red-500/60 text-red-200 bg-red-950/40";
+  } else if (todayLeft != null && todayLeft <= 15) {
+    tone = "border-amber-500/60 text-amber-200 bg-amber-950/40";
+  } else if (todayLeft != null) {
+    tone = "border-emerald-500/60 text-emerald-200 bg-emerald-950/40";
+  }
+  return (
+    <div
+      className={`flex-shrink-0 min-w-[90px] sm:min-w-[105px] rounded-md border px-2 py-1 ${tone}`}
+      data-testid={`tournament-pitch-chip-${p.playerId}`}
+    >
+      <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate">
+        {formatPlayerNameShort(p.playerName)}
+      </div>
+      {resting ? (
+        <div className="text-[10px] font-mono leading-tight mt-0.5">
+          rests → {resting.availableOn.slice(5)}
+        </div>
+      ) : (
+        <div className="text-[10px] font-mono leading-tight mt-0.5 flex items-center gap-1.5">
+          <span>
+            <span className="text-slate-400">today </span>
+            <span className="font-bold">
+              {todayLeft != null ? todayLeft : "—"}
+            </span>
+          </span>
+          <span className="text-slate-500">·</span>
+          <span>
+            <span className="text-slate-400">tot </span>
+            <span className="font-bold">
+              {p.pitchesAvailableInTournament != null
+                ? p.pitchesAvailableInTournament
+                : "—"}
+            </span>
+          </span>
+        </div>
+      )}
+      <div className="text-[9px] text-slate-400 leading-tight mt-0.5">
+        thrown: {p.pitchesToday} today / {p.totalPitchesInTournament} tourney
+      </div>
+    </div>
+  );
+}

@@ -57,8 +57,29 @@ export default function PlayerDetail() {
 
   const startEdit = () => {
     if (!player) return;
-    setFirstName(player.firstName ?? "");
-    setLastName(player.lastName ?? "");
+    // Legacy rows (imported before firstName/lastName became required)
+    // may have a populated `name` with empty/null firstName + lastName.
+    // Without this fallback, opening Edit just to toggle a preferred
+    // position would force the coach to re-type the player's name
+    // before Save would accept the form. Split on the last whitespace
+    // (same convention the bulk-import uses).
+    let f = player.firstName ?? "";
+    let l = player.lastName ?? "";
+    if ((!f || !l) && player.name) {
+      const full = player.name.trim();
+      const idx = full.lastIndexOf(" ");
+      if (idx > 0) {
+        if (!f) f = full.slice(0, idx).trim();
+        if (!l) l = full.slice(idx + 1).trim();
+      } else if (!f) {
+        // Single-token name: keep it as the first name, leave last blank
+        // so the coach can fill it in if they want — but they aren't
+        // forced to (see handleSave for the matching relaxation).
+        f = full;
+      }
+    }
+    setFirstName(f);
+    setLastName(l);
     setNumber(player.number != null ? String(player.number) : "");
     setPreferred(player.preferredPositions);
     setCanPitch(player.canPitch);
@@ -79,10 +100,10 @@ export default function PlayerDetail() {
       toast({ title: "First name is required", variant: "destructive" });
       return;
     }
-    if (!l) {
-      toast({ title: "Last name is required", variant: "destructive" });
-      return;
-    }
+    // Last name is tolerated as empty so coaches editing legacy
+    // single-token roster rows (e.g. nickname-only) aren't blocked from
+    // toggling a preferred position. The server schema allows an empty
+    // lastName for the same reason (see replit.md → "Roster Names").
     updatePlayer.mutate(
       {
         id,
