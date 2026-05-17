@@ -115,6 +115,33 @@ export const teamSettingsTable = pgTable("team_settings", {
    * Set once when the coach clicks "Finish" on the last step.
    */
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+  /**
+   * Saved iCal/webcal URL the coach pasted from their league or
+   * tournament scheduling system. Used by the recurring iCal sync
+   * scheduler — when `icalAutoSync` is true the scheduler refetches
+   * this URL hourly and upserts any new or moved games (matched on
+   * `games.sourceUid`). The one-shot `POST /games/import-ical/sync-now`
+   * route reads from the same field. Null = no saved URL.
+   */
+  icalUrl: text("ical_url"),
+  /**
+   * When true the hourly scheduler refetches `icalUrl` and upserts
+   * matching games into the team's calendar without coach intervention.
+   * Off by default — coaches opt in from Settings → Schedule sync
+   * after their initial manual import. Has no effect when `icalUrl`
+   * is null.
+   */
+  icalAutoSync: boolean("ical_auto_sync").notNull().default(false),
+  /** Wall-clock of the last successful or failed sync attempt. */
+  icalLastSyncAt: timestamp("ical_last_sync_at", { withTimezone: true }),
+  /**
+   * Short error message from the last sync attempt; null on success.
+   * Surfaced in Settings so coaches know when their feed went stale
+   * (URL expired, host took the calendar private, etc.).
+   */
+  icalLastSyncError: text("ical_last_sync_error"),
+  /** Count of games upserted on the last successful sync. Null if never run or last run errored. */
+  icalLastSyncCount: integer("ical_last_sync_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -135,6 +162,8 @@ export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pi
   primaryColor: true,
   secondaryColor: true,
   depthChart: true,
+  icalUrl: true,
+  icalAutoSync: true,
 });
 export type UpdateTeamSettings = z.infer<typeof updateTeamSettingsSchema>;
 export type TeamSettings = typeof teamSettingsTable.$inferSelect;

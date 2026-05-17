@@ -1945,6 +1945,116 @@ export const ExtractTournamentPoolPlayFormatResponse = zod
   );
 
 /**
+ * Stateless chat turn. The client sends the full conversation
+each request; the server replies with the AI's next message
+and (when confident) a structured `parsedFormat` matching
+ExtractedPoolPlayFormat. The coach reviews the parsed format
+in the dialog and clicks "Apply" to merge it into the saved
+pool play.
+
+ * @summary Conversational pool-play format intake
+ */
+export const ChatTournamentPoolPlayFormatParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const chatTournamentPoolPlayFormatBodyMessagesItemContentMax = 4000;
+
+export const chatTournamentPoolPlayFormatBodyMessagesMax = 40;
+
+export const ChatTournamentPoolPlayFormatBody = zod.object({
+  messages: zod
+    .array(
+      zod.object({
+        role: zod.enum(["user", "assistant"]),
+        content: zod
+          .string()
+          .min(1)
+          .max(chatTournamentPoolPlayFormatBodyMessagesItemContentMax),
+      }),
+    )
+    .min(1)
+    .max(chatTournamentPoolPlayFormatBodyMessagesMax),
+});
+
+export const chatTournamentPoolPlayFormatResponseParsedFormatOneAdvanceCountMax = 8;
+
+export const chatTournamentPoolPlayFormatResponseParsedFormatOneByeCountMin = 0;
+export const chatTournamentPoolPlayFormatResponseParsedFormatOneByeCountMax = 8;
+
+export const chatTournamentPoolPlayFormatResponseParsedFormatOneTeamCountMin = 2;
+export const chatTournamentPoolPlayFormatResponseParsedFormatOneTeamCountMax = 16;
+
+export const chatTournamentPoolPlayFormatResponseParsedFormatOneTiebreakersMax = 8;
+
+export const ChatTournamentPoolPlayFormatResponse = zod
+  .object({
+    reply: zod
+      .string()
+      .describe("Assistant's plain-English response shown in the chat thread."),
+    parsedFormat: zod.union([
+      zod
+        .object({
+          advanceCount: zod
+            .number()
+            .min(1)
+            .max(
+              chatTournamentPoolPlayFormatResponseParsedFormatOneAdvanceCountMax,
+            )
+            .nullable(),
+          byeCount: zod
+            .number()
+            .min(chatTournamentPoolPlayFormatResponseParsedFormatOneByeCountMin)
+            .max(chatTournamentPoolPlayFormatResponseParsedFormatOneByeCountMax)
+            .nullable(),
+          teamCount: zod
+            .number()
+            .min(
+              chatTournamentPoolPlayFormatResponseParsedFormatOneTeamCountMin,
+            )
+            .max(
+              chatTournamentPoolPlayFormatResponseParsedFormatOneTeamCountMax,
+            )
+            .nullable()
+            .describe("Total teams in the pool\/bracket, if visible."),
+          tiebreakers: zod
+            .array(
+              zod
+                .enum([
+                  "winPct",
+                  "h2h",
+                  "runDiff",
+                  "runsAllowed",
+                  "runsScored",
+                  "coinFlip",
+                ])
+                .describe(
+                  "Ordered tiebreaker step. `runsAllowed` is inverted internally\n(fewer runs against ranks higher). `coinFlip` is deterministic\nin projections but flagged in the UI so coaches know a real\ncoin flip resolves it on game day.\n",
+                ),
+            )
+            .min(1)
+            .max(
+              chatTournamentPoolPlayFormatResponseParsedFormatOneTiebreakersMax,
+            )
+            .nullable(),
+          notes: zod
+            .string()
+            .nullable()
+            .describe(
+              "Free-form summary of anything the AI noticed but couldn't structure.",
+            ),
+        })
+        .describe(
+          "AI-parsed seeding\/tiebreaker rules from a screenshot of the\ntournament's posted rules. All fields nullable — the coach\nconfirms before the format is applied to the saved pool play.\n",
+        ),
+      zod.null(),
+    ]),
+  })
+  .describe(
+    "One assistant turn. `parsedFormat` is null until the AI has enough signal to propose a format.",
+  );
+
+/**
  * @summary Save (or replace) the pool-play data for a tournament
  */
 export const SaveTournamentPoolPlayParams = zod.object({

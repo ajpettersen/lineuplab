@@ -81,6 +81,10 @@ const UpdateBody = z
     depthChart: z
       .record(z.string().min(1).max(8), z.array(z.number().int().positive()))
       .optional(),
+    // iCal sync — coach pastes the .ics URL once and (optionally)
+    // opts into hourly auto-refresh. Empty string clears the URL.
+    icalUrl: z.string().trim().max(2000).nullable().optional(),
+    icalAutoSync: z.boolean().optional(),
   })
   .refine(
     (v) =>
@@ -96,7 +100,9 @@ const UpdateBody = z
       v.showSelectPositions !== undefined ||
       v.primaryColor !== undefined ||
       v.secondaryColor !== undefined ||
-      v.depthChart !== undefined,
+      v.depthChart !== undefined ||
+      v.icalUrl !== undefined ||
+      v.icalAutoSync !== undefined,
     { message: "Provide at least one field to update" }
   );
 
@@ -150,6 +156,8 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     primaryColor?: string | null;
     secondaryColor?: string | null;
     depthChart?: Record<string, number[]>;
+    icalUrl?: string | null;
+    icalAutoSync?: boolean;
     updatedAt: ReturnType<typeof sql>;
   } = { updatedAt: sql`now()` };
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
@@ -175,6 +183,13 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
     patch.secondaryColor = parsed.data.secondaryColor ?? null;
   if (parsed.data.depthChart !== undefined)
     patch.depthChart = parsed.data.depthChart;
+  if (parsed.data.icalUrl !== undefined) {
+    // Empty string normalizes to null so "clear URL" round-trips cleanly.
+    const trimmed = parsed.data.icalUrl?.trim() ?? null;
+    patch.icalUrl = trimmed && trimmed.length > 0 ? trimmed : null;
+  }
+  if (parsed.data.icalAutoSync !== undefined)
+    patch.icalAutoSync = parsed.data.icalAutoSync;
   const [updated] = await db
     .update(teamSettingsTable)
     .set(patch)

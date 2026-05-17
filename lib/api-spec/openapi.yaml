@@ -606,6 +606,42 @@ paths:
         "404":
           description: Tournament not found
 
+  /tournaments/{id}/pool-play/chat:
+    post:
+      operationId: chatTournamentPoolPlayFormat
+      tags: [tournaments]
+      summary: Conversational pool-play format intake
+      description: |
+        Stateless chat turn. The client sends the full conversation
+        each request; the server replies with the AI's next message
+        and (when confident) a structured `parsedFormat` matching
+        ExtractedPoolPlayFormat. The coach reviews the parsed format
+        in the dialog and clicks "Apply" to merge it into the saved
+        pool play.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoolPlayChatRequest"
+      responses:
+        "200":
+          description: AI reply + optional parsed format preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolPlayChatResponse"
+        "400":
+          description: Validation error
+        "404":
+          description: Tournament not found
+
   /tournaments/{id}/pool-play:
     put:
       operationId: saveTournamentPoolPlay
@@ -2166,6 +2202,42 @@ components:
         - advanceCount
         - byeCount
         - updatedAt
+
+    PoolPlayChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required: [role, content]
+
+    PoolPlayChatRequest:
+      type: object
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 40
+          items:
+            $ref: "#/components/schemas/PoolPlayChatMessage"
+      required: [messages]
+
+    PoolPlayChatResponse:
+      type: object
+      description: One assistant turn. `parsedFormat` is null until the AI has enough signal to propose a format.
+      properties:
+        reply:
+          type: string
+          description: Assistant's plain-English response shown in the chat thread.
+        parsedFormat:
+          oneOf:
+            - $ref: "#/components/schemas/ExtractedPoolPlayFormat"
+            - type: "null"
+      required: [reply, parsedFormat]
 
     ExtractedPoolPlayFormat:
       type: object

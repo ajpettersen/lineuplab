@@ -395,6 +395,182 @@ Tournament context: "${tournament.name}"${tournament.location ? `, ${tournament.
 );
 
 // ---------------------------------------------------------------------------
+// POST /tournaments/:id/pool-play/chat — conversational format intake
+//
+// Lets a coach describe their tournament format in natural language
+// ("10 teams, top 6 advance, top 2 get a bye, tiebreakers are h2h
+// then run differential then runs allowed"). The AI replies in plain
+// English AND, when it has enough signal, emits a structured
+// `parsedFormat` object matching ExtractedPoolPlayFormat. The coach
+// reviews and clicks "Apply format" in the dialog to commit.
+//
+// Stateless — the client sends the full conversation each turn.
+// ---------------------------------------------------------------------------
+
+const ChatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(4000),
+});
+
+const ChatBodySchema = z.object({
+  messages: z.array(ChatMessageSchema).min(1).max(40),
+});
+
+router.post(
+  "/tournaments/:id/pool-play/chat",
+  async (req, res): Promise<void> => {
+    const userId = req.ownerUserId!;
+    const params = IdParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const tournament = await getOwnedTournament(params.data.id, userId);
+    if (!tournament) {
+      res.status(404).json({ error: "Tournament not found" });
+      return;
+    }
+    const bodyParsed = ChatBodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: bodyParsed.error.message });
+      return;
+    }
+
+    const charge = await chargeAiCall(req, "pool-play-format-chat", 1);
+    if (!charge.ok) {
+      res.status(charge.status).json({ error: charge.error });
+      return;
+    }
+
+    const allowedTiebreakers = POOL_PLAY_TIEBREAKER_KEYS.join('","');
+    const systemPrompt = `You are helping a youth baseball/softball coach configure the seeding/tiebreaker rules of a tournament called "${tournament.name}"${tournament.location ? ` (${tournament.location})` : ""}.
+
+Have a brief, friendly conversation with the coach to gather:
+  - teamCount      (total teams in their pool — integer 2-16, optional)
+  - advanceCount   (how many advance to bracket play — integer 1-8)
+  - byeCount       (how many advancing teams get a first-round bye — integer 0-8, ≤ advanceCount)
+  - tiebreakers    (ORDERED list, most-important first; one or more of: "${allowedTiebreakers}")
+
+Mapping help (English → key):
+  - "record" / "win-loss record" / "winning percentage" → "winPct"
+  - "head to head" / "h2h" → "h2h"
+  - "run differential" / "run diff" → "runDiff"
+  - "runs allowed" / "fewest runs against" → "runsAllowed"
+  - "runs scored" / "most runs for" → "runsScored"
+  - "coin flip" / "draw" / "random" → "coinFlip"
+
+GUIDELINES:
+  - Keep replies SHORT (1-3 sentences). Ask at most one clarifying question per turn.
+  - If the coach gives all required fields in one message, confirm by summarizing back and emit the parsedFormat immediately.
+  - If the coach pastes verbose tournament rules, extract everything you can and emit a partial parsedFormat without nagging for missing fields — they can fill them in later.
+  - Never invent values you weren't told. Omit (null) anything you're unsure of.
+  - Don't ask about pool/team names — that's collected in a separate flow.
+
+RETURN FORMAT — EXACTLY this JSON, no markdown fences, no extra prose:
+{
+  "reply": "<short conversational response to the coach>",
+  "parsedFormat": null OR {
+    "advanceCount": <integer 1-8 | null>,
+    "byeCount":     <integer 0-8 | null>,
+    "teamCount":    <integer 2-16 | null>,
+    "tiebreakers":  ["${POOL_PLAY_TIEBREAKER_KEYS.join('","')}", ...] | null,
+    "notes":        "<short free-text> | null"
+  }
+}
+
+Emit a non-null parsedFormat as soon as you've gathered enough to be useful — at minimum advanceCount + tiebreakers. The coach reviews before it's applied, so it's safe to propose.`;
+
+    const chatMessages = [
+      { role: "system" as const, content: systemPrompt },
+      ...bodyParsed.data.messages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    ];
+
+    let parsed: { reply?: unknown; parsedFormat?: unknown };
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 800,
+        reasoning_effort: "minimal",
+        messages: chatMessages,
+      });
+      const text = response.choices[0]?.message?.content ?? "";
+      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      req.log.error({ err: e }, "pool-play chat failed");
+      res.status(502).json({
+        error: "AI couldn't process that message — try rephrasing or fall back to the rules-photo / manual edit flow.",
+      });
+      return;
+    }
+
+    const reply =
+      typeof parsed.reply === "string" && parsed.reply.trim().length > 0
+        ? parsed.reply.trim().slice(0, 2000)
+        : "Got it.";
+
+    // Reuse the same coercion as format-extract so the shapes match.
+    let parsedFormat: {
+      advanceCount: number | null;
+      byeCount: number | null;
+      teamCount: number | null;
+      tiebreakers: PoolPlayTiebreakerKey[] | null;
+      notes: string | null;
+    } | null = null;
+    const rawFmt = parsed.parsedFormat;
+    if (rawFmt && typeof rawFmt === "object") {
+      const obj = rawFmt as Record<string, unknown>;
+      const intInRange = (v: unknown, lo: number, hi: number): number | null => {
+        if (typeof v !== "number" || !Number.isFinite(v)) return null;
+        const n = Math.round(v);
+        if (n < lo || n > hi) return null;
+        return n;
+      };
+      const allowedSet = new Set<string>(POOL_PLAY_TIEBREAKER_KEYS);
+      let tiebreakers: PoolPlayTiebreakerKey[] | null = null;
+      if (Array.isArray(obj.tiebreakers)) {
+        const seen = new Set<string>();
+        const list: PoolPlayTiebreakerKey[] = [];
+        for (const k of obj.tiebreakers) {
+          if (typeof k !== "string") continue;
+          if (!allowedSet.has(k)) continue;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          list.push(k as PoolPlayTiebreakerKey);
+          if (list.length >= 8) break;
+        }
+        if (list.length > 0) tiebreakers = list;
+      }
+      const notes =
+        typeof obj.notes === "string" && obj.notes.trim().length > 0
+          ? obj.notes.trim().slice(0, 400)
+          : null;
+      parsedFormat = {
+        advanceCount: intInRange(obj.advanceCount, 1, 8),
+        byeCount: intInRange(obj.byeCount, 0, 8),
+        teamCount: intInRange(obj.teamCount, 2, 16),
+        tiebreakers,
+        notes,
+      };
+      // If every field is null, drop it — no point showing the coach a
+      // useless "Apply format" CTA.
+      const allNull =
+        parsedFormat.advanceCount === null &&
+        parsedFormat.byeCount === null &&
+        parsedFormat.teamCount === null &&
+        parsedFormat.tiebreakers === null &&
+        parsedFormat.notes === null;
+      if (allNull) parsedFormat = null;
+    }
+
+    res.json({ reply, parsedFormat });
+  },
+);
+
+// ---------------------------------------------------------------------------
 // PUT /tournaments/:id/pool-play — save (or replace) parsed pool data
 // ---------------------------------------------------------------------------
 

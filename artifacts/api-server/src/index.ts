@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startBoxScoreReminderScheduler } from "./lib/box-score-reminder-scheduler";
+import { startIcalSyncScheduler } from "./lib/ical-sync";
 
 const rawPort = process.env["PORT"];
 
@@ -26,4 +27,8 @@ app.listen(port, (err) => {
   // Start the GameChanger box-score reminder scheduler. Safe to call
   // when VAPID keys are missing — the scheduler will log + no-op.
   startBoxScoreReminderScheduler();
+  // Hourly iCal refresh for teams that saved a feed URL + opted into
+  // auto-sync. Safe to start unconditionally — no-ops when no team
+  // is opted in.
+  startIcalSyncScheduler();
 });

@@ -916,6 +916,31 @@ export interface UpsertPitchCountBody {
   notes?: string | null;
 }
 
+export type PoolPlayChatMessageRole =
+  (typeof PoolPlayChatMessageRole)[keyof typeof PoolPlayChatMessageRole];
+
+export const PoolPlayChatMessageRole = {
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export interface PoolPlayChatMessage {
+  role: PoolPlayChatMessageRole;
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  content: string;
+}
+
+export interface PoolPlayChatRequest {
+  /**
+   * @minItems 1
+   * @maxItems 40
+   */
+  messages: PoolPlayChatMessage[];
+}
+
 /**
  * AI-parsed seeding/tiebreaker rules from a screenshot of the
 tournament's posted rules. All fields nullable — the coach
@@ -953,6 +978,15 @@ export interface ExtractedPoolPlayFormat {
    * @nullable
    */
   notes: string | null;
+}
+
+/**
+ * One assistant turn. `parsedFormat` is null until the AI has enough signal to propose a format.
+ */
+export interface PoolPlayChatResponse {
+  /** Assistant's plain-English response shown in the chat thread. */
+  reply: string;
+  parsedFormat: ExtractedPoolPlayFormat | null;
 }
 
 /**

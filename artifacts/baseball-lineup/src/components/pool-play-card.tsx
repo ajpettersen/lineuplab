@@ -57,8 +57,10 @@ import {
   ArrowDown,
   Award,
   Camera,
+  MessageCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { TournamentFormatChatDialog } from "@/components/tournament-format-chat-dialog";
 
 /**
  * "Pool Play" card on the tournament detail page. Handles the full
@@ -78,9 +80,12 @@ export function PoolPlayCard({
   poolPlay: PoolPlay | null;
   analysis: PoolPlayAnalysis | null;
 }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
   const [importOpen, setImportOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   // Held when the coach extracts a format via rules-photo while no
   // pool exists yet — the next opened Import/Edit dialog will seed
   // its defaults from this so the format isn't lost.
@@ -98,6 +103,10 @@ export function PoolPlayCard({
           Pool Play Scenarios
         </CardTitle>
         <div className="flex flex-wrap gap-2 justify-end">
+          <Button size="sm" variant="outline" onClick={() => setChatOpen(true)}>
+            <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+            Set up with AI
+          </Button>
           {poolPlay && (
             <Button size="sm" variant="outline" onClick={() => setFormatOpen(true)}>
               <Camera className="h-3.5 w-3.5 mr-1.5" />
@@ -159,8 +168,85 @@ export function PoolPlayCard({
           }}
         />
       )}
+      {chatOpen && (
+        <TournamentFormatChatDialog
+          tournamentId={tournamentId}
+          onClose={() => setChatOpen(false)}
+          onApplyFormat={(fmt) => {
+            setChatOpen(false);
+            if (poolPlay) {
+              // Pool already exists — merge the new format directly and
+              // save. We don't reopen the Edit dialog because the
+              // PreviewEditor seeds tiebreakers from `existing` first,
+              // which would silently drop the AI's proposal.
+              void applyFormatToExistingPool(tournamentId, poolPlay, fmt, qc, toast);
+            } else {
+              // No pool yet — stash and chain into Import where the
+              // coach adds team names; PreviewEditor reads `seedFormat`
+              // when `existing` is null.
+              setPendingFormat(fmt);
+              setImportOpen(true);
+            }
+          }}
+        />
+      )}
     </Card>
   );
+}
+
+/**
+ * Merge a chat-applied format into an existing pool and save in-place.
+ * Keeps teams/games/ourTeamName/tiebreaker (legacy) untouched, just
+ * overlays the new advanceCount/byeCount/tiebreakers fields and
+ * bumps updatedAt.
+ */
+async function applyFormatToExistingPool(
+  tournamentId: number,
+  existing: PoolPlay,
+  fmt: {
+    advanceCount?: number;
+    byeCount?: number;
+    tiebreakers?: PoolPlayTiebreakerKey[];
+  },
+  qc: ReturnType<typeof useQueryClient>,
+  toast: ReturnType<typeof useToast>["toast"],
+) {
+  // Pool sizes have an invariant — byeCount must not exceed advanceCount,
+  // and advanceCount must not exceed the team count. Clamp defensively
+  // so the server doesn't 400 on edge AI suggestions.
+  const nextAdvance = Math.min(
+    Math.max(1, fmt.advanceCount ?? existing.advanceCount),
+    existing.teams.length,
+  );
+  const nextBye = Math.min(
+    Math.max(0, fmt.byeCount ?? existing.byeCount ?? 0),
+    nextAdvance,
+  );
+  const nextTiebreakers =
+    fmt.tiebreakers && fmt.tiebreakers.length > 0
+      ? fmt.tiebreakers
+      : existing.tiebreakers && existing.tiebreakers.length > 0
+        ? existing.tiebreakers
+        : (["winPct", "h2h", "runDiff"] as PoolPlayTiebreakerKey[]);
+  const next: PoolPlay = {
+    ...existing,
+    advanceCount: nextAdvance,
+    byeCount: nextBye,
+    tiebreakers: nextTiebreakers,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    const { saveTournamentPoolPlay } = await import("@workspace/api-client-react");
+    await saveTournamentPoolPlay(tournamentId, next);
+    await qc.invalidateQueries({ queryKey: getGetTournamentQueryKey(tournamentId) });
+    toast({ title: "Format applied", description: "Pool standings re-projected." });
+  } catch (e) {
+    toast({
+      title: "Couldn't apply format",
+      description: (e as Error)?.message ?? "Try again or use Edit to set it manually.",
+      variant: "destructive",
+    });
+  }
 }
 
 function EmptyState({

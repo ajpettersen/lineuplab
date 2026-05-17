@@ -1,4 +1,5 @@
-import { pgTable, text, serial, timestamp, integer, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, index, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -81,13 +82,31 @@ export const gamesTable = pgTable(
      * coach explicitly removed the import).
      */
     boxScoreReminderSentAt: timestamp("box_score_reminder_sent_at", { withTimezone: true }),
+    /**
+     * Stable external identifier from the source the game was imported
+     * from. Today only set by the iCal sync path — value is the VEVENT
+     * UID. Used by the recurring iCal sync scheduler to upsert moved
+     * games (date/time/location/opponent edits on the league side) and
+     * to skip already-known events on subsequent fetches. Null for
+     * games created manually in the app. Scoped (userId, sourceUid)
+     * via a partial unique index so two coaches can sync from the
+     * same league calendar without colliding.
+     */
+    sourceUid: text("source_uid"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // Soft-delete timestamp. Null = visible. Set by the trash action
     // so the coach can hit Undo on the toast. All read queries scope
     // to `deletedAt IS NULL`; the restore endpoint clears it.
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
-  (table) => [index("games_user_id_idx").on(table.userId)],
+  (table) => [
+    index("games_user_id_idx").on(table.userId),
+    // Partial unique so manual rows (sourceUid IS NULL) don't conflict
+    // and so the iCal upsert can use ON CONFLICT to update in place.
+    uniqueIndex("games_user_source_uid_uidx")
+      .on(table.userId, table.sourceUid)
+      .where(sql`${table.sourceUid} IS NOT NULL`),
+  ],
 );
 
 export const insertGameSchema = createInsertSchema(gamesTable).omit({

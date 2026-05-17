@@ -40,6 +40,8 @@ import type {
   Player,
   PlayerStats,
   PoolPlay,
+  PoolPlayChatRequest,
+  PoolPlayChatResponse,
   Practice,
   PracticeAttendance,
   PracticeDetail,
@@ -2403,6 +2405,104 @@ export const useExtractTournamentPoolPlayFormat = <
   return useMutation(
     getExtractTournamentPoolPlayFormatMutationOptions(options),
   );
+};
+
+/**
+ * Stateless chat turn. The client sends the full conversation
+each request; the server replies with the AI's next message
+and (when confident) a structured `parsedFormat` matching
+ExtractedPoolPlayFormat. The coach reviews the parsed format
+in the dialog and clicks "Apply" to merge it into the saved
+pool play.
+
+ * @summary Conversational pool-play format intake
+ */
+export const getChatTournamentPoolPlayFormatUrl = (id: number) => {
+  return `/api/tournaments/${id}/pool-play/chat`;
+};
+
+export const chatTournamentPoolPlayFormat = async (
+  id: number,
+  poolPlayChatRequest: PoolPlayChatRequest,
+  options?: RequestInit,
+): Promise<PoolPlayChatResponse> => {
+  return customFetch<PoolPlayChatResponse>(
+    getChatTournamentPoolPlayFormatUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(poolPlayChatRequest),
+    },
+  );
+};
+
+export const getChatTournamentPoolPlayFormatMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof chatTournamentPoolPlayFormat>>,
+    TError,
+    { id: number; data: BodyType<PoolPlayChatRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof chatTournamentPoolPlayFormat>>,
+  TError,
+  { id: number; data: BodyType<PoolPlayChatRequest> },
+  TContext
+> => {
+  const mutationKey = ["chatTournamentPoolPlayFormat"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof chatTournamentPoolPlayFormat>>,
+    { id: number; data: BodyType<PoolPlayChatRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return chatTournamentPoolPlayFormat(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChatTournamentPoolPlayFormatMutationResult = NonNullable<
+  Awaited<ReturnType<typeof chatTournamentPoolPlayFormat>>
+>;
+export type ChatTournamentPoolPlayFormatMutationBody =
+  BodyType<PoolPlayChatRequest>;
+export type ChatTournamentPoolPlayFormatMutationError = ErrorType<void>;
+
+/**
+ * @summary Conversational pool-play format intake
+ */
+export const useChatTournamentPoolPlayFormat = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof chatTournamentPoolPlayFormat>>,
+    TError,
+    { id: number; data: BodyType<PoolPlayChatRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof chatTournamentPoolPlayFormat>>,
+  TError,
+  { id: number; data: BodyType<PoolPlayChatRequest> },
+  TContext
+> => {
+  return useMutation(getChatTournamentPoolPlayFormatMutationOptions(options));
 };
 
 /**
