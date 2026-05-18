@@ -1328,7 +1328,21 @@ export default function GameDetail() {
           setEditedLineup(null);
           setSelectedEntryId(null);
         },
-        onError: () => toast({ title: "Failed to save lineup", variant: "destructive" }),
+        onError: (err) => {
+          // The save may actually have landed server-side and we just
+          // lost the response (Wi-Fi blip, sleeping laptop, etc.).
+          // Refetch the lineup so the UI reconciles with the server —
+          // if our edits are there, the coach sees them stay on screen
+          // and can verify before reacting to the toast.
+          qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(id) });
+          const detail =
+            err instanceof Error && err.message ? err.message : "Unknown error";
+          toast({
+            title: "Failed to save lineup",
+            description: `${detail}. The lineup was refreshed — check whether your changes are there before retrying.`,
+            variant: "destructive",
+          });
+        },
       }
     );
   };
