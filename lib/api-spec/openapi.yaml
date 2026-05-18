@@ -1392,6 +1392,21 @@ components:
         tournamentId:
           type: ["integer", "null"]
           description: Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.
+        bracketStage:
+          type: ["string", "null"]
+          enum: [pool, bracket, null]
+          description: For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.
+        effectiveTimeLimits:
+          oneOf:
+            - type: "null"
+            - type: object
+              properties:
+                noNewInningMinutes:
+                  type: ["integer", "null"]
+                hardStopMinutes:
+                  type: ["integer", "null"]
+              required: [noNewInningMinutes, hardStopMinutes]
+          description: Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.
         notes:
           type: ["string", "null"]
         planSnapshot:
@@ -1493,6 +1508,10 @@ components:
         tournamentId:
           type: ["integer", "null"]
           description: Set to a tournaments.id to link this game into that tournament; set to null to detach.
+        bracketStage:
+          type: ["string", "null"]
+          enum: [pool, bracket, null]
+          description: For tournament games — switch between pool-play and bracket-play time-limit rules. Set null to clear.
 
     LineupEntry:
       type: object
@@ -1932,6 +1951,18 @@ components:
               items:
                 $ref: "#/components/schemas/RestTier"
           description: Rest tiers for this tournament. Null = inherit team default.
+        poolPlayNoNewInningMinutes:
+          type: ["integer", "null"]
+          description: Pool-play "no new inning after N minutes" rule. Null = no rule.
+        poolPlayHardStopMinutes:
+          type: ["integer", "null"]
+          description: Pool-play hard stop (minutes). Field Display surfaces warnings — does NOT auto-finalize. Null = no rule.
+        bracketNoNewInningMinutes:
+          type: ["integer", "null"]
+          description: Bracket-play "no new inning after N minutes" rule. Null = no rule.
+        bracketHardStopMinutes:
+          type: ["integer", "null"]
+          description: Bracket-play hard stop (minutes). Null = no rule.
         createdAt:
           type: string
           format: date-time
@@ -2097,6 +2128,22 @@ components:
             - type: array
               items:
                 $ref: "#/components/schemas/RestTier"
+        poolPlayNoNewInningMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
+        poolPlayHardStopMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
+        bracketNoNewInningMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
+        bracketHardStopMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
       required:
         - name
         - startDate
@@ -2129,6 +2176,22 @@ components:
             - type: array
               items:
                 $ref: "#/components/schemas/RestTier"
+        poolPlayNoNewInningMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
+        poolPlayHardStopMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
+        bracketNoNewInningMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
+        bracketHardStopMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 360
 
     PitchCount:
       type: object

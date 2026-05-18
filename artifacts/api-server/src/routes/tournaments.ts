@@ -205,6 +205,10 @@ router.post("/tournaments", async (req, res): Promise<void> => {
       dailyPitchMax: d.dailyPitchMax ?? null,
       tournamentPitchMax: d.tournamentPitchMax ?? null,
       restTiers: (d.restTiers ?? null) as RestTier[] | null,
+      poolPlayNoNewInningMinutes: d.poolPlayNoNewInningMinutes ?? null,
+      poolPlayHardStopMinutes: d.poolPlayHardStopMinutes ?? null,
+      bracketNoNewInningMinutes: d.bracketNoNewInningMinutes ?? null,
+      bracketHardStopMinutes: d.bracketHardStopMinutes ?? null,
       networkFingerprint: fp || null,
     })
     .returning();
@@ -519,6 +523,14 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
   if (d.tournamentPitchMax !== undefined)
     updates.tournamentPitchMax = d.tournamentPitchMax;
   if (d.restTiers !== undefined) updates.restTiers = d.restTiers;
+  if (d.poolPlayNoNewInningMinutes !== undefined)
+    updates.poolPlayNoNewInningMinutes = d.poolPlayNoNewInningMinutes;
+  if (d.poolPlayHardStopMinutes !== undefined)
+    updates.poolPlayHardStopMinutes = d.poolPlayHardStopMinutes;
+  if (d.bracketNoNewInningMinutes !== undefined)
+    updates.bracketNoNewInningMinutes = d.bracketNoNewInningMinutes;
+  if (d.bracketHardStopMinutes !== undefined)
+    updates.bracketHardStopMinutes = d.bracketHardStopMinutes;
 
   // If name or dates changed, recompute the network fingerprint.
   // We need the current row to fill in the unchanged side of the

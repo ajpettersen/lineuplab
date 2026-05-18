@@ -199,6 +199,21 @@ export const tournamentsTable = pgTable(
      */
     poolPlay: jsonb("pool_play").$type<PoolPlayJson>(),
     /**
+     * Per-stage time-limit rules (minutes). Optional — null = no rule.
+     *   • noNewInning: once elapsed game time crosses this threshold, the
+     *     CURRENT inning is still played to completion but no new inning
+     *     starts after it.
+     *   • hardStop: the entire game ends regardless of inning when the
+     *     elapsed timer crosses this. Field Display surfaces warnings and
+     *     color states — it does NOT auto-finalize the game (coach still
+     *     taps "End Game" when ready). Pool and bracket get independent
+     *     pairs because pool play often uses a tighter clock than bracket.
+     */
+    poolPlayNoNewInningMinutes: integer("pool_play_no_new_inning_minutes"),
+    poolPlayHardStopMinutes: integer("pool_play_hard_stop_minutes"),
+    bracketNoNewInningMinutes: integer("bracket_no_new_inning_minutes"),
+    bracketHardStopMinutes: integer("bracket_hard_stop_minutes"),
+    /**
      * SHA1 fingerprint of (normalized name, startDate, endDate). Used to
      * detect when two coaches added the same real-world tournament and
      * suggest they share data. Backfilled lazily — null on legacy rows

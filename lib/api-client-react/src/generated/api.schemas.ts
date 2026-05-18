@@ -88,6 +88,29 @@ export const GameGameType = {
   tournament: "tournament",
 } as const;
 
+/**
+ * For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.
+ * @nullable
+ */
+export type GameBracketStage =
+  | (typeof GameBracketStage)[keyof typeof GameBracketStage]
+  | null;
+
+export const GameBracketStage = {
+  pool: "pool",
+  bracket: "bracket",
+} as const;
+
+/**
+ * Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.
+ */
+export type GameEffectiveTimeLimits = null | {
+  /** @nullable */
+  noNewInningMinutes: number | null;
+  /** @nullable */
+  hardStopMinutes: number | null;
+};
+
 export interface PlanSnapshotEntry {
   playerId: number;
   playerName: string;
@@ -127,6 +150,13 @@ export interface Game {
    * @nullable
    */
   tournamentId?: number | null;
+  /**
+   * For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.
+   * @nullable
+   */
+  bracketStage?: GameBracketStage;
+  /** Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty. */
+  effectiveTimeLimits?: GameEffectiveTimeLimits;
   /** @nullable */
   notes?: string | null;
   /** Snapshot of the planned lineup taken before a post-game photo override (null when no snapshot has been taken) */
@@ -189,6 +219,19 @@ export const UpdateGameBodyGameType = {
   tournament: "tournament",
 } as const;
 
+/**
+ * For tournament games — switch between pool-play and bracket-play time-limit rules. Set null to clear.
+ * @nullable
+ */
+export type UpdateGameBodyBracketStage =
+  | (typeof UpdateGameBodyBracketStage)[keyof typeof UpdateGameBodyBracketStage]
+  | null;
+
+export const UpdateGameBodyBracketStage = {
+  pool: "pool",
+  bracket: "bracket",
+} as const;
+
 export interface UpdateGameBody {
   opponent?: string;
   gameDate?: string;
@@ -214,6 +257,11 @@ export interface UpdateGameBody {
    * @nullable
    */
   tournamentId?: number | null;
+  /**
+   * For tournament games — switch between pool-play and bracket-play time-limit rules. Set null to clear.
+   * @nullable
+   */
+  bracketStage?: UpdateGameBodyBracketStage;
 }
 
 export interface LineupEntry {
@@ -569,6 +617,26 @@ export interface Tournament {
   tournamentPitchMax?: number | null;
   /** Rest tiers for this tournament. Null = inherit team default. */
   restTiers?: null | RestTier[];
+  /**
+   * Pool-play "no new inning after N minutes" rule. Null = no rule.
+   * @nullable
+   */
+  poolPlayNoNewInningMinutes?: number | null;
+  /**
+   * Pool-play hard stop (minutes). Field Display surfaces warnings — does NOT auto-finalize. Null = no rule.
+   * @nullable
+   */
+  poolPlayHardStopMinutes?: number | null;
+  /**
+   * Bracket-play "no new inning after N minutes" rule. Null = no rule.
+   * @nullable
+   */
+  bracketNoNewInningMinutes?: number | null;
+  /**
+   * Bracket-play hard stop (minutes). Null = no rule.
+   * @nullable
+   */
+  bracketHardStopMinutes?: number | null;
   createdAt: string;
 }
 
@@ -879,6 +947,30 @@ export interface CreateTournamentBody {
   /** @nullable */
   tournamentPitchMax?: number | null;
   restTiers?: null | RestTier[];
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  poolPlayNoNewInningMinutes?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  poolPlayHardStopMinutes?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  bracketNoNewInningMinutes?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  bracketHardStopMinutes?: number | null;
 }
 
 export interface UpdateTournamentBody {
@@ -898,6 +990,30 @@ export interface UpdateTournamentBody {
   /** @nullable */
   tournamentPitchMax?: number | null;
   restTiers?: null | RestTier[];
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  poolPlayNoNewInningMinutes?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  poolPlayHardStopMinutes?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  bracketNoNewInningMinutes?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 360
+   * @nullable
+   */
+  bracketHardStopMinutes?: number | null;
 }
 
 export interface PitchCount {

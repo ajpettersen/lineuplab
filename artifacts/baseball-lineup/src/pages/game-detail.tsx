@@ -4582,6 +4582,11 @@ export default function GameDetail() {
             innings: game.innings,
             status: game.status,
             gameType: game.gameType ?? null,
+            tournamentId: game.tournamentId ?? null,
+            bracketStage:
+              game.bracketStage === "pool" || game.bracketStage === "bracket"
+                ? game.bracketStage
+                : null,
             notes: game.notes ?? null,
           }}
           onClose={() => setEditGameOpen(false)}

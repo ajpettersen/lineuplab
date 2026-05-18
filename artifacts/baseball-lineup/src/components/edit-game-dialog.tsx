@@ -30,6 +30,8 @@ export type EditableGame = {
   innings: number;
   status: string;
   gameType?: "league" | "tournament" | null;
+  tournamentId?: number | null;
+  bracketStage?: "pool" | "bracket" | null;
   notes: string | null;
 };
 
@@ -57,7 +59,16 @@ export function EditGameDialog({
   const [gameType, setGameType] = useState<"none" | "league" | "tournament">(
     game.gameType === "league" || game.gameType === "tournament" ? game.gameType : "none"
   );
+  // Bracket stage selector — only relevant when the game is linked to a
+  // tournament AND tagged as a tournament game. Drives which pair of
+  // time-limit fields on the parent tournament applies to this game on
+  // the Field Display.
+  const [bracketStage, setBracketStage] = useState<"pool" | "bracket">(
+    game.bracketStage === "bracket" ? "bracket" : "pool",
+  );
   const [saving, setSaving] = useState(false);
+  const showStagePicker =
+    game.tournamentId != null && gameType === "tournament";
 
   const handleSave = async () => {
     if (!opponent.trim()) { toast({ title: "Opponent required", variant: "destructive" }); return; }
@@ -74,6 +85,10 @@ export function EditGameDialog({
           notes: notes.trim() || null,
           status,
           gameType: gameType === "none" ? null : gameType,
+          // Only persist a stage when the game is actually a tournament
+          // game linked to a tournament — otherwise clear it so a coach
+          // demoting "tournament" → "league" doesn't leave a stale stage.
+          bracketStage: showStagePicker ? bracketStage : null,
         }),
       });
       if (!r.ok) throw new Error();
@@ -145,6 +160,35 @@ export function EditGameDialog({
                 : "Lineup generator will use your default fairness setting."}
             </p>
           </div>
+          {showStagePicker && (
+            <div className="flex flex-col gap-1.5" data-testid="bracket-stage-picker">
+              <Label>Tournament stage</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { v: "pool" as const, label: "Pool Play" },
+                  { v: "bracket" as const, label: "Bracket Play" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setBracketStage(opt.v)}
+                    className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                      bracketStage === opt.v
+                        ? "border-primary bg-primary/5 text-foreground font-medium"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    }`}
+                    data-testid={`button-bracket-stage-${opt.v}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Switches the time-limit rules shown in the Field Display
+                (set up on the tournament page).
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>Status</Label>

@@ -10,6 +10,7 @@ import {
   aiPinnedAssignmentsTable,
   playersTable,
   teamSettingsTable,
+  tournamentsTable,
 } from "@workspace/db";
 import type { PlanSnapshotEntry } from "@workspace/db";
 import {
@@ -163,6 +164,12 @@ router.post("/games", async (req, res): Promise<void> => {
       status: "upcoming",
       notes: d.notes ?? null,
       gameType: d.gameType ?? null,
+      tournamentId: d.tournamentId ?? null,
+      // Tournament games default to pool play; coach switches to bracket
+      // from the game-edit dialog once bracket play begins. Non-tournament
+      // games stay null.
+      bracketStage:
+        d.tournamentId != null && d.gameType === "tournament" ? "pool" : null,
     })
     .returning();
   res.status(201).json(game);
@@ -357,7 +364,51 @@ router.get("/games/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Game not found" });
     return;
   }
-  res.json(game);
+  // Resolve effective time-limit rules from the parent tournament (if any).
+  // Field Display reads `effectiveTimeLimits` directly so it doesn't have to
+  // re-fetch the tournament on every poll. Stage defaults to "pool" when not
+  // yet set so legacy tournament games still get pool-play rules.
+  let effectiveTimeLimits:
+    | { noNewInningMinutes: number | null; hardStopMinutes: number | null }
+    | null = null;
+  if (game.tournamentId != null) {
+    const [tournament] = await db
+      .select({
+        poolPlayNoNewInningMinutes: tournamentsTable.poolPlayNoNewInningMinutes,
+        poolPlayHardStopMinutes: tournamentsTable.poolPlayHardStopMinutes,
+        bracketNoNewInningMinutes: tournamentsTable.bracketNoNewInningMinutes,
+        bracketHardStopMinutes: tournamentsTable.bracketHardStopMinutes,
+      })
+      .from(tournamentsTable)
+      .where(
+        and(
+          eq(tournamentsTable.id, game.tournamentId),
+          eq(tournamentsTable.userId, userId),
+          isNull(tournamentsTable.deletedAt),
+        ),
+      );
+    if (tournament) {
+      const stage = game.bracketStage === "bracket" ? "bracket" : "pool";
+      const noNew =
+        stage === "bracket"
+          ? tournament.bracketNoNewInningMinutes
+          : tournament.poolPlayNoNewInningMinutes;
+      const hard =
+        stage === "bracket"
+          ? tournament.bracketHardStopMinutes
+          : tournament.poolPlayHardStopMinutes;
+      // Only emit the object when at least one rule is set — otherwise null
+      // signals "no enforcement" to the client and keeps the timer chip in
+      // its neutral state.
+      if (noNew != null || hard != null) {
+        effectiveTimeLimits = {
+          noNewInningMinutes: noNew ?? null,
+          hardStopMinutes: hard ?? null,
+        };
+      }
+    }
+  }
+  res.json({ ...game, effectiveTimeLimits });
 });
 
 router.patch("/games/:id", async (req, res): Promise<void> => {
@@ -391,6 +442,14 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   if (d.notes !== undefined) updates.notes = d.notes;
   if (d.gameType !== undefined) updates.gameType = d.gameType;
   if (d.tournamentId !== undefined) updates.tournamentId = d.tournamentId;
+  if (d.bracketStage !== undefined) updates.bracketStage = d.bracketStage;
+  // Semantic guard: bracketStage is only meaningful on tournament-linked
+  // games (tournamentId != null AND gameType="tournament"). The Edit Game
+  // dialog already hides the selector outside that combo, but the API
+  // could still receive an out-of-band PATCH (stale client, scripted
+  // request) that leaves the row in an inconsistent state. Reject early.
+  // Tournament POST handles this implicitly by computing the default
+  // server-side, so this guard only needs to cover PATCH.
 
   // If the coach is shrinking the game's innings (e.g. they hit the 10-run
   // rule and ended early), drop any lineup data that would now point past the
@@ -410,6 +469,21 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
         ),
       );
     if (!existing) return null;
+
+    // Resolve POST-update tournamentId + gameType to enforce the
+    // bracketStage semantic guard (see comment above the updates map).
+    const nextTournamentId =
+      d.tournamentId !== undefined ? d.tournamentId : existing.tournamentId;
+    const nextGameType =
+      d.gameType !== undefined ? d.gameType : existing.gameType;
+    const nextBracketStage =
+      d.bracketStage !== undefined ? d.bracketStage : existing.bracketStage;
+    if (
+      nextBracketStage != null &&
+      !(nextTournamentId != null && nextGameType === "tournament")
+    ) {
+      return "INVALID_BRACKET_STAGE" as const;
+    }
 
     const [updated] = await tx
       .update(gamesTable)
@@ -453,6 +527,12 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
     return updated;
   });
 
+  if (game === "INVALID_BRACKET_STAGE") {
+    res.status(400).json({
+      error: "bracketStage can only be set on tournament-linked games",
+    });
+    return;
+  }
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;

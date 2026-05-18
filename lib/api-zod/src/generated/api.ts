@@ -182,6 +182,24 @@ export const ListGamesResponseItem = zod.object({
     .describe(
       "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
     ),
+  bracketStage: zod
+    .union([zod.literal("pool"), zod.literal("bracket"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  effectiveTimeLimits: zod
+    .union([
+      zod.null(),
+      zod.object({
+        noNewInningMinutes: zod.number().nullable(),
+        hardStopMinutes: zod.number().nullable(),
+      }),
+    ])
+    .optional()
+    .describe(
+      "Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.",
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -275,6 +293,24 @@ export const GetGameResponse = zod.object({
     .describe(
       "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
     ),
+  bracketStage: zod
+    .union([zod.literal("pool"), zod.literal("bracket"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  effectiveTimeLimits: zod
+    .union([
+      zod.null(),
+      zod.object({
+        noNewInningMinutes: zod.number().nullable(),
+        hardStopMinutes: zod.number().nullable(),
+      }),
+    ])
+    .optional()
+    .describe(
+      "Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.",
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -337,6 +373,12 @@ export const UpdateGameBody = zod.object({
     .describe(
       "Set to a tournaments.id to link this game into that tournament; set to null to detach.",
     ),
+  bracketStage: zod
+    .union([zod.literal("pool"), zod.literal("bracket"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "For tournament games — switch between pool-play and bracket-play time-limit rules. Set null to clear.",
+    ),
 });
 
 export const UpdateGameResponse = zod.object({
@@ -374,6 +416,24 @@ export const UpdateGameResponse = zod.object({
     .nullish()
     .describe(
       "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
+    ),
+  bracketStage: zod
+    .union([zod.literal("pool"), zod.literal("bracket"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  effectiveTimeLimits: zod
+    .union([
+      zod.null(),
+      zod.object({
+        noNewInningMinutes: zod.number().nullable(),
+        hardStopMinutes: zod.number().nullable(),
+      }),
+    ])
+    .optional()
+    .describe(
+      "Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.",
     ),
   notes: zod.string().nullish(),
   planSnapshot: zod
@@ -453,6 +513,24 @@ export const SnapshotPlanResponse = zod.object({
     .describe(
       "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
     ),
+  bracketStage: zod
+    .union([zod.literal("pool"), zod.literal("bracket"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  effectiveTimeLimits: zod
+    .union([
+      zod.null(),
+      zod.object({
+        noNewInningMinutes: zod.number().nullable(),
+        hardStopMinutes: zod.number().nullable(),
+      }),
+    ])
+    .optional()
+    .describe(
+      "Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.",
+    ),
   notes: zod.string().nullish(),
   planSnapshot: zod
     .union([
@@ -522,6 +600,24 @@ export const ClearPlanSnapshotResponse = zod.object({
     .nullish()
     .describe(
       "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
+    ),
+  bracketStage: zod
+    .union([zod.literal("pool"), zod.literal("bracket"), zod.literal(null)])
+    .nullish()
+    .describe(
+      "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  effectiveTimeLimits: zod
+    .union([
+      zod.null(),
+      zod.object({
+        noNewInningMinutes: zod.number().nullable(),
+        hardStopMinutes: zod.number().nullable(),
+      }),
+    ])
+    .optional()
+    .describe(
+      "Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.",
     ),
   notes: zod.string().nullish(),
   planSnapshot: zod
@@ -1139,6 +1235,28 @@ export const ListTournamentsResponseItem = zod
       ])
       .optional()
       .describe("Rest tiers for this tournament. Null = inherit team default."),
+    poolPlayNoNewInningMinutes: zod
+      .number()
+      .nullish()
+      .describe(
+        'Pool-play \"no new inning after N minutes\" rule. Null = no rule.',
+      ),
+    poolPlayHardStopMinutes: zod
+      .number()
+      .nullish()
+      .describe(
+        "Pool-play hard stop (minutes). Field Display surfaces warnings — does NOT auto-finalize. Null = no rule.",
+      ),
+    bracketNoNewInningMinutes: zod
+      .number()
+      .nullish()
+      .describe(
+        'Bracket-play \"no new inning after N minutes\" rule. Null = no rule.',
+      ),
+    bracketHardStopMinutes: zod
+      .number()
+      .nullish()
+      .describe("Bracket-play hard stop (minutes). Null = no rule."),
     createdAt: zod.coerce.date(),
   })
   .and(
@@ -1164,6 +1282,14 @@ export const createTournamentBodyNameMax = 120;
 export const createTournamentBodyRestTiersTwoItemMaxPitchesMin = 0;
 
 export const createTournamentBodyRestTiersTwoItemDaysRestMin = 0;
+
+export const createTournamentBodyPoolPlayNoNewInningMinutesMax = 360;
+
+export const createTournamentBodyPoolPlayHardStopMinutesMax = 360;
+
+export const createTournamentBodyBracketNoNewInningMinutesMax = 360;
+
+export const createTournamentBodyBracketHardStopMinutesMax = 360;
 
 export const CreateTournamentBody = zod.object({
   name: zod.string().min(1).max(createTournamentBodyNameMax),
@@ -1198,6 +1324,26 @@ export const CreateTournamentBody = zod.object({
       ),
     ])
     .optional(),
+  poolPlayNoNewInningMinutes: zod
+    .number()
+    .min(1)
+    .max(createTournamentBodyPoolPlayNoNewInningMinutesMax)
+    .nullish(),
+  poolPlayHardStopMinutes: zod
+    .number()
+    .min(1)
+    .max(createTournamentBodyPoolPlayHardStopMinutesMax)
+    .nullish(),
+  bracketNoNewInningMinutes: zod
+    .number()
+    .min(1)
+    .max(createTournamentBodyBracketNoNewInningMinutesMax)
+    .nullish(),
+  bracketHardStopMinutes: zod
+    .number()
+    .min(1)
+    .max(createTournamentBodyBracketHardStopMinutesMax)
+    .nullish(),
 });
 
 /**
@@ -1287,6 +1433,28 @@ export const GetTournamentResponse = zod
       ])
       .optional()
       .describe("Rest tiers for this tournament. Null = inherit team default."),
+    poolPlayNoNewInningMinutes: zod
+      .number()
+      .nullish()
+      .describe(
+        'Pool-play \"no new inning after N minutes\" rule. Null = no rule.',
+      ),
+    poolPlayHardStopMinutes: zod
+      .number()
+      .nullish()
+      .describe(
+        "Pool-play hard stop (minutes). Field Display surfaces warnings — does NOT auto-finalize. Null = no rule.",
+      ),
+    bracketNoNewInningMinutes: zod
+      .number()
+      .nullish()
+      .describe(
+        'Bracket-play \"no new inning after N minutes\" rule. Null = no rule.',
+      ),
+    bracketHardStopMinutes: zod
+      .number()
+      .nullish()
+      .describe("Bracket-play hard stop (minutes). Null = no rule."),
     createdAt: zod.coerce.date(),
   })
   .and(
@@ -1327,6 +1495,28 @@ export const GetTournamentResponse = zod
             .nullish()
             .describe(
               "Optional FK to a tournaments row. Set when the game is part of a multi-game tournament weekend so the app can roll per-pitcher pitch counts across the tournament.",
+            ),
+          bracketStage: zod
+            .union([
+              zod.literal("pool"),
+              zod.literal("bracket"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+            ),
+          effectiveTimeLimits: zod
+            .union([
+              zod.null(),
+              zod.object({
+                noNewInningMinutes: zod.number().nullable(),
+                hardStopMinutes: zod.number().nullable(),
+              }),
+            ])
+            .optional()
+            .describe(
+              "Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty.",
             ),
           notes: zod.string().nullish(),
           planSnapshot: zod
@@ -1676,6 +1866,14 @@ export const updateTournamentBodyRestTiersTwoItemMaxPitchesMin = 0;
 
 export const updateTournamentBodyRestTiersTwoItemDaysRestMin = 0;
 
+export const updateTournamentBodyPoolPlayNoNewInningMinutesMax = 360;
+
+export const updateTournamentBodyPoolPlayHardStopMinutesMax = 360;
+
+export const updateTournamentBodyBracketNoNewInningMinutesMax = 360;
+
+export const updateTournamentBodyBracketHardStopMinutesMax = 360;
+
 export const UpdateTournamentBody = zod.object({
   name: zod.string().min(1).max(updateTournamentBodyNameMax).optional(),
   startDate: zod.coerce.date().optional(),
@@ -1709,6 +1907,26 @@ export const UpdateTournamentBody = zod.object({
       ),
     ])
     .optional(),
+  poolPlayNoNewInningMinutes: zod
+    .number()
+    .min(1)
+    .max(updateTournamentBodyPoolPlayNoNewInningMinutesMax)
+    .nullish(),
+  poolPlayHardStopMinutes: zod
+    .number()
+    .min(1)
+    .max(updateTournamentBodyPoolPlayHardStopMinutesMax)
+    .nullish(),
+  bracketNoNewInningMinutes: zod
+    .number()
+    .min(1)
+    .max(updateTournamentBodyBracketNoNewInningMinutesMax)
+    .nullish(),
+  bracketHardStopMinutes: zod
+    .number()
+    .min(1)
+    .max(updateTournamentBodyBracketHardStopMinutesMax)
+    .nullish(),
 });
 
 export const updateTournamentResponseRestTiersTwoItemMaxPitchesMin = 0;
@@ -1760,6 +1978,28 @@ export const UpdateTournamentResponse = zod.object({
     ])
     .optional()
     .describe("Rest tiers for this tournament. Null = inherit team default."),
+  poolPlayNoNewInningMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      'Pool-play \"no new inning after N minutes\" rule. Null = no rule.',
+    ),
+  poolPlayHardStopMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Pool-play hard stop (minutes). Field Display surfaces warnings — does NOT auto-finalize. Null = no rule.",
+    ),
+  bracketNoNewInningMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      'Bracket-play \"no new inning after N minutes\" rule. Null = no rule.',
+    ),
+  bracketHardStopMinutes: zod
+    .number()
+    .nullish()
+    .describe("Bracket-play hard stop (minutes). Null = no rule."),
   createdAt: zod.coerce.date(),
 });
 

@@ -47,6 +47,15 @@ export const gamesTable = pgTable(
     // Null for league games / one-offs. ON DELETE SET NULL so removing
     // a tournament doesn't blow away its games.
     tournamentId: integer("tournament_id"),
+    /**
+     * For tournament games only: which stage of the tournament this game
+     * belongs to. Drives which pair of time-limit fields on the parent
+     * tournament (`pool_play_*` vs `bracket_*`) applies to this game.
+     * Null when the game has no `tournamentId`. New tournament games
+     * default to "pool" — the coach can switch a game to "bracket" from
+     * the game edit dialog once bracket play begins.
+     */
+    bracketStage: text("bracket_stage"),
     notes: text("notes"),
     // Snapshot of the planned lineup (taken when the coach chose "Keep both"
     // before overriding with a post-game photo). Null = no snapshot.

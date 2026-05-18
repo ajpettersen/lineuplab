@@ -688,6 +688,10 @@ function EditTournamentDialog({
     dailyPitchMax?: number | null;
     tournamentPitchMax?: number | null;
     restTiers?: RestTier[] | null;
+    poolPlayNoNewInningMinutes?: number | null;
+    poolPlayHardStopMinutes?: number | null;
+    bracketNoNewInningMinutes?: number | null;
+    bracketHardStopMinutes?: number | null;
   }) => void;
   isPending: boolean;
 }) {
@@ -708,6 +712,29 @@ function EditTournamentDialog({
   const [restTiers, setRestTiers] = useState<RestTier[] | null>(
     (tournament.restTiers as RestTier[] | null | undefined) ?? null,
   );
+  // Time-limit rules — pool play and bracket play get independent pairs
+  // because pool play often runs a tighter clock than bracket play. Empty
+  // string = no rule. Server-side validators clamp to 1-360 minutes.
+  const [poolNoNew, setPoolNoNew] = useState<string>(
+    tournament.poolPlayNoNewInningMinutes != null
+      ? String(tournament.poolPlayNoNewInningMinutes)
+      : "",
+  );
+  const [poolHardStop, setPoolHardStop] = useState<string>(
+    tournament.poolPlayHardStopMinutes != null
+      ? String(tournament.poolPlayHardStopMinutes)
+      : "",
+  );
+  const [bracketNoNew, setBracketNoNew] = useState<string>(
+    tournament.bracketNoNewInningMinutes != null
+      ? String(tournament.bracketNoNewInningMinutes)
+      : "",
+  );
+  const [bracketHardStop, setBracketHardStop] = useState<string>(
+    tournament.bracketHardStopMinutes != null
+      ? String(tournament.bracketHardStopMinutes)
+      : "",
+  );
 
   // Re-seed local form state when the tournament prop changes — happens
   // after a successful save invalidates the query and refetches.
@@ -725,6 +752,26 @@ function EditTournamentDialog({
         : "",
     );
     setRestTiers((tournament.restTiers as RestTier[] | null | undefined) ?? null);
+    setPoolNoNew(
+      tournament.poolPlayNoNewInningMinutes != null
+        ? String(tournament.poolPlayNoNewInningMinutes)
+        : "",
+    );
+    setPoolHardStop(
+      tournament.poolPlayHardStopMinutes != null
+        ? String(tournament.poolPlayHardStopMinutes)
+        : "",
+    );
+    setBracketNoNew(
+      tournament.bracketNoNewInningMinutes != null
+        ? String(tournament.bracketNoNewInningMinutes)
+        : "",
+    );
+    setBracketHardStop(
+      tournament.bracketHardStopMinutes != null
+        ? String(tournament.bracketHardStopMinutes)
+        : "",
+    );
   }, [tournament]);
 
   const submit = () => {
@@ -736,6 +783,10 @@ function EditTournamentDialog({
       dailyPitchMax: parseOptionalInt(dailyMax),
       tournamentPitchMax: parseOptionalInt(tournamentMax),
       restTiers,
+      poolPlayNoNewInningMinutes: parseOptionalInt(poolNoNew),
+      poolPlayHardStopMinutes: parseOptionalInt(poolHardStop),
+      bracketNoNewInningMinutes: parseOptionalInt(bracketNoNew),
+      bracketHardStopMinutes: parseOptionalInt(bracketHardStop),
     });
   };
 
@@ -826,6 +877,92 @@ function EditTournamentDialog({
                 }
                 data-testid="input-edit-tournament-total-max"
               />
+            </div>
+          </div>
+          <div className="space-y-2 border rounded-md p-3">
+            <div>
+              <Label className="text-xs uppercase tracking-wider font-display">
+                Time Limits
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Pool and bracket play often use different clocks. Field
+                Display shows warnings — games are never auto-finalized.
+                Leave blank for no rule.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground">Pool Play</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="e-pool-no-new" className="text-xs">
+                    No new inning (min)
+                  </Label>
+                  <Input
+                    id="e-pool-no-new"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={360}
+                    value={poolNoNew}
+                    onChange={(e) => setPoolNoNew(e.target.value)}
+                    placeholder="e.g. 75"
+                    data-testid="input-edit-tournament-pool-no-new"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="e-pool-hard" className="text-xs">
+                    Hard stop (min)
+                  </Label>
+                  <Input
+                    id="e-pool-hard"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={360}
+                    value={poolHardStop}
+                    onChange={(e) => setPoolHardStop(e.target.value)}
+                    placeholder="e.g. 90"
+                    data-testid="input-edit-tournament-pool-hard"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground">Bracket Play</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="e-bracket-no-new" className="text-xs">
+                    No new inning (min)
+                  </Label>
+                  <Input
+                    id="e-bracket-no-new"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={360}
+                    value={bracketNoNew}
+                    onChange={(e) => setBracketNoNew(e.target.value)}
+                    placeholder="e.g. 90"
+                    data-testid="input-edit-tournament-bracket-no-new"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="e-bracket-hard" className="text-xs">
+                    Hard stop (min)
+                  </Label>
+                  <Input
+                    id="e-bracket-hard"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={360}
+                    value={bracketHardStop}
+                    onChange={(e) => setBracketHardStop(e.target.value)}
+                    placeholder="e.g. 105"
+                    data-testid="input-edit-tournament-bracket-hard"
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <div className="space-y-1.5">
