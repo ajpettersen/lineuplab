@@ -6,7 +6,16 @@ import type {
 } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+// Time between Radix marking the toast `state="closed"` (so the
+// slide-out animation plays) and us actually unmounting it from the
+// React tree. The shadcn template ships this at 1_000_000ms (~16
+// MINUTES), which leaves a "closed" toast div sitting in the DOM with
+// `pointer-events: auto` — on mobile/iPad the viewport is pinned to
+// the top of the screen full-width, so the invisible-but-still-mounted
+// toast was eating taps for the buttons behind it for the entire
+// session. 1000ms is plenty of headroom for the close animation
+// (~150ms) without leaving a tap-blocker around afterwards.
+const TOAST_REMOVE_DELAY = 1000
 // Radix's own default is 5000ms, which coaches were finding too long —
 // a "Saved" toast appearing at top:0 on phone-portrait often overlapped
 // the very save/back button they wanted to tap next. 2500ms still gives
