@@ -1360,8 +1360,14 @@ export default function GameDetail() {
         },
       },
       {
-        onSuccess: () => {
-          qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(id) });
+        onSuccess: (savedEntries) => {
+          // Jump the lineup cache straight to the saved state. The
+          // POST endpoint returns the full set of entries, so we can
+          // skip the invalidate → background refetch round-trip —
+          // which otherwise leaves a few hundred ms where the cached
+          // lineup is still the pre-save snapshot and the UI flashes
+          // back to the old positions before the refetch lands.
+          qc.setQueryData(getGetGameLineupQueryKey(id), savedEntries);
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
           // Stamp the SavedIndicator with the moment the server
@@ -1371,8 +1377,17 @@ export default function GameDetail() {
           setLastLineupSavedAt(Date.now());
           if (!opts?.silent) toast({ title: "Lineup saved" });
           setGenerateOpen(false);
-          setPreviewLineup(null);
-          setEditedLineup(null);
+          // Only clear the staged state if it's STILL the value we
+          // just saved. If the coach kept editing while the save was
+          // in flight (drag → 800ms → save kicks off → drag again),
+          // editedLineup is now a NEW reference holding their newer
+          // edits — wiping it to null would silently lose those
+          // changes and the next autosave wouldn't fire because the
+          // effect's dep array would see editedLineup go from null
+          // to … null. Reference-equality on the saved snapshot is
+          // exactly what we want: clear iff no further edits.
+          setPreviewLineup((cur) => (cur === lineupToSave ? null : cur));
+          setEditedLineup((cur) => (cur === lineupToSave ? null : cur));
           setSelectedEntryId(null);
         },
         onError: (err) => {
