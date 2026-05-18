@@ -39,6 +39,8 @@ import {
   Trash2,
   X,
   AlertCircle,
+  Timer,
+  Flag,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -47,6 +49,34 @@ import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal, safeFormatDate } from "@/lib/tournament-date";
 import { PoolPlayCard } from "@/components/pool-play-card";
 import { TournamentNetworkCard } from "@/components/tournament-network-card";
+import {
+  computeTournamentStatus,
+  computeTournamentRecord,
+  formatRecord,
+  type TournamentStatusKind,
+} from "@/lib/tournament-status";
+
+// Mirrors the listing-page palette so the same status reads the same on
+// both surfaces. Kept inline rather than re-exported because the hero
+// uses a slightly larger pill and we want the freedom to evolve the two
+// in different directions later (e.g. add a sub-label only on the hero).
+const HERO_STATUS_STYLES: Record<
+  TournamentStatusKind,
+  { chip: string; dot: string }
+> = {
+  live: {
+    chip: "border-emerald-300/70 bg-emerald-50 text-emerald-900",
+    dot: "bg-emerald-500 motion-safe:animate-pulse",
+  },
+  upcoming: {
+    chip: "border-amber-300/70 bg-amber-50 text-amber-900",
+    dot: "bg-amber-500",
+  },
+  completed: {
+    chip: "border-slate-300 bg-slate-100 text-slate-700",
+    dot: "bg-slate-400",
+  },
+};
 
 function parseOptionalInt(s: string): number | null {
   const t = s.trim();
@@ -209,6 +239,37 @@ export default function TournamentDetail() {
       ? "no rest rules"
       : `${(tournament.effectiveRestTiers ?? []).length} rest tiers`;
 
+  // Hero status: live (pulsing dot) > upcoming (gold) > completed (slate).
+  // Record is W-L-T across completed games — same source as the dashboard.
+  const status = computeTournamentStatus(tournament.startDate, tournament.endDate);
+  const statusStyles = HERO_STATUS_STYLES[status.kind];
+  const record = computeTournamentRecord(tournament.games);
+  const recordLabel = formatRecord(record);
+  // Compact time-limits summary — shown as a Timer chip so it's
+  // discoverable at a glance instead of buried inside the Edit dialog.
+  // We surface up to two pairs (Pool / Bracket) but only when at least
+  // one minute field is set; otherwise the chip is hidden entirely.
+  const tlPoolNoNew = tournament.poolPlayNoNewInningMinutes;
+  const tlPoolHard = tournament.poolPlayHardStopMinutes;
+  const tlBracketNoNew = tournament.bracketNoNewInningMinutes;
+  const tlBracketHard = tournament.bracketHardStopMinutes;
+  const hasAnyTimeLimit =
+    tlPoolNoNew != null ||
+    tlPoolHard != null ||
+    tlBracketNoNew != null ||
+    tlBracketHard != null;
+  // "{no-new}/{hard}" when both set (compact pair reads as a known
+  // ratio), otherwise spell out which side is configured so a coach
+  // who only filled in one field isn't left guessing which it was.
+  const fmtPair = (noNew: number | null | undefined, hard: number | null | undefined) =>
+    noNew != null && hard != null
+      ? `${noNew}/${hard}m`
+      : noNew != null
+        ? `no-new ${noNew}m`
+        : hard != null
+          ? `hard ${hard}m`
+          : "—";
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
@@ -218,14 +279,32 @@ export default function TournamentDetail() {
             All tournaments
           </Button>
         </Link>
+        {/* Broadcast-style hero (May 2026 Phase 2 redesign): status pill
+         *  on top, big title in the middle, and a stat strip at the
+         *  bottom that puts record + games-played + total pitches + time
+         *  limits side-by-side so the coach can size up "where are we in
+         *  this weekend" before scrolling. Edit / Delete sit in the
+         *  upper-right so the destructive button stays out of the
+         *  primary glance path. */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <div className="eyebrow text-primary/70">Tournament</div>
-            <h1 className="page-title text-foreground mt-1 flex items-center gap-3">
-              <Trophy className="h-7 w-7 text-purple-600" />
-              {tournament.name}
+          <div className="min-w-0 flex-1 space-y-2">
+            <Badge
+              variant="outline"
+              className={`text-[10px] font-display font-semibold tracking-[0.18em] px-2 py-0.5 ${statusStyles.chip}`}
+              aria-label={status.detail}
+              data-testid="badge-tournament-status"
+            >
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full mr-1.5 ${statusStyles.dot}`}
+                aria-hidden="true"
+              />
+              {status.label}
+            </Badge>
+            <h1 className="page-title text-foreground flex items-center gap-3">
+              <Trophy className="h-7 w-7 text-purple-600 shrink-0" />
+              <span className="truncate">{tournament.name}</span>
             </h1>
-            <div className="text-sm text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
                 {format(tournamentDateAsLocal(tournament.startDate), "MMM d")} –{" "}
@@ -237,16 +316,12 @@ export default function TournamentDetail() {
                   {tournament.location}
                 </span>
               )}
-              <Badge variant="outline" className="text-xs">
-                {dailyLabel}
-                {tournamentLabel ? ` · ${tournamentLabel}` : ""} · {restTiersLabel}
-              </Badge>
             </div>
             {tournament.notes && (
-              <p className="text-sm mt-2 text-muted-foreground">{tournament.notes}</p>
+              <p className="text-sm text-muted-foreground">{tournament.notes}</p>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -266,6 +341,90 @@ export default function TournamentDetail() {
               <Trash2 className="h-3.5 w-3.5 mr-1.5" />
               Delete
             </Button>
+          </div>
+        </div>
+
+        {/* Stat strip — broadcast scoreboard vibe. Big Roboto-Mono
+         *  numerals on a tinted panel, with the rules chips on the
+         *  right. Grid collapses to 2 cols on phone so each stat still
+         *  has breathing room. */}
+        <div
+          className="mt-4 rounded-lg border bg-card/60 px-3 py-3 sm:px-4 sm:py-3"
+          data-testid="tournament-hero-stats"
+        >
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div>
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+                Record
+              </div>
+              <div
+                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5"
+                data-testid="text-tournament-record"
+              >
+                {recordLabel}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+                Games
+              </div>
+              <div
+                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5"
+                data-testid="text-tournament-games-progress"
+              >
+                {record.played}
+                <span className="text-base text-muted-foreground">/{record.total}</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+                Pitches
+              </div>
+              <div
+                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5"
+                data-testid="text-tournament-total-pitches"
+              >
+                {tournamentPitchTotal}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+                Pitchers
+              </div>
+              <div className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5">
+                {tournament.pitcherAvailability.length}
+              </div>
+            </div>
+          </div>
+          {/* Rules row — collapses naturally on small widths. Each chip
+           *  exposes the same info that used to live in a single dense
+           *  "{dailyLabel} · {tournamentLabel} · {restTiersLabel}"
+           *  outline badge — now split so each is independently
+           *  scannable and the time-limit chip can sit alongside. */}
+          <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              {dailyLabel}
+            </Badge>
+            {tournamentLabel && (
+              <Badge variant="outline" className="text-xs">
+                {tournamentLabel}
+              </Badge>
+            )}
+            <Badge variant="outline" className="text-xs">
+              {restTiersLabel}
+            </Badge>
+            {hasAnyTimeLimit && (
+              <Badge
+                variant="outline"
+                className="text-xs gap-1 flex items-center"
+                data-testid="badge-tournament-time-limits"
+                aria-label="Time limits: pool no-new / hard, bracket no-new / hard"
+              >
+                <Timer className="h-3 w-3" aria-hidden="true" />
+                Pool {fmtPair(tlPoolNoNew, tlPoolHard)} · Bracket{" "}
+                {fmtPair(tlBracketNoNew, tlBracketHard)}
+              </Badge>
+            )}
           </div>
         </div>
       </div>
@@ -414,7 +573,7 @@ export default function TournamentDetail() {
               No games linked yet. Use "Add game" above.
             </p>
           ) : (
-            <ul className="divide-y">
+            <div className="grid gap-3 sm:grid-cols-2">
               {tournament.games.map((g) => {
                 const usage = pitchesByGame.get(g.id);
                 // Defensive `?? []`: an old persisted cache rehydrated
@@ -425,20 +584,86 @@ export default function TournamentDetail() {
                 const suggestion = (tournament.gameSuggestions ?? []).find(
                   (s) => s.gameId === g.id,
                 );
+                // Score chip — only show when completed AND we have both
+                // sides. "W"/"L"/"T" prefix mirrors the dashboard pill so
+                // a coach scanning the grid recognizes the outcome at a
+                // glance. Phase 2 redesign: each game gets its own card
+                // instead of a divider row, with the stage badge tucked
+                // into the upper-right corner so POOL/BRACKET reads as
+                // metadata, not a primary action.
+                const hasFinalScore =
+                  g.status === "completed" &&
+                  g.ourScore != null &&
+                  g.opponentScore != null;
+                const outcome = hasFinalScore
+                  ? g.ourScore! > g.opponentScore!
+                    ? "W"
+                    : g.ourScore! < g.opponentScore!
+                      ? "L"
+                      : "T"
+                  : null;
+                const stageLabel =
+                  g.bracketStage === "bracket"
+                    ? "BRACKET"
+                    : g.bracketStage === "pool"
+                      ? "POOL"
+                      : null;
                 return (
-                <li
+                <div
                   key={g.id}
-                  className="py-3 flex items-start justify-between gap-3"
+                  className="relative rounded-lg border bg-card p-3 transition-colors hover:border-primary/40"
                   data-testid={`row-tournament-game-${g.id}`}
                 >
-                  <div className="min-w-0 flex-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute top-1 right-1 h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
+                    onClick={() =>
+                      updateGame.mutate({ id: g.id, data: { tournamentId: null } })
+                    }
+                    aria-label="Remove from tournament"
+                    data-testid={`button-remove-game-${g.id}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-0 pr-7">
+                    {stageLabel && (
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] font-display font-semibold tracking-[0.18em] px-1.5 py-0 mb-1.5 ${
+                          g.bracketStage === "bracket"
+                            ? "border-purple-300/70 bg-purple-50 text-purple-900"
+                            : "border-slate-300 bg-slate-50 text-slate-700"
+                        }`}
+                        data-testid={`badge-game-stage-${g.id}`}
+                      >
+                        <Flag className="h-2.5 w-2.5 mr-1" aria-hidden="true" />
+                        {stageLabel}
+                      </Badge>
+                    )}
                     <div className="flex items-center gap-2 flex-wrap">
                       <Link
                         href={`/games/${g.id}`}
-                        className="font-medium hover:underline"
+                        className="font-semibold hover:underline truncate"
                       >
                         vs {g.opponent}
                       </Link>
+                      {outcome && (
+                        <Badge
+                          variant="outline"
+                          className={`text-xs font-display font-bold tabular-nums ${
+                            outcome === "W"
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                              : outcome === "L"
+                                ? "border-rose-300 bg-rose-50 text-rose-900"
+                                : "border-slate-300 bg-slate-100 text-slate-700"
+                          }`}
+                          data-testid={`badge-game-score-${g.id}`}
+                          aria-label={`Final ${outcome === "W" ? "win" : outcome === "L" ? "loss" : "tie"} ${g.ourScore} to ${g.opponentScore}`}
+                        >
+                          {outcome} {g.ourScore}-{g.opponentScore}
+                        </Badge>
+                      )}
                       {usage && usage.totalPitches > 0 ? (
                         <Badge
                           variant="secondary"
@@ -457,7 +682,7 @@ export default function TournamentDetail() {
                         </Badge>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
+                    <div className="text-xs text-muted-foreground mt-1">
                       {safeFormatDate(g.gameDate, "EEE, MMM d · h:mm a", "Date TBD")}
                       {g.location ? ` · ${g.location}` : ""}
                     </div>
@@ -528,22 +753,10 @@ export default function TournamentDetail() {
                       </div>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600 shrink-0"
-                    onClick={() =>
-                      updateGame.mutate({ id: g.id, data: { tournamentId: null } })
-                    }
-                    aria-label="Remove from tournament"
-                    data-testid={`button-remove-game-${g.id}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </li>
+                </div>
                 );
               })}
-            </ul>
+            </div>
           )}
           {tournament.games.length > 0 && (
             <div

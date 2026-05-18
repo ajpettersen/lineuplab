@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,9 +24,38 @@ import {
 import { Plus, Trophy, MapPin, CalendarDays, Users, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal } from "@/lib/tournament-date";
+import {
+  computeTournamentStatus,
+  computeTournamentRecord,
+  formatRecord,
+  type TournamentStatusKind,
+} from "@/lib/tournament-status";
+import { useListGames } from "@workspace/api-client-react";
+
+// Visual palette per status. Live = pulsing emerald dot to draw the eye
+// to the "in-progress this weekend" cards first; upcoming = warm gold so
+// future weekends still feel anticipated; completed = neutral.
+const STATUS_STYLES: Record<
+  TournamentStatusKind,
+  { chip: string; dot: string }
+> = {
+  live: {
+    chip: "border-emerald-300/70 bg-emerald-50 text-emerald-900",
+    dot: "bg-emerald-500 motion-safe:animate-pulse",
+  },
+  upcoming: {
+    chip: "border-amber-300/70 bg-amber-50 text-amber-900",
+    dot: "bg-amber-500",
+  },
+  completed: {
+    chip: "border-slate-300 bg-slate-100 text-slate-700",
+    dot: "bg-slate-400",
+  },
+};
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -47,6 +76,25 @@ export default function Tournaments() {
   // Pull team defaults so the dialog can show "Team default: 85" hints
   // — coach inherits whenever they leave the per-tournament field blank.
   const { data: teamSettings } = useGetTeamSettings();
+  // Pull all games so each card can show its tournament's W-L-T record.
+  // Cheaper than refetching per-tournament — the games query is already
+  // warm from other pages and react-query dedupes.
+  const { data: allGames = [] } = useListGames();
+  // Bucket games by tournamentId in ONE pass instead of filtering
+  // `allGames` inside `tournaments.map(...)`, which would be O(T×G) per
+  // render. Memoized so unrelated state changes (dialog open, form
+  // typing) don't reshuffle the map. Tournaments without any games
+  // simply look up an empty array via the `?? []` fallback.
+  const gamesByTournament = useMemo(() => {
+    const m = new Map<NonNullable<typeof allGames[number]["tournamentId"]>, typeof allGames>();
+    for (const g of allGames) {
+      if (!g.tournamentId) continue;
+      const arr = m.get(g.tournamentId);
+      if (arr) arr.push(g);
+      else m.set(g.tournamentId, [g]);
+    }
+    return m;
+  }, [allGames]);
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -272,7 +320,14 @@ export default function Tournaments() {
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {tournaments.map((t) => (
+          {tournaments.map((t) => {
+            const status = computeTournamentStatus(t.startDate, t.endDate);
+            const styles = STATUS_STYLES[status.kind];
+            const record = computeTournamentRecord(
+              gamesByTournament.get(t.id) ?? [],
+            );
+            const recordLabel = formatRecord(record);
+            return (
             // Use a click-handler + role=button instead of wrapping
             // the Card in a <Link>, so the inline "+ Game" button can
             // live inside the card without producing invalid nested
@@ -294,10 +349,24 @@ export default function Tournaments() {
               }}
             >
               <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-                <CardTitle className="text-base flex items-center gap-2 min-w-0">
-                  <Trophy className="h-4 w-4 text-purple-600 shrink-0" />
-                  <span className="truncate">{t.name}</span>
-                </CardTitle>
+                <div className="min-w-0 space-y-1.5">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] font-display font-semibold tracking-[0.15em] px-2 py-0.5 ${styles.chip}`}
+                    data-testid={`badge-tournament-status-${t.id}`}
+                    aria-label={status.detail}
+                  >
+                    <span
+                      className={`inline-block h-1.5 w-1.5 rounded-full mr-1.5 ${styles.dot}`}
+                      aria-hidden="true"
+                    />
+                    {status.label}
+                  </Badge>
+                  <CardTitle className="text-base flex items-center gap-2 min-w-0">
+                    <Trophy className="h-4 w-4 text-purple-600 shrink-0" />
+                    <span className="truncate">{t.name}</span>
+                  </CardTitle>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -332,6 +401,15 @@ export default function Tournaments() {
                   </div>
                 )}
                 <div className="flex items-center gap-3 pt-1.5 text-xs text-muted-foreground">
+                  {recordLabel !== "—" && (
+                    <span
+                      className="font-display font-bold tracking-wider text-foreground tabular-nums"
+                      data-testid={`text-tournament-record-${t.id}`}
+                      aria-label={`Record ${recordLabel}`}
+                    >
+                      {recordLabel}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
                     <CalendarDays className="h-3 w-3" />
                     {t.gameCount} game{t.gameCount === 1 ? "" : "s"}
@@ -344,7 +422,8 @@ export default function Tournaments() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
