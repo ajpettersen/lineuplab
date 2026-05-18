@@ -1128,8 +1128,10 @@ export default function GameDetail() {
       },
       {
         onSuccess: (result) => {
+          // Stash as a preview; the autosave effect below picks it up
+          // and POSTs to the server right away so the coach doesn't have
+          // to click "Save Lineup" before navigating away.
           setPreviewLineup(result);
-          toast({ title: "Lineup generated — review and save" });
         },
         onError: (err: unknown) => {
           // Orval throws an AxiosError-like with .response.data on non-2xx;
@@ -1304,7 +1306,10 @@ export default function GameDetail() {
     );
   };
 
-  const handleSaveLineup = (lineupToSave: typeof lineup) => {
+  const handleSaveLineup = (
+    lineupToSave: typeof lineup,
+    opts?: { silent?: boolean },
+  ) => {
     saveLineup.mutate(
       {
         id,
@@ -1322,7 +1327,7 @@ export default function GameDetail() {
           qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(id) });
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
-          toast({ title: "Lineup saved" });
+          if (!opts?.silent) toast({ title: "Lineup saved" });
           setGenerateOpen(false);
           setPreviewLineup(null);
           setEditedLineup(null);
@@ -1346,6 +1351,39 @@ export default function GameDetail() {
       }
     );
   };
+
+  // Keep the latest `handleSaveLineup` callable via a ref so the
+  // autosave effects below don't need to list every dep the handler
+  // closes over (`saveLineup`, `qc`, `id`, setters, `toast`, …). They
+  // just want "call whatever the current handler is" when the lineup
+  // state changes.
+  const handleSaveLineupRef = useRef(handleSaveLineup);
+  handleSaveLineupRef.current = handleSaveLineup;
+
+  // ── Autosave: generated / AI / photo previews ──────────────────────
+  // As soon as a fresh preview lineup lands (Generate button, AI
+  // regenerate, photo override path), POST it to the server. The
+  // save's `onSuccess` clears `previewLineup`, so this effect can't
+  // loop, and `saveLineup.isPending` gate prevents stacking saves if
+  // a new preview arrives mid-flight.
+  useEffect(() => {
+    if (!previewLineup || !canEditLineup) return;
+    if (saveLineup.isPending) return;
+    handleSaveLineupRef.current(previewLineup);
+  }, [previewLineup, canEditLineup, saveLineup.isPending]);
+
+  // ── Autosave: manual edits (drag-drop swaps, position changes) ─────
+  // Debounce so a flurry of swaps batches into ONE POST instead of
+  // one per drop. Silent on success — the saved state appears in the
+  // grid naturally, and toasting on every edit would be noisy. Errors
+  // still toast via `handleSaveLineup`'s onError.
+  useEffect(() => {
+    if (!editedLineup || !canEditLineup) return;
+    const t = setTimeout(() => {
+      handleSaveLineupRef.current(editedLineup, { silent: true });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [editedLineup, canEditLineup]);
 
   /**
    * Pull a player out of the displayed lineup entirely (e.g. injury, early
@@ -2517,24 +2555,27 @@ export default function GameDetail() {
           state from a permission downgrade mid-session. */}
       {previewLineup && canEditLineup && (
         <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg" data-testid="banner-preview">
-          <span className="text-sm text-yellow-800 font-medium">Preview — lineup not saved yet</span>
+          <span className="text-sm text-yellow-800 font-medium">
+            {saveLineup.isPending ? "Saving generated lineup…" : "Generated lineup — auto-saving"}
+          </span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setPreviewLineup(null); setSelectedEntryId(null); }}>Discard</Button>
             <Button size="sm" onClick={() => handleSaveLineup(previewLineup)} disabled={saveLineup.isPending} data-testid="button-save-preview">
               <Save className="h-4 w-4 mr-1" />
-              {saveLineup.isPending ? "Saving..." : "Save Lineup"}
+              {saveLineup.isPending ? "Saving..." : "Save now"}
             </Button>
           </div>
         </div>
       )}
       {!previewLineup && editedLineup && canEditLineup && (
         <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="banner-edited">
-          <span className="text-sm text-amber-800 font-medium">Unsaved changes — you've moved players around</span>
+          <span className="text-sm text-amber-800 font-medium">
+            {saveLineup.isPending ? "Saving changes…" : "Auto-saving your edits…"}
+          </span>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={discardEdits} data-testid="button-discard-edits">Discard</Button>
             <Button size="sm" onClick={() => handleSaveLineup(editedLineup)} disabled={saveLineup.isPending} data-testid="button-save-edits">
               <Save className="h-4 w-4 mr-1" />
-              {saveLineup.isPending ? "Saving..." : "Save Changes"}
+              {saveLineup.isPending ? "Saving..." : "Save now"}
             </Button>
           </div>
         </div>
