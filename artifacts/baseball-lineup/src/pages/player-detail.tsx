@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Edit, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 
@@ -127,7 +128,7 @@ export default function PlayerDetail() {
           toast({ title: "Player updated" });
           setEditing(false);
         },
-        onError: () => toast({ title: "Failed to update", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to update", err),
       }
     );
   };

@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, Loader2, Plus, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
 function todayISO() {
@@ -227,7 +228,7 @@ export default function NewGame() {
           toast({ title: "Game added" });
           navigate(`/games/${game.id}`);
         },
-        onError: () => toast({ title: "Failed to add game", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to add game", err),
       }
     );
   };

@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -79,8 +80,8 @@ export function EditGameDialog({
       toast({ title: "Game updated" });
       onSaved();
       onClose();
-    } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to save", err);
     } finally {
       setSaving(false);
     }

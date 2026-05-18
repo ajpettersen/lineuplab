@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
@@ -515,8 +516,8 @@ function AddPlayerRuleForm({
       toast({ title: "Rule added" });
       setPlayerId("");
       setPosition("");
-    } catch {
-      toast({ title: "Failed to add rule", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to add rule", err);
     } finally {
       setSaving(false);
     }

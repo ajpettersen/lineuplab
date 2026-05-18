@@ -61,6 +61,7 @@ import {
 import { format } from "date-fns";
 import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
@@ -450,7 +451,7 @@ export default function Games() {
           });
           setDeleteId(null);
         },
-        onError: () => toast({ title: "Failed to delete game", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to delete game", err),
       }
     );
   };

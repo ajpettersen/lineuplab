@@ -86,6 +86,8 @@ import {
 import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil, Settings2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
+import { AiAssistantPanel } from "@/components/game-detail/ai-assistant-panel";
 import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus } from "@/lib/game-status";
@@ -485,8 +487,8 @@ export default function GameDetail() {
       if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
       setAiMemoryCount(0);
       toast({ title: "AI memory cleared" });
-    } catch {
-      toast({ title: "Couldn't clear AI memory", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Couldn't clear AI memory", err);
     } finally {
       setAiMemoryClearing(false);
     }
@@ -596,7 +598,16 @@ export default function GameDetail() {
       await refetchLocks();
     }
     if (hadRealError) {
-      toast({ title: "Failed to remove lock", variant: "destructive" });
+      // `hadRealError` is a boolean — the individual fetches were
+      // logged but discarded above, so we don't have a specific
+      // message to surface. Give the coach a useful next step
+      // instead of just a destructive title.
+      toast({
+        title: "Couldn't remove some locks",
+        description:
+          "One or more locks failed to delete. The list has been refreshed — try again.",
+        variant: "destructive",
+      });
     } else {
       toast({ title: "Lock removed" });
     }
@@ -815,8 +826,8 @@ export default function GameDetail() {
       const data = await resp.json();
       // Exclude the current game — copying from yourself is meaningless.
       setCopyGames(data.filter((g: { id: number }) => g.id !== id));
-    } catch {
-      toast({ title: "Failed to load past games", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to load past games", err);
       setCopyOpen(false);
     } finally {
       setCopyLoading(false);
@@ -868,8 +879,8 @@ export default function GameDetail() {
         title: "Lineup loaded — review and save",
         description: warnings.join(". ") || undefined,
       });
-    } catch {
-      toast({ title: "Failed to load that lineup", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to load that lineup", err);
     } finally {
       setCopyApplyingId(null);
     }
@@ -1327,8 +1338,7 @@ export default function GameDetail() {
           setViewPlanOpen(false);
           toast({ title: "Original plan discarded" });
         },
-        onError: () =>
-          toast({ title: "Failed to clear snapshot", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to clear snapshot", err),
       },
     );
   };
@@ -1825,7 +1835,7 @@ export default function GameDetail() {
           toast({ title: "Game marked as completed" });
           setCompleteOpen(false);
         },
-        onError: () => toast({ title: "Failed to update game", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to update game", err),
       }
     );
   };
@@ -1865,8 +1875,7 @@ export default function GameDetail() {
             description: `Game is now ${removed - 1} inning${removed - 1 === 1 ? "" : "s"} long.`,
           });
         },
-        onError: () =>
-          toast({ title: "Failed to remove inning", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to remove inning", err),
       },
     );
   };
@@ -1893,7 +1902,7 @@ export default function GameDetail() {
           setEndEarlyOpen(false);
           setEndEarlyLastInning("");
         },
-        onError: () => toast({ title: "Failed to shorten game", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to shorten game", err),
       },
     );
   };
@@ -2465,76 +2474,18 @@ export default function GameDetail() {
       </Button>
 
       {/* AI Assistant search bar */}
-      <Card className={mobileToolsOpen ? "" : "max-sm:hidden"}>
-        <CardContent className="p-3">
-          <form
-            className="flex items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!aiLoading) handleAskAi();
-            }}
-          >
-            <Sparkles className="h-4 w-4 text-purple-500 shrink-0 ml-1" />
-            <Input
-              value={aiInput}
-              onChange={(e) => setAiInput(e.target.value)}
-              placeholder='Ask the assistant — e.g. "Why is Henry on the bench in inning 2?" or "Put Henry at catcher for the first 3 innings"'
-              disabled={aiLoading}
-              data-testid="input-ai-assistant"
-              className="flex-1"
-            />
-            <Button
-              type="submit"
-              size="sm"
-              disabled={aiLoading || !aiInput.trim()}
-              data-testid="button-ai-ask"
-            >
-              {aiLoading ? "Thinking…" : "Ask"}
-            </Button>
-          </form>
-          {aiAnswer && (
-            <div
-              className="mt-3 p-3 rounded-md bg-purple-50 border border-purple-200 text-sm text-purple-900 flex items-start justify-between gap-3"
-              data-testid="ai-answer"
-            >
-              <div className="flex items-start gap-2 flex-1">
-                <Sparkles className="h-4 w-4 mt-0.5 text-purple-500 shrink-0" />
-                <p className="leading-snug">{aiAnswer}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAiAnswer(null)}
-                className="text-purple-400 hover:text-purple-700 shrink-0"
-                aria-label="Dismiss assistant message"
-                data-testid="button-ai-dismiss"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-          {aiMemoryCount > 0 && (
-            <div
-              className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground"
-              data-testid="ai-memory-indicator"
-            >
-              <span>
-                Remembering {aiMemoryCount} earlier assistant {aiMemoryCount === 1 ? "pin" : "pins"} for this game so they aren't undone.
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={handleClearAiMemory}
-                disabled={aiMemoryClearing}
-                data-testid="button-ai-memory-clear"
-              >
-                {aiMemoryClearing ? "Clearing…" : "Reset"}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <AiAssistantPanel
+        aiInput={aiInput}
+        onAiInputChange={setAiInput}
+        aiLoading={aiLoading}
+        onAsk={handleAskAi}
+        aiAnswer={aiAnswer}
+        onDismissAnswer={() => setAiAnswer(null)}
+        aiMemoryCount={aiMemoryCount}
+        aiMemoryClearing={aiMemoryClearing}
+        onClearMemory={handleClearAiMemory}
+        mobileToolsOpen={mobileToolsOpen}
+      />
 
       {/* Position Locks — pin specific players to specific positions/innings.
           The lineup generator and AI assistant honor these. The id is used

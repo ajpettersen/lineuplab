@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X, AlertTriangle, Info, ShieldCheck, Users, ListOrdered } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 import { usePermission } from "@/hooks/use-permission";
 import {
   Tooltip,
@@ -194,7 +195,7 @@ function ImportRosterDialog({
         })
       );
     } catch (e) {
-      toast({ title: e instanceof Error ? e.message : "Extraction failed", variant: "destructive" });
+      toastError(toast, "Extraction failed", e);
     } finally {
       setExtracting(false);
     }
@@ -287,7 +288,7 @@ function ImportRosterDialog({
       });
       handleClose();
     } catch (e) {
-      toast({ title: e instanceof Error ? e.message : "Import failed", variant: "destructive" });
+      toastError(toast, "Import failed", e);
     } finally {
       setSaving(false);
     }
@@ -595,7 +596,7 @@ function AddPlayerDialog({
           setPreferred([]);
           setCanPitch(false);
         },
-        onError: () => toast({ title: "Failed to add player", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to add player", err),
       }
     );
   };
@@ -915,7 +916,7 @@ export default function Players() {
           });
           setDeleteId(null);
         },
-        onError: () => toast({ title: "Failed to delete player", variant: "destructive" }),
+        onError: (err) => toastError(toast, "Failed to delete player", err),
       }
     );
   };

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertDialog,
@@ -10,42 +10,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  ConfirmContext,
+  type ConfirmOptions,
+} from "@/lib/use-confirm";
 
-/**
- * Promise-based replacement for `window.confirm` that renders a styled,
- * theme-aware AlertDialog instead of the native browser prompt.
- *
- * Why this exists: native `window.confirm` looks out of place on
- * mobile/iPad (browser-chrome modal, can't be themed, can't show
- * formatted descriptions, breaks the in-app aesthetic), and on iOS
- * it can briefly steal focus in a jarring way mid-gesture.
- *
- * Usage:
- *   const confirm = useConfirm();
- *   const ok = await confirm({
- *     title: "Discard unsaved edits?",
- *     description: "Your changes won't be saved.",
- *     confirmText: "Discard",
- *     variant: "destructive",
- *   });
- *   if (!ok) return;
- */
-export type ConfirmOptions = {
-  title: string;
-  description?: ReactNode;
-  confirmText?: string;
-  cancelText?: string;
-  variant?: "default" | "destructive";
-};
+// Re-export the hook + types from the dedicated hook module so
+// existing `import { useConfirm } from "@/lib/confirm"` call sites
+// keep working without an extra file rename. The hook itself lives
+// in `use-confirm.ts` so this .tsx module only exports components —
+// otherwise Vite's react-refresh can't fast-refresh edits here and
+// every change triggers a full page reload.
+export { useConfirm, type ConfirmOptions, type ConfirmFn } from "@/lib/use-confirm";
 
 type PendingConfirm = ConfirmOptions & {
   id: number;
   resolve: (value: boolean) => void;
 };
-
-const ConfirmContext = createContext<
-  ((opts: ConfirmOptions) => Promise<boolean>) | null
->(null);
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
@@ -123,12 +104,4 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       </AlertDialog>
     </ConfirmContext.Provider>
   );
-}
-
-export function useConfirm() {
-  const ctx = useContext(ConfirmContext);
-  if (!ctx) {
-    throw new Error("useConfirm must be used inside <ConfirmProvider>");
-  }
-  return ctx;
 }

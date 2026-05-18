@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollX } from "@/components/ui/scroll-x";
 import { useToast } from "@/hooks/use-toast";
+import { toastError } from "@/lib/toast-error";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 
@@ -111,8 +112,8 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
       qc.invalidateQueries({ queryKey: ["batting-stats"] });
       toast({ title: "Stats saved" });
       setEditId(null);
-    } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to save", err);
     } finally {
       setSaving(false);
     }
@@ -144,8 +145,8 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
           }
         },
       });
-    } catch {
-      toast({ title: "Failed to clear stats", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to clear stats", err);
     } finally {
       setNuking(false);
     }
@@ -182,8 +183,8 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
       qc.invalidateQueries({ queryKey: ["batting-stats"] });
       toast({ title: `Saved stats for ${extracted.length} players` });
       setExtracted(null);
-    } catch {
-      toast({ title: "Failed to save extracted stats", variant: "destructive" });
+    } catch (err) {
+      toastError(toast, "Failed to save extracted stats", err);
     } finally {
       setSaving(false);
     }
