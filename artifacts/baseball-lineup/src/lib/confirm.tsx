@@ -39,6 +39,7 @@ export type ConfirmOptions = {
 };
 
 type PendingConfirm = ConfirmOptions & {
+  id: number;
   resolve: (value: boolean) => void;
 };
 
@@ -48,23 +49,36 @@ const ConfirmContext = createContext<
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
-  // Resolve the in-flight promise exactly once, even if Radix fires
-  // both onAction AND onOpenChange(false) back-to-back.
-  const settledRef = useRef(false);
+  // Track which dialog instance we're settling so a stale Radix
+  // onOpenChange(false) firing AFTER we've already replaced the
+  // pending request can't accidentally resolve the new one.
+  const settledIdsRef = useRef<Set<number>>(new Set());
+  const idRef = useRef(0);
 
   const confirm = useCallback(
     (opts: ConfirmOptions) =>
       new Promise<boolean>((resolve) => {
-        settledRef.current = false;
-        setPending({ ...opts, resolve });
+        const id = ++idRef.current;
+        // If a previous request is still on-screen, resolve it as
+        // "cancel" before replacing — otherwise that caller's promise
+        // would hang forever (real risk if a user re-triggers the
+        // same action quickly, or two async flows race).
+        setPending((prev) => {
+          if (prev && !settledIdsRef.current.has(prev.id)) {
+            settledIdsRef.current.add(prev.id);
+            prev.resolve(false);
+          }
+          return { ...opts, id, resolve };
+        });
       }),
     [],
   );
 
   const settle = (value: boolean) => {
-    if (settledRef.current) return;
-    settledRef.current = true;
-    pending?.resolve(value);
+    if (!pending) return;
+    if (settledIdsRef.current.has(pending.id)) return;
+    settledIdsRef.current.add(pending.id);
+    pending.resolve(value);
     setPending(null);
   };
 

@@ -35,6 +35,7 @@ import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/lib/confirm";
 import { bumpOfflineQueueCount, isPendingWriteKey } from "@/lib/offline-queue";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crown, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, Volume2, VolumeX, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -516,6 +517,10 @@ interface GameTimerProps {
 
 function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
   const [now, setNow] = useState(() => Date.now());
+  // Hook MUST be called before the early-return below so React sees
+  // the same hook order on every render (otherwise toggling startedAt
+  // from null → set crashes with a hooks-order error).
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!startedAt) return;
@@ -554,10 +559,14 @@ function GameTimer({ startedAt, onStart, onReset }: GameTimerProps) {
   const minutes = elapsedMin % 60;
   const display = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-  const handleReset = () => {
-    if (typeof window !== "undefined" && window.confirm("Reset the game timer?")) {
-      onReset();
-    }
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: "Reset the game timer?",
+      description: "The elapsed clock will start over from zero.",
+      confirmText: "Reset",
+      variant: "destructive",
+    });
+    if (ok) onReset();
   };
 
   return (

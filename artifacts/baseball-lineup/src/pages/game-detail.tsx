@@ -42,6 +42,8 @@ import {
   getGetTournamentQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useConfirm } from "@/lib/confirm";
+import { SavedIndicator } from "@/components/saved-indicator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -142,9 +144,23 @@ export default function GameDetail() {
   const { data: game, isLoading: gameLoading } = useGetGame(id, {
     query: { enabled: !!id, queryKey: getGetGameQueryKey(id) },
   });
-  const { data: lineup = [], isLoading: lineupLoading } = useGetGameLineup(id, {
+  const {
+    data: lineup = [],
+    isLoading: lineupLoading,
+    dataUpdatedAt: lineupFetchedAt,
+  } = useGetGameLineup(id, {
     query: { enabled: !!id, queryKey: getGetGameLineupQueryKey(id) },
   });
+  // Promise-based confirm() — replaces the half-dozen native
+  // `window.confirm` calls scattered through this page. Centralized
+  // dialog lives in <ConfirmProvider> at the app root.
+  const confirm = useConfirm();
+  // Tracks the most recent successful saveLineup mutation so the
+  // header SavedIndicator can show "Saved Xs ago". Initialized to
+  // null and seeded from the lineup query's `dataUpdatedAt` below so
+  // the page shows a sensible age on first load (not "just now" for
+  // data that's actually hours old).
+  const [lastLineupSavedAt, setLastLineupSavedAt] = useState<number | null>(null);
   const { data: players = [] } = useListPlayers();
   // Read coach preferences so the Generate flow can honor "always lock
   // pitchers and catchers" — see the AlertDialog flow on `openGenerate`
@@ -779,9 +795,12 @@ export default function GameDetail() {
   const openCopy = async () => {
     if (editedLineup || previewLineup) {
       const what = editedLineup ? "unsaved lineup edits" : "an unsaved lineup preview";
-      const ok = window.confirm(
-        `You have ${what}. Loading a previous lineup will replace them. Continue?`,
-      );
+      const ok = await confirm({
+        title: "Load a previous lineup?",
+        description: `You have ${what}. Loading a previous lineup will replace them.`,
+        confirmText: "Replace",
+        variant: "destructive",
+      });
       if (!ok) return;
       setEditedLineup(null);
       setPreviewLineup(null);
@@ -864,12 +883,15 @@ export default function GameDetail() {
     setImageError(null);
   };
 
-  const openImage = () => {
+  const openImage = async () => {
     if (editedLineup || previewLineup) {
       const what = editedLineup ? "unsaved lineup edits" : "an unsaved lineup preview";
-      const ok = window.confirm(
-        `You have ${what}. Importing from a screenshot will replace them. Continue?`,
-      );
+      const ok = await confirm({
+        title: "Import from screenshot?",
+        description: `You have ${what}. Importing from a screenshot will replace them.`,
+        confirmText: "Replace",
+        variant: "destructive",
+      });
       if (!ok) return;
       setEditedLineup(null);
       setPreviewLineup(null);
@@ -1048,9 +1070,12 @@ export default function GameDetail() {
       return;
     }
     if (editedLineup) {
-      const ok = window.confirm(
-        "You have unsaved lineup edits. Generating a new lineup will discard them. Continue?",
-      );
+      const ok = await confirm({
+        title: "Discard your edits?",
+        description: "You have unsaved lineup edits. Generating a new lineup will discard them.",
+        confirmText: "Discard and generate",
+        variant: "destructive",
+      });
       if (!ok) return;
       setEditedLineup(null);
       setSelectedEntryId(null);
@@ -1158,9 +1183,11 @@ export default function GameDetail() {
     if (!message) return;
     if (editedLineup || previewLineup) {
       const what = editedLineup ? "unsaved lineup edits" : "an unsaved lineup preview";
-      const ok = window.confirm(
-        `You have ${what}. Asking the assistant to regenerate may replace them. Continue?`,
-      );
+      const ok = await confirm({
+        title: "Ask the assistant?",
+        description: `You have ${what}. Asking the assistant to regenerate may replace them.`,
+        confirmText: "Continue",
+      });
       if (!ok) return;
     }
     const myRequestId = ++aiRequestIdRef.current;
@@ -1327,6 +1354,11 @@ export default function GameDetail() {
           qc.invalidateQueries({ queryKey: getGetGameLineupQueryKey(id) });
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
+          // Stamp the SavedIndicator with the moment the server
+          // acknowledged the write so the header chip flips to
+          // "Saved just now" — both for explicit saves and silent
+          // auto-saves.
+          setLastLineupSavedAt(Date.now());
           if (!opts?.silent) toast({ title: "Lineup saved" });
           setGenerateOpen(false);
           setPreviewLineup(null);
@@ -1393,13 +1425,16 @@ export default function GameDetail() {
    * currently on screen — preview, edited, or saved (in the saved case it
    * seeds `editedLineup` so the change is reviewable + savable).
    */
-  const handleRemovePlayerFromLineup = (playerId: number, playerName: string) => {
+  const handleRemovePlayerFromLineup = async (playerId: number, playerName: string) => {
     const current = previewLineup ?? editedLineup ?? lineup;
     const innings = new Set(current.filter((e) => e.playerId === playerId).map((e) => e.inning));
     if (innings.size === 0) return;
-    const ok = window.confirm(
-      `Remove ${playerName} from this lineup? They'll be cleared from all ${innings.size} inning${innings.size === 1 ? "" : "s"} they appear in. Use this for injuries or mid-game departures.`,
-    );
+    const ok = await confirm({
+      title: `Remove ${playerName} from this lineup?`,
+      description: `They'll be cleared from all ${innings.size} inning${innings.size === 1 ? "" : "s"} they appear in. Use this for injuries or mid-game departures.`,
+      confirmText: "Remove",
+      variant: "destructive",
+    });
     if (!ok) return;
     const next = current.filter((e) => e.playerId !== playerId);
     if (previewLineup) setPreviewLineup(next);
@@ -1802,17 +1837,16 @@ export default function GameDetail() {
    * lineup entries, locks, and AI pins for that inning. We confirm in
    * place because it's destructive and can't be undone.
    */
-  const handleRemoveLastInning = () => {
+  const handleRemoveLastInning = async () => {
     if (!game || game.innings <= 1) return;
     const removed = game.innings;
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        `Remove inning ${removed}? Any players, locks, or assistant pins for that inning will be deleted.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Remove inning ${removed}?`,
+      description: "Any players, locks, or assistant pins for that inning will be deleted.",
+      confirmText: "Remove inning",
+      variant: "destructive",
+    });
+    if (!ok) return;
     updateGame.mutate(
       { id, data: { innings: removed - 1 } },
       {
@@ -2257,6 +2291,19 @@ export default function GameDetail() {
                     return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Past</Badge>;
                   return <Badge className="bg-primary/10 text-primary hover:bg-primary/10">Upcoming</Badge>;
                 })()}
+                {/* Lineup save status. Only shows once we've actually
+                    saved in this session — falling back to the query's
+                    fetch time would make passive background refetches
+                    look like "Saved just now", which lies about
+                    durability. Hidden for view-only coaches since
+                    they can't trigger a save. */}
+                {canEditLineup && (
+                  <SavedIndicator
+                    isPending={saveLineup.isPending}
+                    isError={saveLineup.isError && !saveLineup.isPending}
+                    lastSavedAt={lastLineupSavedAt}
+                  />
+                )}
                 {/* Header action group. The Depth Chart dialog is read-
                     only so it's available to every viewer (including
                     "view" tier); Edit + Box Score still gate at

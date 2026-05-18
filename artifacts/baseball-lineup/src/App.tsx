@@ -20,6 +20,7 @@ import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ConfirmProvider } from "@/lib/confirm";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
@@ -576,20 +577,26 @@ function ClerkProviderWithRoutes() {
         <ConflictListener />
         <PushNavigationListener />
         <TooltipProvider>
-          {/* Top-level Suspense covers the lazy <Join /> route below.
-              Authed and signed-out trees inside ProtectedApp have
-              their own nested boundaries so a route chunk swap shows
-              the spinner where the page would render, not over the
-              whole app. */}
-          <Suspense fallback={<RouteFallback />}>
-          <Switch>
-            <Route path="/sign-in/*?" component={SignInPage} />
-            <Route path="/sign-up/*?" component={SignUpPage} />
-            <Route path="/join/:token" component={Join} />
-            <Route component={ProtectedApp} />
-          </Switch>
-          </Suspense>
-          <Toaster />
+          {/* ConfirmProvider mounts a single AlertDialog instance and
+              exposes a promise-based `useConfirm()` helper used across
+              the app in place of `window.confirm` — keeps native
+              browser prompts off mobile/iPad. */}
+          <ConfirmProvider>
+            {/* Top-level Suspense covers the lazy <Join /> route below.
+                Authed and signed-out trees inside ProtectedApp have
+                their own nested boundaries so a route chunk swap shows
+                the spinner where the page would render, not over the
+                whole app. */}
+            <Suspense fallback={<RouteFallback />}>
+            <Switch>
+              <Route path="/sign-in/*?" component={SignInPage} />
+              <Route path="/sign-up/*?" component={SignUpPage} />
+              <Route path="/join/:token" component={Join} />
+              <Route component={ProtectedApp} />
+            </Switch>
+            </Suspense>
+            <Toaster />
+          </ConfirmProvider>
         </TooltipProvider>
       </PersistQueryClientProvider>
     </ClerkProvider>
