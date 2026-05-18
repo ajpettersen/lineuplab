@@ -8,11 +8,14 @@ import {
   useSaveLineup,
   useUpdateGame,
   useGetTournament,
+  useGetGamePitchCounts,
+  useUpsertGamePitchCount,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
   getGetSeasonStatsQueryKey,
   getGetPlayerStatsQueryKey,
   getGetTournamentQueryKey,
+  getGetGamePitchCountsQueryKey,
   type LineupEntry,
   type Game,
   type UpdateGameBody,
@@ -56,6 +59,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 // Every position the field display knows how to lay out. The team's actual
 // `activeFieldPositions` (from team_settings) is intersected with this list
@@ -860,6 +872,26 @@ export default function FieldDisplay() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const saveLineup = useSaveLineup();
+  // Per-game pitch counts. Loaded so the "how many pitches did Sarah
+  // throw?" prompt that fires on pitcher removal can ADD to whatever's
+  // already on file rather than overwrite it (the upsert endpoint is
+  // REPLACE-semantics). Cheap query — one tiny row per pitcher this
+  // game — and the same data is the source of truth for the Tournament
+  // Pitches Panel above, so loading it here also keeps that panel
+  // fresher on the iPad.
+  const { data: gamePitchCounts = [] } = useGetGamePitchCounts(id, {
+    query: { enabled: id > 0, queryKey: getGetGamePitchCountsQueryKey(id) },
+  });
+  const upsertPitchCount = useUpsertGamePitchCount();
+  // Queue of "this pitcher just came off the mound" prompts. Each entry
+  // pops a small modal asking for pitch count; submitting (or skipping)
+  // shifts the next one in. A queue (not a single value) so two rapid
+  // P swaps both get captured — see saveLineupOptimistically below for
+  // detection. Skip = "don't record", not "record 0" — coaches may not
+  // be tracking pitches this game at all.
+  const [pitcherPromptQueue, setPitcherPromptQueue] = useState<
+    { playerId: number; playerName: string }[]
+  >([]);
   // Game-record updater for score input. networkMode 'always' so our
   // explicit navigator.onLine gate inside flushGameSave is what controls
   // when a request actually goes out — without 'always', React Query's
@@ -1771,6 +1803,37 @@ export default function FieldDisplay() {
   };
 
   const saveLineupOptimistically = (nextLineup: LineupEntry[]) => {
+    // ── Pitcher-removal detection ──
+    // Compare who's at "P" in the CURRENT inning before vs. after the
+    // move. Anyone who came off the mound — whether swapped to bench
+    // or swapped with another fielder — gets prompted for their pitch
+    // count so the tournament-day availability math stays honest. We
+    // read PREVIOUS state from the React-Query cache (since `lineup`
+    // here is the closed-over value at apply-time, which is the right
+    // pre-move snapshot). One drag can only displace one P slot, so we
+    // queue removals serially rather than batch-prompting.
+    const prevP = lineup
+      .filter((e) => e.inning === currentInning && e.position === "P")
+      .map((e) => e.playerId);
+    const nextP = nextLineup
+      .filter((e) => e.inning === currentInning && e.position === "P")
+      .map((e) => e.playerId);
+    const removedPlayerIds = prevP.filter((pid) => !nextP.includes(pid));
+    if (removedPlayerIds.length > 0) {
+      // Find each removed player's display name from the current cache
+      // and stage prompts. The prompt UI honors a queue so two rapid
+      // P swaps (unusual but possible) both get captured.
+      const additions = removedPlayerIds
+        .map((pid) => {
+          const entry = lineup.find((e) => e.playerId === pid);
+          return entry ? { playerId: pid, playerName: entry.playerName } : null;
+        })
+        .filter((x): x is { playerId: number; playerName: string } => x != null);
+      if (additions.length > 0) {
+        setPitcherPromptQueue((q) => [...q, ...additions]);
+      }
+    }
+
     const queryKey = getGetGameLineupQueryKey(id);
     qc.setQueryData(queryKey, nextLineup);
     pendingLineupRef.current = nextLineup;
@@ -2783,6 +2846,29 @@ export default function FieldDisplay() {
             />
           </div>
         )}
+        {/* Re-open affordance — when the coach has dismissed the
+         *  tournament pitches panel, surface a small pill right where
+         *  the panel used to be so they can pop it back without
+         *  hunting through the kebab menu. Mirrors the panel's mobile
+         *  visibility rule (Order tab only on phones) so it doesn't
+         *  steal vertical space from the Field diagram. */}
+        {!showTournamentPitches && tournamentId != null && (
+          <div
+            className={`flex justify-center ${mobileTab === "order" ? "" : "max-md:hidden"}`}
+          >
+            <button
+              type="button"
+              onClick={() => setShowTournamentPitches(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-broadcast-gold bg-[#06101f] border border-broadcast-gold/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
+              aria-label="Show tournament pitches"
+              data-testid="button-show-tournament-pitches"
+            >
+              <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              Show pitches
+              <ChevronDown className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+            </button>
+          </div>
+        )}
       </header>
 
       {/* ── Body: field on the left, batting panel on the right ──
@@ -3284,6 +3370,76 @@ export default function FieldDisplay() {
        * The score on the field display already syncs through the
        * same patch chain, so any pending +1 taps on the score
        * stepper are persisted before navigation happens. */}
+      {/* Pitcher-removed pitch-count prompt. Renders one modal per
+       *  queued removal; on submit/skip it shifts the queue. Submit
+       *  ADDS to the existing pitch count on file so a multi-outing
+       *  pitcher (came in, came out, came back in, came out again)
+       *  accumulates correctly. Skip = "not tracking" — leaves the
+       *  pitch count untouched so a coach who doesn't care about
+       *  pitch limits isn't forced to type a number every swap. */}
+      {pitcherPromptQueue.length > 0 && (
+        <PitcherPitchesPrompt
+          key={`${pitcherPromptQueue[0]!.playerId}-${pitcherPromptQueue.length}`}
+          playerName={pitcherPromptQueue[0]!.playerName}
+          existingPitches={
+            gamePitchCounts.find(
+              (pc) => pc.playerId === pitcherPromptQueue[0]!.playerId,
+            )?.pitches ?? 0
+          }
+          // Skip is the ONLY user-initiated dequeue path. Failed
+          // saves keep the prompt open (see onSubmit return value)
+          // so a flaky-WiFi POST doesn't quietly drop the coach's
+          // entered count. Successful saves dequeue in onSubmit.
+          onSkip={() => setPitcherPromptQueue((q) => q.slice(1))}
+          onSubmit={async (addPitches) => {
+            const head = pitcherPromptQueue[0]!;
+            const existing =
+              gamePitchCounts.find((pc) => pc.playerId === head.playerId)
+                ?.pitches ?? 0;
+            // Clamp at the server's documented 0..500 range. We use
+            // the clamped total in BOTH the POST and the success
+            // toast so a coach who fat-fingered "1500" sees the
+            // capped value reflected in the confirmation message
+            // (instead of being told something different was saved
+            // than what shows up on the tournament board).
+            const clampedTotal = Math.max(0, Math.min(500, existing + addPitches));
+            try {
+              await upsertPitchCount.mutateAsync({
+                id,
+                data: { playerId: head.playerId, pitches: clampedTotal },
+              });
+            } catch {
+              // Leave the prompt up so the coach can retry with the
+              // same entered number — a dugout iPad on parking-lot
+              // WiFi sees enough transient failures that auto-
+              // dropping the entry would make this feature lossy.
+              toast({
+                title: "Couldn't save pitches",
+                description: "Tap Save again, or Skip to dismiss.",
+                variant: "destructive",
+              });
+              return false;
+            }
+            // Refresh the source-of-truth for the Tournament Pitches
+            // Panel (PitchCounts query) AND the tournament-wide
+            // availability board (Tournament query — its
+            // pitcherAvailability[] is recomputed server-side from
+            // these rows).
+            qc.invalidateQueries({ queryKey: getGetGamePitchCountsQueryKey(id) });
+            if (tournamentId != null) {
+              qc.invalidateQueries({
+                queryKey: getGetTournamentQueryKey(tournamentId),
+              });
+            }
+            toast({
+              title: "Pitches logged",
+              description: `${head.playerName}: +${addPitches} (total ${clampedTotal})`,
+            });
+            setPitcherPromptQueue((q) => q.slice(1));
+            return true;
+          }}
+        />
+      )}
       <AlertDialog open={endGameDialogOpen} onOpenChange={setEndGameDialogOpen}>
         <AlertDialogContent data-testid="dialog-end-game">
           <AlertDialogHeader>
@@ -3405,6 +3561,146 @@ interface FieldPositionSlotProps {
  * NOT on every tap, so a coach who rapidly taps +5 doesn't generate 5
  * separate PATCH attempts).
  */
+/**
+ * Modal that pops the moment a pitcher is dragged off the "P" slot,
+ * asking the coach for the pitch count of the OUTING that just ended.
+ * Lives as a sibling of the End-Game AlertDialog rather than reusing
+ * `useConfirm` because we need a number entry, not a boolean. The
+ * submitted value is ADDED to whatever's already on file (the upsert
+ * endpoint is REPLACE — addition is done by the caller), so a relief
+ * pitcher who comes back in later in the game accumulates correctly
+ * across multiple outings. Skip is a first-class option so coaches
+ * who aren't tracking pitch counts aren't forced to type a number on
+ * every defensive shuffle.
+ */
+interface PitcherPitchesPromptProps {
+  playerName: string;
+  existingPitches: number;
+  /**
+   * Resolves to `true` when the save succeeded (caller should
+   * dequeue) or `false` when it failed (caller should leave the
+   * prompt open so the coach can retry without losing their input).
+   */
+  onSubmit: (addPitches: number) => Promise<boolean>;
+  /** Coach explicitly dismissed — never called by save failures. */
+  onSkip: () => void;
+}
+
+function PitcherPitchesPrompt({
+  playerName,
+  existingPitches,
+  onSubmit,
+  onSkip,
+}: PitcherPitchesPromptProps) {
+  const [raw, setRaw] = useState<string>("");
+  // In-flight lock — prevents double-submits from a rapid double-tap
+  // on Save AND blocks Skip / backdrop-close while a POST is mid-air.
+  // Without this, a coach who tap-tap-taps Save on a slow connection
+  // could fire two upserts and (worse) two queue-shifts, silently
+  // discarding the next queued prompt.
+  const [submitting, setSubmitting] = useState(false);
+  const parsed = Number.parseInt(raw, 10);
+  const valid = Number.isFinite(parsed) && parsed >= 0 && parsed <= 500;
+  const adjust = (delta: number) => {
+    if (submitting) return;
+    const current = Number.isFinite(parsed) ? parsed : 0;
+    const next = Math.max(0, Math.min(500, current + delta));
+    setRaw(String(next));
+  };
+  const handleSave = async () => {
+    if (submitting || !valid || parsed === 0) return;
+    setSubmitting(true);
+    try {
+      // Caller dequeues internally on success; we just need to
+      // release the lock on failure so the coach can retry.
+      await onSubmit(parsed);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        // Block accidental backdrop / Esc dismissal while saving so
+        // an iPad coach can't lose the in-flight entry by tapping
+        // outside the modal mid-POST.
+        if (!open && !submitting) onSkip();
+      }}
+    >
+      <DialogContent className="sm:max-w-md" data-testid="dialog-pitcher-pitches">
+        <DialogHeader>
+          <DialogTitle>How many pitches did {playerName} throw?</DialogTitle>
+          <DialogDescription>
+            {existingPitches > 0
+              ? `Already logged today: ${existingPitches}. We'll add to that total.`
+              : "Logged on this game so the tournament pitch counts stay accurate."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center justify-center gap-3 py-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-10 w-10"
+            onClick={() => adjust(-5)}
+            disabled={submitting}
+            aria-label="Decrease by 5"
+            data-testid="button-pitches-minus-5"
+          >
+            <Minus className="h-4 w-4" />
+          </Button>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={500}
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            autoFocus
+            disabled={submitting}
+            placeholder="0"
+            className="h-12 w-24 text-center text-2xl font-mono"
+            data-testid="input-pitches"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-10 w-10"
+            onClick={() => adjust(5)}
+            disabled={submitting}
+            aria-label="Increase by 5"
+            data-testid="button-pitches-plus-5"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onSkip}
+            disabled={submitting}
+            data-testid="button-pitches-skip"
+          >
+            Skip
+          </Button>
+          <Button
+            type="button"
+            disabled={submitting || !valid || parsed === 0}
+            onClick={handleSave}
+            data-testid="button-pitches-save"
+          >
+            {submitting ? "Saving…" : "Save pitches"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 interface DialogScoreInputProps {
   label: string;
   value: number;
