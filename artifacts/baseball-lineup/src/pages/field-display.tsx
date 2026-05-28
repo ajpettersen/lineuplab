@@ -1222,6 +1222,60 @@ export default function FieldDisplay() {
     if (currentInning > innings) setCurrentInning(innings);
   }, [innings, currentInning, game]);
 
+  // Pitch-limit-approaching warning (tournament games only). Fires
+  // one toast per pitcher per game when the active pitcher's
+  // tournament-day pitch count crosses 80% of their resolved daily
+  // cap. Gives the coach a real heads-up window to start warming a
+  // reliever before they hit the tapped-out wall at 100% (which is
+  // gated by `tappedOutWarning` on the NEXT drag-onto-P — by then
+  // it's too late to plan). One-shot per pitcher per game, gated by
+  // `fd-pitch-warn-v1:<gameId>:<playerId>` in localStorage so it
+  // doesn't re-fire on the 5s poll or a page refresh. Mid-game
+  // count corrections that pull the value back under threshold do
+  // NOT reset the flag — the warning already did its job, and
+  // re-arming would just nag a coach who fat-fingered a +5 button.
+  useEffect(() => {
+    if (tournamentId == null || !id) return;
+    if (!tournament?.pitcherAvailability) return;
+    const activePitcherId = lineup.find(
+      (e) => e.inning === currentInning && e.position === "P",
+    )?.playerId;
+    if (activePitcherId == null) return;
+    const avail = tournament.pitcherAvailability.find(
+      (a) => a.playerId === activePitcherId,
+    );
+    if (!avail || avail.dailyMax == null) return;
+    // Threshold = ceil(80%) so a cap of 75 fires at 60, not 60.0.
+    // Skip the warning entirely once they're AT the cap — the
+    // tapped-out warning on the next P swap covers that territory
+    // and we don't want to double-toast for the same event.
+    const threshold = Math.ceil(avail.dailyMax * 0.8);
+    if (avail.pitchesToday < threshold) return;
+    if (avail.pitchesToday >= avail.dailyMax) return;
+    const key = `fd-pitch-warn-v1:${id}:${activePitcherId}`;
+    try {
+      if (localStorage.getItem(key) === "1") return;
+      localStorage.setItem(key, "1");
+    } catch {
+      // Private mode / quota — fall through and toast anyway. One
+      // extra toast per render is preferable to a silent failure
+      // because the cap warning is genuinely safety-critical.
+    }
+    const remaining = Math.max(0, avail.dailyMax - avail.pitchesToday);
+    toast({
+      title: `${avail.playerName} approaching daily cap`,
+      description: `${avail.pitchesToday}/${avail.dailyMax} pitches today · ${remaining} left. Consider warming a reliever.`,
+      duration: 8000,
+    });
+  }, [
+    tournamentId,
+    tournament?.pitcherAvailability,
+    lineup,
+    currentInning,
+    id,
+    toast,
+  ]);
+
   // Show "Just updated" pulse when the lineup data changes. Driven off a
   // string fingerprint of the lineup so we don't false-trigger on identical
   // re-fetches. The pulse fades after ~3s.
