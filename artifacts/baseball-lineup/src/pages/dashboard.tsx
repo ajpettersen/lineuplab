@@ -17,7 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
-import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info, FileText } from "lucide-react";
+import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info, FileText, Check, Circle, Sparkles, Wand2 } from "lucide-react";
 import { NextGameHero } from "@/components/next-game-hero";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
@@ -147,36 +147,187 @@ export default function Dashboard() {
         <NextGameHero game={heroGame} teamName={teamName ?? ""} />
       )}
 
-      {/* Empty-roster nudge — auto-disappears once any active player
-          exists. Surfaces here for coaches who hit "Skip for now" on
-          the onboarding roster step (or who never got a chance to
-          import yet). No dismissal logic — adding even one player
-          drops it from the dashboard. */}
-      {playerStatsLoaded && playerStats.length === 0 && canCreateGame && (
-        <Card
-          className="border-primary/30 bg-primary/5"
-          data-testid="card-finish-roster"
-        >
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Users className="h-4 w-4 text-primary" />
-              Finish setting up your roster
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              Add players so you can start building lineups. Type a list,
-              paste from a doc, or upload a screenshot.
-            </p>
-            <Link href="/players">
-              <Button size="sm" data-testid="button-finish-roster">
-                Add players
-                <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      )}
+      {/* "Get started" checklist — auto-disappears once the coach
+          has a roster, at least one game on the books, AND at
+          least one completed game (= they've actually used the app
+          for what it's for). Serves two audiences:
+            1) Brand-new coaches who just signed up — the empty
+               dashboard has nothing to do, so this is their map.
+               First step deep-links to /welcome so they get the
+               full guided wizard, not a bare /players page.
+            2) Coaches who signed up but stalled (e.g. added roster
+               but never scheduled a game) — every dashboard visit
+               re-surfaces the exact next step instead of leaving
+               them to guess.
+          The single inline "Do it now" button is wired to the
+          first INCOMPLETE step so the call to action is always
+          unambiguous. The card hides itself the moment all three
+          rows are checked — we don't want lifelong nagging once
+          they're in the flow. */}
+      {canCreateGame && playerStatsLoaded && (() => {
+        const hasRoster = playerStats.length > 0;
+        const hasGames = actualGames.length > 0;
+        const hasCompleted = completedGames.length > 0;
+        if (hasRoster && hasGames && hasCompleted) return null;
+        // Pick the most useful destination for the "Play your first
+        // game" step:
+        //  - past-unrecorded game → score it (closes the loop)
+        //  - upcoming game → open Field Display (next thing they'll do)
+        //  - nothing yet → no link, just hint copy
+        const pastUnrecorded = actualGames
+          .filter((g) => isPastUnrecorded(g))
+          .sort(
+            (a, b) =>
+              new Date(b.gameDate).getTime() - new Date(a.gameDate).getTime(),
+          )[0];
+        const nextUpcoming = actualGames
+          .filter((g) => isTrulyUpcoming(g))
+          .sort(
+            (a, b) =>
+              new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime(),
+          )[0];
+        type Step = {
+          done: boolean;
+          label: string;
+          hint: string;
+          cta: { href: string; label: string } | null;
+        };
+        const steps: Step[] = [
+          {
+            done: hasRoster,
+            label: "Add your roster",
+            hint: "Type a list, paste from a doc, or upload a screenshot — the AI splits names, numbers, and positions for you.",
+            cta: { href: "/welcome", label: "Start setup" },
+          },
+          {
+            done: hasGames,
+            label: "Schedule your first game",
+            hint: "Add one manually, or paste your league's iCal/webcal URL to import the whole season.",
+            cta: { href: "/games/new", label: "Add a game" },
+          },
+          {
+            done: hasCompleted,
+            label: "Play and score a game",
+            hint: pastUnrecorded
+              ? "Looks like you've got a past game without a score yet — close the loop."
+              : nextUpcoming
+                ? "Use Field Display to manage positions inning by inning, then record the score."
+                : "Once a game is on the books, you'll generate lineups and score it from here.",
+            cta: pastUnrecorded
+              ? { href: `/games/${pastUnrecorded.id}`, label: "Score it" }
+              : nextUpcoming
+                ? {
+                    href: `/games/${nextUpcoming.id}/display`,
+                    label: "Open Field Display",
+                  }
+                : null,
+          },
+        ];
+        const doneCount = steps.filter((s) => s.done).length;
+        // The CTA button is bound to the FIRST incomplete step. If
+        // none has a destination (e.g. step 3 with no games yet
+        // when step 1 is already complete), the card still shows
+        // the checklist — it's a status surface, not just a CTA.
+        const firstUndone = steps.find((s) => !s.done && s.cta != null);
+        return (
+          <Card
+            className="border-primary/30 bg-primary/5"
+            data-testid="card-get-started"
+          >
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Get started with Lineup Lab
+                <span className="text-xs font-normal text-muted-foreground ml-1">
+                  ({doneCount} of {steps.length})
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Use a proper group + checkbox roles so screen
+                  readers announce "Add your roster, checked" /
+                  "unchecked" for each step instead of just reading
+                  the label and silently ignoring the visual
+                  check-mark / line-through. The list itself is the
+                  group; each row is a non-interactive checkbox
+                  (these aren't toggleable — completion is derived
+                  from app state — but `aria-checked` + `role` is
+                  still the most accurate semantics for "binary
+                  status per row"). */}
+              <ul
+                role="group"
+                aria-label="Getting started steps"
+                className="space-y-2.5"
+              >
+                {steps.map((s, i) => (
+                  <li
+                    key={s.label}
+                    role="checkbox"
+                    aria-checked={s.done}
+                    aria-label={`${s.label}, ${s.done ? "completed" : "not yet completed"}`}
+                    className="flex items-start gap-2.5"
+                    data-testid={`getstarted-step-${i}`}
+                  >
+                    {s.done ? (
+                      <span
+                        aria-hidden="true"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                      >
+                        <Check className="h-3 w-3" />
+                      </span>
+                    ) : (
+                      <Circle
+                        aria-hidden="true"
+                        className="h-5 w-5 shrink-0 text-muted-foreground/60"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={
+                          s.done
+                            ? "text-sm font-medium text-muted-foreground line-through"
+                            : "text-sm font-medium text-foreground"
+                        }
+                      >
+                        {s.label}
+                      </div>
+                      {!s.done && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {s.hint}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between gap-3 pt-1">
+                {/* "Guided tour" escape hatch — even if step 1 is
+                    done, a stalled coach can still revisit the full
+                    7-step wizard for invites, colors, etc. */}
+                <Link href="/welcome">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs gap-1 text-muted-foreground hover:text-foreground"
+                    data-testid="button-getstarted-tour"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    Take the guided tour
+                  </Button>
+                </Link>
+                {firstUndone?.cta && (
+                  <Link href={firstUndone.cta.href}>
+                    <Button size="sm" data-testid="button-getstarted-cta">
+                      {firstUndone.cta.label}
+                      <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Coaching tasks (only renders when the coach has open items, so a
           fresh account stays clean). */}

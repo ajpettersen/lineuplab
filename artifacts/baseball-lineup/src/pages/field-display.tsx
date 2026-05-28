@@ -4700,7 +4700,18 @@ function PitcherChip({ p }: { p: TPAvailability }) {
   }
   return (
     <div
-      className={`flex-shrink-0 min-w-[90px] sm:min-w-[105px] rounded-md border px-2 py-1 ${tone}`}
+      // `cursor-default` + `select-none` deliberately de-emphasize
+      // these chips as INFO ONLY. They look enough like the
+      // draggable bench/lineup chips that an automated tester (and
+      // presumably a coach mid-game) tried to drag them onto the
+      // pitcher's mound, which silently no-ops because the drag
+      // handler only accepts `player-`-prefixed source IDs. The
+      // intended UX is: glance at this panel to see who's fresh,
+      // then drag the matching bench chip onto P. Removing the
+      // grab cursor + text-selection feel makes "this is a
+      // reference card" land without changing the broadcast
+      // styling. If we ever wire useDraggable into these, undo this.
+      className={`flex-shrink-0 min-w-[90px] sm:min-w-[105px] rounded-md border px-2 py-1 cursor-default select-none ${tone}`}
       data-testid={`tournament-pitch-chip-${p.playerId}`}
     >
       <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate">
