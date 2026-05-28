@@ -892,6 +892,19 @@ export default function FieldDisplay() {
   const [pitcherPromptQueue, setPitcherPromptQueue] = useState<
     { playerId: number; playerName: string }[]
   >([]);
+  // Tapped-out-pitcher confirm state. When a coach drags somebody onto
+  // "P" who has 0 pitches left today, we stash the would-be lineup +
+  // the violation details here and pop an AlertDialog. Confirm commits
+  // the move; Cancel just drops it — there's no undo to perform
+  // because we never wrote anything optimistically (the check runs
+  // BEFORE _commitLineupSave). One pitcher per dialog: a single drag
+  // can only put one player on the mound at a time.
+  const [tappedOutWarning, setTappedOutWarning] = useState<{
+    nextLineup: LineupEntry[];
+    playerName: string;
+    pitchesToday: number;
+    dailyMax: number | null;
+  } | null>(null);
   // Game-record updater for score input. networkMode 'always' so our
   // explicit navigator.onLine gate inside flushGameSave is what controls
   // when a request actually goes out — without 'always', React Query's
@@ -1802,7 +1815,15 @@ export default function FieldDisplay() {
       });
   };
 
-  const saveLineupOptimistically = (nextLineup: LineupEntry[]) => {
+  /**
+   * Inner save — commits the move to React Query, localStorage, and the
+   * pending-write queue, then ALSO queues a pitcher-removal prompt if
+   * the move took someone off the mound. Split out from
+   * `saveLineupOptimistically` so the tapped-out-pitcher warning below
+   * can gate the move behind a confirm dialog without duplicating any
+   * of the save/queue logic.
+   */
+  const _commitLineupSave = (nextLineup: LineupEntry[]) => {
     // ── Pitcher-removal detection ──
     // Compare who's at "P" in the CURRENT inning before vs. after the
     // move. Anyone who came off the mound — whether swapped to bench
@@ -1845,6 +1866,47 @@ export default function FieldDisplay() {
     // flushSave is offline-aware: it'll skip the POST and just leave
     // pending in place if we're offline, then drain on reconnect.
     flushSave();
+  };
+
+  const saveLineupOptimistically = (nextLineup: LineupEntry[]) => {
+    // ── Tapped-out-pitcher guardrail ──
+    // For tournaments we know each pitcher's pitchesAvailableToday
+    // (server computes it from tournament daily/total caps minus
+    // logged pitches). Before we let a coach drop someone onto "P"
+    // who's at or over their cap, we surface a confirm: the cap might
+    // be wrong, or the coach might be intentionally overriding (rules
+    // vary by league), but it should never be a SILENT mistake. Only
+    // pitchers being NEWLY assigned to P in this inning are checked —
+    // re-saving a lineup that already had a tapped-out pitcher on the
+    // mound (e.g. a non-P drag elsewhere) shouldn't nag.
+    const prevPForCheck = lineup
+      .filter((e) => e.inning === currentInning && e.position === "P")
+      .map((e) => e.playerId);
+    const nextPForCheck = nextLineup
+      .filter((e) => e.inning === currentInning && e.position === "P")
+      .map((e) => e.playerId);
+    const newlyOnMound = nextPForCheck.filter((pid) => !prevPForCheck.includes(pid));
+    if (tournamentId != null && tournament?.pitcherAvailability && newlyOnMound.length > 0) {
+      for (const pid of newlyOnMound) {
+        const avail = tournament.pitcherAvailability.find((a) => a.playerId === pid);
+        // Null cap = "no cap configured" — render path treats it as
+        // "—", so we treat it the same here (no warning). Only block
+        // when a real numeric cap has been hit or crossed.
+        if (avail && avail.pitchesAvailableToday !== null && avail.pitchesAvailableToday <= 0) {
+          setTappedOutWarning({
+            nextLineup,
+            playerName: avail.playerName,
+            pitchesToday: avail.pitchesToday,
+            dailyMax: avail.dailyMax,
+          });
+          // Bail BEFORE committing — the dialog's Confirm action calls
+          // _commitLineupSave(nextLineup) directly. Cancel just drops
+          // the staged move so the drag effectively undoes itself.
+          return;
+        }
+      }
+    }
+    _commitLineupSave(nextLineup);
   };
 
   /**
@@ -3377,6 +3439,63 @@ export default function FieldDisplay() {
        *  accumulates correctly. Skip = "not tracking" — leaves the
        *  pitch count untouched so a coach who doesn't care about
        *  pitch limits isn't forced to type a number every swap. */}
+      {/* Tapped-out-pitcher confirm. Coach has dragged someone onto P
+       *  who has zero pitches available today under the tournament's
+       *  daily cap. Cancel drops the move; Confirm commits it
+       *  (sometimes the cap is wrong, or the coach is intentionally
+       *  going over — but it should be a CHOICE, not silent). */}
+      <AlertDialog
+        open={tappedOutWarning != null}
+        onOpenChange={(open) => { if (!open) setTappedOutWarning(null); }}
+      >
+        <AlertDialogContent data-testid="dialog-tapped-out-pitcher">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {tappedOutWarning?.playerName} is at the daily pitch cap
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {tappedOutWarning != null && (
+                <>
+                  {tappedOutWarning.playerName} has thrown{" "}
+                  <span className="font-mono font-semibold">
+                    {tappedOutWarning.pitchesToday}
+                  </span>{" "}
+                  pitch{tappedOutWarning.pitchesToday === 1 ? "" : "es"} today
+                  {tappedOutWarning.dailyMax != null && (
+                    <>
+                      {" "}(cap:{" "}
+                      <span className="font-mono font-semibold">
+                        {tappedOutWarning.dailyMax}
+                      </span>
+                      )
+                    </>
+                  )}
+                  . Putting them back on the mound may break tournament rules.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setTappedOutWarning(null)}
+              data-testid="button-tapped-out-cancel"
+            >
+              Cancel move
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pending = tappedOutWarning;
+                setTappedOutWarning(null);
+                if (pending) _commitLineupSave(pending.nextLineup);
+              }}
+              data-testid="button-tapped-out-confirm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Pitch anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {pitcherPromptQueue.length > 0 && (
         <PitcherPitchesPrompt
           key={`${pitcherPromptQueue[0]!.playerId}-${pitcherPromptQueue.length}`}

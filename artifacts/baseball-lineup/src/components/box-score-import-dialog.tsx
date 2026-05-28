@@ -6,6 +6,7 @@ import {
   useSaveBoxScore,
   useDeleteBoxScore,
   useUpdateGame,
+  useGetGamePitchCounts,
   getGetBoxScoreQueryKey,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
@@ -40,7 +41,7 @@ import { useToast } from "@/hooks/use-toast";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-import { Upload, Trash2, X, Plus, Sparkles, AlertCircle } from "lucide-react";
+import { Upload, Trash2, X, Plus, Sparkles, AlertCircle, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 
 interface Props {
@@ -116,6 +117,27 @@ export function BoxScoreImportDialog({
       enabled: open,
     },
   });
+
+  // Live pitch counts that were tap-counted on the field display
+  // during the game. We surface a "Live: N" chip next to any pitcher
+  // row whose AI-extracted count disagrees, with a one-tap action to
+  // swap the row over to the manual value. Without this, a coach
+  // who tap-counted Sarah's 47 pitches all afternoon would silently
+  // lose that data the moment the box-score import saved 52 (the
+  // server's UPSERT path overwrites manual counts). Loaded fresh
+  // every time the dialog opens so an in-game re-import sees the
+  // latest live values.
+  const { data: livePitchCounts = [] } = useGetGamePitchCounts(gameId, {
+    query: {
+      queryKey: getGetGamePitchCountsQueryKey(gameId),
+      enabled: open,
+    },
+  });
+  const livePitchesByPlayer = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const pc of livePitchCounts) m.set(pc.playerId, pc.pitches);
+    return m;
+  }, [livePitchCounts]);
 
   const extract = useExtractBoxScore();
   const save = useSaveBoxScore();
@@ -879,55 +901,81 @@ export function BoxScoreImportDialog({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {pitching.map((r) => (
-                    <div
-                      key={r._key}
-                      className="flex items-center gap-2 rounded border p-2"
-                    >
-                      <Select
-                        value={r.playerId > 0 ? String(r.playerId) : ""}
-                        onValueChange={(v) =>
-                          updatePitching(r._key, "playerId", Number(v))
-                        }
+                  {pitching.map((r) => {
+                    // Reconciliation chip — only shows when we have a
+                    // tap-counted value on file AND it disagrees with
+                    // what's in the row right now. One tap copies the
+                    // live value into the row's editable field. The
+                    // chip stays after a swap (the difference is now
+                    // zero so it disappears on its own).
+                    const live = r.playerId > 0
+                      ? livePitchesByPlayer.get(r.playerId)
+                      : undefined;
+                    const showDiff = live != null && live !== (r.pitches ?? 0);
+                    return (
+                      <div
+                        key={r._key}
+                        className="flex items-center gap-2 rounded border p-2"
                       >
-                        <SelectTrigger className="h-9 flex-1">
-                          <SelectValue placeholder="Pick pitcher" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sortedPlayers.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>
-                              {p.name}
-                              {p.number != null ? ` #${p.number}` : ""}
-                              {p.canPitch ? "" : " (not flagged P)"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div>
-                        <Label className="text-xs">Pitches</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={r.pitches ?? 0}
-                          onChange={(e) =>
-                            updatePitching(
-                              r._key,
-                              "pitches",
-                              Math.max(0, Number(e.target.value) || 0),
-                            )
+                        <Select
+                          value={r.playerId > 0 ? String(r.playerId) : ""}
+                          onValueChange={(v) =>
+                            updatePitching(r._key, "playerId", Number(v))
                           }
-                          className="h-9 w-24 text-center"
-                        />
+                        >
+                          <SelectTrigger className="h-9 flex-1">
+                            <SelectValue placeholder="Pick pitcher" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sortedPlayers.map((p) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.name}
+                                {p.number != null ? ` #${p.number}` : ""}
+                                {p.canPitch ? "" : " (not flagged P)"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div>
+                          <Label className="text-xs">Pitches</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={r.pitches ?? 0}
+                            onChange={(e) =>
+                              updatePitching(
+                                r._key,
+                                "pitches",
+                                Math.max(0, Number(e.target.value) || 0),
+                              )
+                            }
+                            className="h-9 w-24 text-center"
+                          />
+                          {showDiff && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updatePitching(r._key, "pitches", live)
+                              }
+                              title="Use the pitch count tracked live on the field display"
+                              className="mt-1 inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 px-1.5 py-0.5 text-[10px] font-mono text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/50"
+                              data-testid={`button-use-live-pitches-${r.playerId}`}
+                            >
+                              <RotateCcw className="h-2.5 w-2.5" />
+                              Live: {live}
+                            </button>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removePitchingRow(r._key)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removePitchingRow(r._key)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
