@@ -152,6 +152,11 @@ export default function TournamentDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [addGameOpen, setAddGameOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // "fresh" answers the pre-game question "who CAN I pitch today?"
+  // (most-rested first). "workhorse" is the analytical view (totals
+  // desc). Default is "fresh" because the surface is most useful
+  // before a game; the workhorse sort was the legacy default.
+  const [availabilitySort, setAvailabilitySort] = useState<"fresh" | "workhorse">("fresh");
 
   const linkedGameIds = useMemo(
     () => new Set((tournament?.games ?? []).map((g) => g.id)),
@@ -204,6 +209,36 @@ export default function TournamentDetail() {
     for (const v of pitchesByGame.values()) total += v.totalPitches;
     return total;
   }, [pitchesByGame]);
+
+  // Pre-sorted availability rows for the table. "fresh" sort puts the
+  // pitchers a coach can actually use today first: most pitches left
+  // → fewest left → tapped out (0) → resting (sunk to the bottom).
+  // "No cap" rows (null) are treated as fully available and float
+  // alongside maximum-cap pitchers. Ties break by least-thrown today
+  // so a totally fresh arm beats one who already has 12 pitches even
+  // when their remaining is identical.
+  const sortedAvailability = useMemo(() => {
+    const rows = (tournament?.pitcherAvailability ?? []).slice();
+    if (availabilitySort === "workhorse") {
+      rows.sort((a, b) => b.totalPitchesInTournament - a.totalPitchesInTournament);
+      return rows;
+    }
+    // freshness score: resting → -Infinity (always last). null cap →
+    // treat as Number.MAX_SAFE_INTEGER so they sort above anyone with
+    // a numeric cap but stay deterministic.
+    const score = (p: typeof rows[number]) => {
+      if (p.restingUntil) return Number.NEGATIVE_INFINITY;
+      if (p.pitchesAvailableToday == null) return Number.MAX_SAFE_INTEGER;
+      return p.pitchesAvailableToday;
+    };
+    rows.sort((a, b) => {
+      const diff = score(b) - score(a);
+      if (diff !== 0) return diff;
+      // tie-break: fewer pitches today wins (truly-fresh > used-once)
+      return a.pitchesToday - b.pitchesToday;
+    });
+    return rows;
+  }, [tournament?.pitcherAvailability, availabilitySort]);
 
   if (isLoading) {
     return (
@@ -430,12 +465,104 @@ export default function TournamentDetail() {
       </div>
 
       <Card data-testid="card-pitcher-availability">
-        <CardHeader>
-          <CardTitle className="text-base">Pitcher Availability</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Rolling totals across this tournament + how many pitches each
-            pitcher has left today after league rest rules.
-          </p>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div className="min-w-0">
+            <CardTitle className="text-base">Pitcher Availability</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Rolling totals across this tournament + how many pitches each
+              pitcher has left today after league rest rules.
+            </p>
+            {/* Status roll-up — answers the pre-game question
+             *  ("who can I send out today?") at one glance so the coach
+             *  doesn't have to scan the table to count. Hidden when the
+             *  roster has no pitchers. */}
+            {tournament.pitcherAvailability.length > 0 && (
+              <div
+                className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]"
+                data-testid="pitcher-availability-summary"
+              >
+                {(() => {
+                  let fresh = 0;
+                  let used = 0;
+                  let done = 0;
+                  let resting = 0;
+                  for (const p of tournament.pitcherAvailability) {
+                    if (p.restingUntil) {
+                      resting++;
+                    } else if (p.pitchesAvailableToday == null) {
+                      // No cap configured — count as fresh since they
+                      // can throw without restriction.
+                      fresh++;
+                    } else if (p.pitchesAvailableToday === 0) {
+                      done++;
+                    } else if (p.pitchesToday > 0) {
+                      used++;
+                    } else {
+                      fresh++;
+                    }
+                  }
+                  return (
+                    <>
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-300 bg-emerald-50 text-emerald-900 font-mono"
+                        data-testid="summary-fresh"
+                      >
+                        {fresh} fresh
+                      </Badge>
+                      {used > 0 && (
+                        <Badge variant="outline" className="font-mono" data-testid="summary-used">
+                          {used} used
+                        </Badge>
+                      )}
+                      {done > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="border-red-300 bg-red-50 text-red-900 font-mono"
+                          data-testid="summary-done"
+                        >
+                          {done} tapped out
+                        </Badge>
+                      )}
+                      {resting > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-300 bg-amber-50 text-amber-900 font-mono"
+                          data-testid="summary-resting"
+                        >
+                          {resting} resting
+                        </Badge>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+          {/* Sort toggle. Defaults to "fresh" because the pre-game
+           *  question is "who CAN I pitch right now" — workhorse-first
+           *  totals are the post-game/analytical view. Toggle is hidden
+           *  when there are no pitchers so the header stays clean. */}
+          {tournament.pitcherAvailability.length > 0 && (
+            <div className="shrink-0 inline-flex rounded-md border bg-muted/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setAvailabilitySort("fresh")}
+                className={`px-2 py-1 rounded ${availabilitySort === "fresh" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="sort-availability-fresh"
+              >
+                Fresh today
+              </button>
+              <button
+                type="button"
+                onClick={() => setAvailabilitySort("workhorse")}
+                className={`px-2 py-1 rounded ${availabilitySort === "workhorse" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="sort-availability-workhorse"
+              >
+                Workhorse
+              </button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {tournament.pitcherAvailability.length === 0 ? (
@@ -455,9 +582,7 @@ export default function TournamentDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {tournament.pitcherAvailability
-                    .slice()
-                    .sort((a, b) => b.totalPitchesInTournament - a.totalPitchesInTournament)
+                  {sortedAvailability
                     .map((p) => {
                       // dailyMax may be null (no cap configured) — in that
                       // case "exceeded" is meaningless and we render the
