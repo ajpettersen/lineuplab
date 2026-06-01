@@ -20,6 +20,14 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SPORT_PROFILES, SPORT_IDS, type SportId } from "@workspace/sport-profiles";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -158,6 +166,7 @@ export default function Settings() {
 
   const [teamName, setTeamName] = useState("");
   const [teamShortName, setTeamShortName] = useState("");
+  const [sport, setSport] = useState<SportId>("baseball");
   const [battingStyle, setBattingStyle] = useState<"continuous" | "nine_man">(
     "continuous"
   );
@@ -182,6 +191,7 @@ export default function Settings() {
     if (teamQuery.data) {
       setTeamName(teamQuery.data.teamName);
       setTeamShortName(teamQuery.data.teamShortName);
+      setSport(teamQuery.data.sport === "basketball" ? "basketball" : "baseball");
       setBattingStyle(
         teamQuery.data.battingStyle === "nine_man" ? "nine_man" : "continuous"
       );
@@ -247,6 +257,7 @@ export default function Settings() {
       data: {
         teamName: name,
         teamShortName: short,
+        sport,
         battingStyle,
         defaultDailyPitchMax: parseOptionalInt(defaultDailyMax),
         defaultTournamentPitchMax: parseOptionalInt(defaultTournamentMax),
@@ -335,6 +346,57 @@ export default function Settings() {
       </TabsContent>
 
       <TabsContent value="team" className="space-y-6 mt-4">
+      <Card data-testid="card-team-sport">
+        <CardHeader>
+          <CardTitle>Sport</CardTitle>
+          <CardDescription>
+            Sets the positions, periods, and tools this team uses. Existing
+            teams stay on Baseball / Softball.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="sport">Team sport</Label>
+          <Select
+            value={sport}
+            onValueChange={(v) => setSport(v as SportId)}
+            disabled={teamLoading || !canEditTeam}
+          >
+            <SelectTrigger id="sport" className="w-full" data-testid="select-sport">
+              <SelectValue placeholder="Choose a sport" />
+            </SelectTrigger>
+            <SelectContent>
+              {SPORT_IDS.map((id) => (
+                <SelectItem key={id} value={id} data-testid={`select-sport-${id}`}>
+                  {SPORT_PROFILES[id].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {sport === "baseball"
+              ? "Innings, 9–10 fielders, batting order, pitch counts and tournaments."
+              : "Quarters, 5 on the court (PG/SG/SF/PF/C), and fair playing-time rotations."}
+          </p>
+          <div className="flex justify-end pt-1">
+            <Button
+              onClick={onSaveTeam}
+              disabled={updateTeam.isPending || teamLoading || !canEditTeam}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              data-testid="button-save-sport"
+            >
+              {updateTeam.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save sport
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card data-testid="card-team-branding">
         <CardHeader>
           <CardTitle>Team Branding</CardTitle>
@@ -370,6 +432,7 @@ export default function Settings() {
               Used where space is tight (e.g. mobile chips, exports).
             </p>
           </div>
+          {sport === "baseball" && (
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="space-y-0.5 pr-4">
               <Label htmlFor="battingStyle" className="text-sm font-medium">
@@ -391,7 +454,9 @@ export default function Settings() {
               data-testid="switch-batting-style"
             />
           </div>
+          )}
 
+          {sport === "baseball" && (
           <div className="rounded-lg border p-3 space-y-4">
             <div className="flex items-center gap-2">
               <Trophy className="h-4 w-4 text-purple-600" />
@@ -445,6 +510,7 @@ export default function Settings() {
               />
             </div>
           </div>
+          )}
 
           <div className="flex justify-end">
             <Button

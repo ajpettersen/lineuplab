@@ -46,7 +46,8 @@ export default function NewGame() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const prefsQuery = useGetPreferences();
-  const { usesTournaments } = useTeamSettings();
+  const { usesTournaments, sportProfile } = useTeamSettings();
+  const tournamentsEnabled = usesTournaments && sportProfile.features.tournaments;
 
   // When the coach lands on this page from a tournament's "Create new
   // game" CTA, the tournament id rides along as ?tournamentId=N. We
@@ -68,7 +69,7 @@ export default function NewGame() {
   const [inningsTouched, setInningsTouched] = useState(false);
   const [notes, setNotes] = useState("");
   const [gameType, setGameType] = useState<"none" | "league" | "tournament">(
-    tournamentIdFromQuery != null && usesTournaments ? "tournament" : "none",
+    tournamentIdFromQuery != null && tournamentsEnabled ? "tournament" : "none",
   );
 
   // Tournament attachment for tournament-type games. When the coach
@@ -78,7 +79,7 @@ export default function NewGame() {
   // tournament's pitch counts / rest tracking, defeating the point of
   // tagging it tournament in the first place).
   const tournamentsQuery = useListTournaments({
-    query: { enabled: usesTournaments, queryKey: getListTournamentsQueryKey() },
+    query: { enabled: tournamentsEnabled, queryKey: getListTournamentsQueryKey() },
   });
   const tournaments = tournamentsQuery.data ?? [];
   const [selectedTournamentId, setSelectedTournamentId] = useState<number | null>(
@@ -313,7 +314,7 @@ export default function NewGame() {
                   // Tournament option only shown when the team's
                   // tournament feature flag is on (Settings →
                   // Defaults → "We play tournaments").
-                  ...(usesTournaments
+                  ...(tournamentsEnabled
                     ? [{ v: "tournament" as const, label: "Tournament", hint: "Most competitive" }]
                     : []),
                 ]).map((opt) => (
@@ -345,7 +346,7 @@ export default function NewGame() {
                 ))}
               </div>
             </div>
-            {gameType === "tournament" && usesTournaments && (
+            {gameType === "tournament" && tournamentsEnabled && (
               <div className="flex flex-col gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3">
                 <Label className="flex items-center gap-1.5 text-foreground">
                   <Trophy className="h-4 w-4 text-purple-600" />

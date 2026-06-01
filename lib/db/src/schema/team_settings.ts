@@ -17,6 +17,13 @@ export const teamSettingsTable = pgTable("team_settings", {
   teamName: text("team_name").notNull(),
   teamShortName: text("team_short_name").notNull(),
   /**
+   * Which sport this team coaches. Drives the whole sport-profile layer
+   * (positions, period label innings↔quarters, on-field count, and which
+   * baseball-only features show). Defaults to "baseball" so every existing
+   * team is untouched. See `@workspace/sport-profiles`.
+   */
+  sport: text("sport").notNull().default("baseball"),
+  /**
    * How the team bats. Drives how the generator assigns batting orders:
    *  - "continuous" → every player on the roster gets a batting slot (the
    *    youth-baseball default — everyone bats every time through the order).
@@ -151,6 +158,7 @@ export type RestTier = { maxPitches: number; daysRest: number };
 export const updateTeamSettingsSchema = createInsertSchema(teamSettingsTable).pick({
   teamName: true,
   teamShortName: true,
+  sport: true,
   battingStyle: true,
   defaultDailyPitchMax: true,
   defaultTournamentPitchMax: true,

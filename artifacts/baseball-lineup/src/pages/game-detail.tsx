@@ -100,6 +100,7 @@ import { BoxScoreDisplayCard } from "@/components/box-score-display-card";
 import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
+import { sportPositionCodes, type SportId } from "@workspace/sport-profiles";
 
 const STANDARD_FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 // Canonical L→R column order for the lineup grid. Includes LCF/RCF so a
@@ -111,8 +112,41 @@ const INFIELD = new Set(["C", "1B", "2B", "3B", "SS"]);
 const OUTFIELD = new Set(["LF", "LCF", "CF", "RCF", "RF"]);
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type Category = "Pitching" | "Infield" | "Outfield" | "Bench";
-function categoryFor(pos: string): Category {
+// Sport-aware "by position" tally columns. Baseball keeps its exact legacy
+// categories + colors (Pitching/Infield/Outfield, with C counted as Infield)
+// so existing coaches see no change; basketball rolls the five court spots up
+// into Guard/Forward/Center. Bench + Out are appended generically by the
+// renderer, so this only describes the colored field-position buckets.
+interface TallyCategory {
+  key: string;
+  label: string;
+  /** Tailwind chip classes for a non-zero count. */
+  cls: string;
+  /** lowercased token for data-testid. */
+  testid: string;
+}
+const TALLY_CATEGORIES: Record<SportId, TallyCategory[]> = {
+  baseball: [
+    { key: "Pitching", label: "Pitching", cls: "bg-red-100 text-red-800", testid: "pitching" },
+    { key: "Infield", label: "Infield", cls: "bg-emerald-100 text-emerald-800", testid: "infield" },
+    { key: "Outfield", label: "Outfield", cls: "bg-indigo-100 text-indigo-800", testid: "outfield" },
+  ],
+  basketball: [
+    { key: "Guard", label: "Guard", cls: "bg-red-100 text-red-800", testid: "guard" },
+    { key: "Forward", label: "Forward", cls: "bg-emerald-100 text-emerald-800", testid: "forward" },
+    { key: "Center", label: "Center", cls: "bg-indigo-100 text-indigo-800", testid: "center" },
+  ],
+};
+// Map a single position code to its tally category key for the given sport.
+// Returns "Bench" for the bench slot (and for anything unrecognized).
+function categoryForPos(pos: string, sport: SportId): string {
+  if (pos === "Bench") return "Bench";
+  if (sport === "basketball") {
+    if (pos === "PG" || pos === "SG") return "Guard";
+    if (pos === "SF" || pos === "PF") return "Forward";
+    if (pos === "C") return "Center";
+    return "Bench";
+  }
   if (pos === "P") return "Pitching";
   if (INFIELD.has(pos)) return "Infield";
   if (OUTFIELD.has(pos)) return "Outfield";
@@ -214,7 +248,7 @@ export default function GameDetail() {
   const clearPlanSnapshot = useClearPlanSnapshot();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { teamName, battingStyle, activeFieldPositions, showSelectPositions } = useTeamSettings();
+  const { teamName, battingStyle, activeFieldPositions, showSelectPositions, sport, sportProfile } = useTeamSettings();
   // Two new dialogs introduced for the post-game photo override flow:
   // - replaceConfirmOpen: shown after a photo is parsed AND a saved lineup
   //   already exists, asking whether to keep the original as a plan snapshot.
@@ -293,11 +327,29 @@ export default function GameDetail() {
   });
   useEffect(() => {
     const onHash = () => {
-      if (window.location.hash === "#pitch-counts-card") setLineupTab("pitching");
+      // Only honor the pitch-counts deep-link when the sport actually
+      // exposes a pitching panel (baseball). Basketball has no pitch
+      // counts tab, so jumping there would land on a hidden panel.
+      if (
+        window.location.hash === "#pitch-counts-card" &&
+        sportProfile.features.pitchCounts
+      ) {
+        setLineupTab("pitching");
+      }
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [sportProfile.features.pitchCounts]);
+  // Safety net: if the active tab isn't available for this sport (e.g. a
+  // basketball team deep-linked to #pitch-counts-card, or batting order is
+  // hidden), fall back to the always-present defense/lineup tab.
+  useEffect(() => {
+    if (lineupTab === "pitching" && !sportProfile.features.pitchCounts) {
+      setLineupTab("defense");
+    } else if (lineupTab === "batting" && !sportProfile.features.battingOrder) {
+      setLineupTab("defense");
+    }
+  }, [lineupTab, sportProfile.features.pitchCounts, sportProfile.features.battingOrder]);
   // "Copy from previous game" picker state.
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyGames, setCopyGames] = useState<Array<{
@@ -1731,12 +1783,11 @@ export default function GameDetail() {
       toast({ title: "No tally to copy yet", variant: "destructive" });
       return;
     }
-    const header = ["Player", "Pitching", "Infield", "Outfield", "Bench", "Out", "Total"].join("\t");
+    const header = ["Player", ...tallyCategories.map((c) => c.label), "Bench", "Out", "Total"].join("\t");
     const rows = tallyRows.map((r) => {
-      const total = r.Pitching + r.Infield + r.Outfield + r.Bench + r.Out;
-      return [r.playerName, r.Pitching, r.Infield, r.Outfield, r.Bench, r.Out, total]
-        .map(String)
-        .join("\t");
+      const catCells = tallyCategories.map((c) => r.counts[c.key] ?? 0);
+      const total = catCells.reduce((s, n) => s + n, 0) + r.Bench + r.Out;
+      return [r.playerName, ...catCells, r.Bench, r.Out, total].map(String).join("\t");
     });
     const tsv = [header, ...rows].join("\n");
     await writeTsvToClipboard(tsv, "Tally copied");
@@ -1754,7 +1805,7 @@ export default function GameDetail() {
     // Bench column lists every benched player for the inning, comma-separated,
     // labeled "Bench (SIT)" so a coach pasting into Sheets can tell at a
     // glance which kids are sitting that inning.
-    const inningHeader = ["Inning", ...displayPositions, "Bench (SIT)"].join("\t");
+    const inningHeader = [sportProfile.periodLabel, ...displayPositions, "Bench (SIT)"].join("\t");
     const inningRows = Array.from({ length: inningCount }, (_, i) => i + 1).map((inning) => {
       const cells = displayPositions.map((pos) => {
         const e = data.find((x) => x.inning === inning && x.position === pos);
@@ -1777,15 +1828,22 @@ export default function GameDetail() {
     // covers everyone on the roster for that game.
     const lineupNames = battingOrderRows.map((r) => r.playerName);
 
-    const tallyHeader = ["Player", "Pitching", "Infield", "Outfield", "Bench", "", "Lineup"];
+    const tallyHeader = ["Player", ...tallyCategories.map((c) => c.label), "Bench", "", "Lineup"];
+    const emptyCells = tallyCategories.map(() => "");
     const dataRowCount = Math.max(tallyRows.length, lineupNames.length);
     const bottomRows: string[] = [tallyHeader.join("\t")];
     for (let i = 0; i < dataRowCount; i++) {
       const t = tallyRows[i];
       const lineupCell = lineupNames[i] ?? "";
       const cells = t
-        ? [t.playerName, String(t.Pitching), String(t.Infield), String(t.Outfield), String(t.Bench), "", lineupCell]
-        : ["", "", "", "", "", "", lineupCell];
+        ? [
+            t.playerName,
+            ...tallyCategories.map((c) => String(t.counts[c.key] ?? 0)),
+            String(t.Bench),
+            "",
+            lineupCell,
+          ]
+        : ["", ...emptyCells, "", "", lineupCell];
       bottomRows.push(cells.join("\t"));
     }
 
@@ -1960,10 +2018,20 @@ export default function GameDetail() {
   // since switched to LCF/RCF (and vice versa). Always sorted in canonical
   // L→R order so the grid reads left-to-right consistently.
   const displayPositions = useMemo<readonly string[]>(() => {
+    if (sport === "basketball") {
+      // Basketball ignores the baseball activeFieldPositions; its court spots
+      // come straight from the sport profile (PG/SG/SF/PF/C). Any stray
+      // position present on saved entries is appended so old data isn't lost.
+      const order = sportPositionCodes("basketball");
+      const present = new Set<string>(order);
+      for (const e of displayLineup) if (e.position !== "Bench") present.add(e.position);
+      const extras = [...present].filter((p) => !order.includes(p));
+      return [...order, ...extras];
+    }
     const present = new Set<string>(activeFieldPositions);
     for (const e of displayLineup) if (e.position !== "Bench") present.add(e.position);
     return POSITION_DISPLAY_ORDER.filter((p) => present.has(p));
-  }, [activeFieldPositions, displayLineup]);
+  }, [activeFieldPositions, displayLineup, sport]);
   // Map (inning, position) -> entry, so cells know their entry id for swap.
   // Bench rows are NOT included here — bench is rendered as its own list.
   const cellByInningPos: Record<number, Record<string, typeof displayLineup[number]>> = {};
@@ -2024,7 +2092,7 @@ export default function GameDetail() {
         };
         byPlayer.set(e.playerId, s);
       }
-      const cat = categoryFor(e.position);
+      const cat = categoryForPos(e.position, sport);
       if (cat === "Bench") s.bench += 1;
       else {
         s.field += 1;
@@ -2105,13 +2173,13 @@ export default function GameDetail() {
   // "Out" tracks innings where the player has no entry at all (e.g. a kid who
   // showed up late or left early, or a photo import that didn't pick up their
   // name) so each row's total still adds up to the full game length.
+  const tallyCategories = TALLY_CATEGORIES[sport];
   const tallyRows = useMemo(() => {
     type Row = {
       playerId: number;
       playerName: string;
-      Pitching: number;
-      Infield: number;
-      Outfield: number;
+      /** Per-category period counts (keys are the sport's category keys). */
+      counts: Record<string, number>;
       Bench: number;
       Out: number;
     };
@@ -2126,22 +2194,23 @@ export default function GameDetail() {
         row = {
           playerId: e.playerId,
           playerName: e.playerName,
-          Pitching: 0,
-          Infield: 0,
-          Outfield: 0,
+          counts: Object.fromEntries(tallyCategories.map((c) => [c.key, 0])),
           Bench: 0,
           Out: 0,
         };
         map.set(e.playerId, row);
       }
-      row[categoryFor(e.position)] += 1;
+      const cat = categoryForPos(e.position, sport);
+      if (cat === "Bench") row.Bench += 1;
+      else row.counts[cat] = (row.counts[cat] ?? 0) + 1;
     }
     for (const row of map.values()) {
-      const counted = row.Pitching + row.Infield + row.Outfield + row.Bench;
+      const counted =
+        tallyCategories.reduce((s, c) => s + (row.counts[c.key] ?? 0), 0) + row.Bench;
       row.Out = Math.max(0, innings - counted);
     }
     return Array.from(map.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
-  }, [displayLineup, innings]);
+  }, [displayLineup, innings, sport, tallyCategories]);
 
   /**
    * Reorder the batting lineup by moving the player at `fromIndex` to
@@ -2377,7 +2446,8 @@ export default function GameDetail() {
                       <Pencil className="h-4 w-4 mr-2" />
                       Edit
                     </Button>
-                    {game.status !== ("cancelled" as typeof game.status) && (
+                    {sportProfile.features.boxScoreImport &&
+                      game.status !== ("cancelled" as typeof game.status) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -2477,7 +2547,7 @@ export default function GameDetail() {
       {/* Read-only box score — auto-renders when boxScoreImportedAt is set.
           Coaches land here after a game and want to see results without
           re-opening the import dialog. The Edit button still routes there. */}
-      {game.boxScoreImportedAt && (
+      {sportProfile.features.boxScoreImport && game.boxScoreImportedAt && (
         <BoxScoreDisplayCard
           gameId={game.id}
           onEdit={can("partial") ? () => setBoxScoreOpen(true) : undefined}
@@ -2806,27 +2876,35 @@ export default function GameDetail() {
         onValueChange={(v) => setLineupTab(v as typeof lineupTab)}
         className="game-tabs"
       >
-        <TabsList className="no-print w-full grid grid-cols-2 sm:grid-cols-4 h-auto">
+        <TabsList
+          className={`no-print w-full grid grid-cols-2 h-auto ${
+            sport === "basketball" ? "sm:grid-cols-2" : "sm:grid-cols-4"
+          }`}
+        >
           <TabsTrigger value="defense" data-testid="tab-defense">
-            Defense
+            {sport === "basketball" ? "Lineup" : "Defense"}
           </TabsTrigger>
-          <TabsTrigger
-            value="batting"
-            disabled={displayLineup.length === 0}
-            data-testid="tab-batting"
-          >
-            Batting Order
-          </TabsTrigger>
+          {sportProfile.features.battingOrder && (
+            <TabsTrigger
+              value="batting"
+              disabled={displayLineup.length === 0}
+              data-testid="tab-batting"
+            >
+              Batting Order
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="innings"
             disabled={displayLineup.length === 0}
             data-testid="tab-innings"
           >
-            Innings
+            {sportProfile.periodLabelPlural}
           </TabsTrigger>
-          <TabsTrigger value="pitching" data-testid="tab-pitching">
-            Pitch Counts
-          </TabsTrigger>
+          {sportProfile.features.pitchCounts && (
+            <TabsTrigger value="pitching" data-testid="tab-pitching">
+              Pitch Counts
+            </TabsTrigger>
+          )}
         </TabsList>
         {/* `forceMount` keeps every panel mounted so print CSS can
             reveal them all at once and so heavy panels (lineup grid)
@@ -2980,7 +3058,7 @@ export default function GameDetail() {
                 <table className="w-full text-sm border-separate border-spacing-y-0.5 table-fixed">
                   <thead>
                     <tr>
-                      <th className="text-left py-2 pr-2 text-[10px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-12 lg:w-16">Inn</th>
+                      <th className="text-left py-2 pr-2 text-[10px] lg:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-12 lg:w-16">{sportProfile.periodLabelShort}</th>
                       {displayPositions.map((pos) => (
                         <th key={pos} className="text-center py-2 px-0.5 lg:px-1 w-[58px] lg:w-20">
                           <span className="inline-block px-1.5 lg:px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] lg:text-[11px] font-bold tracking-wide">
@@ -3440,7 +3518,7 @@ export default function GameDetail() {
       {displayLineup.length > 0 ? (
         <Card data-testid="card-tally">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-3">
-            <CardTitle className="text-base">Innings by Position</CardTitle>
+            <CardTitle className="text-base">{sportProfile.terms.timeByPositionLabel}</CardTitle>
             <Button
               type="button"
               variant="outline"
@@ -3459,9 +3537,9 @@ export default function GameDetail() {
                 <thead>
                   <tr className="text-muted-foreground text-xs">
                     <th className="text-left py-2 pr-3 font-medium">Player</th>
-                    <th className="text-center py-2 px-2 font-medium">Pitching</th>
-                    <th className="text-center py-2 px-2 font-medium">Infield</th>
-                    <th className="text-center py-2 px-2 font-medium">Outfield</th>
+                    {tallyCategories.map((c) => (
+                      <th key={c.key} className="text-center py-2 px-2 font-medium">{c.label}</th>
+                    ))}
                     <th className="text-center py-2 px-2 font-medium">Bench</th>
                     <th className="text-center py-2 px-2 font-medium">Out</th>
                     <th className="text-center py-2 pl-2 font-medium">Total</th>
@@ -3470,7 +3548,10 @@ export default function GameDetail() {
                 </thead>
                 <tbody>
                   {tallyRows.map((row) => {
-                    const total = row.Pitching + row.Infield + row.Outfield + row.Bench + row.Out;
+                    const total =
+                      tallyCategories.reduce((s, c) => s + (row.counts[c.key] ?? 0), 0) +
+                      row.Bench +
+                      row.Out;
                     return (
                       <tr
                         key={row.playerId}
@@ -3478,33 +3559,26 @@ export default function GameDetail() {
                         data-testid={`tally-row-${row.playerId}`}
                       >
                         <td className="py-1.5 pr-3 font-medium">{row.playerName}</td>
-                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-pitching`}>
-                          {row.Pitching > 0 ? (
-                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-xs font-semibold">
-                              {row.Pitching}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/40">—</span>
-                          )}
-                        </td>
-                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-infield`}>
-                          {row.Infield > 0 ? (
-                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">
-                              {row.Infield}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/40">—</span>
-                          )}
-                        </td>
-                        <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-outfield`}>
-                          {row.Outfield > 0 ? (
-                            <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 text-xs font-semibold">
-                              {row.Outfield}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/40">—</span>
-                          )}
-                        </td>
+                        {tallyCategories.map((c) => {
+                          const n = row.counts[c.key] ?? 0;
+                          return (
+                            <td
+                              key={c.key}
+                              className="text-center py-1.5 px-2"
+                              data-testid={`tally-${row.playerId}-${c.testid}`}
+                            >
+                              {n > 0 ? (
+                                <span
+                                  className={`inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded ${c.cls} text-xs font-semibold`}
+                                >
+                                  {n}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/40">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
                         <td className="text-center py-1.5 px-2" data-testid={`tally-${row.playerId}-bench`}>
                           {row.Bench > 0 ? (
                             <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-semibold">
@@ -3545,13 +3619,15 @@ export default function GameDetail() {
               </table>
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              Pitching: P · Infield: C, 1B, 2B, 3B, SS · Outfield: LF, CF, RF · Out: innings the player has no entry for
+              {sport === "basketball"
+                ? `Guard: PG, SG · Forward: SF, PF · Center: C · Out: ${sportProfile.periodLabelPlural.toLowerCase()} the player has no entry for`
+                : "Pitching: P · Infield: C, 1B, 2B, 3B, SS · Outfield: LF, CF, RF · Out: innings the player has no entry for"}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-md">
-          Generate or import a lineup first to see the innings tally.
+          Generate or import a {sportProfile.terms.lineupNoun.toLowerCase()} first to see the {sportProfile.periodLabelPlural.toLowerCase()} tally.
         </div>
       )}
         </TabsContent>

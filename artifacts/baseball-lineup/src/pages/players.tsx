@@ -39,6 +39,7 @@ import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIco
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { usePermission } from "@/hooks/use-permission";
+import { useSportProfile } from "@/hooks/use-sport-profile";
 import {
   Tooltip,
   TooltipContent,
@@ -46,7 +47,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type ExtractedPlayer = {
@@ -70,10 +70,14 @@ function ImportRosterDialog({
   open,
   onClose,
   existingPlayers,
+  positions,
+  showPitching,
 }: {
   open: boolean;
   onClose: () => void;
   existingPlayers: ReadonlyArray<{ name: string; number?: number | null }>;
+  positions: string[];
+  showPitching: boolean;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -222,7 +226,7 @@ function ImportRosterDialog({
       prev
         ? prev.map((p, i) =>
             i === idx
-              ? { ...p, preferredPositions: all ? [...ALL_POSITIONS] : [] }
+              ? { ...p, preferredPositions: all ? [...positions] : [] }
               : p,
           )
         : prev,
@@ -409,7 +413,9 @@ function ImportRosterDialog({
                     <th className="p-2">Name</th>
                     <th className="p-2 w-20">#</th>
                     <th className="p-2">Positions</th>
-                    <th className="p-2 w-16 text-center">Pitch</th>
+                    {showPitching && (
+                      <th className="p-2 w-16 text-center">Pitch</th>
+                    )}
                     <th className="p-2 w-8"></th>
                   </tr>
                 </thead>
@@ -459,8 +465,8 @@ function ImportRosterDialog({
                         <div className="flex flex-wrap items-center gap-1">
                           {(() => {
                             const allSelected =
-                              row.preferredPositions.length === ALL_POSITIONS.length &&
-                              ALL_POSITIONS.every((p) => row.preferredPositions.includes(p));
+                              row.preferredPositions.length === positions.length &&
+                              positions.every((p) => row.preferredPositions.includes(p));
                             return (
                               <Button
                                 type="button"
@@ -474,7 +480,7 @@ function ImportRosterDialog({
                               </Button>
                             );
                           })()}
-                          {ALL_POSITIONS.map((pos) => {
+                          {positions.map((pos) => {
                             const preferred = row.preferredPositions.includes(pos);
                             return (
                               <button
@@ -501,6 +507,7 @@ function ImportRosterDialog({
                           })}
                         </div>
                       </td>
+                      {showPitching && (
                       <td className="p-2 align-top text-center">
                         <Checkbox
                           checked={row.canPitch}
@@ -508,6 +515,7 @@ function ImportRosterDialog({
                           data-testid={`checkbox-pitch-${i}`}
                         />
                       </td>
+                      )}
                       <td className="p-2 align-top">
                         <button
                           type="button"
@@ -541,9 +549,13 @@ function ImportRosterDialog({
 function AddPlayerDialog({
   open,
   onClose,
+  positions,
+  showPitching,
 }: {
   open: boolean;
   onClose: () => void;
+  positions: string[];
+  showPitching: boolean;
 }) {
   const qc = useQueryClient();
   const createPlayer = useCreatePlayer();
@@ -579,7 +591,7 @@ function AddPlayerDialog({
           number: number ? parseInt(number) : null,
           // eligiblePositions is server-derived from canPitch — we send the
           // full list so the generated zod schema is satisfied; server overwrites it.
-          eligiblePositions: ALL_POSITIONS,
+          eligiblePositions: positions,
           preferredPositions: preferred,
           canPitch,
           active: true,
@@ -646,8 +658,8 @@ function AddPlayerDialog({
               <Label>Preferred Positions</Label>
               {(() => {
                 const allSelected =
-                  preferred.length === ALL_POSITIONS.length &&
-                  ALL_POSITIONS.every((p) => preferred.includes(p));
+                  preferred.length === positions.length &&
+                  positions.every((p) => preferred.includes(p));
                 return (
                   <Button
                     type="button"
@@ -655,7 +667,7 @@ function AddPlayerDialog({
                     variant="ghost"
                     className="h-6 px-2 text-xs"
                     onClick={() =>
-                      setPreferred(allSelected ? [] : [...ALL_POSITIONS])
+                      setPreferred(allSelected ? [] : [...positions])
                     }
                     data-testid="button-preferred-toggle-all"
                   >
@@ -670,7 +682,7 @@ function AddPlayerDialog({
               generator.
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {ALL_POSITIONS.map((pos) => (
+              {positions.map((pos) => (
                 <label
                   key={pos}
                   className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer text-sm transition-colors ${
@@ -688,6 +700,7 @@ function AddPlayerDialog({
               ))}
             </div>
           </div>
+          {showPitching && (
           <div className="flex items-center gap-2">
             <Checkbox
               id="canPitch"
@@ -696,6 +709,7 @@ function AddPlayerDialog({
             />
             <Label htmlFor="canPitch">Can pitch</Label>
           </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -749,25 +763,30 @@ const COVERAGE_TOOLTIP: Record<CoverageLevel, string> = {
 
 function PositionCoveragePanel({
   players,
+  positions,
+  showPitching,
 }: {
   players: ReadonlyArray<{ preferredPositions: string[]; canPitch?: boolean }>;
+  positions: string[];
+  showPitching: boolean;
 }) {
   const coverage: Record<string, number> = Object.fromEntries(
-    ALL_POSITIONS.map((p) => [p, 0]),
+    positions.map((p) => [p, 0]),
   );
   for (const player of players) {
-    const positions = new Set(player.preferredPositions ?? []);
+    const playerPositions = new Set(player.preferredPositions ?? []);
     // "Can pitch" flag is the source of truth for who can take the mound,
     // even if a coach hasn't added "P" to their preferred positions list.
     // Surface them in the P coverage tally so the depth indicator matches
-    // who would actually be eligible to pitch.
-    if (player.canPitch) positions.add("P");
-    for (const pos of positions) {
+    // who would actually be eligible to pitch. Only relevant for sports that
+    // have pitching (baseball/softball).
+    if (showPitching && player.canPitch) playerPositions.add("P");
+    for (const pos of playerPositions) {
       if (pos in coverage) coverage[pos]++;
     }
   }
 
-  const problems = ALL_POSITIONS.filter((p) => (coverage[p] ?? 0) < 2);
+  const problems = positions.filter((p) => (coverage[p] ?? 0) < 2);
   const allCovered = problems.length === 0;
 
   return (
@@ -814,7 +833,7 @@ function PositionCoveragePanel({
       <CardContent className="pt-0">
         <TooltipProvider delayDuration={200}>
           <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
-            {ALL_POSITIONS.map((pos) => {
+            {positions.map((pos) => {
               const count = coverage[pos] ?? 0;
               const level = coverageLevel(count);
               const styles = COVERAGE_STYLES[level];
@@ -872,6 +891,12 @@ export default function Players() {
   // edit, or delete players. Server enforces independently.
   const { can } = usePermission();
   const canEditRoster = can("full");
+  // Positions + pitching visibility follow the team's sport. Baseball teams
+  // see the standard 9 positions and the "Can pitch" controls; basketball
+  // teams see PG/SG/SF/PF/C and no pitching UI.
+  const { profile } = useSportProfile();
+  const positions = profile.positions.map((p) => p.code);
+  const showPitching = profile.features.pitching;
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -977,7 +1002,11 @@ export default function Players() {
         <TabsContent value="roster" className="mt-6 flex flex-col gap-6">
 
       {!isLoading && players.length >= 1 && (
-        <PositionCoveragePanel players={players} />
+        <PositionCoveragePanel
+          players={players}
+          positions={positions}
+          showPitching={showPitching}
+        />
       )}
 
       {isLoading ? (
@@ -1037,7 +1066,7 @@ export default function Players() {
                             no preferred positions
                           </span>
                         )}
-                        {p.canPitch && (
+                        {showPitching && p.canPitch && (
                           <Badge variant="outline" className="text-xs px-1.5 py-0 text-primary border-primary/40">
                             Pitcher
                           </Badge>
@@ -1070,12 +1099,19 @@ export default function Players() {
         </div>
       )}
 
-      <AddPlayerDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddPlayerDialog
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        positions={positions}
+        showPitching={showPitching}
+      />
 
       <ImportRosterDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
         existingPlayers={players}
+        positions={positions}
+        showPitching={showPitching}
       />
 
       <AlertDialog open={deleteId != null} onOpenChange={(o) => !o && setDeleteId(null)}>

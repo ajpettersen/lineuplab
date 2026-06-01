@@ -1728,6 +1728,13 @@ components:
           type: string
         teamShortName:
           type: string
+        sport:
+          type: string
+          enum: [baseball, basketball]
+          description: |
+            Which sport this team coaches. Drives positions, period label
+            (innings vs quarters), on-court count, and feature gating.
+            Defaults to baseball.
         battingStyle:
           type: string
           enum: [continuous, nine_man]
@@ -1832,6 +1839,9 @@ components:
           type: string
           minLength: 1
           maxLength: 20
+        sport:
+          type: string
+          enum: [baseball, basketball]
         battingStyle:
           type: string
           enum: [continuous, nine_man]

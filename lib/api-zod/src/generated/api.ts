@@ -794,6 +794,12 @@ export const GetTeamSettingsResponse = zod.object({
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
+  sport: zod
+    .enum(["baseball", "basketball"])
+    .optional()
+    .describe(
+      "Which sport this team coaches. Drives positions, period label\n(innings vs quarters), on-court count, and feature gating.\nDefaults to baseball.\n",
+    ),
   battingStyle: zod
     .enum(["continuous", "nine_man"])
     .describe(
@@ -909,6 +915,7 @@ export const UpdateTeamSettingsBody = zod.object({
     .min(1)
     .max(updateTeamSettingsBodyTeamShortNameMax)
     .optional(),
+  sport: zod.enum(["baseball", "basketball"]).optional(),
   battingStyle: zod.enum(["continuous", "nine_man"]).optional(),
   defaultDailyPitchMax: zod.number().nullish(),
   defaultTournamentPitchMax: zod.number().nullish(),
@@ -987,6 +994,12 @@ export const UpdateTeamSettingsResponse = zod.object({
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
+  sport: zod
+    .enum(["baseball", "basketball"])
+    .optional()
+    .describe(
+      "Which sport this team coaches. Drives positions, period label\n(innings vs quarters), on-court count, and feature gating.\nDefaults to baseball.\n",
+    ),
   battingStyle: zod
     .enum(["continuous", "nine_man"])
     .describe(
@@ -1090,6 +1103,12 @@ export const CompleteOnboardingResponse = zod.object({
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
+  sport: zod
+    .enum(["baseball", "basketball"])
+    .optional()
+    .describe(
+      "Which sport this team coaches. Drives positions, period label\n(innings vs quarters), on-court count, and feature gating.\nDefaults to baseball.\n",
+    ),
   battingStyle: zod
     .enum(["continuous", "nine_man"])
     .describe(

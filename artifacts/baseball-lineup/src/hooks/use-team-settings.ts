@@ -1,4 +1,5 @@
 import { useGetTeamSettings } from "@workspace/api-client-react";
+import { getSportProfile, type SportId, type SportProfile } from "@workspace/sport-profiles";
 
 const DEFAULT_FIELD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 
@@ -21,9 +22,16 @@ export function useTeamSettings() {
   // default; coaches who swap field formats game-to-game enable it
   // from Settings → Defaults.
   const showSelectPositions: boolean = query.data?.showSelectPositions ?? false;
+  // Per-team sport (default baseball so existing teams are untouched). The
+  // resolved profile drives positions, period labels, on-court count, and
+  // which baseball-only features show across the app.
+  const sport: SportId = query.data?.sport === "basketball" ? "basketball" : "baseball";
+  const sportProfile: SportProfile = getSportProfile(sport);
   return {
     teamName: query.data?.teamName ?? "",
     teamShortName: query.data?.teamShortName ?? "",
+    sport,
+    sportProfile,
     battingStyle,
     activeFieldPositions,
     usesTournaments,

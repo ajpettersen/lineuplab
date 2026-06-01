@@ -55,6 +55,7 @@ const UpdateBody = z
   .object({
     teamName: z.string().trim().min(1, "Team name required").max(80).optional(),
     teamShortName: z.string().trim().min(1, "Short name required").max(20).optional(),
+    sport: z.enum(["baseball", "basketball"]).optional(),
     battingStyle: z.enum(["continuous", "nine_man"]).optional(),
     defaultDailyPitchMax: z.number().int().min(0).max(500).nullish(),
     defaultTournamentPitchMax: z.number().int().min(0).max(2000).nullish(),
@@ -90,6 +91,7 @@ const UpdateBody = z
     (v) =>
       v.teamName !== undefined ||
       v.teamShortName !== undefined ||
+      v.sport !== undefined ||
       v.battingStyle !== undefined ||
       v.defaultDailyPitchMax !== undefined ||
       v.defaultTournamentPitchMax !== undefined ||
@@ -145,6 +147,7 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
   const patch: {
     teamName?: string;
     teamShortName?: string;
+    sport?: "baseball" | "basketball";
     battingStyle?: "continuous" | "nine_man";
     defaultDailyPitchMax?: number | null;
     defaultTournamentPitchMax?: number | null;
@@ -162,6 +165,7 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
   } = { updatedAt: sql`now()` };
   if (parsed.data.teamName !== undefined) patch.teamName = parsed.data.teamName;
   if (parsed.data.teamShortName !== undefined) patch.teamShortName = parsed.data.teamShortName;
+  if (parsed.data.sport !== undefined) patch.sport = parsed.data.sport;
   if (parsed.data.battingStyle !== undefined) patch.battingStyle = parsed.data.battingStyle;
   if (parsed.data.defaultDailyPitchMax !== undefined)
     patch.defaultDailyPitchMax = parsed.data.defaultDailyPitchMax ?? null;

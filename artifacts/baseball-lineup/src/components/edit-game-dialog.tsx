@@ -45,7 +45,7 @@ export function EditGameDialog({
   onSaved: () => void;
 }) {
   const { toast } = useToast();
-  const { usesTournaments } = useTeamSettings();
+  const { usesTournaments, sportProfile } = useTeamSettings();
   const [opponent, setOpponent] = useState(game.opponent);
   const [gameDate, setGameDate] = useState(() => {
     const d = new Date(game.gameDate);
@@ -134,7 +134,7 @@ export function EditGameDialog({
               {([
                 { v: "none" as const, label: "Unspecified" },
                 { v: "league" as const, label: "League" },
-                ...(usesTournaments
+                ...(usesTournaments && sportProfile.features.tournaments
                   ? [{ v: "tournament" as const, label: "Tournament" }]
                   : []),
               ]).map((opt) => (

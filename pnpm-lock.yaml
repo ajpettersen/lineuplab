@@ -184,6 +184,9 @@ importers:
       '@workspace/integrations-openai-ai-server':
         specifier: workspace:*
         version: link:../../lib/integrations-openai-ai-server
+      '@workspace/sport-profiles':
+        specifier: workspace:*
+        version: link:../../lib/sport-profiles
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -399,6 +402,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/sport-profiles':
+        specifier: workspace:*
+        version: link:../../lib/sport-profiles
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -877,6 +883,8 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
+
+  lib/sport-profiles: {}
 
   scripts:
     devDependencies:

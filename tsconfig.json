@@ -7,6 +7,9 @@
       "path": "./lib/db"
     },
     {
+      "path": "./lib/sport-profiles"
+    },
+    {
       "path": "./lib/api-client-react"
     },
     {

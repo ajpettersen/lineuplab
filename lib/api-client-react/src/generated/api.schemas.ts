@@ -399,6 +399,20 @@ export interface RestTier {
 }
 
 /**
+ * Which sport this team coaches. Drives positions, period label
+(innings vs quarters), on-court count, and feature gating.
+Defaults to baseball.
+
+ */
+export type TeamSettingsSport =
+  (typeof TeamSettingsSport)[keyof typeof TeamSettingsSport];
+
+export const TeamSettingsSport = {
+  baseball: "baseball",
+  basketball: "basketball",
+} as const;
+
+/**
  * Continuous = every player on the roster bats. Nine-man = only the
 top 9 batters get a slot in the order.
 
@@ -425,6 +439,11 @@ export interface TeamSettings {
   userId: string;
   teamName: string;
   teamShortName: string;
+  /** Which sport this team coaches. Drives positions, period label
+(innings vs quarters), on-court count, and feature gating.
+Defaults to baseball.
+ */
+  sport?: TeamSettingsSport;
   /** Continuous = every player on the roster bats. Nine-man = only the
 top 9 batters get a slot in the order.
  */
@@ -498,6 +517,14 @@ is set.
   updatedAt: string;
 }
 
+export type UpdateTeamSettingsBodySport =
+  (typeof UpdateTeamSettingsBodySport)[keyof typeof UpdateTeamSettingsBodySport];
+
+export const UpdateTeamSettingsBodySport = {
+  baseball: "baseball",
+  basketball: "basketball",
+} as const;
+
 export type UpdateTeamSettingsBodyBattingStyle =
   (typeof UpdateTeamSettingsBodyBattingStyle)[keyof typeof UpdateTeamSettingsBodyBattingStyle];
 
@@ -539,6 +566,7 @@ export interface UpdateTeamSettingsBody {
    * @maxLength 20
    */
   teamShortName?: string;
+  sport?: UpdateTeamSettingsBodySport;
   battingStyle?: UpdateTeamSettingsBodyBattingStyle;
   /** @nullable */
   defaultDailyPitchMax?: number | null;

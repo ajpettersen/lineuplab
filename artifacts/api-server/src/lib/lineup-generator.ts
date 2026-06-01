@@ -66,6 +66,13 @@ export interface LineupConstraints {
    */
   fieldPositions?: readonly string[];
   /**
+   * Skip batting-order assignment entirely. Set for sports that don't bat
+   * (e.g. basketball), where the generator is used purely to distribute fair
+   * on-court time across periods. When true every returned entry gets
+   * `battingOrder: null` and the ordering logic below is bypassed.
+   */
+  skipBattingOrder?: boolean;
+  /**
    * Per-position depth chart, sourced from `team_settings.depthChart`.
    * Map shape: `{ "SS": [aliceId, bobId, carlosId], "2B": [...] }` — the
    * first id in each array is the coach's #1 at that position, second is
@@ -442,6 +449,12 @@ export function generateFairLineup(
     }
 
     results.push(...inningAssignments);
+  }
+
+  // Sports without a batting order (basketball) bail out here — the fair
+  // on-court distribution above is the whole point; there's no lineup to bat.
+  if (constraints.skipBattingOrder) {
+    return results.map((e) => ({ ...e, battingOrder: null }));
   }
 
   // Batting order — depends on gameType:

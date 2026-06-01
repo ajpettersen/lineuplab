@@ -40,6 +40,13 @@ pnpm generate # Orval codegen
 
 ## Architecture decisions
 
+### Multi-sport
+- **Per-team sport**: `team_settings.sport` (text, default `"baseball"`) selects the sport for the whole team. Existing teams stay baseball with zero behavior change — every fallback resolves to baseball.
+- **Single source of truth**: `@workspace/sport-profiles` (`lib/sport-profiles`) is the registry, imported by BOTH api-server and web. A profile carries `positions[{code,label,short,group}]`, `periodLabel`/`Plural`/`Short`, `defaultPeriods`, `onFieldCount`, `benchLabel`, `terms{lineupNoun,fieldNoun,timeByPositionLabel,generateLabel}`, and `features{pitching,battingOrder,boxScoreImport,tournaments,pitchCounts}`. `getSportProfile(sport)` falls back to baseball. Basketball v1 = PG/SG/SF/PF/C across quarters.
+- **Gating rule**: sport-specific surfaces gate on `sportProfile.features.*` — NOT hardcoded sport checks, and NOT only on existing flags like `usesTournaments` (which defaults `true`). Tournament game-type (new-game/edit-game), box-score import + display (game-detail), Arm Watch / Season Stats nav (layout), and pitch-counts/batting tabs all gate on the relevant feature flag. Deep-link/hash tab state (e.g. `#pitch-counts-card`) is guarded by a safety-net effect that resets to the always-present "defense"/lineup tab when the target tab is hidden.
+- **Fair rotation reuse**: `generateFairLineup` is sport-agnostic — basketball passes the 5 court positions as `fieldPositions` + `skipBattingOrder=true` + periods=quarters; pitcher exclusion only fires on a literal "P" (basketball has none).
+- **Onboarding**: a "What sport?" step (between Team identity and Team colors) persists `sport` via `PATCH /team-settings`.
+
 ### Core
 - **Multi-tenancy**: Data isolation per coach (`Clerk userId`) with `assertPermission` middleware gating write routes.
 - **Permission Tiers** (`team_memberships.permission`): `view < upload < partial < full` (linear rank). Owner row locked to `full`. Server enforces via `assertPermission(level)` (`lib/permissions.ts`); web hides write controls via `usePermission()`. `upload` is for a stat-keeper / "GameChanger" parent — read-only EXCEPT `/games/:id/box-score*`. **`role` (free-form display label) is decoupled from `permission` (what they can do).** Both inline-editable from the Coaches card.

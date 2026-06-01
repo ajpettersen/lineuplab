@@ -228,7 +228,7 @@ function NavGroupDropdown({
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { teamName, usesTournaments } = useTeamSettings();
+  const { teamName, usesTournaments, sportProfile } = useTeamSettings();
   const { signOut } = useClerk();
   const { user } = useUser();
   const { data: ctx } = useTeamContext();
@@ -356,7 +356,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         // selected) so old links keep working — we just don't show
         // it as its own nav item.
         { href: "/players", label: "Roster", icon: Users },
-        { href: "/arm-watch", label: "Arm Watch", icon: Shield },
+        // Arm Watch tracks pitcher rest/pitch counts — baseball-only.
+        ...(sportProfile.features.pitchCounts
+          ? [{ href: "/arm-watch", label: "Arm Watch", icon: Shield }]
+          : []),
       ],
     },
     {
@@ -365,10 +368,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       children: [
         { href: "/games", label: "Schedule", icon: CalendarDays },
         // Tournaments hidden when the team has flipped off the
-        // tournament feature flag in Settings → Defaults. Existing
-        // tournament games still render correctly elsewhere; this
+        // tournament feature flag in Settings → Defaults, or when the
+        // sport doesn't support tournament pitch rules (e.g. basketball).
+        // Existing tournament games still render correctly elsewhere; this
         // just removes the dedicated tournaments page from nav.
-        ...(usesTournaments
+        ...(usesTournaments && sportProfile.features.tournaments
           ? [{ href: "/tournaments", label: "Tournaments", icon: Trophy }]
           : []),
         { href: "/practices", label: "Practices", icon: Clipboard },
@@ -379,7 +383,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       icon: BarChart2,
       children: [
         { href: "/stats", label: "Rotation Report", icon: BarChart2 },
-        { href: "/season-stats", label: "Season Stats", icon: Activity },
+        // Season Stats surfaces batting/pitching box-score totals —
+        // baseball-only for now.
+        ...(sportProfile.features.boxScoreImport
+          ? [{ href: "/season-stats", label: "Season Stats", icon: Activity }]
+          : []),
       ],
     },
     // Settings as its own top-level tab — was previously a child of

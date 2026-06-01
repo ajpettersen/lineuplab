@@ -11,6 +11,7 @@ import {
   SaveLineupBody,
 } from "@workspace/api-zod";
 import { generateFairLineup, FIELD_POSITIONS } from "../lib/lineup-generator";
+import { getSportProfile, sportPositionCodes } from "@workspace/sport-profiles";
 import { getOwnedGame, filterOwnedPlayerIds } from "../lib/ownership";
 
 // Default 9-position list when team_settings.activeFieldPositions is missing
@@ -156,6 +157,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   const [teamSettingsRow] = await db
     .select({
       battingStyle: teamSettingsTable.battingStyle,
+      sport: teamSettingsTable.sport,
       activeFieldPositions: teamSettingsTable.activeFieldPositions,
       // Per-position depth chart — used as a soft bias by the lineup
       // generator. Scales inversely with the equity dial: in
@@ -170,11 +172,18 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     .where(eq(teamSettingsTable.userId, userId));
   const battingStyle: "continuous" | "nine_man" =
     teamSettingsRow?.battingStyle === "nine_man" ? "nine_man" : "continuous";
+  // Resolve the team's sport profile. For basketball the generator fills the
+  // five court positions (PG/SG/SF/PF/C) each PERIOD and skips the batting
+  // order entirely — it's purely a fair-minutes distribution across quarters.
+  const sportProfile = getSportProfile(teamSettingsRow?.sport);
+  const isBasketball = sportProfile.id === "basketball";
   // Use the team's chosen active positions (e.g. LCF+RCF instead of CF) when
   // present and non-empty; otherwise fall back to the standard 9 so a coach
-  // who never touched the toggle keeps the legacy behavior.
-  const activeFieldPositions: readonly string[] =
-    teamSettingsRow?.activeFieldPositions && teamSettingsRow.activeFieldPositions.length > 0
+  // who never touched the toggle keeps the legacy behavior. Basketball ignores
+  // the baseball activeFieldPositions and uses its profile's court positions.
+  const activeFieldPositions: readonly string[] = isBasketball
+    ? sportPositionCodes("basketball")
+    : teamSettingsRow?.activeFieldPositions && teamSettingsRow.activeFieldPositions.length > 0
       ? teamSettingsRow.activeFieldPositions
       : STANDARD_FIELD_POSITIONS;
 
@@ -189,6 +198,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       playerSeasonSLG: slgMap,
       battingStyle,
       fieldPositions: activeFieldPositions,
+      skipBattingOrder: isBasketball,
       depthChart:
         (teamSettingsRow?.depthChart as Record<string, number[]> | null | undefined) ?? undefined,
     },

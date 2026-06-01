@@ -34,6 +34,19 @@ import {
   useCreateInvite,
   type TeamInvite,
 } from "@/hooks/use-team-context";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  SPORT_IDS,
+  getSportProfile,
+  DEFAULT_SPORT,
+  type SportId,
+} from "@workspace/sport-profiles";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -66,6 +79,7 @@ type StepId =
   | "welcome"
   | "profile"
   | "team"
+  | "sport"
   | "colors"
   | "roster"
   | "invites"
@@ -75,6 +89,7 @@ const STEPS: { id: StepId; label: string }[] = [
   { id: "welcome", label: "Welcome" },
   { id: "profile", label: "About you" },
   { id: "team", label: "Team identity" },
+  { id: "sport", label: "Sport" },
   { id: "colors", label: "Team colors" },
   { id: "roster", label: "Roster" },
   { id: "invites", label: "Invite coaches" },
@@ -124,6 +139,7 @@ export default function Onboarding() {
   const [role, setRole] = useState("Head Coach");
   const [teamName, setTeamName] = useState("");
   const [teamShortName, setTeamShortName] = useState("");
+  const [sport, setSport] = useState<SportId>(DEFAULT_SPORT);
   const [primaryColor, setPrimaryColor] = useState(APP_DEFAULT_PRIMARY);
   const [secondaryColor, setSecondaryColor] = useState(APP_DEFAULT_SECONDARY);
   const [rosterText, setRosterText] = useState("");
@@ -154,6 +170,9 @@ export default function Onboarding() {
     if (settings.primaryColor) setPrimaryColor((c) => settings.primaryColor ?? c);
     if (settings.secondaryColor)
       setSecondaryColor((c) => settings.secondaryColor ?? c);
+    if (settings.sport === "basketball" || settings.sport === "baseball") {
+      setSport(settings.sport);
+    }
   }, [settings]);
 
   // Auto-fill short name from team name when the coach hasn't typed one.
@@ -195,6 +214,12 @@ export default function Onboarding() {
               teamName: teamName.trim(),
               teamShortName: teamShortName.trim(),
             },
+          });
+          await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
+          return true;
+        case "sport":
+          await updateSettings.mutateAsync({
+            data: { sport },
           });
           await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
           return true;
@@ -378,6 +403,9 @@ export default function Onboarding() {
               setTeamName={setTeamName}
               setTeamShortName={setTeamShortName}
             />
+          )}
+          {step.id === "sport" && (
+            <SportStep sport={sport} setSport={setSport} />
           )}
           {step.id === "colors" && (
             <ColorsStep
@@ -603,6 +631,46 @@ function TeamStep({
           />
           <p className="text-xs text-muted-foreground">
             Up to 20 characters. We'll auto-fill from the full name as you type.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SportStep({
+  sport,
+  setSport,
+}: {
+  sport: SportId;
+  setSport: (s: SportId) => void;
+}) {
+  const profile = getSportProfile(sport);
+  return (
+    <div>
+      <StepHeader
+        icon={ListChecks}
+        title="What sport does this team play?"
+        body="This tailors positions, period labels, and which features show up. You can change it later in Settings."
+      />
+      <div className="mx-auto grid max-w-md gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="onb-sport">Sport</Label>
+          <Select value={sport} onValueChange={(v) => setSport(v as SportId)}>
+            <SelectTrigger id="onb-sport" data-testid="select-onboarding-sport">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPORT_IDS.map((id) => (
+                <SelectItem key={id} value={id} data-testid={`option-onboarding-sport-${id}`}>
+                  {getSportProfile(id).label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {profile.positions.map((p) => p.code).join(" · ")} · {profile.defaultPeriods}{" "}
+            {profile.periodLabelPlural.toLowerCase()}
           </p>
         </div>
       </div>
