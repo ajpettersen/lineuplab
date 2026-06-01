@@ -1,1 +1,2 @@
 - [PWA white-screen on boot](pwa-white-screen-boot.md) — empty #root + lazy/Clerk/IDB boot = blank first paint; needs inline splash + chunk-error reload + cache cleanup.
+- [date-fns format render crash](date-fns-render-crash.md) — `format(new Date(x))` on null/invalid date throws in render → ErrorBoundary blanks whole page; use a safe-format wrapper.

@@ -140,6 +140,27 @@ function positionColor(pos: string) {
   return colors[pos] ?? "bg-muted text-muted-foreground border border-border";
 }
 
+/**
+ * Crash-safe wrapper around date-fns `format`. `format(new Date(x), …)`
+ * throws "Invalid time value" the moment `x` is null, empty, or a
+ * malformed date string — and because that happens during render, a
+ * single bad row would take the WHOLE game-detail page down into the
+ * ErrorBoundary ("Something went wrong / Reload page"). That's exactly
+ * the "clicking into a game sometimes errors and makes me reload"
+ * symptom coaches reported. Parse defensively and return a label
+ * instead of throwing so one bad date can't blank the page.
+ */
+function safeFormatDate(
+  value: string | number | Date | null | undefined,
+  fmt: string,
+  fallback = "Date TBD",
+): string {
+  if (value == null) return fallback;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return format(d, fmt);
+}
+
 export default function GameDetail() {
   const [, params] = useRoute("/games/:id");
   const id = parseInt(params?.id ?? "0");
@@ -2374,7 +2395,7 @@ export default function GameDetail() {
               <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1">
                   <CalendarDays className="h-3.5 w-3.5" />
-                  {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")}
+                  {safeFormatDate(game.gameDate, "EEEE, MMMM d, yyyy · h:mm a")}
                 </span>
                 {game.location && (
                   <span className="flex items-center gap-1">
@@ -2645,7 +2666,7 @@ export default function GameDetail() {
       {game.gameType === "tournament" &&
         tournamentForCallout.data &&
         (() => {
-          const items = tournamentForCallout.data.pitcherAvailability
+          const items = (tournamentForCallout.data.pitcherAvailability ?? [])
             .filter((p) => {
               if (p.restingUntil) return true;
               if (p.pitchesAvailableToday == null) return false;
@@ -2693,9 +2714,10 @@ export default function GameDetail() {
                             <span>
                               {" "}
                               — resting until{" "}
-                              {format(
-                                new Date(p.restingUntil.availableOn),
+                              {safeFormatDate(
+                                p.restingUntil.availableOn,
                                 "EEE M/d",
+                                "soon",
                               )}
                             </span>
                           ) : (
@@ -2765,7 +2787,7 @@ export default function GameDetail() {
             {formatOpponentForMatchup(game.opponent, teamName) || game.opponent}
           </div>
           <div className="print-subtitle">
-            {format(new Date(game.gameDate), "EEEE, MMMM d, yyyy · h:mm a")}
+            {safeFormatDate(game.gameDate, "EEEE, MMMM d, yyyy · h:mm a")}
             {" · "}
             {innings} innings
             {game.gameType === "tournament" && " · Tournament"}
@@ -4100,7 +4122,7 @@ export default function GameDetail() {
                         })()}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                        <span>{format(new Date(g.gameDate), "EEE, MMM d, yyyy")}</span>
+                        <span>{safeFormatDate(g.gameDate, "EEE, MMM d, yyyy")}</span>
                         <span>{g.innings} innings{inningMismatch && ` (yours: ${game?.innings})`}</span>
                         {copyApplyingId === g.id && <span className="text-primary">Loading…</span>}
                       </div>
