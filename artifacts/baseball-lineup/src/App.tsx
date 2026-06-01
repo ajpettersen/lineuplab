@@ -54,6 +54,7 @@ const Stats = lazy(() => import("@/pages/stats"));
 const SeasonStats = lazy(() => import("@/pages/season-stats"));
 const ArmWatch = lazy(() => import("@/pages/arm-watch"));
 const Settings = lazy(() => import("@/pages/settings"));
+const Help = lazy(() => import("@/pages/help"));
 // /depth-chart now mounts the combined Roster+Depth Chart page (it
 // detects the path and opens to the Depth Chart tab). Keeps old
 // bookmarks + the nav link working without a separate component.
@@ -478,6 +479,7 @@ function ProtectedApp() {
                 </Route>
                 <Route path="/depth-chart" component={DepthChart} />
                 <Route path="/settings" component={Settings} />
+                <Route path="/help" component={Help} />
                 {/* Master-admin only — server-side `requireMasterAdmin`
                     middleware 403s the underlying APIs for non-admins,
                     and the page itself shows an "access denied" panel.

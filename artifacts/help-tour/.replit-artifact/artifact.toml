@@ -1,0 +1,31 @@
+kind = "video"
+previewPath = "/help-tour/"
+title = "Lineup Lab Quick Tour"
+version = "1.0.0"
+id = "artifacts/help-tour"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/help-tour/" ]
+localPort = 21922
+
+[services.development]
+run = "pnpm --filter @workspace/help-tour run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/help-tour", "run", "build" ]
+publicDir = "artifacts/help-tour/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21922"
+BASE_PATH = "/help-tour/"

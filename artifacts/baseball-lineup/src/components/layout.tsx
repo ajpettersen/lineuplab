@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreHorizontal,
+  LifeBuoy,
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
@@ -387,6 +388,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
     // top-bar nav handles overflow if the tab strip wraps on narrow
     // laptops, so promoting it back to top-level is safe.
     { href: "/settings", label: "Settings", icon: SettingsIcon },
+    // Help / FAQ + Quick Tour video — its own top-level tab so a
+    // brand-new coach can always find "how do I do X?" in one click.
+    { href: "/help", label: "Help", icon: LifeBuoy },
     // Master-admin-only: tucked at the end so it doesn't visually
     // dominate for users who'll never see it.
     ...(isMasterAdmin

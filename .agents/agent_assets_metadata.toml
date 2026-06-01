@@ -1,8 +1,43 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "7NkF884R5ClEUXGhdXaaU"
 uri = "file://attached_assets/generated_images/lineup-lab-icon.png"
 type = "image"
 title = "lineup lab app icon"
+
+[[outputs]]
+id = "RAXam5pnKXz3K4vpPRquo"
+uri = "file://artifacts/help-tour/public/images/baseball-field.jpg"
+type = "image"
+title = "youth baseball field at sunset"
+
+[[outputs]]
+id = "fsXAhQ2G14gqqshAdqZNo"
+uri = "file://artifacts/help-tour/public/images/clipboard.jpg"
+type = "image"
+title = "baseball coach clipboard"
+
+[[outputs]]
+id = "a1DmZw86mfyuMgd4y94kz"
+uri = "file://artifacts/help-tour/public/images/home-plate.jpg"
+type = "image"
+title = "baseball home plate close up"
+
+[[outputs]]
+id = "dcZ09qRfyNUgyMedwrP1i"
+uri = "file://artifacts/help-tour/public/images/lights.jpg"
+type = "image"
+title = "baseball stadium lights"
+
+[[outputs]]
+id = "7skO3ZaR-YcUHnydoOmE1"
+uri = "file://artifacts/help-tour/public/images/dugout.jpg"
+type = "image"
+title = "youth baseball dugout"
+
+[[outputs]]
+id = "TA-oY8LfHk36dWEcJXE1m"
+uri = "file://artifacts/help-tour/public/audio/bg_music.mp3"
+type = "audio"
+title = "background music"
