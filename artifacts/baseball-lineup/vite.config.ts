@@ -63,7 +63,7 @@ export default defineConfig({
         // Don't intercept /api at all (see comment above) and keep
         // Clerk's auth flow exclusively on the network so login
         // never gets served a stale page.
-        navigateFallbackDenylist: [/^\/api\//, /^\/sign-in/, /^\/sign-up/, /^\/promo-video\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/sign-in/, /^\/sign-up/, /^\/promo-video\//, /^\/help-tour\//],
         // Bump the precache size cap so larger JS chunks (recharts,
         // dnd-kit) don't get silently skipped.
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
