@@ -1,0 +1,1 @@
+- [PWA white-screen on boot](pwa-white-screen-boot.md) — empty #root + lazy/Clerk/IDB boot = blank first paint; needs inline splash + chunk-error reload + cache cleanup.

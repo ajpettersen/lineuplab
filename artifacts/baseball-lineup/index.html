@@ -64,7 +64,51 @@
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Instant boot splash. The app's real UI doesn't paint until the
+         JS bundle downloads, React mounts, Clerk does its network
+         handshake, and the IndexedDB query cache rehydrates — several
+         seconds on a phone or a cold cache. Without anything in #root
+         the user stares at a pure white screen the whole time. This
+         inline markup (no external CSS/JS, so it renders on the very
+         first paint) shows a branded spinner immediately. createRoot's
+         render() replaces #root's children, so the splash vanishes the
+         moment the React tree mounts — no teardown code needed. Colors
+         are hard-coded from the theme tokens (--background 215 30% 98%,
+         --primary 220 85% 22%) so there's no light→dark flash when the
+         app takes over. prefers-reduced-motion stops the spin. -->
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: hsl(215 30% 98%);
+      }
+      #boot-splash .boot-spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid hsl(220 85% 22% / 0.2);
+        border-top-color: hsl(220 85% 22%);
+        border-radius: 9999px;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash .boot-spinner {
+          animation: none;
+        }
+      }
+    </style>
+    <div id="root">
+      <div id="boot-splash" role="status" aria-label="Loading Lineup Lab">
+        <div class="boot-spinner"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

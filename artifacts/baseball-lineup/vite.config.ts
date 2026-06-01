@@ -44,6 +44,14 @@ export default defineConfig({
       registerType: "autoUpdate",
       injectRegister: "auto",
       workbox: {
+        // Purge precache entries from prior deploys when a new SW
+        // activates. Without this, every publish layers another full
+        // app-shell precache into CacheStorage and stale revisions can
+        // linger, which both bloats the cache and risks serving a
+        // mismatched asset after an update. autoUpdate already does
+        // skipWaiting + clientsClaim; this rounds out the "always boot
+        // the freshest shell" story.
+        cleanupOutdatedCaches: true,
         // Pull in our custom Web Push handler (push + notificationclick)
         // INSIDE the Workbox-generated SW. Path is resolved against the
         // SW's base URL — files in `public/` end up at the site root,
