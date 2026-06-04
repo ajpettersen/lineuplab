@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import { Check, ChevronDown, LogOut, Users } from "lucide-react";
 import {
   DropdownMenu,
@@ -28,12 +29,28 @@ export function TeamSwitcher({ className }: { className?: string }) {
   const { data: ctx, isLoading } = useTeamContext();
   const switchTeam = useSwitchTeam();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   if (isLoading || !ctx) return null;
 
+  const viewingForeignAsAdmin =
+    ctx.currentUser.isMasterAdmin &&
+    ctx.activeOwnerUserId !== ctx.ownedTeam.ownerUserId &&
+    !ctx.memberOf.some((t) => t.ownerUserId === ctx.activeOwnerUserId);
+
   const handleSwitch = (ownerUserId: string) => {
     if (ownerUserId === ctx.activeOwnerUserId) return;
+    // When the admin is leaving a "view as this team" session, also
+    // navigate home in the same click. Otherwise they'd stay parked on
+    // whatever route they were on (often an /admin page or a foreign
+    // team's deep link) and need a SECOND click to actually get out of
+    // the team they were inspecting. Mirrors "View as this team", which
+    // routes to "/" on entry.
+    const leavingForeignAdminView = viewingForeignAsAdmin;
     switchTeam.mutate(ownerUserId, {
+      onSuccess: () => {
+        if (leavingForeignAdminView) setLocation("/");
+      },
       onError: (err) => {
         toast({
           title: "Couldn't switch teams",
@@ -43,11 +60,6 @@ export function TeamSwitcher({ className }: { className?: string }) {
       },
     });
   };
-
-  const viewingForeignAsAdmin =
-    ctx.currentUser.isMasterAdmin &&
-    ctx.activeOwnerUserId !== ctx.ownedTeam.ownerUserId &&
-    !ctx.memberOf.some((t) => t.ownerUserId === ctx.activeOwnerUserId);
 
   // Admin-bypass case: show a one-click "return to my team" button.
   if (viewingForeignAsAdmin && ctx.memberOf.length === 0) {
