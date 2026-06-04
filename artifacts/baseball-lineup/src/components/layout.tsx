@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Home,
@@ -39,14 +39,27 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TeamSwitcher } from "@/components/team-switcher";
-import { CoachProfilePrompt } from "@/components/coach-profile-prompt";
 import { TeamThemeApplier } from "@/components/team-theme-applier";
 import { SyncStatusChip } from "@/components/sync-status-chip";
-import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
 import { useAdminMe } from "@/hooks/use-admin";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
+import { prefetchRoute } from "@/lib/route-prefetch";
+
+// These two only render conditionally (a one-time profile modal and an
+// iOS "add to home screen" nudge) and never on first paint, so we keep
+// them out of the shell's critical bundle and load them lazily.
+const CoachProfilePrompt = lazy(() =>
+  import("@/components/coach-profile-prompt").then((m) => ({
+    default: m.CoachProfilePrompt,
+  })),
+);
+const InstallPwaPrompt = lazy(() =>
+  import("@/components/install-pwa-prompt").then((m) => ({
+    default: m.InstallPwaPrompt,
+  })),
+);
 
 type NavLeaf = { href: string; label: string; icon: typeof Home };
 type NavGroup = { label: string; icon: typeof Home; children: NavLeaf[] };
@@ -207,6 +220,9 @@ function NavGroupDropdown({
               <Link
                 href={child.href}
                 data-testid={`link-nav-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
+                onMouseEnter={() => prefetchRoute(child.href)}
+                onFocus={() => prefetchRoute(child.href)}
+                onTouchStart={() => prefetchRoute(child.href)}
                 onClick={() => {
                   cancelClose();
                   setOpen(false);
@@ -496,6 +512,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                               key={child.href}
                               href={child.href}
                               data-testid={`link-nav-mobile-${child.label.toLowerCase().replace(/\s+/g, "-")}`}
+                              onTouchStart={() => prefetchRoute(child.href)}
                               onClick={() => setMobileNavOpen(false)}
                               className={`flex items-center gap-3 rounded-md px-3 py-2 font-broadcast uppercase tracking-[0.12em] text-sm transition-all ${
                                 isActive
@@ -518,6 +535,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     data-testid={`link-nav-mobile-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                    onTouchStart={() => prefetchRoute(item.href)}
                     onClick={() => setMobileNavOpen(false)}
                     className={`flex items-center gap-3 rounded-md px-3 py-2.5 font-broadcast uppercase tracking-[0.12em] text-sm transition-all ${
                       isActive
@@ -647,7 +665,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   data-testid={`link-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  onMouseEnter={() => dispatchNavHover(null)}
+                  onMouseEnter={() => {
+                    dispatchNavHover(null);
+                    prefetchRoute(item.href);
+                  }}
+                  onFocus={() => prefetchRoute(item.href)}
+                  onTouchStart={() => prefetchRoute(item.href)}
                   className={`relative shrink-0 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
                     isActive
                       ? "text-primary-foreground bg-white/10"
@@ -797,6 +820,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 key={href}
                 href={href}
                 data-testid={`link-tabbar-${label.toLowerCase()}`}
+                onTouchStart={() => prefetchRoute(href)}
                 className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-broadcast uppercase tracking-[0.12em] transition-colors ${
                   active
                     ? "text-primary-foreground"
@@ -824,15 +848,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       {/* First-time onboarding modal — auto-opens once per (user, team)
-          when the coach hasn't filled in their per-team displayName yet. */}
-      <CoachProfilePrompt />
+          when the coach hasn't filled in their per-team displayName yet.
+          Lazy + Suspense(null): not needed for first paint, so it stays
+          out of the shell's critical bundle. */}
+      <Suspense fallback={null}>
+        <CoachProfilePrompt />
+      </Suspense>
       {/* Inject per-team primary/secondary CSS variables on the html
           element so the brand follows the active team. */}
       <TeamThemeApplier />
       {/* iOS-only nudge to "Add to Home Screen" so the app installs
           as a PWA — required for the service worker to keep the page
-          available with no wifi at the field. */}
-      <InstallPwaPrompt />
+          available with no wifi at the field. Lazy-loaded; only ever
+          renders on iOS Safari outside an installed PWA. */}
+      <Suspense fallback={null}>
+        <InstallPwaPrompt />
+      </Suspense>
     </div>
   );
 }

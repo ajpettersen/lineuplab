@@ -85,14 +85,14 @@ type StepId =
   | "invites"
   | "tour";
 
-const STEPS: { id: StepId; label: string }[] = [
+const STEPS: { id: StepId; label: string; optional?: boolean }[] = [
   { id: "welcome", label: "Welcome" },
   { id: "profile", label: "About you" },
   { id: "team", label: "Team identity" },
-  { id: "sport", label: "Sport" },
-  { id: "colors", label: "Team colors" },
-  { id: "roster", label: "Roster" },
-  { id: "invites", label: "Invite coaches" },
+  { id: "sport", label: "Sport", optional: true },
+  { id: "colors", label: "Team colors", optional: true },
+  { id: "roster", label: "Roster", optional: true },
+  { id: "invites", label: "Invite coaches", optional: true },
   { id: "tour", label: "Quick tour" },
 ];
 
@@ -190,9 +190,10 @@ export default function Onboarding() {
       case "profile":
         return displayName.trim().length >= 2;
       case "team":
-        return (
-          teamName.trim().length >= 2 && teamShortName.trim().length >= 1
-        );
+        // Only the full team name is required — the short name is
+        // auto-derived (see effect above) and we fall back to it on
+        // save, so we don't block a coach who cleared the short field.
+        return teamName.trim().length >= 2;
       default:
         return true;
     }
@@ -208,15 +209,23 @@ export default function Onboarding() {
             role: role.trim() || null,
           });
           return true;
-        case "team":
+        case "team": {
+          // Fall back to a derived short name if the coach cleared it —
+          // the team gate only requires the full name now.
+          const trimmedName = teamName.trim();
+          const shortName =
+            teamShortName.trim() ||
+            trimmedName.split(/\s+/).slice(-1)[0]?.slice(0, 20) ||
+            trimmedName.slice(0, 20);
           await updateSettings.mutateAsync({
             data: {
-              teamName: teamName.trim(),
-              teamShortName: teamShortName.trim(),
+              teamName: trimmedName,
+              teamShortName: shortName,
             },
           });
           await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
           return true;
+        }
         case "sport":
           await updateSettings.mutateAsync({
             data: { sport },
@@ -356,6 +365,11 @@ export default function Onboarding() {
           <div className="flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <span data-testid="text-step-label">
               Step {stepIdx + 1} of {STEPS.length} · {step.label}
+              {step.optional && (
+                <span className="ml-1.5 text-muted-foreground/70 normal-case">
+                  (optional)
+                </span>
+              )}
             </span>
             <div className="flex items-center gap-3">
               <span>{Math.round(((stepIdx + 1) / STEPS.length) * 100)}%</span>
@@ -802,7 +816,7 @@ function RosterStep({
       <StepHeader
         icon={ListChecks}
         title="Add your roster"
-        body="One player per line — first and last name. You can also skip this and bulk-import from a screenshot later on the Players page."
+        body="One player per line — a first name is plenty; add a last name if you have it. You can also skip this and bulk-import from a screenshot later on the Players page."
       />
       <div className="mx-auto max-w-md space-y-3">
         <Textarea

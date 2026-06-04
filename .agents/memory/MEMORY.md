@@ -1,4 +1,5 @@
 - [PWA white-screen on boot](pwa-white-screen-boot.md) — empty #root + lazy/Clerk/IDB boot = blank first paint; needs inline splash + chunk-error reload + cache cleanup.
 - [date-fns format render crash](date-fns-render-crash.md) — `format(new Date(x))` on null/invalid date throws in render → ErrorBoundary blanks whole page; use a safe-format wrapper.
+- [Load perf is boot/shell, not code-splitting](load-perf-is-boot-not-splitting.md) — routes already lazy + vendors already split; "slow load" = Clerk/IndexedDB boot. Fix with intent prefetch + lazy non-first-paint shell.
 - [Multi-sport architecture](multi-sport-architecture.md) — per-team `team_settings.sport`; gate sport-specific surfaces on `sportProfile.features.*` (NOT hardcoded sport / `usesTournaments`); `@workspace/sport-profiles` is the registry.
 - [PWA hijacks embedded iframes](pwa-iframe-artifact-denylist.md) — embedding an artifact via iframe needs its path on baseball-lineup's `navigateFallbackDenylist` or the SW serves index.html into the frame (prod-only).
