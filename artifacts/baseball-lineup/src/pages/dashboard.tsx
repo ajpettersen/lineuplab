@@ -631,6 +631,21 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {t.type === "score" && t.gameId != null && (
+                // One-tap "enter the final score" — drops the coach
+                // straight into the score-entry dialog on the game page
+                // (via `?complete=1`) so the missing score is the first
+                // thing they see.
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-8"
+                  onClick={() => navigate(`/games/${t.gameId}?complete=1`)}
+                  data-testid={`button-task-score-${t.id}`}
+                >
+                  Score it
+                </Button>
+              )}
               {t.type === "box_score" && (
                 // One-tap import — opens the existing GameChanger dialog
                 // right here on the dashboard so a coach finishing a game

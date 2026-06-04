@@ -381,19 +381,30 @@ export default function GameDetail() {
   // coaches who want the season-pacing view.
   const [mobileDefenseView, setMobileDefenseView] = useState<"single" | "all">("single");
   const [mobileActiveInning, setMobileActiveInning] = useState(1);
-  const [completeOpen, setCompleteOpen] = useState(false);
-  // Box score dialog. Auto-opens on arrival when the URL carries
-  // `?openBoxScore=1` so that the field-display "End game" flow can
-  // drop the coach straight into the upload screen on the way out.
-  // We only honor the flag once on first mount — subsequent renders
-  // (e.g. closing the dialog) shouldn't re-trigger it. The query
-  // string is left in place; it's harmless and lets the coach refresh
-  // back into the same state.
+  // Auto-opens on arrival when the URL carries `?complete=1` so the
+  // dashboard "Score it" task can drop the coach straight into the
+  // final-score entry dialog for a game missing its score.
+  const [completeOpen, setCompleteOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("complete") === "1";
+  });
   const [editGameOpen, setEditGameOpen] = useState(false);
   const [depthChartOpen, setDepthChartOpen] = useState(false);
-  const [boxScoreOpen, setBoxScoreOpen] = useState(() => {
+  const [boxScoreOpen, setBoxScoreOpen] = useState(false);
+  // Box-score offer. On arrival from the field-display "Mark complete &
+  // finish" flow (`?openBoxScore=1`) we no longer drop the coach straight
+  // into the upload screen — instead we ASK first whether they want to
+  // load a box score for pitch counting + batting stats. "Yes" opens the
+  // importer; "No" just dismisses. We only honor the flag once on first
+  // mount so closing the prompt (or the importer) doesn't re-trigger it.
+  // The query string is left in place; it's harmless.
+  const [boxScorePromptOpen, setBoxScorePromptOpen] = useState(() => {
     if (typeof window === "undefined") return false;
-    return new URLSearchParams(window.location.search).get("openBoxScore") === "1";
+    const params = new URLSearchParams(window.location.search);
+    // Score entry takes precedence — if both deep-link params somehow
+    // arrive together, don't stack two modals on mount.
+    if (params.get("complete") === "1") return false;
+    return params.get("openBoxScore") === "1";
   });
   // "Game ended early" flow — coach picks the last inning that was actually
   // played (e.g. 10-run rule) and the server trims the game length plus any
@@ -4659,6 +4670,44 @@ export default function GameDetail() {
           <DepthChartReference topN={3} />
         </DialogContent>
       </Dialog>
+
+      {/* Box-score offer. Arriving from the field-display "Mark complete &
+          finish" flow asks first instead of auto-opening the importer, so
+          coaches who don't track box scores aren't forced through it. */}
+      {sportProfile.features.boxScoreImport && (
+        <AlertDialog
+          open={boxScorePromptOpen}
+          onOpenChange={(o) => !o && setBoxScorePromptOpen(false)}
+        >
+          <AlertDialogContent data-testid="dialog-box-score-offer">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Load a box score for this game?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Do you want to load a box score in for this game for pitch
+                counting and batting statistics? You can always import one
+                later from the game page.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => setBoxScorePromptOpen(false)}
+                data-testid="button-box-score-offer-no"
+              >
+                No, not now
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setBoxScorePromptOpen(false);
+                  setBoxScoreOpen(true);
+                }}
+                data-testid="button-box-score-offer-yes"
+              >
+                Yes, load box score
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {boxScoreOpen && (
         <BoxScoreImportDialog
