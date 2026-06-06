@@ -475,13 +475,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <SheetDescription className="sr-only">
               Main navigation for {displayTeamName}
             </SheetDescription>
-            <div className="flex h-16 items-center border-b-2 border-accent/80 px-4 gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.15)]">
+            <div className="flex min-h-16 items-center border-b-2 border-accent/80 px-4 py-3 gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent shadow-[0_0_0_2px_rgba(0,0,0,0.15)]">
                 <Shield className="h-5 w-5 text-primary" />
               </div>
-              <div className="flex flex-col leading-tight">
+              <div className="flex min-w-0 flex-col leading-tight">
                 <span
-                  className="text-lg font-bold text-sidebar-foreground font-broadcast uppercase tracking-wide"
+                  className="text-lg font-bold text-sidebar-foreground font-broadcast uppercase tracking-wide leading-tight"
                   data-testid="text-team-name-mobile"
                 >
                   {displayTeamName}
