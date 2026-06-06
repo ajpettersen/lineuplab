@@ -405,9 +405,9 @@ function ImportRosterDialog({
               position; preferred just biases the lineup generator.
             </p>
 
-            <div className="border rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
+            <div className="sm:border sm:rounded-md sm:overflow-hidden">
+              <table className="w-full text-sm block sm:table">
+                <thead className="bg-muted/50 hidden sm:table-header-group">
                   <tr className="text-left">
                     <th className="p-2 w-10"></th>
                     <th className="p-2">Name</th>
@@ -419,17 +419,27 @@ function ImportRosterDialog({
                     <th className="p-2 w-8"></th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="block sm:table-row-group">
                   {extracted.map((row, i) => (
-                    <tr key={i} className={`border-t ${row.include ? "" : "opacity-40"}`} data-testid={`row-extracted-${i}`}>
-                      <td className="p-2 align-top">
-                        <Checkbox
-                          checked={row.include}
-                          onCheckedChange={(v) => updateRow(i, { include: !!v })}
-                          data-testid={`checkbox-include-${i}`}
-                        />
+                    <tr
+                      key={i}
+                      className={`relative block rounded-md border p-3 mb-3 sm:table-row sm:rounded-none sm:border-0 sm:border-t sm:p-0 sm:mb-0 ${row.include ? "" : "opacity-40"}`}
+                      data-testid={`row-extracted-${i}`}
+                    >
+                      <td className="block p-0 align-top sm:table-cell sm:p-2">
+                        <label className="flex items-center gap-2">
+                          <Checkbox
+                            checked={row.include}
+                            onCheckedChange={(v) => updateRow(i, { include: !!v })}
+                            data-testid={`checkbox-include-${i}`}
+                          />
+                          <span className="text-xs font-medium text-muted-foreground sm:hidden">
+                            Include in import
+                          </span>
+                        </label>
                       </td>
-                      <td className="p-2 align-top">
+                      <td className="block p-0 pt-3 align-top sm:table-cell sm:p-2 sm:pt-2">
+                        <span className="mb-1 block text-xs font-medium text-muted-foreground sm:hidden">Name</span>
                         <Input
                           value={row.name}
                           onChange={(e) => updateRow(i, { name: e.target.value })}
@@ -448,7 +458,8 @@ function ImportRosterDialog({
                           <p className="text-xs text-muted-foreground mt-1 italic">{row.notes}</p>
                         )}
                       </td>
-                      <td className="p-2 align-top">
+                      <td className="block p-0 pt-3 align-top sm:table-cell sm:p-2 sm:pt-2">
+                        <span className="mb-1 block text-xs font-medium text-muted-foreground sm:hidden">Number</span>
                         <Input
                           type="number"
                           value={row.number ?? ""}
@@ -457,11 +468,12 @@ function ImportRosterDialog({
                               number: e.target.value === "" ? null : parseInt(e.target.value),
                             })
                           }
-                          className="h-8"
+                          className="h-8 w-24 sm:w-full"
                           data-testid={`input-number-${i}`}
                         />
                       </td>
-                      <td className="p-2 align-top">
+                      <td className="block p-0 pt-3 align-top sm:table-cell sm:p-2 sm:pt-2">
+                        <span className="mb-1 block text-xs font-medium text-muted-foreground sm:hidden">Preferred positions</span>
                         <div className="flex flex-wrap items-center gap-1">
                           {(() => {
                             const allSelected =
@@ -508,15 +520,20 @@ function ImportRosterDialog({
                         </div>
                       </td>
                       {showPitching && (
-                      <td className="p-2 align-top text-center">
-                        <Checkbox
-                          checked={row.canPitch}
-                          onCheckedChange={(v) => updateRow(i, { canPitch: !!v })}
-                          data-testid={`checkbox-pitch-${i}`}
-                        />
+                      <td className="block p-0 pt-3 align-top sm:table-cell sm:p-2 sm:text-center">
+                        <label className="flex items-center gap-2 sm:justify-center">
+                          <Checkbox
+                            checked={row.canPitch}
+                            onCheckedChange={(v) => updateRow(i, { canPitch: !!v })}
+                            data-testid={`checkbox-pitch-${i}`}
+                          />
+                          <span className="text-xs font-medium text-muted-foreground sm:hidden">
+                            Can pitch
+                          </span>
+                        </label>
                       </td>
                       )}
-                      <td className="p-2 align-top">
+                      <td className="absolute right-2 top-2 block p-0 align-top sm:static sm:table-cell sm:p-2">
                         <button
                           type="button"
                           onClick={() => setExtracted((prev) => prev?.filter((_, j) => j !== i) ?? null)}

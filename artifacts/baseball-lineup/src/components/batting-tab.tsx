@@ -342,7 +342,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
           <ScrollX>
             <table className="w-full text-xs">
               <thead><tr className="border-b border-yellow-300">
-                <th className="text-left py-1 pr-3">Player</th>
+                <th className="text-left py-1 pr-3 sticky left-0 z-20 bg-yellow-50 border-r border-yellow-200">Player</th>
                 {COLS.map((c) => (
                   <th
                     key={c.statKey}
@@ -358,7 +358,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                   const livePA = computePA(row);
                   return (
                     <tr key={i} className="border-b border-yellow-100">
-                      <td className="py-1 pr-3 font-medium">{row.playerName}</td>
+                      <td className="py-1 pr-3 font-medium sticky left-0 z-10 bg-yellow-50 border-r border-yellow-200">{row.playerName}</td>
                       {COLS.map((c) => {
                         if (c.editKey) {
                           return (
@@ -407,7 +407,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Player</th>
+                  <th className="text-left py-2 pr-4 font-medium text-muted-foreground sticky left-0 z-20 bg-card border-r border-border">Player</th>
                   {COLS.map((c) => (
                     <th
                       key={c.statKey}
@@ -435,7 +435,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                     const livePA = computePA(editData);
                     return (
                       <tr key={p.id} className="border-b border-border/50 bg-primary/5">
-                        <td className="py-2 pr-4 font-medium">{p.name}</td>
+                        <td className="py-2 pr-4 font-medium sticky left-0 z-10 bg-card border-r border-border">{p.name}</td>
                         {COLS.map((c) => {
                           if (c.editKey) {
                             return (
@@ -477,7 +477,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                   const pa = computePA(s);
                   return (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30">
-                      <td className="py-2.5 pr-4">
+                      <td className="py-2.5 pr-4 sticky left-0 z-10 bg-card border-r border-border">
                         <button
                           type="button"
                           onClick={() => setLogPlayerId(p.id)}
