@@ -2922,7 +2922,7 @@ export default function GameDetail() {
             don't have to re-mount when the coach toggles between tabs. */}
         <TabsContent value="defense" forceMount className="mt-3 data-[state=inactive]:hidden">
       <Card data-testid="card-defensive-lineup">
-        <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
+        <CardHeader className="flex-row items-start justify-between space-y-0 gap-3 p-4 sm:p-6">
           <div>
             <CardTitle className="text-base">
               {displayLineup.length > 0 ? "Defensive Lineup" : "No Lineup Yet"}
@@ -2972,8 +2972,8 @@ export default function GameDetail() {
                 className="no-print"
                 title="Open the live dugout / fence-iPad display for this game (auto-updates)"
               >
-                <Tv className="h-4 w-4 mr-1.5" />
-                Field Display
+                <Tv className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Field Display</span>
               </Button>
               {/* Single Export menu — replaces the prior pair of "Copy
                   for Sheets" + "Print" buttons. Same actions, half the
@@ -2987,8 +2987,8 @@ export default function GameDetail() {
                     className="no-print"
                     title="Copy the lineup to your clipboard or print this card"
                   >
-                    <Upload className="h-4 w-4 mr-1.5" />
-                    Export
+                    <Upload className="h-4 w-4 sm:mr-1.5" />
+                    <span className="hidden sm:inline">Export</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -3016,7 +3016,7 @@ export default function GameDetail() {
             </div>
           )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
           {lineupLoading ? (
             <div className="h-40 bg-muted animate-pulse rounded" />
           ) : displayLineup.length === 0 ? (
@@ -3265,11 +3265,11 @@ export default function GameDetail() {
                             return (
                               <div
                                 key={pos}
-                                className={`flex items-center gap-3 px-3 py-2 ${
+                                className={`flex items-center gap-2.5 px-3 py-1.5 ${
                                   posIdx % 2 === 0 ? "bg-card" : "bg-muted/40"
                                 } ${posIdx > 0 ? "border-t border-border/60" : ""}`}
                               >
-                                <span className="inline-flex items-center justify-center min-w-[44px] h-8 px-2 rounded bg-secondary text-secondary-foreground text-xs font-bold tracking-wide font-['Roboto_Mono']">
+                                <span className="inline-flex items-center justify-center min-w-[40px] h-7 px-2 rounded bg-secondary text-secondary-foreground text-xs font-bold tracking-wide font-['Roboto_Mono']">
                                   {pos}
                                 </span>
                                 <div className="flex-1 min-w-0 flex items-center justify-start">
@@ -3291,8 +3291,8 @@ export default function GameDetail() {
                               </div>
                             );
                           })}
-                          <div className="flex items-start gap-3 px-3 py-2 bg-muted/60 border-t border-border/60">
-                            <span className="inline-flex items-center justify-center min-w-[44px] h-8 px-2 rounded bg-muted text-muted-foreground text-[11px] font-bold tracking-wide uppercase">
+                          <div className="flex items-start gap-2.5 px-3 py-1.5 bg-muted/60 border-t border-border/60">
+                            <span className="inline-flex items-center justify-center min-w-[40px] h-7 px-2 rounded bg-muted text-muted-foreground text-[11px] font-bold tracking-wide uppercase">
                               Bench
                             </span>
                             <div className="flex-1 min-w-0">
