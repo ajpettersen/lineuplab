@@ -119,16 +119,16 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="eyebrow text-primary/70">Coach Console</div>
           <h1 className="page-title text-foreground mt-1">Season Dashboard</h1>
           <p className="text-muted-foreground mt-2 text-sm">Track your team's progress and fairness</p>
         </div>
         {canCreateGame && (
-          <Link href="/games/new">
+          <Link href="/games/new" className="shrink-0">
             <Button
-              className="bg-primary text-primary-foreground hover:bg-primary/90 font-broadcast uppercase tracking-wider shadow-md"
+              className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 font-broadcast uppercase tracking-wider shadow-md"
               data-testid="button-add-game"
             >
               <CalendarDays className="h-4 w-4 mr-2" />

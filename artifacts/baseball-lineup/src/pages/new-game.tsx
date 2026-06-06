@@ -307,7 +307,7 @@ export default function NewGame() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Game Type</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {([
                   { v: "none" as const, label: "Unspecified", hint: "Use my fairness setting" },
                   { v: "league" as const, label: "League", hint: "Even out plate appearances" },

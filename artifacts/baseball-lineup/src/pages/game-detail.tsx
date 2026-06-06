@@ -2970,6 +2970,7 @@ export default function GameDetail() {
                 onClick={() => window.open(`${BASE}/games/${id}/display`, "_blank", "noopener")}
                 data-testid="button-open-field-display"
                 className="no-print"
+                aria-label="Field Display"
                 title="Open the live dugout / fence-iPad display for this game (auto-updates)"
               >
                 <Tv className="h-4 w-4 sm:mr-1.5" />
@@ -2985,6 +2986,7 @@ export default function GameDetail() {
                     size="sm"
                     data-testid="button-export-lineup"
                     className="no-print"
+                    aria-label="Export"
                     title="Copy the lineup to your clipboard or print this card"
                   >
                     <Upload className="h-4 w-4 sm:mr-1.5" />

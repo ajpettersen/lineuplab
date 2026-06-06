@@ -161,7 +161,7 @@ export default function Tournaments() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="eyebrow text-primary/70">Multi-Game</div>
           <h1 className="page-title text-foreground mt-1 flex items-center gap-3">
@@ -174,7 +174,7 @@ export default function Tournaments() {
         </div>
         <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
           <DialogTrigger asChild>
-            <Button data-testid="button-new-tournament">
+            <Button data-testid="button-new-tournament" className="w-full sm:w-auto shrink-0">
               <Plus className="h-4 w-4 mr-1.5" />
               New Tournament
             </Button>
