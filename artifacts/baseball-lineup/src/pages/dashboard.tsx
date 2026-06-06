@@ -605,7 +605,7 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
         {tasks.map((t) => (
           <div
             key={t.id}
-            className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/60 hover:border-border transition-colors"
+            className="flex flex-col gap-2 p-3 rounded-lg border border-border/60 hover:border-border transition-colors sm:flex-row sm:items-center sm:justify-between sm:gap-3"
             data-testid={`row-task-${t.id}`}
           >
             <div className="min-w-0 flex-1">
@@ -630,7 +630,7 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
                 {TASK_LABEL[t.type]}
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center justify-end gap-1.5 flex-wrap shrink-0">
               {t.type === "score" && t.gameId != null && (
                 // One-tap "enter the final score" — drops the coach
                 // straight into the score-entry dialog on the game page
