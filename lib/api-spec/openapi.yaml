@@ -1396,6 +1396,9 @@ components:
           type: ["string", "null"]
           enum: [pool, bracket, null]
           description: For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.
+        isChampionship:
+          type: boolean
+          description: True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.
         effectiveTimeLimits:
           oneOf:
             - type: "null"
@@ -1430,6 +1433,7 @@ components:
         - innings
         - status
         - type
+        - isChampionship
         - createdAt
 
     PlanSnapshotEntry:
@@ -1512,6 +1516,9 @@ components:
           type: ["string", "null"]
           enum: [pool, bracket, null]
           description: For tournament games — switch between pool-play and bracket-play time-limit rules. Set null to clear.
+        isChampionship:
+          type: boolean
+          description: Flag this game as the tournament championship so the Field Display auto-enables Championship Mode. Can only be true on tournament games (gameType="tournament").
 
     LineupEntry:
       type: object

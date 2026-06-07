@@ -1,5 +1,6 @@
 - [PWA white-screen on boot](pwa-white-screen-boot.md) — empty #root + lazy/Clerk/IDB boot = blank first paint; needs inline splash + chunk-error reload + cache cleanup.
 - [date-fns format render crash](date-fns-render-crash.md) — `format(new Date(x))` on null/invalid date throws in render → ErrorBoundary blanks whole page; use a safe-format wrapper.
+- [Field Display per-device toggles](field-display-per-device-toggles.md) — global localStorage visual-mode flags leak across games; key on per-game DB flag + session override reset on game id.
 - [Tournament/game date matching](tournament-date-matching.md) — match game↔tournament by comparing `YYYY-MM-DD` substrings client-side, NOT server-side date_trunc on UTC timestamps (evening-game off-by-one).
 - [Load perf is boot/shell, not code-splitting](load-perf-is-boot-not-splitting.md) — routes already lazy + vendors already split; "slow load" = Clerk/IndexedDB boot. Fix with intent prefetch + lazy non-first-paint shell.
 - [Multi-sport architecture](multi-sport-architecture.md) — per-team `team_settings.sport`; gate sport-specific surfaces on `sportProfile.features.*` (NOT hardcoded sport / `usesTournaments`); `@workspace/sport-profiles` is the registry.

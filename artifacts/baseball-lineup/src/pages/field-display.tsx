@@ -910,32 +910,33 @@ export default function FieldDisplay() {
     }
   }, [celebrateSound]);
 
-  // Championship Mode — opt-in "pump up the kids" treatment for big
-  // tournament games. Adds a pulsing gold frame glow, animated rainbow
-  // chyron shimmer, glowing scoreboard numerals, and CROWN icons on
-  // the tournament pre-title. The field/lineup themselves stay static
-  // (no rotation, no chip movement) so the coach reading the iPad
-  // isn't distracted — only the chrome around them gets cranked up.
-  // Persisted per-device so a team that uses it for the championship
-  // game on a Sunday doesn't have to re-enable it every restart.
-  // Only meaningful for tournament games; the kebab toggle is hidden
-  // for league fixtures.
-  const CHAMP_MODE_KEY = "fd-championship-mode";
-  const [championshipMode, setChampionshipMode] = useState<boolean>(() => {
-    try {
-      if (typeof window === "undefined") return false;
-      return localStorage.getItem(CHAMP_MODE_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  // Championship Mode — "pump up the kids" treatment for big tournament
+  // games. Adds a pulsing gold frame glow, animated rainbow chyron
+  // shimmer, glowing scoreboard numerals, and CROWN icons on the
+  // tournament pre-title. The field/lineup themselves stay static (no
+  // rotation, no chip movement) so the coach reading the iPad isn't
+  // distracted — only the chrome around them gets cranked up. Only
+  // meaningful for tournament games; the kebab toggle is hidden for
+  // league fixtures.
+  //
+  // Driven PER GAME by the `games.isChampionship` data flag (set in the
+  // Edit Game dialog). A flagged game auto-lights up; the coach can still
+  // flip it for the current session via the kebab.
+  // We deliberately do NOT persist a global per-device toggle anymore:
+  // doing so used to leak the gold treatment onto later, non-championship
+  // tournament games on the same iPad. The flag itself is the durable
+  // signal, so persistence now lives in the DB, scoped to the right game.
+  //   null  → no manual choice this session; follow the game's flag
+  //   true  → coach forced it ON for this session
+  //   false → coach forced it OFF for this session
+  const [champOverride, setChampOverride] = useState<boolean | null>(null);
+  // Reset the manual override whenever we switch to a different game so
+  // the new game starts by honoring its own flag (the component isn't
+  // guaranteed to remount on a route-param change).
   useEffect(() => {
-    try {
-      localStorage.setItem(CHAMP_MODE_KEY, championshipMode ? "1" : "0");
-    } catch {
-      /* private mode */
-    }
-  }, [championshipMode]);
+    setChampOverride(null);
+  }, [id]);
+  const championshipMode = champOverride ?? Boolean(game?.isChampionship);
 
   // Web Audio context — created lazily on first user gesture (iOS
   // Safari requires the unlock to happen during a touch/click handler,
@@ -2375,7 +2376,7 @@ export default function FieldDisplay() {
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
-                    setChampionshipMode((v) => !v);
+                    setChampOverride(!championshipMode);
                   }}
                   data-testid="menu-championship-mode"
                 >

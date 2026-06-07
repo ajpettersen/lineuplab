@@ -188,6 +188,11 @@ export const ListGamesResponseItem = zod.object({
     .describe(
       "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
     ),
+  isChampionship: zod
+    .boolean()
+    .describe(
+      "True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.",
+    ),
   effectiveTimeLimits: zod
     .union([
       zod.null(),
@@ -299,6 +304,11 @@ export const GetGameResponse = zod.object({
     .describe(
       "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
     ),
+  isChampionship: zod
+    .boolean()
+    .describe(
+      "True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.",
+    ),
   effectiveTimeLimits: zod
     .union([
       zod.null(),
@@ -379,6 +389,12 @@ export const UpdateGameBody = zod.object({
     .describe(
       "For tournament games — switch between pool-play and bracket-play time-limit rules. Set null to clear.",
     ),
+  isChampionship: zod
+    .boolean()
+    .optional()
+    .describe(
+      'Flag this game as the tournament championship so the Field Display auto-enables Championship Mode. Can only be true on tournament games (gameType=\"tournament\").',
+    ),
 });
 
 export const UpdateGameResponse = zod.object({
@@ -422,6 +438,11 @@ export const UpdateGameResponse = zod.object({
     .nullish()
     .describe(
       "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  isChampionship: zod
+    .boolean()
+    .describe(
+      "True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.",
     ),
   effectiveTimeLimits: zod
     .union([
@@ -519,6 +540,11 @@ export const SnapshotPlanResponse = zod.object({
     .describe(
       "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
     ),
+  isChampionship: zod
+    .boolean()
+    .describe(
+      "True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.",
+    ),
   effectiveTimeLimits: zod
     .union([
       zod.null(),
@@ -606,6 +632,11 @@ export const ClearPlanSnapshotResponse = zod.object({
     .nullish()
     .describe(
       "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+    ),
+  isChampionship: zod
+    .boolean()
+    .describe(
+      "True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.",
     ),
   effectiveTimeLimits: zod
     .union([
@@ -1524,6 +1555,11 @@ export const GetTournamentResponse = zod
             .nullish()
             .describe(
               "For tournament games — which stage this game belongs to. Drives which time-limit pair applies. Null when the game has no tournamentId.",
+            ),
+          isChampionship: zod
+            .boolean()
+            .describe(
+              "True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games.",
             ),
           effectiveTimeLimits: zod
             .union([

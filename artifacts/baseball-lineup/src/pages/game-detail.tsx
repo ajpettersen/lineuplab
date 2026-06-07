@@ -4657,6 +4657,7 @@ export default function GameDetail() {
               game.bracketStage === "pool" || game.bracketStage === "bracket"
                 ? game.bracketStage
                 : null,
+            isChampionship: game.isChampionship ?? false,
             notes: game.notes ?? null,
           }}
           onClose={() => setEditGameOpen(false)}

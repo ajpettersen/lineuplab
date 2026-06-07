@@ -155,6 +155,8 @@ export interface Game {
    * @nullable
    */
   bracketStage?: GameBracketStage;
+  /** True when this game is flagged as the tournament championship. The Field Display auto-enables Championship Mode for it. Only ever true on tournament games. */
+  isChampionship: boolean;
   /** Server-resolved time-limit rules for this game (looked up from the parent tournament's pool vs bracket fields based on `bracketStage`). Null when the game has no `tournamentId` or the resolved pair is fully empty. */
   effectiveTimeLimits?: GameEffectiveTimeLimits;
   /** @nullable */
@@ -262,6 +264,8 @@ export interface UpdateGameBody {
    * @nullable
    */
   bracketStage?: UpdateGameBodyBracketStage;
+  /** Flag this game as the tournament championship so the Field Display auto-enables Championship Mode. Can only be true on tournament games (gameType="tournament"). */
+  isChampionship?: boolean;
 }
 
 export interface LineupEntry {

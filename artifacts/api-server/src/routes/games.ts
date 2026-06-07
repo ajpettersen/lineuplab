@@ -444,6 +444,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   if (d.gameType !== undefined) updates.gameType = d.gameType;
   if (d.tournamentId !== undefined) updates.tournamentId = d.tournamentId;
   if (d.bracketStage !== undefined) updates.bracketStage = d.bracketStage;
+  if (d.isChampionship !== undefined) updates.isChampionship = d.isChampionship;
   // Semantic guard: bracketStage is only meaningful on tournament-linked
   // games (tournamentId != null AND gameType="tournament"). The Edit Game
   // dialog already hides the selector outside that combo, but the API
@@ -484,6 +485,19 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
       !(nextTournamentId != null && nextGameType === "tournament")
     ) {
       return "INVALID_BRACKET_STAGE" as const;
+    }
+
+    // Semantic guard: a game can only be flagged as the championship when
+    // it's a tournament game — Championship Mode on the Field Display is
+    // gated on gameType="tournament", so flagging a league/unspecified
+    // game would be a no-op that confuses later reads. Reject so the row
+    // stays consistent even if an out-of-band PATCH tries it.
+    const nextIsChampionship =
+      d.isChampionship !== undefined
+        ? d.isChampionship
+        : existing.isChampionship;
+    if (nextIsChampionship && nextGameType !== "tournament") {
+      return "INVALID_CHAMPIONSHIP" as const;
     }
 
     const [updated] = await tx
@@ -531,6 +545,12 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   if (game === "INVALID_BRACKET_STAGE") {
     res.status(400).json({
       error: "bracketStage can only be set on tournament-linked games",
+    });
+    return;
+  }
+  if (game === "INVALID_CHAMPIONSHIP") {
+    res.status(400).json({
+      error: "isChampionship can only be set on tournament games",
     });
     return;
   }

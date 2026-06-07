@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, index, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, index, jsonb, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -56,6 +56,16 @@ export const gamesTable = pgTable(
      * the game edit dialog once bracket play begins.
      */
     bracketStage: text("bracket_stage"),
+    /**
+     * Marks this game as the tournament championship. When true, the
+     * Field Display auto-enables Championship Mode (gold frame glow,
+     * rainbow chyron, crowns) without the coach having to flip the
+     * per-device kebab toggle. Only meaningful on tournament games
+     * (gameType="tournament"); the edit dialog hides the checkbox and the
+     * API rejects setting it true otherwise. Default false so existing
+     * games are unaffected.
+     */
+    isChampionship: boolean("is_championship").notNull().default(false),
     notes: text("notes"),
     // Snapshot of the planned lineup (taken when the coach chose "Keep both"
     // before overriding with a post-game photo). Null = no snapshot.

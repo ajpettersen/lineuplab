@@ -16,9 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { Trophy } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -32,6 +34,7 @@ export type EditableGame = {
   gameType?: "league" | "tournament" | null;
   tournamentId?: number | null;
   bracketStage?: "pool" | "bracket" | null;
+  isChampionship?: boolean | null;
   notes: string | null;
 };
 
@@ -66,9 +69,15 @@ export function EditGameDialog({
   const [bracketStage, setBracketStage] = useState<"pool" | "bracket">(
     game.bracketStage === "bracket" ? "bracket" : "pool",
   );
+  // Championship flag — when set, the Field Display auto-enables
+  // Championship Mode for this game. Only meaningful on tournament games.
+  const [isChampionship, setIsChampionship] = useState<boolean>(
+    game.isChampionship === true,
+  );
   const [saving, setSaving] = useState(false);
   const showStagePicker =
     game.tournamentId != null && gameType === "tournament";
+  const showChampionship = gameType === "tournament";
 
   const handleSave = async () => {
     if (!opponent.trim()) { toast({ title: "Opponent required", variant: "destructive" }); return; }
@@ -89,6 +98,10 @@ export function EditGameDialog({
           // game linked to a tournament — otherwise clear it so a coach
           // demoting "tournament" → "league" doesn't leave a stale stage.
           bracketStage: showStagePicker ? bracketStage : null,
+          // Same idea for the championship flag — only true on tournament
+          // games; clear it if the coach demotes the game type so the
+          // server guard doesn't reject the save.
+          isChampionship: showChampionship ? isChampionship : false,
         }),
       });
       if (!r.ok) throw new Error();
@@ -187,6 +200,38 @@ export function EditGameDialog({
                 Switches the time-limit rules shown in the Field Display
                 (set up on the tournament page).
               </p>
+            </div>
+          )}
+          {showChampionship && (
+            <div className="flex flex-col gap-1.5" data-testid="championship-toggle">
+              <Label>Championship</Label>
+              <button
+                type="button"
+                onClick={() => setIsChampionship((v) => !v)}
+                className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
+                  isChampionship
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/40"
+                }`}
+                data-testid="button-toggle-championship"
+              >
+                <Checkbox
+                  checked={isChampionship}
+                  className="mt-0.5 pointer-events-none"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <Trophy className="h-3.5 w-3.5 text-amber-500" />
+                    This is the championship game
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Auto-turns on Championship Mode (gold glow, crowns) on the
+                    Field Display.
+                  </span>
+                </span>
+              </button>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
