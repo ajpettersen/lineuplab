@@ -172,6 +172,31 @@ export default function NewGame() {
       });
       return;
     }
+    // Auto-link to a tournament whose dates cover this game's day — but only
+    // when the coach left the game type unset ("none"). An explicit "league"
+    // or "tournament" pick is always respected. We compare calendar-date
+    // STRINGS (YYYY-MM-DD), never converting through local time, so this is
+    // timezone-safe: `gameDate` is the local day the coach typed and tournament
+    // start/end are stored as date-only (UTC-midnight ISO). An evening game
+    // can't slip onto the wrong day the way a UTC timestamp comparison would.
+    const autoMatchedTournamentId =
+      tournamentsEnabled && gameType === "none" && linkTournamentId == null
+        ? (() => {
+            const gameDay = gameDate.slice(0, 10);
+            const match = tournaments.find((t) => {
+              const start = t.startDate.slice(0, 10);
+              const end = t.endDate.slice(0, 10);
+              return gameDay >= start && gameDay <= end;
+            });
+            return match?.id ?? null;
+          })()
+        : null;
+    const effectiveGameType =
+      autoMatchedTournamentId != null
+        ? "tournament"
+        : gameType === "none"
+          ? null
+          : gameType;
     createGame.mutate(
       {
         data: {
@@ -180,7 +205,10 @@ export default function NewGame() {
           location: location.trim() || null,
           innings: parseInt(innings) || 6,
           notes: notes.trim() || null,
-          gameType: gameType === "none" ? null : gameType,
+          gameType: effectiveGameType,
+          ...(autoMatchedTournamentId != null
+            ? { tournamentId: autoMatchedTournamentId }
+            : {}),
         },
       },
       {
@@ -194,8 +222,13 @@ export default function NewGame() {
           // selector we drop the coach on the new game so they can set
           // up the lineup right away. (linkTournamentId is recomputed
           // here from the same fallback as the validation check above.)
+          // Only link via the explicit picker / ?tournamentId= path when the
+          // coach actually marked this a tournament game. A "league" pick must
+          // stay unlinked even if they arrived from a tournament page, so the
+          // explicit league choice is respected (the server won't auto-link it
+          // either). Tournament games with no date-overlap still link here.
           const linkTournamentId = selectedTournamentId ?? tournamentIdFromQuery;
-          if (linkTournamentId != null) {
+          if (linkTournamentId != null && gameType === "tournament") {
             updateGame.mutate(
               { id: game.id, data: { tournamentId: linkTournamentId } },
               {
@@ -226,7 +259,19 @@ export default function NewGame() {
             );
             return;
           }
-          toast({ title: "Game added" });
+          // We may have auto-linked this game at create time to a tournament
+          // whose dates cover its day (coach left the game type unset). The
+          // returned row carries the tournamentId, so reflect that in the
+          // toast and refresh the tournament views.
+          if (game.tournamentId != null) {
+            qc.invalidateQueries({
+              queryKey: getGetTournamentQueryKey(game.tournamentId),
+            });
+            qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
+            toast({ title: "Game added to tournament" });
+          } else {
+            toast({ title: "Game added" });
+          }
           navigate(`/games/${game.id}`);
         },
         onError: (err) => toastError(toast, "Failed to add game", err),

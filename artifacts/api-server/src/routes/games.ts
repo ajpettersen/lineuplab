@@ -153,6 +153,7 @@ router.post("/games", async (req, res): Promise<void> => {
     return;
   }
   const d = parsed.data;
+
   const [game] = await db
     .insert(gamesTable)
     .values({

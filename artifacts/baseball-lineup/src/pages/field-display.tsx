@@ -20,7 +20,7 @@ import {
   type Game,
   type UpdateGameBody,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
@@ -97,6 +97,70 @@ import { PitcherChip } from "@/components/field-display/pitcher-chip";
 import { DialogScoreInput } from "@/components/field-display/dialog-score-input";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// ── "No bench 2 of 3 innings" mid-game guardrail ──
+// Mirrors the lineup generator's rule: a player must not sit the bench in 2
+// (or more) of any 3 consecutive innings. The generator enforces this when it
+// builds a lineup; here we WARN the dugout coach when a live position change
+// would create a fresh violation (the coach can still override — real-game
+// situations sometimes demand it). Only fires when the coach has the
+// `global_no_bench_two_of_three` constraint turned on.
+type FdConstraint = { type: string; active: boolean };
+async function fetchConstraintsForFieldDisplay(): Promise<FdConstraint[]> {
+  const r = await fetch(`${BASE}/api/constraints`, { credentials: "same-origin" });
+  if (!r.ok) throw new Error(`GET /api/constraints failed (${r.status})`);
+  const data: unknown = await r.json().catch(() => null);
+  return Array.isArray(data) ? (data as FdConstraint[]) : [];
+}
+
+// playerId → set of innings that player is benched, for a given lineup.
+function benchedInningsByPlayer(entries: LineupEntry[]): Map<number, Set<number>> {
+  const m = new Map<number, Set<number>>();
+  for (const e of entries) {
+    if (e.position !== "Bench") continue;
+    let s = m.get(e.playerId);
+    if (!s) {
+      s = new Set<number>();
+      m.set(e.playerId, s);
+    }
+    s.add(e.inning);
+  }
+  return m;
+}
+
+// True if, across any 3-consecutive-inning window that CONTAINS `inning`, the
+// player is benched in 2+ of those innings.
+function violatesTwoOfThreeAround(benched: Set<number>, inning: number): boolean {
+  for (const start of [inning - 2, inning - 1, inning]) {
+    let count = 0;
+    for (let i = start; i < start + 3; i++) if (benched.has(i)) count++;
+    if (count >= 2) return true;
+  }
+  return false;
+}
+
+// Players who would NEWLY break the 2-of-3 rule because of a change to
+// `inning` (present in `next` but not already broken in `prev`). Returns
+// distinct display names in lineup order.
+function findNewBenchRuleViolations(
+  prev: LineupEntry[],
+  next: LineupEntry[],
+  inning: number,
+): string[] {
+  const prevB = benchedInningsByPlayer(prev);
+  const nextB = benchedInningsByPlayer(next);
+  const nameById = new Map<number, string>();
+  for (const e of next) if (!nameById.has(e.playerId)) nameById.set(e.playerId, e.playerName);
+  const names: string[] = [];
+  for (const [pid, set] of nextB) {
+    if (!violatesTwoOfThreeAround(set, inning)) continue;
+    const prevSet = prevB.get(pid) ?? new Set<number>();
+    if (violatesTwoOfThreeAround(prevSet, inning)) continue; // already broken — don't re-nag
+    const name = nameById.get(pid) ?? "A player";
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
 
 // Team-name shortening lives in `@/lib/team-name` so the Dashboard hero
 // card and recent-games lists share the exact same logic — coaches see
@@ -257,6 +321,27 @@ export default function FieldDisplay() {
     pitchesToday: number;
     dailyMax: number | null;
   } | null>(null);
+  // "No bench 2 of 3 innings" confirm state. When a live alignment change
+  // would newly bench a player 2 of 3 consecutive innings AND that rule is
+  // turned on, we stash the would-be lineup + the affected player names and
+  // pop an AlertDialog. Confirm commits; Cancel drops the staged move. Same
+  // bail-before-commit pattern as tappedOutWarning above.
+  const [benchRuleWarning, setBenchRuleWarning] = useState<{
+    nextLineup: LineupEntry[];
+    playerNames: string[];
+  } | null>(null);
+  // Whether the coach has the "no bench 2 of 3 innings" rule active. Shares
+  // the ["constraints"] query cache with the Constraints page. Failures are
+  // non-fatal — the warning just stays off.
+  const { data: fdConstraints } = useQuery({
+    queryKey: ["constraints"],
+    queryFn: fetchConstraintsForFieldDisplay,
+    retry: 1,
+    staleTime: 60_000,
+  });
+  const noBenchTwoOfThreeActive = !!fdConstraints?.some(
+    (c) => c.type === "global_no_bench_two_of_three" && c.active,
+  );
   // Game-record updater for score input. networkMode 'always' so our
   // explicit navigator.onLine gate inside flushGameSave is what controls
   // when a request actually goes out — without 'always', React Query's
@@ -1310,6 +1395,21 @@ export default function FieldDisplay() {
           // the staged move so the drag effectively undoes itself.
           return;
         }
+      }
+    }
+    // ── "No bench 2 of 3 innings" guardrail ──
+    // If the coach has the rule on and this move would NEWLY put someone on
+    // the bench in 2 of 3 consecutive innings, surface a confirm so it's
+    // never a silent mistake. Coach can still override (Bench anyway).
+    if (noBenchTwoOfThreeActive) {
+      const violators = findNewBenchRuleViolations(
+        lineup,
+        nextLineup,
+        currentInning,
+      );
+      if (violators.length > 0) {
+        setBenchRuleWarning({ nextLineup, playerNames: violators });
+        return;
       }
     }
     _commitLineupSave(nextLineup);
@@ -2898,6 +2998,58 @@ export default function FieldDisplay() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Pitch anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* "No bench 2 of 3 innings" rule warning. Advisory — coach can override. */}
+      <AlertDialog
+        open={benchRuleWarning != null}
+        onOpenChange={(open) => { if (!open) setBenchRuleWarning(null); }}
+      >
+        <AlertDialogContent data-testid="dialog-bench-rule">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              This benches{" "}
+              {benchRuleWarning != null &&
+                (benchRuleWarning.playerNames.length === 1
+                  ? formatPlayerNameShort(benchRuleWarning.playerNames[0]!)
+                  : `${benchRuleWarning.playerNames.length} players`)}{" "}
+              2 of 3 innings
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {benchRuleWarning != null && (
+                <>
+                  Your "No bench 2 of 3 innings" rule says no one should sit{" "}
+                  2 out of any 3 innings in a row. This change would do that for{" "}
+                  <span className="font-semibold">
+                    {benchRuleWarning.playerNames
+                      .map((n) => formatPlayerNameShort(n))
+                      .join(", ")}
+                  </span>
+                  .
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setBenchRuleWarning(null)}
+              data-testid="button-bench-rule-cancel"
+            >
+              Cancel move
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pending = benchRuleWarning;
+                setBenchRuleWarning(null);
+                if (pending) _commitLineupSave(pending.nextLineup);
+              }}
+              data-testid="button-bench-rule-confirm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Bench anyway
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
