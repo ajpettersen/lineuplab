@@ -92,6 +92,7 @@ import {
   playFanfareSound,
   fireScoredRunCheer,
   fireTakeTheLeadCelebration,
+  fireChampionshipWelcome,
 } from "@/components/field-display/audio-helpers";
 import { ScoreStepper } from "@/components/field-display/score-stepper";
 import { GameTimer } from "@/components/field-display/game-timer";
@@ -1184,6 +1185,30 @@ export default function FieldDisplay() {
   // tournament-specific batting-order math (top-of-order OPS, etc.)
   // already runs upstream in the lineup generator.
   const isTournament = game?.gameType === "tournament";
+
+  // One-shot joyful "welcome to the championship!" confetti. Fires once
+  // when Championship Mode flips ON for this game (game loads as a
+  // championship, or the coach toggles it via the kebab) — a soft, party-
+  // colored sprinkle, NOT the big take-the-lead barrage. Deliberately
+  // gentle so it delights the kids without being stress-inducing.
+  // The component isn't guaranteed to remount on a route-param change, so
+  // the latch keys on `id` (below) and we gate on `game?.id === id` to
+  // ensure each game — including navigating straight from one championship
+  // game to another — gets exactly one welcome and never fires off stale
+  // previous-game data mid-navigation.
+  const prevChampOnRef = useRef(false);
+  const champWelcomeIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (champWelcomeIdRef.current !== id) {
+      champWelcomeIdRef.current = id;
+      prevChampOnRef.current = false;
+    }
+    const champOn = isTournament && championshipMode && game?.id === id;
+    if (champOn && !prevChampOnRef.current) {
+      fireChampionshipWelcome(confettiFireRef.current);
+    }
+    prevChampOnRef.current = champOn;
+  }, [id, isTournament, championshipMode, game?.id]);
 
   // Time-of-day palette, unless the coach has flipped on Sunlight mode —
   // in which case force the brightest preset (`morning`) regardless of
@@ -2857,7 +2882,7 @@ export default function FieldDisplay() {
                 data-testid="tournament-pretitle"
               >
                 {championshipMode ? (
-                  <Crown className="h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
+                  <Crown className="fd-champ-crown h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
                 ) : (
                   <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
                 )}
@@ -2865,7 +2890,7 @@ export default function FieldDisplay() {
                   {championshipMode ? "Championship" : "Tournament"}
                 </span>
                 {championshipMode ? (
-                  <Crown className="h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
+                  <Crown className="fd-champ-crown fd-champ-crown--delay h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
                 ) : (
                   <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
                 )}

@@ -611,18 +611,21 @@
  * Animations honor prefers-reduced-motion (held still as gradients).
  * ────────────────────────────────────────────────────────────── */
 
+/* A slow, gentle "breathe" rather than a fast throb. Lower amplitude +
+ * longer period so it reads as a warm celebratory shimmer, never an
+ * urgent / alarm-like pulse that could stress the kids out. */
 @keyframes fd-champ-frame-pulse {
   0%, 100% {
     box-shadow:
-      inset 0 0 0 3px rgba(245, 191, 66, 0.95),
-      inset 0 0 60px rgba(245, 191, 66, 0.35),
-      0 0 40px rgba(245, 191, 66, 0.4);
+      inset 0 0 0 3px rgba(245, 191, 66, 0.85),
+      inset 0 0 50px rgba(245, 191, 66, 0.22),
+      0 0 30px rgba(245, 191, 66, 0.3);
   }
   50% {
     box-shadow:
-      inset 0 0 0 3px rgba(255, 232, 150, 1),
-      inset 0 0 90px rgba(245, 191, 66, 0.55),
-      0 0 80px rgba(245, 191, 66, 0.7);
+      inset 0 0 0 3px rgba(255, 232, 150, 0.95),
+      inset 0 0 72px rgba(245, 191, 66, 0.34),
+      0 0 52px rgba(245, 191, 66, 0.45);
   }
 }
 
@@ -632,13 +635,22 @@
 }
 
 @keyframes fd-champ-score-glow {
-  0%, 100% { text-shadow: 0 0 12px rgba(245, 191, 66, 0.5), 0 0 24px rgba(245, 191, 66, 0.3); }
-  50%      { text-shadow: 0 0 20px rgba(255, 232, 150, 0.95), 0 0 44px rgba(245, 191, 66, 0.7); }
+  0%, 100% { text-shadow: 0 0 10px rgba(245, 191, 66, 0.45), 0 0 20px rgba(245, 191, 66, 0.25); }
+  50%      { text-shadow: 0 0 16px rgba(255, 232, 150, 0.8), 0 0 34px rgba(245, 191, 66, 0.55); }
+}
+
+/* Playful, friendly bob for the flanking crowns — a small hop + tiny
+ * wiggle that makes the panel feel happy and alive (party, not pressure).
+ * Slow and low-amplitude so it stays gentle on the eyes. */
+@keyframes fd-champ-crown-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30%      { transform: translateY(-3px) rotate(-7deg); }
+  65%      { transform: translateY(-1px) rotate(6deg); }
 }
 
 .fd-championship {
   position: relative;
-  animation: fd-champ-frame-pulse 2.6s ease-in-out infinite;
+  animation: fd-champ-frame-pulse 4.2s ease-in-out infinite;
 }
 
 .fd-championship::before {
@@ -658,31 +670,41 @@
 }
 
 .fd-champ-chyron {
+  /* A genuinely colorful — but SOFT, pastel — rainbow so it feels like a
+   * birthday-party banner rather than a single hard gold stripe. Eased
+   * a touch slower than before so the sweep stays calm and joyful. */
   background-image: linear-gradient(
     90deg,
-    #f5bf42 0%,
-    #ffe896 12%,
-    #ffffff 25%,
-    #ffe896 38%,
-    #f5bf42 50%,
-    #ffe896 62%,
-    #ffffff 75%,
-    #ffe896 88%,
-    #f5bf42 100%
+    #ff9ec7 0%,
+    #ffd98a 18%,
+    #b6f0a8 36%,
+    #9ad8ff 54%,
+    #c9b0ff 72%,
+    #ff9ec7 100%
   );
   background-size: 200% 100%;
-  animation: fd-champ-rainbow-sweep 4s linear infinite;
+  animation: fd-champ-rainbow-sweep 5.5s linear infinite;
 }
 
 .fd-champ-score {
-  animation: fd-champ-score-glow 2.2s ease-in-out infinite;
+  animation: fd-champ-score-glow 3.2s ease-in-out infinite;
   color: #ffe896 !important;
+}
+
+.fd-champ-crown {
+  animation: fd-champ-crown-bob 2.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+/* Stagger the second crown so the pair bobs playfully out of sync. */
+.fd-champ-crown--delay {
+  animation-delay: 1.2s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .fd-championship,
   .fd-champ-chyron,
-  .fd-champ-score {
+  .fd-champ-score,
+  .fd-champ-crown {
     animation: none !important;
   }
   .fd-championship {

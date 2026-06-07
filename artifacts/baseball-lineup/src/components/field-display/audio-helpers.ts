@@ -175,6 +175,80 @@ export function fireScoredRunCheer(fire: ConfettiFire | null) {
   }, 120);
 }
 
+/**
+ * Gentle, joyful one-shot "welcome to the championship!" confetti. Fires
+ * ONCE when Championship Mode turns on (game opens as a championship, or
+ * the coach flips the kebab toggle). Deliberately SOFT and playful —
+ * party colors, low velocity, a slow drift — rather than the big take-
+ * the-lead barrage. The goal is to delight the kids without the
+ * relentless flashing/booming that reads as high-pressure. No screen
+ * flash, no sound. Honors prefers-reduced-motion.
+ */
+export function fireChampionshipWelcome(fire: ConfettiFire | null) {
+  if (typeof window === "undefined") return;
+  const shoot = fire ?? confetti;
+  // Soft party palette — warm, friendly, multi-color (not just gold) so
+  // it feels like a birthday party, not an alarm.
+  const PARTY = [
+    "#ff9ec7", // pink
+    "#ffd98a", // sunny yellow
+    "#b6f0a8", // mint
+    "#9ad8ff", // sky blue
+    "#c9b0ff", // lavender
+    "#ffb27a", // soft coral
+  ];
+
+  const reduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (reduced) {
+    void shoot({
+      particleCount: 40,
+      spread: 70,
+      startVelocity: 26,
+      origin: { y: 0.5 },
+      colors: PARTY,
+    });
+    return;
+  }
+
+  // A soft puff up from the lower-center — gentle arc, lots of drift.
+  void shoot({
+    particleCount: 80,
+    spread: 100,
+    startVelocity: 36,
+    gravity: 0.72,
+    decay: 0.92,
+    scalar: 1.05,
+    ticks: 280,
+    origin: { x: 0.5, y: 0.7 },
+    colors: PARTY,
+  });
+  // A few slow ticker-tape waves drifting down from the top so it keeps
+  // gently raining for a beat — calm, not a barrage — then it's done.
+  let wave = 0;
+  const drift = window.setInterval(() => {
+    if (wave >= 3) {
+      window.clearInterval(drift);
+      return;
+    }
+    wave++;
+    void shoot({
+      particleCount: 28,
+      angle: 270,
+      spread: 120,
+      startVelocity: 16,
+      gravity: 0.6,
+      decay: 0.94,
+      scalar: 0.95,
+      ticks: 340,
+      origin: { x: 0.5, y: -0.05 },
+      colors: PARTY,
+    });
+  }, 360);
+}
+
 export function fireTakeTheLeadCelebration(
   fire: ConfettiFire | null,
   flashEl: HTMLDivElement | null,
