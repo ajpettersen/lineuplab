@@ -34,6 +34,8 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { categoryForPos } from "@/components/game-detail/utils";
+import { type SportId } from "@workspace/sport-profiles";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
@@ -162,6 +164,64 @@ function findNewBenchRuleViolations(
   return names;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Rotation tally — an at-a-glance, opt-in panel that counts how many
+ * innings each player is slated for INFIELD / OUTFIELD / BENCH across the
+ * WHOLE saved lineup (every inning, not just the current one). It lets a
+ * coach spot who's been parked on the bench too long while dragging chips
+ * around. Pitching is deliberately ignored ("pitching irrespective") — a
+ * pitcher's innings don't land in any of the three buckets, matching how
+ * the coach reasons about field rotation separately from the arm.
+ *
+ * Categories come from the sport-aware `categoryForPos`: baseball yields
+ * Infield/Outfield, basketball yields Guard/Forward/Center. We tack Bench
+ * on at the end. Rows sort by bench count DESC (most-benched first) so the
+ * players who most need to get back on the field surface at the front.
+ */
+interface RotationTallyRow {
+  playerId: number;
+  name: string;
+  counts: Record<string, number>;
+  bench: number;
+}
+
+// Short column labels keyed off the sport-aware category name.
+const ROTATION_CAT_SHORT: Record<string, string> = {
+  Infield: "IF",
+  Outfield: "OF",
+  Guard: "G",
+  Forward: "F",
+  Center: "C",
+  Bench: "B",
+};
+
+function computeRotationTally(
+  entries: LineupEntry[],
+  sport: SportId,
+): { rows: RotationTallyRow[]; fieldCats: string[] } {
+  const byPlayer = new Map<number, RotationTallyRow>();
+  const fieldCats: string[] = [];
+  for (const e of entries) {
+    const cat = categoryForPos(e.position, sport);
+    if (cat === "Pitching") continue; // pitching irrespective
+    let row = byPlayer.get(e.playerId);
+    if (!row) {
+      row = { playerId: e.playerId, name: e.playerName, counts: {}, bench: 0 };
+      byPlayer.set(e.playerId, row);
+    }
+    row.counts[cat] = (row.counts[cat] ?? 0) + 1;
+    if (cat === "Bench") {
+      row.bench += 1;
+    } else if (!fieldCats.includes(cat)) {
+      fieldCats.push(cat);
+    }
+  }
+  const rows = [...byPlayer.values()].sort(
+    (a, b) => b.bench - a.bench || a.name.localeCompare(b.name),
+  );
+  return { rows, fieldCats };
+}
+
 // Team-name shortening lives in `@/lib/team-name` so the Dashboard hero
 // card and recent-games lists share the exact same logic — coaches see
 // "Edina vs Minnetonka" everywhere instead of one screen showing the
@@ -275,7 +335,7 @@ export default function FieldDisplay() {
   // mid-game tap would.
   const [dialogOurScore, setDialogOurScore] = useState(0);
   const [dialogOppScore, setDialogOppScore] = useState(0);
-  const { teamName, teamShortName, activeFieldPositions } = useTeamSettings();
+  const { teamName, teamShortName, activeFieldPositions, sport } = useTeamSettings();
   // Field Display renders OUTSIDE the main `<Layout>` shell (it owns the
   // whole viewport for the dugout iPad), so the Layout-mounted
   // `useHeartbeat()` doesn't fire here. Without this call, a coach
@@ -787,6 +847,13 @@ export default function FieldDisplay() {
     });
   }, [lineup]);
 
+  // Per-player Infield/Outfield/Bench inning counts across the whole saved
+  // lineup (pitching ignored). Drives the opt-in rotation tally panel.
+  const rotationTally = useMemo(
+    () => computeRotationTally(lineup, sport),
+    [lineup, sport],
+  );
+
   // Score line on the header.
   const ourScore = game?.ourScore ?? 0;
   const oppScore = game?.opponentScore ?? 0;
@@ -1084,6 +1151,29 @@ export default function FieldDisplay() {
       // Private mode — silent.
     }
   }, [showTournamentPitches]);
+
+  // ── Rotation tally overlay ──
+  // Opt-in panel showing per-player Infield/Outfield/Bench inning counts
+  // (pitching ignored) so the coach can keep rotation fair while dragging.
+  // Defaults ON because it's the kind of glanceable reference a coach wants
+  // up by default; one kebab tap (persisted) hides it for those who don't.
+  const ROTATION_TALLY_KEY = "fd-show-rotation-tally";
+  const [showRotationTally, setShowRotationTally] = useState<boolean>(() => {
+    try {
+      if (typeof window === "undefined") return true;
+      const v = localStorage.getItem(ROTATION_TALLY_KEY);
+      return v == null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(ROTATION_TALLY_KEY, showRotationTally ? "1" : "0");
+    } catch {
+      // Private mode — silent.
+    }
+  }, [showRotationTally]);
 
   // Tournament splash — when the game is a tournament fixture, dial
   // up the broadcast-graphic accents (animated gold shimmer on the
@@ -2266,6 +2356,20 @@ export default function FieldDisplay() {
                   </span>
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setShowRotationTally((v) => !v);
+                }}
+                data-testid="menu-rotation-tally"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                <span>
+                  {showRotationTally
+                    ? "Hide rotation tally"
+                    : "Show rotation tally"}
+                </span>
+              </DropdownMenuItem>
               {isTournament && (
                 <DropdownMenuItem
                   onSelect={(e) => {
@@ -2433,6 +2537,39 @@ export default function FieldDisplay() {
             >
               <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               Show pitches
+              <ChevronDown className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+            </button>
+          </div>
+        )}
+        {/* Rotation tally — opt-in per-player IF/OF/Bench inning counts.
+         *  Mirrors the tournament-pitches panel's responsive rule (Order
+         *  tab only on phones, always visible on md+ / iPad-landscape) so
+         *  it never steals vertical space from the Field diagram on a
+         *  phone's Field tab. */}
+        {showRotationTally && (
+          <div className={mobileTab === "order" ? "" : "max-md:hidden"}>
+            <RotationTallyPanel
+              rows={rotationTally.rows}
+              fieldCats={rotationTally.fieldCats}
+              onClose={() => setShowRotationTally(false)}
+            />
+          </div>
+        )}
+        {/* Re-open affordance for the rotation tally — same placement /
+         *  visibility rule as the tournament-pitches pill. */}
+        {!showRotationTally && (
+          <div
+            className={`flex justify-center ${mobileTab === "order" ? "" : "max-md:hidden"}`}
+          >
+            <button
+              type="button"
+              onClick={() => setShowRotationTally(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-sky-300 bg-[#06101f] border border-sky-400/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
+              aria-label="Show rotation tally"
+              data-testid="button-show-rotation-tally"
+            >
+              <RotateCcw className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              Show rotation
               <ChevronDown className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
             </button>
           </div>
@@ -3815,6 +3952,100 @@ function TournamentPitchesPanel({
         >
           {sorted.map((p) => (
             <PitcherChip key={p.playerId} p={p} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Opt-in horizontal strip of per-player Infield/Outfield/Bench inning
+// counts (pitching ignored). Rows arrive pre-sorted most-benched-first so
+// the coach's eye lands on whoever's sat the longest. Each chip leads with
+// the player's short name and a row of category counts; Bench is tinted
+// amber and zero counts dim out so the meaningful numbers pop.
+function RotationTallyPanel({
+  rows,
+  fieldCats,
+  onClose,
+}: {
+  rows: RotationTallyRow[];
+  fieldCats: string[];
+  onClose: () => void;
+}) {
+  // Stable column order: the field categories that actually appeared, then
+  // Bench last so it always sits at the right edge of every chip.
+  const cols = [...fieldCats, "Bench"];
+  return (
+    <div
+      className="relative w-full bg-[#06101f] border-t border-sky-400/40 px-2 sm:px-4 py-2 sm:py-2.5"
+      data-testid="rotation-tally-panel"
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-sky-300">
+          <RotateCcw className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+          Rotation
+          <span className="text-slate-400 normal-case tracking-normal font-sans text-[10px]">
+            innings by area · pitching aside
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Hide rotation tally"
+          className="text-slate-400 hover:text-white p-1 -mr-1"
+          data-testid="button-close-rotation-tally"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-[11px] text-slate-400 py-2">
+          No lineup to tally yet.
+        </div>
+      ) : (
+        <div
+          /* Same horizontal-swipe handling as the tournament pitches strip:
+           * `touch-action: pan-x` keeps the gesture on this row instead of
+           * the parent vertical scroller, and `overscroll-x-contain` stops
+           * it triggering a browser back-gesture past the last chip. */
+          className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 overscroll-x-contain"
+          style={{ touchAction: "pan-x" }}
+        >
+          {rows.map((r) => (
+            <div
+              key={r.playerId}
+              className="shrink-0 rounded-md bg-[#0b1830] border border-white/10 px-2 py-1"
+              data-testid={`rotation-tally-chip-${r.playerId}`}
+            >
+              <div className="text-[11px] font-semibold text-white truncate max-w-[100px]">
+                {formatPlayerNameShort(r.name)}
+              </div>
+              <div className="flex gap-1 mt-0.5">
+                {cols.map((c) => {
+                  const n = c === "Bench" ? r.bench : (r.counts[c] ?? 0);
+                  const isBench = c === "Bench";
+                  const dim = n === 0;
+                  return (
+                    <span
+                      key={c}
+                      className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] tabular-nums font-medium ${
+                        dim
+                          ? "bg-white/5 text-slate-500"
+                          : isBench
+                            ? "bg-amber-400/20 text-amber-200"
+                            : "bg-sky-400/15 text-sky-200"
+                      }`}
+                    >
+                      <span className="opacity-70">
+                        {ROTATION_CAT_SHORT[c] ?? c.slice(0, 2)}
+                      </span>
+                      {n}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
       )}
