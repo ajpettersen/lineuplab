@@ -2543,21 +2543,13 @@ export default function FieldDisplay() {
           </div>
         )}
         {/* Rotation tally — opt-in per-player IF/OF/Bench inning counts.
-         *  Mirrors the tournament-pitches panel's responsive rule (Order
-         *  tab only on phones, always visible on md+ / iPad-landscape) so
-         *  it never steals vertical space from the Field diagram on a
-         *  phone's Field tab. */}
-        {showRotationTally && (
-          <div className={mobileTab === "order" ? "" : "max-md:hidden"}>
-            <RotationTallyPanel
-              rows={rotationTally.rows}
-              fieldCats={rotationTally.fieldCats}
-              onClose={() => setShowRotationTally(false)}
-            />
-          </div>
-        )}
-        {/* Re-open affordance for the rotation tally — same placement /
-         *  visibility rule as the tournament-pitches pill. */}
+         *  The panel itself is a floating HUD card portaled to <body>
+         *  (see below) so it can't be clipped by the header's stacking
+         *  context or squeezed into its flex-wrap row. Here in the header
+         *  we only render the small "Show rotation" trigger when it's
+         *  hidden — gated to the Order tab on phones so the Field tab
+         *  header stays uncluttered (the kebab works as a universal
+         *  trigger on either tab). */}
         {!showRotationTally && (
           <div
             className={`flex justify-center ${mobileTab === "order" ? "" : "max-md:hidden"}`}
@@ -2576,6 +2568,23 @@ export default function FieldDisplay() {
           </div>
         )}
       </header>
+
+      {/* Rotation tally floating card. Portaled to <body> so it floats
+       *  above the field/sidebar regardless of ancestor stacking contexts
+       *  (the header sits in its own z-10 context, and the sidebar at
+       *  z-20 would otherwise paint over an in-header panel). It's a
+       *  non-modal HUD anchored bottom-right so the coach can keep
+       *  dragging chips on the field while it's open. */}
+      {showRotationTally &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <RotationTallyPanel
+            rows={rotationTally.rows}
+            fieldCats={rotationTally.fieldCats}
+            onClose={() => setShowRotationTally(false)}
+          />,
+          document.body,
+        )}
 
       {/* ── Body: field on the left, batting panel on the right ──
        * Wrapped in a DndContext so chips on the field and on the bench can
@@ -3975,81 +3984,107 @@ function RotationTallyPanel({
   onClose: () => void;
 }) {
   // Stable column order: the field categories that actually appeared, then
-  // Bench last so it always sits at the right edge of every chip.
+  // Bench last so it always sits at the right edge of every row.
   const cols = [...fieldCats, "Bench"];
+  // One shared grid template drives the column header AND every body row so
+  // the numbers line up in tidy columns. Name takes the slack; each count
+  // column is a fixed 2.5rem so digits align no matter the roster.
+  const gridCols = {
+    gridTemplateColumns: `minmax(0,1fr) repeat(${cols.length}, 2.5rem)`,
+  };
   return (
     <div
-      className="relative w-full bg-[#06101f] border-t border-sky-400/40 px-2 sm:px-4 py-2 sm:py-2.5"
+      /* Floating HUD card, anchored bottom-right. On phones it lifts above
+       * the FIELD/ORDER tab bar (bottom-20) and spans most of the width;
+       * on tablet/desktop it's a compact ~21rem card in the corner. The
+       * whole thing is capped at 70vh and its body scrolls internally. */
+      className="fixed z-[60] right-2 bottom-2 max-lg:bottom-20 max-lg:left-2 lg:left-auto w-auto lg:w-[21rem] max-w-[calc(100vw-1rem)] max-h-[70vh] flex flex-col rounded-xl border border-sky-400/30 bg-[#0a1424]/95 backdrop-blur-sm shadow-2xl shadow-black/70 overflow-hidden"
       data-testid="rotation-tally-panel"
+      role="dialog"
+      aria-label="Rotation tally"
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-sky-300">
-          <RotateCcw className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-          Rotation
-          <span className="text-slate-400 normal-case tracking-normal font-sans text-[10px]">
-            innings by area · pitching aside
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10 bg-[#0f1d33] shrink-0">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="flex items-center gap-1.5 text-xs font-broadcast uppercase tracking-wider text-sky-300">
+            <RotateCcw className="h-3.5 w-3.5" />
+            Rotation
+          </span>
+          <span className="text-[10px] text-slate-400 truncate">
+            innings by area
           </span>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Hide rotation tally"
-          className="text-slate-400 hover:text-white p-1 -mr-1"
+          className="text-slate-400 hover:text-white hover:bg-white/10 rounded-md p-1 -mr-1 shrink-0"
           data-testid="button-close-rotation-tally"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
       {rows.length === 0 ? (
-        <div className="text-[11px] text-slate-400 py-2">
+        <div className="text-xs text-slate-400 px-3 py-4 text-center">
           No lineup to tally yet.
         </div>
       ) : (
         <div
-          /* Vertical scrolling list — the roster can run 12-15 deep, so a
-           * capped-height column that scrolls down is the natural gesture
-           * (the old horizontal strip swallowed touch scrolls and felt
-           * stuck). `touch-action: pan-y` keeps the vertical pan attached
-           * to this list, and `overscroll-contain` stops the scroll from
-           * bubbling out to the page once you hit the ends. */
-          className="flex flex-col gap-0.5 max-h-[42vh] lg:max-h-[55vh] overflow-y-auto overscroll-contain pr-1 -mr-1"
+          /* Vertical scroll — rosters run 12-15 deep. `touch-action: pan-y`
+           * keeps the pan attached to this list and `overscroll-contain`
+           * stops it bubbling out once you hit the ends. */
+          className="overflow-y-auto overscroll-contain min-h-0"
           style={{ touchAction: "pan-y" }}
         >
-          {rows.map((r) => (
-            <div
-              key={r.playerId}
-              className="flex items-center justify-between gap-2 rounded-md bg-[#0b1830] border border-white/10 px-2 py-1.5"
-              data-testid={`rotation-tally-chip-${r.playerId}`}
-            >
-              <div className="text-xs sm:text-sm font-semibold text-white truncate min-w-0">
-                {formatPlayerNameShort(r.name)}
-              </div>
-              <div className="flex gap-1 shrink-0">
+          {/* Sticky column header so the IF / OF / B labels stay visible
+           * while the list scrolls under them. */}
+          <div
+            className="sticky top-0 z-10 grid items-center gap-x-1 px-3 py-1.5 bg-[#0a1424]/95 backdrop-blur-sm border-b border-white/5 text-[10px] font-broadcast uppercase tracking-wider text-slate-400"
+            style={gridCols}
+          >
+            <span>Player</span>
+            {cols.map((c) => (
+              <span
+                key={c}
+                className={`text-center ${c === "Bench" ? "text-amber-300/80" : "text-sky-300/70"}`}
+              >
+                {ROTATION_CAT_SHORT[c] ?? c.slice(0, 2)}
+              </span>
+            ))}
+          </div>
+          <div className="px-1.5 py-1">
+            {rows.map((r, i) => (
+              <div
+                key={r.playerId}
+                className={`grid items-center gap-x-1 px-1.5 py-1.5 rounded-lg ${
+                  i % 2 === 1 ? "bg-white/[0.03]" : ""
+                }`}
+                style={gridCols}
+                data-testid={`rotation-tally-chip-${r.playerId}`}
+              >
+                <span className="text-sm font-medium text-white truncate min-w-0 pr-1">
+                  {formatPlayerNameShort(r.name)}
+                </span>
                 {cols.map((c) => {
                   const n = c === "Bench" ? r.bench : (r.counts[c] ?? 0);
                   const isBench = c === "Bench";
-                  const dim = n === 0;
                   return (
                     <span
                       key={c}
-                      className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] sm:text-xs tabular-nums font-medium ${
-                        dim
-                          ? "bg-white/5 text-slate-500"
+                      className={`text-center text-sm tabular-nums font-semibold ${
+                        n === 0
+                          ? "text-slate-600"
                           : isBench
-                            ? "bg-amber-400/20 text-amber-200"
-                            : "bg-sky-400/15 text-sky-200"
+                            ? "text-amber-300"
+                            : "text-sky-200"
                       }`}
                     >
-                      <span className="opacity-70">
-                        {ROTATION_CAT_SHORT[c] ?? c.slice(0, 2)}
-                      </span>
                       {n}
                     </span>
                   );
                 })}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
