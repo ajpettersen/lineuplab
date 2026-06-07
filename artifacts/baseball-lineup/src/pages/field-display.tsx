@@ -2834,10 +2834,11 @@ export default function FieldDisplay() {
          *  Single equal-distribution flex column at every viewport — 9
          *  batters get tall comfortable rows, 18 batters get shorter
          *  rows that still read clearly (min-h-[2.25rem] floor keeps
-         *  them tappable). The list always fills the panel height
-         *  exactly without scrolling because the parent locks to the
-         *  viewport on every breakpoint. The "currently at bat"
-         *  tracker was removed because there's no way to know real
+         *  them tappable). The list fills the panel height exactly and
+         *  shows no scrollbar whenever the roster fits; only a deep
+         *  roster that overflows the min-h floor scrolls (see the inner
+         *  container's `overflow-y-auto` note below). The "currently at
+         *  bat" tracker was removed because there's no way to know real
          *  game state without a GameChanger-style integration, and a
          *  stale indicator was worse than no indicator. */}
         <aside className={`max-lg:border-t-0 lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
@@ -2880,25 +2881,25 @@ export default function FieldDisplay() {
               />
             )}
           </div>
-          {/* The batting list MUST fit the panel without an internal
-           *  scroll — the dugout iPad is strapped to a fence and a
-           *  coach glancing at it shouldn't have to swipe to see the
-           *  bottom of the order. The wrapper is `flex flex-col
-           *  overflow-hidden`, the <ol> is `flex-1 min-h-0` so it
-           *  owns all leftover vertical space, and each <li> uses
-           *  `flex-1 basis-0` so 9 batters get tall comfy rows and
-           *  18 batters get shorter rows that still read clearly
+          {/* The batting list tries to fit the panel WITHOUT an internal
+           *  scroll — the dugout iPad is strapped to a fence and a coach
+           *  glancing at it shouldn't have to swipe to see the bottom of
+           *  the order. The wrapper is `flex flex-col`, the <ol> is
+           *  `flex-1 min-h-0` so it owns all leftover vertical space, and
+           *  each <li> uses `flex-1 basis-0` so 9 batters get tall comfy
+           *  rows and 18 batters get shorter rows that still read clearly
            *  (min-h floor keeps them tappable). */}
-          {/* Sub-lg viewports (phone portrait + phone landscape + iPad
-           *  portrait) get internal scroll so a deep roster on a short
-           *  viewport isn't clipped. Earlier this was scoped to portrait
-           *  only — on phone landscape the `flex-1 basis-0` rows have a
-           *  ~2.5rem floor, and 12+ batters × 40px overflows the ~280px
-           *  of vertical space the panel actually has on a 844×390
-           *  landscape phone. Letting it scroll is the right answer.
-           *  Desktop (`lg:`) keeps overflow-hidden because the panel
-           *  always fits the viewport there. */}
-          <div className="flex-1 min-h-0 overflow-hidden max-lg:overflow-y-auto flex flex-col p-2 sm:p-3">
+          {/* `overflow-y-auto` at EVERY breakpoint is the safety net: the
+           *  `flex-1 basis-0` rows only grow when they fit, so a roster
+           *  that fits shows NO scrollbar (the common case, behaviour
+           *  unchanged). But a deep roster on a short viewport — phone
+           *  landscape (12+ batters × ~40px floor over ~280px), iPad
+           *  portrait, OR even iPad landscape / desktop with a 15+ player
+           *  roster — would otherwise hit the min-h floor and clip its
+           *  last batters under `overflow-hidden`. Letting it scroll when
+           *  (and only when) it overflows is the right answer at all
+           *  sizes. */}
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-2 sm:p-3">
           {battingOrder.length === 0 ? (
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
