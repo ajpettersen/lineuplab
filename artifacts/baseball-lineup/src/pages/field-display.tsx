@@ -1155,16 +1155,17 @@ export default function FieldDisplay() {
   // ── Rotation tally overlay ──
   // Opt-in panel showing per-player Infield/Outfield/Bench inning counts
   // (pitching ignored) so the coach can keep rotation fair while dragging.
-  // Defaults ON because it's the kind of glanceable reference a coach wants
-  // up by default; one kebab tap (persisted) hides it for those who don't.
+  // Defaults OFF and only appears when the coach deliberately taps "Show
+  // rotation" (or the kebab) — the dugout iPad faces the players, and a
+  // coach doesn't want kids reading who's slated for the most bench time.
+  // The choice persists per-device once they opt in.
   const ROTATION_TALLY_KEY = "fd-show-rotation-tally";
   const [showRotationTally, setShowRotationTally] = useState<boolean>(() => {
     try {
-      if (typeof window === "undefined") return true;
-      const v = localStorage.getItem(ROTATION_TALLY_KEY);
-      return v == null ? true : v === "1";
+      if (typeof window === "undefined") return false;
+      return localStorage.getItem(ROTATION_TALLY_KEY) === "1";
     } catch {
-      return true;
+      return false;
     }
   });
   useEffect(() => {
@@ -4005,23 +4006,25 @@ function RotationTallyPanel({
         </div>
       ) : (
         <div
-          /* Same horizontal-swipe handling as the tournament pitches strip:
-           * `touch-action: pan-x` keeps the gesture on this row instead of
-           * the parent vertical scroller, and `overscroll-x-contain` stops
-           * it triggering a browser back-gesture past the last chip. */
-          className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 overscroll-x-contain"
-          style={{ touchAction: "pan-x" }}
+          /* Vertical scrolling list — the roster can run 12-15 deep, so a
+           * capped-height column that scrolls down is the natural gesture
+           * (the old horizontal strip swallowed touch scrolls and felt
+           * stuck). `touch-action: pan-y` keeps the vertical pan attached
+           * to this list, and `overscroll-contain` stops the scroll from
+           * bubbling out to the page once you hit the ends. */
+          className="flex flex-col gap-0.5 max-h-[42vh] lg:max-h-[55vh] overflow-y-auto overscroll-contain pr-1 -mr-1"
+          style={{ touchAction: "pan-y" }}
         >
           {rows.map((r) => (
             <div
               key={r.playerId}
-              className="shrink-0 rounded-md bg-[#0b1830] border border-white/10 px-2 py-1"
+              className="flex items-center justify-between gap-2 rounded-md bg-[#0b1830] border border-white/10 px-2 py-1.5"
               data-testid={`rotation-tally-chip-${r.playerId}`}
             >
-              <div className="text-[11px] font-semibold text-white truncate max-w-[100px]">
+              <div className="text-xs sm:text-sm font-semibold text-white truncate min-w-0">
                 {formatPlayerNameShort(r.name)}
               </div>
-              <div className="flex gap-1 mt-0.5">
+              <div className="flex gap-1 shrink-0">
                 {cols.map((c) => {
                   const n = c === "Bench" ? r.bench : (r.counts[c] ?? 0);
                   const isBench = c === "Bench";
@@ -4029,7 +4032,7 @@ function RotationTallyPanel({
                   return (
                     <span
                       key={c}
-                      className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] tabular-nums font-medium ${
+                      className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] sm:text-xs tabular-nums font-medium ${
                         dim
                           ? "bg-white/5 text-slate-500"
                           : isBench
