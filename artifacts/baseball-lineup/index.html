@@ -60,8 +60,16 @@
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- Single consolidated font request for every family the app
+         actually uses: Bricolage Grotesque (body), Oswald (display),
+         Roboto Mono (numerals), Space Mono (code/mono). Weights are
+         pinned to the ones in use rather than pulling whole variable
+         axes, and the fonts load here in the head — in parallel with the
+         JS bundle — instead of via a render-blocking @import in
+         index.css. This trims a meaningful chunk of font bytes off the
+         mobile/iPad first load (previously Inter was downloaded but
+         never used, and Oswald + Roboto Mono were each fetched twice). -->
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <!-- Instant boot splash. The app's real UI doesn't paint until the
