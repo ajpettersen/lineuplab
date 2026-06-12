@@ -350,6 +350,29 @@ export default function Stats() {
     }))
     .sort((a, b) => b.bench - a.bench);
 
+  // Pre-compute each player's per-group count + percentage once so the
+  // desktop table and the mobile card list render from the SAME numbers
+  // (avoids the getCount/getPct logic drifting between two layouts).
+  const fieldingRows = playerStats
+    .filter((p) => p.combinedTotal > 0)
+    .sort((a, b) => b.combinedTotal - a.combinedTotal)
+    .map((p) => {
+      const groups = (p.groups as Record<string, number>) ?? {};
+      const groupPct = (p.groupPct as Record<string, number>) ?? {};
+      const cells = displayGroupOrder.map((g) => {
+        const count =
+          g === "infield"
+            ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groups[k] ?? 0), 0)
+            : (groups[g] ?? 0);
+        const pct =
+          g === "infield"
+            ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groupPct[k] ?? 0), 0)
+            : (groupPct[g] ?? 0);
+        return { g, count, pct };
+      });
+      return { p, cells };
+    });
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -413,7 +436,8 @@ export default function Stats() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <ScrollX>
+                  {/* Desktop / tablet: wide multi-column table. */}
+                  <ScrollX className="hidden md:block">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
@@ -425,57 +449,96 @@ export default function Stats() {
                         </tr>
                       </thead>
                       <tbody>
-                        {playerStats
-                          .filter((p) => p.combinedTotal > 0)
-                          .sort((a, b) => b.combinedTotal - a.combinedTotal)
-                          .map((p) => {
-                            const groups = (p.groups as Record<string, number>) ?? {};
-                            const groupPct = (p.groupPct as Record<string, number>) ?? {};
-                            const getCount = (g: string) =>
-                              g === "infield"
-                                ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groups[k] ?? 0), 0)
-                                : (groups[g] ?? 0);
-                            const getPct = (g: string) =>
-                              g === "infield"
-                                ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groupPct[k] ?? 0), 0)
-                                : (groupPct[g] ?? 0);
-                            return (
-                              <tr key={p.playerId} className="border-b border-border/50 hover:bg-muted/30">
-                                <td className="py-2.5 pr-4">
-                                  <button
-                                    type="button"
-                                    onClick={() => setLogPlayerId(p.playerId)}
-                                    className="font-medium text-left hover:underline focus:underline focus:outline-none"
-                                    title="View game log"
-                                  >
-                                    {p.playerName}
-                                  </button>
-                                  {p.playerNumber != null && <div className="text-xs text-muted-foreground">#{p.playerNumber}</div>}
-                                  {p.historicalTotal > 0 && <div className="text-xs text-blue-600">{p.historicalTotal} hist.</div>}
-                                </td>
-                                <td className="text-center px-2 font-mono">{p.combinedTotal}</td>
-                                {displayGroupOrder.map((g) => {
-                                  const count = getCount(g);
-                                  const pct = getPct(g);
-                                  return (
-                                    <td key={g} className="text-center px-2" data-testid={`cell-${p.playerId}-${g}`}>
-                                      {count > 0 ? (
-                                        <div>
-                                          <div className="font-mono text-sm">{count}</div>
-                                          <PctBar pct={pct} color={GROUP_COLORS[g]} />
-                                        </div>
-                                      ) : (
-                                        <span className="text-muted-foreground/40">—</span>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
+                        {fieldingRows.map(({ p, cells }) => (
+                          <tr key={p.playerId} className="border-b border-border/50 hover:bg-muted/30">
+                            <td className="py-2.5 pr-4">
+                              <button
+                                type="button"
+                                onClick={() => setLogPlayerId(p.playerId)}
+                                className="font-medium text-left hover:underline focus:underline focus:outline-none"
+                                title="View game log"
+                              >
+                                {p.playerName}
+                              </button>
+                              {p.playerNumber != null && <div className="text-xs text-muted-foreground">#{p.playerNumber}</div>}
+                              {p.historicalTotal > 0 && <div className="text-xs text-blue-600">{p.historicalTotal} hist.</div>}
+                            </td>
+                            <td className="text-center px-2 font-mono">{p.combinedTotal}</td>
+                            {cells.map(({ g, count, pct }) => (
+                              <td key={g} className="text-center px-2" data-testid={`cell-${p.playerId}-${g}`}>
+                                {count > 0 ? (
+                                  <div>
+                                    <div className="font-mono text-sm">{count}</div>
+                                    <PctBar pct={pct} color={GROUP_COLORS[g]} />
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </ScrollX>
+
+                  {/* Mobile: per-player cards. Each position group is its own
+                      aligned row — fixed-width label, flexible bar, then the
+                      innings count and percentage in right-aligned mono
+                      columns so the numbers line up cleanly down the card. */}
+                  <div className="flex flex-col gap-3 md:hidden">
+                    {fieldingRows.map(({ p, cells }) => (
+                      <div
+                        key={p.playerId}
+                        className="rounded-lg border border-border/60 p-3"
+                        data-testid={`card-fielding-${p.playerId}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => setLogPlayerId(p.playerId)}
+                              className="font-medium text-left hover:underline focus:underline focus:outline-none truncate"
+                              title="View game log"
+                            >
+                              {p.playerName}
+                            </button>
+                            {p.playerNumber != null && <div className="text-xs text-muted-foreground">#{p.playerNumber}</div>}
+                            {p.historicalTotal > 0 && <div className="text-xs text-blue-600">{p.historicalTotal} hist.</div>}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="font-mono text-lg leading-none">{p.combinedTotal}</div>
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mt-1">Total Inn.</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-col gap-2">
+                          {cells.map(({ g, count, pct }) => (
+                            <div key={g} className="flex items-center gap-2" data-testid={`cell-${p.playerId}-${g}`}>
+                              <span className="w-16 shrink-0 text-xs text-muted-foreground">{GROUP_LABELS[g]}</span>
+                              {count > 0 ? (
+                                <>
+                                  <div className="flex-1 bg-muted rounded-full h-2">
+                                    <div
+                                      className="h-2 rounded-full"
+                                      style={{ width: `${pct}%`, backgroundColor: GROUP_COLORS[g] }}
+                                    />
+                                  </div>
+                                  <span className="w-7 shrink-0 text-right font-mono text-xs">{count}</span>
+                                  <span className="w-10 shrink-0 text-right font-mono text-xs text-muted-foreground">{pct}%</span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex-1 bg-muted/40 rounded-full h-2" />
+                                  <span className="w-7 shrink-0 text-right text-muted-foreground/40">—</span>
+                                  <span className="w-10 shrink-0" />
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
 
