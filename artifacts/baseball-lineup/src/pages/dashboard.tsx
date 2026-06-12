@@ -107,9 +107,20 @@ export default function Dashboard() {
   // <NextGameHero/> computes its own label + isPast badge from the
   // game it receives, so we just need to know whether to render it.
 
+  // Ranked by bench RATE (share of innings sat), not raw bench innings,
+  // so a kid who attended fewer games isn't unfairly flagged just for
+  // having more total innings on a roster with more playing time.
   const mostBenchPlayer = playerStats
     .filter((p) => p.totalInnings > 0)
     .sort((a, b) => b.benchInnings / (b.totalInnings || 1) - a.benchInnings / (a.totalInnings || 1))[0];
+  // Surface the SAME rate we ranked on as a percentage, so the heads-up
+  // metric is consistent with the selection (and easy for a coach to
+  // read at a glance) rather than a raw innings count.
+  const mostBenchPct = mostBenchPlayer
+    ? Math.round(
+        (mostBenchPlayer.benchInnings / (mostBenchPlayer.totalInnings || 1)) * 100,
+      )
+    : 0;
 
   const { data: tasks = [] } = useListDashboardTasks();
   // Game creation is a write — partial+ tiers see the button. View-only
@@ -508,8 +519,8 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-yellow-700">
-                <strong>{mostBenchPlayer.playerName}</strong> has sat on the bench the most this season 
-                ({mostBenchPlayer.benchInnings} innings). Consider prioritizing their field time in the next game.
+                <strong>{mostBenchPlayer.playerName}</strong> has sat on the bench the most this season
+                ({mostBenchPct}% of their innings). Consider prioritizing their field time in the next game.
               </p>
             </CardContent>
           </Card>
