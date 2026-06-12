@@ -706,93 +706,6 @@ export default function Admin() {
         </CardContent>
       </Card>
 
-      <Card data-testid="card-admin-ai-questions">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            AI Assistant questions
-          </CardTitle>
-          <CardDescription>
-            What coaches are typing into the in-game AI Assistant. Newest 100
-            shown. Master-admin's own calls are included.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {aiQuestionsQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading questions…</div>
-          ) : !aiQuestionsQuery.data ? (
-            <div className="text-sm text-muted-foreground">
-              {aiQuestionsQuery.error?.message ?? "Failed to load questions."}
-            </div>
-          ) : aiQuestionsQuery.data.questions.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              No AI Assistant questions logged yet.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {aiQuestionsQuery.data.questions.map((q) => {
-                const intentClass =
-                  q.intent === "answer"
-                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
-                    : q.intent === "regenerate"
-                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                      : q.intent === "remove"
-                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                        : q.intent === "error"
-                          ? "bg-destructive/15 text-destructive"
-                          : "bg-muted text-muted-foreground";
-                return (
-                  <div
-                    key={q.id}
-                    className="rounded-md border p-3 space-y-1.5"
-                    data-testid={`row-admin-ai-question-${q.id}`}
-                  >
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2 flex-wrap text-xs">
-                        <Link
-                          href={`/admin/teams/${encodeURIComponent(q.ownerUserId)}`}
-                          className="font-medium hover:underline"
-                        >
-                          {q.teamName}
-                        </Link>
-                        <span className="text-muted-foreground">·</span>
-                        <span className="text-muted-foreground">
-                          {q.askerName ?? q.askerEmail ?? q.askedByUserId}
-                        </span>
-                        {q.gameId !== null && (
-                          <>
-                            <span className="text-muted-foreground">·</span>
-                            <span className="text-muted-foreground font-mono">
-                              game #{q.gameId}
-                            </span>
-                          </>
-                        )}
-                        <span
-                          className={`text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ${intentClass}`}
-                        >
-                          {q.intent}
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {relativeOrNever(q.createdAt)}
-                      </div>
-                    </div>
-                    <div className="text-sm whitespace-pre-wrap break-words">
-                      {q.question}
-                    </div>
-                    {q.responsePreview && (
-                      <div className="text-xs text-muted-foreground italic whitespace-pre-wrap break-words border-l-2 pl-2">
-                        {q.responsePreview}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <Card data-testid="card-admin-teams">
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div className="space-y-1.5">
@@ -1120,6 +1033,97 @@ export default function Admin() {
                 })}
               </TableBody>
             </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* AI Assistant questions live at the very bottom: it's a long,
+          newest-100 activity log that's useful for spot-checking what
+          coaches ask, but it shouldn't push the Teams + Users tables
+          (the "who is actually using the app" view) below the fold. */}
+      <Card data-testid="card-admin-ai-questions">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            AI Assistant questions
+          </CardTitle>
+          <CardDescription>
+            What coaches are typing into the in-game AI Assistant. Newest 100
+            shown. Master-admin's own calls are included.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {aiQuestionsQuery.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading questions…</div>
+          ) : !aiQuestionsQuery.data ? (
+            <div className="text-sm text-muted-foreground">
+              {aiQuestionsQuery.error?.message ?? "Failed to load questions."}
+            </div>
+          ) : aiQuestionsQuery.data.questions.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No AI Assistant questions logged yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {aiQuestionsQuery.data.questions.map((q) => {
+                const intentClass =
+                  q.intent === "answer"
+                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+                    : q.intent === "regenerate"
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                      : q.intent === "remove"
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                        : q.intent === "error"
+                          ? "bg-destructive/15 text-destructive"
+                          : "bg-muted text-muted-foreground";
+                return (
+                  <div
+                    key={q.id}
+                    className="rounded-md border p-3 space-y-1.5"
+                    data-testid={`row-admin-ai-question-${q.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap text-xs">
+                        <Link
+                          href={`/admin/teams/${encodeURIComponent(q.ownerUserId)}`}
+                          className="font-medium hover:underline"
+                        >
+                          {q.teamName}
+                        </Link>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="text-muted-foreground">
+                          {q.askerName ?? q.askerEmail ?? q.askedByUserId}
+                        </span>
+                        {q.gameId !== null && (
+                          <>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground font-mono">
+                              game #{q.gameId}
+                            </span>
+                          </>
+                        )}
+                        <span
+                          className={`text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ${intentClass}`}
+                        >
+                          {q.intent}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {relativeOrNever(q.createdAt)}
+                      </div>
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap break-words">
+                      {q.question}
+                    </div>
+                    {q.responsePreview && (
+                      <div className="text-xs text-muted-foreground italic whitespace-pre-wrap break-words border-l-2 pl-2">
+                        {q.responsePreview}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

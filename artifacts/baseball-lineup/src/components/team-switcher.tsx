@@ -61,8 +61,13 @@ export function TeamSwitcher({ className }: { className?: string }) {
     });
   };
 
-  // Admin-bypass case: show a one-click "return to my team" button.
-  if (viewingForeignAsAdmin && ctx.memberOf.length === 0) {
+  // Admin "view as this team" case: ALWAYS show a one-click "return to
+  // my team" button, even if this admin also belongs to other teams.
+  // Returning to your own team is the overwhelmingly common need while
+  // impersonating, and a single button is far less clunky than opening
+  // the dropdown and hunting for your own row. (A multi-team admin who
+  // wants a *different* team can return first, then switch.)
+  if (viewingForeignAsAdmin) {
     return (
       <Button
         variant="outline"
@@ -84,26 +89,12 @@ export function TeamSwitcher({ className }: { className?: string }) {
     );
   }
 
-  // Only show the dropdown when there's actually something to switch
-  // between (own team + at least one joined team, OR the admin-foreign
-  // case above which falls through to here when memberOf is non-empty).
+  // Past this point the admin (if any) is NOT in view-as mode — that
+  // case is handled by the early return above. So the dropdown only
+  // ever lists the user's own team plus teams they've actually joined.
   if (ctx.memberOf.length === 0) return null;
 
-  // If the admin is viewing a foreign team that isn't in memberOf,
-  // surface it at the top of the list with a synthetic label so the
-  // dropdown isn't pointing at a "missing" entry.
-  const foreignAdminTeam = viewingForeignAsAdmin
-    ? {
-        ownerUserId: ctx.activeOwnerUserId,
-        teamName: "Viewing as admin",
-        teamShortName: "",
-      }
-    : null;
-  const allTeams = [
-    ...(foreignAdminTeam ? [foreignAdminTeam] : []),
-    ctx.ownedTeam,
-    ...ctx.memberOf,
-  ];
+  const allTeams = [ctx.ownedTeam, ...ctx.memberOf];
   const active = allTeams.find((t) => t.ownerUserId === ctx.activeOwnerUserId);
 
   return (
@@ -129,8 +120,6 @@ export function TeamSwitcher({ className }: { className?: string }) {
         {allTeams.map((t) => {
           const isActive = t.ownerUserId === ctx.activeOwnerUserId;
           const isOwn = t.ownerUserId === ctx.ownedTeam.ownerUserId;
-          const isForeignAdmin =
-            foreignAdminTeam && t.ownerUserId === foreignAdminTeam.ownerUserId;
           return (
             <DropdownMenuItem
               key={t.ownerUserId}
@@ -144,11 +133,7 @@ export function TeamSwitcher({ className }: { className?: string }) {
               <div className="flex flex-col flex-1 min-w-0">
                 <span className="truncate font-medium">{t.teamName}</span>
                 <span className="text-xs text-muted-foreground">
-                  {isForeignAdmin
-                    ? "Viewing as admin"
-                    : isOwn
-                      ? "Your team"
-                      : "Assistant coach"}
+                  {isOwn ? "Your team" : "Assistant coach"}
                 </span>
               </div>
             </DropdownMenuItem>
