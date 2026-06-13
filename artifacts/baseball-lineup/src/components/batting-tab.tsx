@@ -166,12 +166,25 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     fd.append("file", file);
     try {
       const resp = await fetch(`${BASE}/api/batting/extract`, { method: "POST", body: fd });
-      const { extracted: rows } = await resp.json();
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => null);
+        throw new Error(body?.error ?? `Extraction failed (${resp.status})`);
+      }
+      const { extracted: rows, unmatched } = (await resp.json()) as {
+        extracted: ExtractedRow[];
+        unmatched?: string[];
+      };
       setExtracted(rows);
       setUploadOpen(false);
-      toast({ title: `Extracted stats for ${rows.length} players — review and save` });
-    } catch {
-      toast({ title: "Extraction failed", variant: "destructive" });
+      toast({
+        title: `Extracted stats for ${rows.length} player${rows.length === 1 ? "" : "s"} — review and save`,
+        description:
+          unmatched && unmatched.length > 0
+            ? `Couldn't match: ${unmatched.join(", ")}. Check those names against your roster.`
+            : undefined,
+      });
+    } catch (err) {
+      toastError(toast, "Extraction failed", err);
     } finally {
       setUploading(false);
     }
@@ -189,7 +202,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rows: extracted.map((row) => ({ ...row, sourceNote: "Imported from season screenshot" })),
+          rows: extracted.map((row) => ({ ...row, sourceNote: "Imported from season stats" })),
         }),
       });
       if (!resp.ok) throw new Error(`import-season failed (${resp.status})`);
@@ -317,10 +330,10 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
             variant="outline"
             size="sm"
             onClick={() => setUploadOpen(true)}
-            aria-label="Extract from Screenshot"
+            aria-label="Import batting stats"
           >
             <Wand2 className="h-4 w-4 sm:mr-1" />
-            <span className="hidden sm:inline">Extract from Screenshot</span>
+            <span className="hidden sm:inline">Import Stats</span>
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -580,25 +593,25 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
       {/* Upload dialog */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Extract Stats from Screenshot</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Import Batting Stats</DialogTitle></DialogHeader>
           <div className="flex flex-col gap-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Upload a photo or screenshot of a scorebook, stat sheet, or document. The AI will read the batting stats and match them to your roster.
+              Upload a <strong>GameChanger stats export (.csv)</strong> for an exact import, or a photo/screenshot of a scorebook or stat sheet to read with AI. Stats are matched to your roster by jersey number and name.
             </p>
             <p className="rounded-md bg-amber-50 border border-amber-200 p-2 text-xs text-amber-800">
-              Importing a <strong>season</strong> screenshot replaces all prior totals (including imported box scores) for each matched player as of today. Games you record afterward will add on top.
+              Importing <strong>season</strong> stats replaces all prior totals (including imported box scores) for each matched player as of today. Games you record afterward will add on top.
             </p>
             <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-8 cursor-pointer transition-colors ${uploading ? "opacity-50 pointer-events-none" : "hover:border-primary/50 hover:bg-muted/30"}`}>
               <Upload className="h-8 w-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Click to upload image or PDF</span>
+              <span className="text-sm text-muted-foreground">Click to upload CSV, image, or PDF</span>
               <input
                 type="file"
                 className="hidden"
-                accept="image/*,.pdf"
+                accept=".csv,text/csv,image/*,.pdf"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
               />
             </label>
-            {uploading && <p className="text-sm text-center text-muted-foreground animate-pulse">Analyzing image...</p>}
+            {uploading && <p className="text-sm text-center text-muted-foreground animate-pulse">Reading stats...</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUploadOpen(false)}>Cancel</Button>

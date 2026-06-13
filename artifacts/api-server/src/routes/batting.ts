@@ -41,6 +41,188 @@ function computeRates(row: { ab: number; hits: number; doubles: number; triples:
   return { avg: Math.round(avg * 1000) / 1000, obp: Math.round(obp * 1000) / 1000, slg: Math.round(slg * 1000) / 1000, ops: Math.round(ops * 1000) / 1000 };
 }
 
+// ---------------------------------------------------------------------------
+// GameChanger CSV import. GameChanger's "Export Stats" produces a CSV with a
+// two-row header: row 1 carries SECTION markers (Batting / Pitching / Fielding)
+// spread across the columns, row 2 carries the actual column names. Crucially
+// several column names (H, R, BB, SO) appear in BOTH the batting and pitching
+// sections, so we MUST scope batting reads to columns left of the "Pitching"
+// marker — otherwise we'd read a pitcher's hits-allowed as their batting hits.
+// We parse this deterministically (no AI) since it's already structured data.
+// ---------------------------------------------------------------------------
+
+type RosterPlayer = {
+  id: number;
+  name: string;
+  number: number | null;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+type ExtractedBattingRow = {
+  playerId: number;
+  playerName: string;
+  ab: number; hits: number; doubles: number; triples: number; hr: number;
+  rbi: number; bb: number; k: number; hbp: number; sac: number; sf: number; sb: number;
+};
+
+// Minimal RFC-4180-ish CSV parser: handles quoted fields, escaped quotes
+// (""), and CRLF/LF line endings. Sufficient for GameChanger exports.
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let field = "";
+  let row: string[] = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field); field = "";
+    } else if (c === "\n") {
+      row.push(field); rows.push(row); row = []; field = "";
+    } else if (c !== "\r") {
+      field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// CSV batting column name -> our ExtractedBattingRow key.
+const GC_BATTING_COLS: Record<string, keyof ExtractedBattingRow> = {
+  AB: "ab", H: "hits", "2B": "doubles", "3B": "triples", HR: "hr",
+  RBI: "rbi", BB: "bb", SO: "k", HBP: "hbp", SAC: "sac", SF: "sf", SB: "sb",
+};
+
+const normName = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function extractGameChangerBatting(
+  text: string,
+  players: RosterPlayer[],
+): { extracted: ExtractedBattingRow[]; unmatched: string[] } | null {
+  // Strip a leading UTF-8 BOM — some browsers/OSes prepend one on download,
+  // which would otherwise corrupt the first header cell.
+  const rows = parseCsv(text.replace(/^\uFEFF/, ""));
+  if (rows.length < 2) return null;
+
+  // Locate the column-header row (has both "Last" and "First").
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 8); i++) {
+    const r = rows[i].map((c) => c.trim());
+    if (r.includes("Last") && r.includes("First")) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) return null; // not a recognizable GameChanger export
+
+  const header = rows[headerIdx].map((c) => c.trim());
+
+  // The section-marker row is usually directly above the header row. Use the
+  // "Pitching" marker column as the right boundary for batting columns.
+  let pitchingStart = header.length;
+  if (headerIdx > 0) {
+    const sec = rows[headerIdx - 1].map((c) => c.trim());
+    const pi = sec.indexOf("Pitching");
+    if (pi >= 0) pitchingStart = pi;
+  }
+
+  const findCol = (name: string, maxExclusive = header.length): number => {
+    for (let i = 0; i < maxExclusive; i++) if (header[i] === name) return i;
+    return -1;
+  };
+
+  const numberIdx = findCol("Number");
+  const lastIdx = findCol("Last");
+  const firstIdx = findCol("First");
+  if (lastIdx === -1 || firstIdx === -1) return null;
+
+  // Resolve each batting stat column, scoped to the batting section.
+  const statIdx: Partial<Record<keyof ExtractedBattingRow, number>> = {};
+  for (const [csvName, key] of Object.entries(GC_BATTING_COLS)) {
+    const idx = findCol(csvName, pitchingStart);
+    if (idx >= 0) statIdx[key] = idx;
+  }
+
+  // Build roster lookups. Jersey number is the most reliable key (skip numbers
+  // shared by multiple players); fall back to normalized full-name matching.
+  const numberCounts = new Map<number, number>();
+  for (const p of players) {
+    if (p.number != null) numberCounts.set(p.number, (numberCounts.get(p.number) ?? 0) + 1);
+  }
+  const byNumber = new Map<number, RosterPlayer>();
+  const byFullName = new Map<string, RosterPlayer>();
+  for (const p of players) {
+    if (p.number != null && numberCounts.get(p.number) === 1) byNumber.set(p.number, p);
+    const keys = [
+      normName(`${p.firstName ?? ""}${p.lastName ?? ""}`),
+      normName(`${p.lastName ?? ""}${p.firstName ?? ""}`),
+      normName(p.name),
+    ];
+    for (const k of keys) if (k && !byFullName.has(k)) byFullName.set(k, p);
+  }
+
+  const numCell = (row: string[], idx?: number): number => {
+    if (idx == null || idx < 0) return 0;
+    const raw = (row[idx] ?? "").trim();
+    if (!raw || raw === "-") return 0;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  };
+
+  const extracted: ExtractedBattingRow[] = [];
+  const unmatched: string[] = [];
+  const seen = new Set<number>();
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const last = (row[lastIdx] ?? "").trim();
+    const first = (row[firstIdx] ?? "").trim();
+    const firstCell = (row[0] ?? "").trim().toLowerCase();
+    // Stop at the trailing Totals / Glossary blocks.
+    if (firstCell === "totals" || firstCell === "glossary") break;
+    if (!last && !first) continue;
+
+    let player: RosterPlayer | undefined;
+    const numRaw = numberIdx >= 0 ? (row[numberIdx] ?? "").trim() : "";
+    if (numRaw) {
+      const num = parseInt(numRaw, 10);
+      if (Number.isFinite(num)) player = byNumber.get(num);
+    }
+    if (!player) player = byFullName.get(normName(`${first}${last}`));
+    if (!player) player = byFullName.get(normName(`${last}${first}`));
+
+    const display = `${first} ${last}`.trim() || last || first;
+    if (!player) { unmatched.push(display); continue; }
+    if (seen.has(player.id)) continue; // ignore dupes; keep first occurrence
+    seen.add(player.id);
+
+    extracted.push({
+      playerId: player.id,
+      playerName: player.name,
+      ab: numCell(row, statIdx.ab),
+      hits: numCell(row, statIdx.hits),
+      doubles: numCell(row, statIdx.doubles),
+      triples: numCell(row, statIdx.triples),
+      hr: numCell(row, statIdx.hr),
+      rbi: numCell(row, statIdx.rbi),
+      bb: numCell(row, statIdx.bb),
+      k: numCell(row, statIdx.k),
+      hbp: numCell(row, statIdx.hbp),
+      sac: numCell(row, statIdx.sac),
+      sf: numCell(row, statIdx.sf),
+      sb: numCell(row, statIdx.sb),
+    });
+  }
+
+  return { extracted, unmatched };
+}
+
 router.get("/batting", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   // Returns the unioned per-player totals (manual `batting_stats` row
@@ -392,9 +574,6 @@ router.post("/batting/extract", upload.single("file"), async (req, res): Promise
   const userId = req.ownerUserId!;
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
 
-  const charge = await chargeAiCall(req, "batting-import");
-  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
-
   const players = await db
     .select()
     .from(playersTable)
@@ -405,6 +584,29 @@ router.post("/batting/extract", upload.single("file"), async (req, res): Promise
         isNull(playersTable.deletedAt),
       ),
     );
+
+  // CSV (e.g. GameChanger "Export Stats") is already structured data — parse it
+  // deterministically rather than spending an AI call on OCR. Detect by file
+  // extension or mimetype; fall through to the AI vision path for images/PDFs.
+  const filename = req.file.originalname ?? "";
+  const mimetype = req.file.mimetype ?? "";
+  const isCsv = /\.csv$/i.test(filename) || /csv/i.test(mimetype);
+  if (isCsv) {
+    const text = req.file.buffer.toString("utf-8");
+    const result = extractGameChangerBatting(text, players);
+    if (!result) {
+      res.status(422).json({
+        error: "Couldn't read this CSV. Make sure it's a GameChanger stats export (it should have Number, Last, First and batting columns).",
+      });
+      return;
+    }
+    res.json({ extracted: result.extracted, unmatched: result.unmatched });
+    return;
+  }
+
+  const charge = await chargeAiCall(req, "batting-import");
+  if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
+
   const playerList = players.map((p) => `${p.id}: ${p.name}${p.number != null ? ` (#${p.number})` : ""}`).join("\n");
 
   const base64 = req.file.buffer.toString("base64");
