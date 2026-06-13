@@ -12,7 +12,7 @@ import {
   teamSettingsTable,
   aiAssistantQuestionsTable,
 } from "@workspace/db";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
 import {
   generateFairLineup,
@@ -275,8 +275,8 @@ ${body.data.message}`;
 
   let aiResponse: AiResponse | null = null;
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    const completion = await createChatCompletion({
+      model: AI_MODEL,
       max_completion_tokens: 1200,
       // Enforce a JSON response so we don't have to repair prose-wrapped output.
       response_format: { type: "json_object" },

@@ -25,6 +25,7 @@
     "http-proxy-middleware": "^3.0.5",
     "multer": "^1.4.5-lts.2",
     "node-ical": "^0.26.0",
+    "openai": "6.35.0",
     "pino": "^9",
     "pino-http": "^10",
     "web-push": "^3.6.7",

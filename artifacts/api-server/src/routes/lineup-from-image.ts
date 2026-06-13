@@ -2,7 +2,7 @@ import { Router, type IRouter, json as expressJson } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, playersTable } from "@workspace/db";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { FIELD_POSITIONS } from "../lib/lineup-generator";
 import { getOwnedGame } from "../lib/ownership";
 import { gateWrites } from "../lib/permissions";
@@ -238,8 +238,8 @@ Game length: ${game.innings} innings.`;
 
   let aiResult: AiResult | null = null;
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    const completion = await createChatCompletion({
+      model: AI_MODEL,
       // Lineups are short structured JSON; 1500 tokens fits ~80 entries with
       // notes and a margin. Keeping this tight cuts model latency noticeably
       // vs. the previous 4000-token budget.

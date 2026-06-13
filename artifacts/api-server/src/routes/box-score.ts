@@ -10,7 +10,7 @@ import {
   playersTable,
   pitchCountsTable,
 } from "@workspace/db";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { gateWrites } from "../lib/permissions";
 import { chargeAiCall } from "../lib/ai-usage";
 import { getOwnedGame } from "../lib/ownership";
@@ -384,8 +384,8 @@ Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentSco
       ourScore: number | null;
       opponentScore: number | null;
     }> {
-      const response = await openai.chat.completions.create({
-        model: "gpt-5.2",
+      const response = await createChatCompletion({
+        model: AI_MODEL,
         max_completion_tokens: 3000,
         reasoning_effort: "none",
         messages: [

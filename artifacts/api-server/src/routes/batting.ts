@@ -4,7 +4,7 @@ import multer from "multer";
 import { db, battingStatsTable, gameBattingLinesTable, playersTable } from "@workspace/db";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { getOwnedPlayer } from "../lib/ownership";
 import { getBattingTotals } from "../lib/batting-totals";
 import { chargeAiCall } from "../lib/ai-usage";
@@ -334,8 +334,8 @@ Return format:
 
 If a stat column is not visible, use 0. Only include players whose stats you can read. Return raw JSON array, no markdown.`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.2",
+  const response = await createChatCompletion({
+    model: AI_MODEL,
     max_completion_tokens: 4096,
     messages: [
       {

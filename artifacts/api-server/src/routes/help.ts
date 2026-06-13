@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
 
 const router: IRouter = Router();
@@ -113,8 +113,8 @@ router.post("/help/ask", async (req, res): Promise<void> => {
 
   let raw = "";
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    const completion = await createChatCompletion({
+      model: AI_MODEL,
       max_completion_tokens: 800,
       response_format: { type: "json_object" },
       messages: [

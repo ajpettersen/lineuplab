@@ -9,7 +9,7 @@ import {
   playersTable,
   type PracticeBlockJson,
 } from "@workspace/db";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
 import {
   GeneratePracticePlanParams,
@@ -527,9 +527,9 @@ Build the time-blocked plan now.`;
 
     let raw = "";
     try {
-      const completion = await openai.chat.completions.create(
+      const completion = await createChatCompletion(
         {
-          model: "gpt-5.2",
+          model: AI_MODEL,
           max_completion_tokens: 1800,
           response_format: { type: "json_object" },
           messages: [

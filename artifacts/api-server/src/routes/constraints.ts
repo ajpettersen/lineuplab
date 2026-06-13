@@ -3,7 +3,7 @@ import { gateWrites } from "../lib/permissions";
 import { db, lineupConstraintsTable, playersTable } from "@workspace/db";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { getOwnedPlayer } from "../lib/ownership";
 import { chargeAiCall } from "../lib/ai-usage";
 
@@ -159,8 +159,8 @@ Examples:
 
 Return only the JSON object. Always include the "constraints" array, even for a single rule.`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.2",
+  const response = await createChatCompletion({
+    model: AI_MODEL,
     max_completion_tokens: 1500,
     messages: [
       { role: "system", content: systemPrompt },

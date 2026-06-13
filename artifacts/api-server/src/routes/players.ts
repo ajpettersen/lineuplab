@@ -11,7 +11,7 @@ import {
   pitchCountsTable,
 } from "@workspace/db";
 import { desc } from "drizzle-orm";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
 import {
   CreatePlayerBody,
@@ -116,8 +116,8 @@ Players are not gated by "eligible" positions anymore — only canPitch matters
 for whether they'll be auto-assigned to pitch. Output only the raw JSON array.`;
 
 async function callExtractor(content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>) {
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.2",
+  const response = await createChatCompletion({
+    model: AI_MODEL,
     max_completion_tokens: 4096,
     messages: [{ role: "user", content }],
   });
