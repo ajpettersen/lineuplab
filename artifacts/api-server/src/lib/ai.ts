@@ -1,4 +1,4 @@
-import OpenAI, { APIError } from "openai";
+import OpenAI from "openai";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "./logger";
 
@@ -10,6 +10,9 @@ import { logger } from "./logger";
 export const AI_MODEL = "gpt-5.2";
 
 type ChatParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+// Per-request options (e.g. AbortSignal/timeout). Derived from the client
+// so we don't depend on the SDK's internal type-export names.
+type ChatRequestOptions = Parameters<typeof openai.chat.completions.create>[1];
 
 /**
  * Optional tuning knobs we're willing to DROP and retry without when a
@@ -33,13 +36,19 @@ const DROPPABLE_PARAMS = new Set<keyof ChatParams>([
   "service_tier",
 ]);
 
+// Structural check rather than `instanceof APIError`: if the SDK is ever
+// loaded as a second module instance (version drift, dual install), the
+// error object's prototype won't match our imported class and the fallback
+// would silently stop working. Duck-typing the `code`/`param` fields keeps
+// the graceful retry resilient to that.
 function unsupportedParam(err: unknown): string | null {
+  if (typeof err !== "object" || err === null) return null;
+  const { code, param } = err as { code?: unknown; param?: unknown };
   if (
-    err instanceof APIError &&
-    (err.code === "unsupported_value" || err.code === "unsupported_parameter") &&
-    typeof err.param === "string"
+    (code === "unsupported_value" || code === "unsupported_parameter") &&
+    typeof param === "string"
   ) {
-    return err.param;
+    return param;
   }
   return null;
 }
@@ -55,6 +64,7 @@ function unsupportedParam(err: unknown): string | null {
  */
 export async function createChatCompletion(
   params: Omit<ChatParams, "model"> & { model?: string },
+  options?: ChatRequestOptions,
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   let attempt: ChatParams = { model: AI_MODEL, ...params } as ChatParams;
 
@@ -62,7 +72,7 @@ export async function createChatCompletion(
   // never loop forever.
   for (let i = 0; i <= DROPPABLE_PARAMS.size; i++) {
     try {
-      return await openai.chat.completions.create(attempt);
+      return await openai.chat.completions.create(attempt, options);
     } catch (err) {
       const param = unsupportedParam(err);
       if (
@@ -84,5 +94,5 @@ export async function createChatCompletion(
 
   // Retry budget exhausted (every droppable knob peeled). Make one final
   // attempt so the genuine error — if any — surfaces to the caller.
-  return openai.chat.completions.create(attempt);
+  return openai.chat.completions.create(attempt, options);
 }
