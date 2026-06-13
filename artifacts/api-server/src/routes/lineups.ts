@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { db, playersTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, teamSettingsTable } from "@workspace/db";
+import { and, eq, inArray, isNull, ne, isNotNull, or, gte } from "drizzle-orm";
+import { db, playersTable, gamesTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, teamSettingsTable } from "@workspace/db";
 import { getBattingTotalsForPlayers } from "../lib/batting-totals";
 import {
   GetGameLineupParams,
@@ -187,12 +187,60 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       ? teamSettingsRow.activeFieldPositions
       : STANDARD_FIELD_POSITIONS;
 
+  // Learned preferred slots: when this game carries an explicit competitiveness
+  // override, mine the coach's past COMPETITIVE games (slider >= 50 or
+  // tournament-typed) for each player's saved batting slot and average them.
+  // The generator blends this with the OPS ranking at the competitive end so
+  // future competitive lineups drift toward where the coach actually bats each
+  // kid. Skipped entirely when competitiveness is null (legacy behavior).
+  let playerPreferredSlot: Map<number, number> | undefined;
+  if (game.competitiveness != null) {
+    const histRows = await db
+      .select({
+        gameId: lineupEntriesTable.gameId,
+        playerId: lineupEntriesTable.playerId,
+        battingOrder: lineupEntriesTable.battingOrder,
+      })
+      .from(lineupEntriesTable)
+      .innerJoin(gamesTable, eq(lineupEntriesTable.gameId, gamesTable.id))
+      .where(
+        and(
+          eq(gamesTable.userId, userId),
+          isNull(gamesTable.deletedAt),
+          ne(gamesTable.id, params.data.id),
+          isNotNull(lineupEntriesTable.battingOrder),
+          or(gte(gamesTable.competitiveness, 50), eq(gamesTable.gameType, "tournament")),
+        ),
+      );
+    // battingOrder is constant across innings for a player, so collapse to one
+    // slot per (game, player) before averaging.
+    const perGameSlot = new Map<string, number>();
+    for (const r of histRows) {
+      if (r.battingOrder == null) continue;
+      perGameSlot.set(`${r.gameId}:${r.playerId}`, r.battingOrder);
+    }
+    const acc = new Map<number, { sum: number; n: number }>();
+    for (const [key, slotValue] of perGameSlot) {
+      const pid = Number(key.slice(key.indexOf(":") + 1));
+      const cur = acc.get(pid) ?? { sum: 0, n: 0 };
+      cur.sum += slotValue;
+      cur.n += 1;
+      acc.set(pid, cur);
+    }
+    if (acc.size > 0) {
+      playerPreferredSlot = new Map();
+      for (const [pid, a] of acc) playerPreferredSlot.set(pid, a.sum / a.n);
+    }
+  }
+
   const generated = generateFairLineup(
     players,
     innings,
     {
       ...(constraints ?? {}),
       gameType: (game.gameType === "league" || game.gameType === "tournament") ? game.gameType : null,
+      competitiveness: game.competitiveness ?? null,
+      playerPreferredSlot,
       playerSeasonPlateAppearances: paMap,
       playerSeasonOBP: obpMap,
       playerSeasonSLG: slgMap,

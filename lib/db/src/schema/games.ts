@@ -31,6 +31,17 @@ export const gamesTable = pgTable(
     //   "league"     → rebalances season plate appearances (low-PA kids bat earlier)
     //   null         → unspecified, falls back to the global equity slider
     gameType: text("game_type"),
+    /**
+     * Per-game competitiveness override (0-100) for the BATTING ORDER only.
+     * Null = legacy behavior (use the gameType label + global fairness dial).
+     *   0   → fully equitable: order by ascending season plate appearances so
+     *         under-used kids bat earlier and PAs even out.
+     *   100 → fully competitive: OPS table-setter/cleanup order, blended with
+     *         each player's learned preferred slot from past competitive games.
+     * Values in between linearly blend the two orderings. Defense / field
+     * equity is unaffected — this dial only moves the batting order.
+     */
+    competitiveness: integer("competitiveness"),
     ourScore: integer("our_score"),
     opponentScore: integer("opponent_score"),
     // Wall-clock time of the actual first pitch (set by the dugout coach

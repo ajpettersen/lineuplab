@@ -165,6 +165,7 @@ router.post("/games", async (req, res): Promise<void> => {
       status: "upcoming",
       notes: d.notes ?? null,
       gameType: d.gameType ?? null,
+      competitiveness: d.competitiveness ?? null,
       tournamentId: d.tournamentId ?? null,
       // Tournament games default to pool play; coach switches to bracket
       // from the game-edit dialog once bracket play begins. Non-tournament
@@ -442,6 +443,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
   }
   if (d.notes !== undefined) updates.notes = d.notes;
   if (d.gameType !== undefined) updates.gameType = d.gameType;
+  if (d.competitiveness !== undefined) updates.competitiveness = d.competitiveness;
   if (d.tournamentId !== undefined) updates.tournamentId = d.tournamentId;
   if (d.bracketStage !== undefined) updates.bracketStage = d.bracketStage;
   if (d.isChampionship !== undefined) updates.isChampionship = d.isChampionship;

@@ -146,6 +146,9 @@ export const DeletePlayerParams = zod.object({
 /**
  * @summary List all games
  */
+export const listGamesResponseCompetitivenessMin = 0;
+export const listGamesResponseCompetitivenessMax = 100;
+
 export const ListGamesResponseItem = zod.object({
   id: zod.number(),
   opponent: zod.string(),
@@ -167,6 +170,14 @@ export const ListGamesResponseItem = zod.object({
     .nullish()
     .describe(
       'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
+  competitiveness: zod
+    .number()
+    .min(listGamesResponseCompetitivenessMin)
+    .max(listGamesResponseCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType\/global fairness behavior.",
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -236,6 +247,9 @@ export const ListGamesResponse = zod.array(ListGamesResponseItem);
 /**
  * @summary Create a new game
  */
+export const createGameBodyCompetitivenessMin = 0;
+export const createGameBodyCompetitivenessMax = 100;
+
 export const CreateGameBody = zod.object({
   opponent: zod.string(),
   gameDate: zod.coerce.date(),
@@ -249,6 +263,14 @@ export const CreateGameBody = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  competitiveness: zod
+    .number()
+    .min(createGameBodyCompetitivenessMin)
+    .max(createGameBodyCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. Null = use the gameType\/global fairness behavior.",
+    ),
   tournamentId: zod
     .number()
     .nullish()
@@ -261,6 +283,9 @@ export const CreateGameBody = zod.object({
 export const GetGameParams = zod.object({
   id: zod.coerce.number(),
 });
+
+export const getGameResponseCompetitivenessMin = 0;
+export const getGameResponseCompetitivenessMax = 100;
 
 export const GetGameResponse = zod.object({
   id: zod.number(),
@@ -283,6 +308,14 @@ export const GetGameResponse = zod.object({
     .nullish()
     .describe(
       'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
+  competitiveness: zod
+    .number()
+    .min(getGameResponseCompetitivenessMin)
+    .max(getGameResponseCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType\/global fairness behavior.",
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -355,6 +388,9 @@ export const UpdateGameParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const updateGameBodyCompetitivenessMin = 0;
+export const updateGameBodyCompetitivenessMax = 100;
+
 export const UpdateGameBody = zod.object({
   opponent: zod.string().optional(),
   gameDate: zod.coerce.date().optional(),
@@ -377,6 +413,14 @@ export const UpdateGameBody = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  competitiveness: zod
+    .number()
+    .min(updateGameBodyCompetitivenessMin)
+    .max(updateGameBodyCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. Set null to clear and fall back to the gameType\/global fairness behavior.",
+    ),
   tournamentId: zod
     .number()
     .nullish()
@@ -396,6 +440,9 @@ export const UpdateGameBody = zod.object({
       'Flag this game as the tournament championship so the Field Display auto-enables Championship Mode. Can only be true on tournament games (gameType=\"tournament\").',
     ),
 });
+
+export const updateGameResponseCompetitivenessMin = 0;
+export const updateGameResponseCompetitivenessMax = 100;
 
 export const UpdateGameResponse = zod.object({
   id: zod.number(),
@@ -418,6 +465,14 @@ export const UpdateGameResponse = zod.object({
     .nullish()
     .describe(
       'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
+  competitiveness: zod
+    .number()
+    .min(updateGameResponseCompetitivenessMin)
+    .max(updateGameResponseCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType\/global fairness behavior.",
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -498,6 +553,9 @@ export const SnapshotPlanParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const snapshotPlanResponseCompetitivenessMin = 0;
+export const snapshotPlanResponseCompetitivenessMax = 100;
+
 export const SnapshotPlanResponse = zod.object({
   id: zod.number(),
   opponent: zod.string(),
@@ -519,6 +577,14 @@ export const SnapshotPlanResponse = zod.object({
     .nullish()
     .describe(
       'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
+  competitiveness: zod
+    .number()
+    .min(snapshotPlanResponseCompetitivenessMin)
+    .max(snapshotPlanResponseCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType\/global fairness behavior.",
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -591,6 +657,9 @@ export const ClearPlanSnapshotParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const clearPlanSnapshotResponseCompetitivenessMin = 0;
+export const clearPlanSnapshotResponseCompetitivenessMax = 100;
+
 export const ClearPlanSnapshotResponse = zod.object({
   id: zod.number(),
   opponent: zod.string(),
@@ -612,6 +681,14 @@ export const ClearPlanSnapshotResponse = zod.object({
     .nullish()
     .describe(
       'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+    ),
+  competitiveness: zod
+    .number()
+    .min(clearPlanSnapshotResponseCompetitivenessMin)
+    .max(clearPlanSnapshotResponseCompetitivenessMax)
+    .nullish()
+    .describe(
+      "Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType\/global fairness behavior.",
     ),
   ourScore: zod.number().nullish(),
   opponentScore: zod.number().nullish(),
@@ -1407,6 +1484,9 @@ export const getTournamentResponseOneRestTiersTwoItemMaxPitchesMin = 0;
 
 export const getTournamentResponseOneRestTiersTwoItemDaysRestMin = 0;
 
+export const getTournamentResponseTwoGamesItemCompetitivenessMin = 0;
+export const getTournamentResponseTwoGamesItemCompetitivenessMax = 100;
+
 export const getTournamentResponseTwoEffectiveRestTiersItemMaxPitchesMin = 0;
 
 export const getTournamentResponseTwoEffectiveRestTiersItemDaysRestMin = 0;
@@ -1531,6 +1611,14 @@ export const GetTournamentResponse = zod
             .nullish()
             .describe(
               'Competitive context for lineup generation — \"tournament\" favors competitiveness, \"league\" rebalances season plate appearances, null falls back to the global equity slider',
+            ),
+          competitiveness: zod
+            .number()
+            .min(getTournamentResponseTwoGamesItemCompetitivenessMin)
+            .max(getTournamentResponseTwoGamesItemCompetitivenessMax)
+            .nullish()
+            .describe(
+              "Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType\/global fairness behavior.",
             ),
           ourScore: zod.number().nullish(),
           opponentScore: zod.number().nullish(),

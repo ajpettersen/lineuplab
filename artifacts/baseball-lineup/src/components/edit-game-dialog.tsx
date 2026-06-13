@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { useTeamSettings } from "@/hooks/use-team-settings";
@@ -32,6 +33,7 @@ export type EditableGame = {
   innings: number;
   status: string;
   gameType?: "league" | "tournament" | null;
+  competitiveness?: number | null;
   tournamentId?: number | null;
   bracketStage?: "pool" | "bracket" | null;
   isChampionship?: boolean | null;
@@ -74,6 +76,15 @@ export function EditGameDialog({
   const [isChampionship, setIsChampionship] = useState<boolean>(
     game.isChampionship === true,
   );
+  // Per-game competitiveness override (0-100) for the batting order. Off =
+  // null (keep the gameType/global default). On = an explicit 0-100 value
+  // blending equitable PAs (low) with best-bats-first + learned slots (high).
+  const [competitivenessOn, setCompetitivenessOn] = useState<boolean>(
+    game.competitiveness != null,
+  );
+  const [competitiveness, setCompetitiveness] = useState<number>(
+    game.competitiveness ?? 50,
+  );
   const [saving, setSaving] = useState(false);
   const showStagePicker =
     game.tournamentId != null && gameType === "tournament";
@@ -94,6 +105,7 @@ export function EditGameDialog({
           notes: notes.trim() || null,
           status,
           gameType: gameType === "none" ? null : gameType,
+          competitiveness: competitivenessOn ? competitiveness : null,
           // Only persist a stage when the game is actually a tournament
           // game linked to a tournament — otherwise clear it so a coach
           // demoting "tournament" → "league" doesn't leave a stale stage.
@@ -172,6 +184,60 @@ export function EditGameDialog({
                 ? "Lineup generator will favor your strongest players and best bats first."
                 : "Lineup generator will use your default fairness setting."}
             </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => setCompetitivenessOn((v) => !v)}
+              className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
+                competitivenessOn
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/40"
+              }`}
+              data-testid="button-toggle-competitiveness"
+            >
+              <Checkbox
+                checked={competitivenessOn}
+                className="mt-0.5 pointer-events-none"
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-foreground">
+                  Set a custom competitiveness
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Fine-tune the batting order for this game. Overrides the
+                  Game Type default above.
+                </span>
+              </span>
+            </button>
+            {competitivenessOn && (
+              <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Equitable</span>
+                  <span className="font-mono text-sm font-medium text-foreground">
+                    {competitiveness}
+                  </span>
+                  <span>Competitive</span>
+                </div>
+                <Slider
+                  value={[competitiveness]}
+                  onValueChange={(v) => setCompetitiveness(v[0] ?? 50)}
+                  min={0}
+                  max={100}
+                  step={5}
+                  data-testid="slider-competitiveness"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {competitiveness <= 33
+                    ? "Even out plate appearances — under-used players bat earlier."
+                    : competitiveness >= 67
+                      ? "Best OPS order, learning from how you usually bat each player."
+                      : "Balanced — blends fair plate appearances with your best bats."}
+                </p>
+              </div>
+            )}
           </div>
           {showStagePicker && (
             <div className="flex flex-col gap-1.5" data-testid="bracket-stage-picker">

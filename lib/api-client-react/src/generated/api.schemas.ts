@@ -136,6 +136,13 @@ export interface Game {
    * @nullable
    */
   gameType?: GameGameType;
+  /**
+   * Per-game competitiveness override (0-100) for the batting order. 0 = even out plate appearances, 100 = best OPS order blended with the coach's learned preferred slots. Null falls back to the gameType/global fairness behavior.
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  competitiveness?: number | null;
   /** @nullable */
   ourScore?: number | null;
   /** @nullable */
@@ -193,6 +200,13 @@ export interface CreateGameBody {
   notes?: string | null;
   /** @nullable */
   gameType?: CreateGameBodyGameType;
+  /**
+   * Per-game competitiveness override (0-100) for the batting order. Null = use the gameType/global fairness behavior.
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  competitiveness?: number | null;
   /**
    * Optionally create the game already linked to a tournament.
    * @nullable
@@ -254,6 +268,13 @@ export interface UpdateGameBody {
   notes?: string | null;
   /** @nullable */
   gameType?: UpdateGameBodyGameType;
+  /**
+   * Per-game competitiveness override (0-100) for the batting order. Set null to clear and fall back to the gameType/global fairness behavior.
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  competitiveness?: number | null;
   /**
    * Set to a tournaments.id to link this game into that tournament; set to null to detach.
    * @nullable

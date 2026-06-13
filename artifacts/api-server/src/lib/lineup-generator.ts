@@ -50,6 +50,21 @@ export interface LineupConstraints {
    */
   playerSeasonSLG?: Map<number, number>;
   /**
+   * Per-game competitiveness (0-100) for the BATTING ORDER. When non-null it
+   * replaces the gameType-based branch with a continuous blend: 0 = ascending
+   * season PA (equitable, even out plate appearances), 100 = OPS table-setter/
+   * cleanup order blended with the coach's learned preferred slots. Defense and
+   * field equity are unaffected. Null/undefined → legacy gameType branch.
+   */
+  competitiveness?: number | null;
+  /**
+   * Learned average batting slot per playerId, derived from saved orders on the
+   * coach's past competitive games. Only consulted at the competitive end of the
+   * `competitiveness` blend (nudges players toward where the coach usually bats
+   * them, blended 50/50 with the OPS ranking).
+   */
+  playerPreferredSlot?: Map<number, number>;
+  /**
    * Team-wide batting style (from team_settings.batting_style):
    *  - "continuous" → every player on the roster gets a batting slot
    *    (everyone bats, slots 1..N).
@@ -468,14 +483,23 @@ export function generateFairLineup(
   const battingOrderMap = new Map<number, number>();
   let slot = 1;
   const paMap = constraints.playerSeasonPlateAppearances ?? new Map<number, number>();
-  let ordered: Player[];
-  if (constraints.gameType === "league") {
-    ordered = [...players].sort((a, b) => {
+  const fieldTimeOf = (id: number) => totalInningsPlayed.get(id) ?? 0;
+
+  // Equitable order: fewest season PAs bat first (even out plate appearances),
+  // tiebroken by field time so a player who sat still slots behind a
+  // similarly-batted player who took the field.
+  const buildEquitableOrder = (): Player[] =>
+    [...players].sort((a, b) => {
       const paDiff = (paMap.get(a.id) ?? 0) - (paMap.get(b.id) ?? 0);
       if (paDiff !== 0) return paDiff;
-      return (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0);
+      return fieldTimeOf(b.id) - fieldTimeOf(a.id);
     });
-  } else if (constraints.gameType === "tournament") {
+
+  // Competitive order: OPS table-setter / cleanup arrangement. When
+  // `useLearning` is true and learned preferred slots were supplied, each
+  // player's OPS-derived rank is blended 50/50 with where the coach usually
+  // bats them on competitive games.
+  const buildCompetitiveOrder = (useLearning: boolean): Player[] => {
     // Tournament batting order: table-setter / cleanup blend.
     //
     // Plain OBP-descending isn't quite what a coach wants — yes, the
@@ -548,11 +572,51 @@ export function generateFairLineup(
     // and the tail fall through in OPS-descending order.
     arranged.push(...core.sort((a, b) => (b.ops - a.ops) || (fieldTime(b) - fieldTime(a))));
     arranged.push(...tail);
-    ordered = arranged.map((s) => s.player);
+    let opsOrder = arranged.map((s) => s.player);
+
+    // Fold in the coach's learned preferred slots: blend each player's
+    // OPS-derived rank 50/50 with their average slot from past competitive
+    // games. Players with no learned history keep their pure OPS rank.
+    const learned = constraints.playerPreferredSlot;
+    if (useLearning && learned && learned.size > 0) {
+      const opsRank = new Map<number, number>();
+      opsOrder.forEach((p, i) => opsRank.set(p.id, i));
+      opsOrder = [...opsOrder].sort((a, b) => {
+        const aBase = opsRank.get(a.id) ?? 0;
+        const bBase = opsRank.get(b.id) ?? 0;
+        const aKey = learned.has(a.id) ? 0.5 * aBase + 0.5 * (learned.get(a.id)! - 1) : aBase;
+        const bKey = learned.has(b.id) ? 0.5 * bBase + 0.5 * (learned.get(b.id)! - 1) : bBase;
+        if (aKey !== bKey) return aKey - bKey;
+        return fieldTimeOf(b.id) - fieldTimeOf(a.id);
+      });
+    }
+    return opsOrder;
+  };
+
+  // Choose the ordering. A per-game competitiveness override (0-100) takes
+  // precedence and blends the equitable and competitive orders continuously;
+  // otherwise fall back to the gameType-based branch (unchanged legacy behavior).
+  let ordered: Player[];
+  if (constraints.competitiveness != null) {
+    const w = Math.min(1, Math.max(0, constraints.competitiveness / 100));
+    const eq = buildEquitableOrder();
+    const comp = buildCompetitiveOrder(true);
+    const eqRank = new Map<number, number>();
+    eq.forEach((p, i) => eqRank.set(p.id, i));
+    const compRank = new Map<number, number>();
+    comp.forEach((p, i) => compRank.set(p.id, i));
+    ordered = [...players].sort((a, b) => {
+      const aKey = (1 - w) * (eqRank.get(a.id) ?? 0) + w * (compRank.get(a.id) ?? 0);
+      const bKey = (1 - w) * (eqRank.get(b.id) ?? 0) + w * (compRank.get(b.id) ?? 0);
+      if (aKey !== bKey) return aKey - bKey;
+      return fieldTimeOf(b.id) - fieldTimeOf(a.id);
+    });
+  } else if (constraints.gameType === "league") {
+    ordered = buildEquitableOrder();
+  } else if (constraints.gameType === "tournament") {
+    ordered = buildCompetitiveOrder(false);
   } else {
-    ordered = [...players].sort(
-      (a, b) => (totalInningsPlayed.get(b.id) ?? 0) - (totalInningsPlayed.get(a.id) ?? 0)
-    );
+    ordered = [...players].sort((a, b) => fieldTimeOf(b.id) - fieldTimeOf(a.id));
   }
   // In nine-man mode only the top 9 players (by the chosen ordering rule)
   // get a batting slot — the rest are subs with battingOrder=null. Continuous
