@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGetSeasonStats, useGetPlayerStats, useListPlayers, useGetPreferences } from "@workspace/api-client-react";
 
 interface ExtendedPlayerStats {
@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPlayerNameShort } from "@/lib/player-name";
-import { Trash2, Download, Info } from "lucide-react";
+import { Trash2, Download, Info, Sparkles, Send, User } from "lucide-react";
 import { ScrollX } from "@/components/ui/scroll-x";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -163,6 +163,183 @@ function PctBar({ pct, color }: { pct: number; color: string }) {
       </div>
       <span className="text-xs font-mono w-8 text-right">{pct}%</span>
     </div>
+  );
+}
+
+// ---- Rotation Assistant ----
+// Inline season-wide AI assistant scoped to rotation/playing-time questions.
+// Reuses the same READ-ONLY tool-calling endpoint as the app-wide /ask page
+// (POST /api/assistant) — that loop already exposes get_position_by_inning,
+// which answers per-inning questions like "started the game on the bench"
+// (position "Bench" in inning 1). No backend change needed.
+type AssistantMessage = { role: "user" | "assistant"; content: string };
+
+const ROTATION_SUGGESTIONS = [
+  "How many innings has each player started the game on the bench?",
+  "Who has sat on the bench the most this season?",
+  "Has anyone never played the infield?",
+  "Who has pitched the fewest innings?",
+];
+
+function RotationAssistantCard() {
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
+
+  async function send(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || loading) return;
+    setError(null);
+    const next: AssistantMessage[] = [...messages, { role: "user", content: trimmed }];
+    setMessages(next);
+    setInput("");
+    setLoading(true);
+    const myRequestId = ++requestIdRef.current;
+    try {
+      // Bounded tail keeps the prompt within the server's 24-message cap.
+      const resp = await fetch(`${BASE}/api/assistant`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: next.slice(-20) }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed (${resp.status})`);
+      }
+      const data = await resp.json();
+      if (myRequestId !== requestIdRef.current) return;
+      setMessages((prev) => [...prev, { role: "assistant", content: data.text }]);
+    } catch (e) {
+      if (myRequestId !== requestIdRef.current) return;
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      if (myRequestId === requestIdRef.current) setLoading(false);
+    }
+  }
+
+  const empty = messages.length === 0;
+
+  return (
+    <Card data-testid="card-rotation-assistant">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          Ask about the rotation
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          One-off questions about playing time and position history — e.g. who's
+          started the most innings on the bench. Reads your completed games (plus
+          imported history for season totals).
+        </p>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {empty ? (
+          <div className="flex flex-wrap gap-2">
+            {ROTATION_SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => send(s)}
+                disabled={loading}
+                className="text-xs rounded-full border px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
+                data-testid="rotation-assistant-suggestion"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div
+            ref={scrollRef}
+            className="max-h-72 overflow-y-auto rounded-lg border bg-muted/20 p-3 space-y-3"
+            data-testid="rotation-assistant-messages"
+          >
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={`flex gap-2.5 ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                data-testid={`rotation-assistant-message-${m.role}`}
+              >
+                {m.role === "assistant" && (
+                  <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-fit">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                  </div>
+                )}
+                <div
+                  className={`rounded-2xl px-3.5 py-2 text-sm leading-snug whitespace-pre-wrap max-w-[80%] ${
+                    m.role === "user"
+                      ? "bg-primary text-primary-foreground rounded-br-sm"
+                      : "bg-card text-foreground rounded-bl-sm border"
+                  }`}
+                >
+                  {m.content}
+                </div>
+                {m.role === "user" && (
+                  <div className="shrink-0 rounded-full bg-muted p-1.5 h-fit">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            ))}
+            {loading && (
+              <div className="flex gap-2.5 justify-start" data-testid="rotation-assistant-loading">
+                <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-fit">
+                  <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+                </div>
+                <div className="rounded-2xl rounded-bl-sm bg-card border px-3.5 py-2 text-sm text-muted-foreground">
+                  Thinking…
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <p className="text-sm text-destructive" data-testid="rotation-assistant-error">
+            {error}
+          </p>
+        )}
+
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send(input);
+          }}
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send(input);
+              }
+            }}
+            placeholder="Ask about playing time, bench innings, positions…"
+            rows={1}
+            disabled={loading}
+            data-testid="input-rotation-assistant"
+            className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-h-32"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={loading || !input.trim()}
+            data-testid="button-rotation-assistant-send"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -414,6 +591,8 @@ export default function Stats() {
           </Card>
         )}
       </div>
+
+      <RotationAssistantCard />
 
       <Tabs defaultValue="fielding">
         <TabsList>
