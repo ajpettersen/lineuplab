@@ -199,9 +199,21 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
         });
       }
     }
-
-    if (tasks.length >= MAX_TASKS) break;
   }
+
+  // Order game tasks by category priority so the most important nags float
+  // to the top regardless of which game they belong to. Recording a final
+  // score is the most important (it drives W-L-T + season stats), so it
+  // ranks above importing a box-score screenshot, which ranks above pitch
+  // counts. gameDate-DESC recency is preserved within each category because
+  // the collection loop above runs newest-first and Array.sort is stable.
+  const TASK_PRIORITY: Record<Task["type"], number> = {
+    score: 0,
+    box_score: 1,
+    pitch_counts: 2,
+    tournament_network: 3,
+  };
+  tasks.sort((a, b) => TASK_PRIORITY[a.type] - TASK_PRIORITY[b.type]);
 
   // Tournament-network suggestion tasks. We surface ONE task per
   // tournament owned by this coach that:
