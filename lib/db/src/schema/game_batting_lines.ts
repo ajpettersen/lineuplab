@@ -60,6 +60,7 @@ export const gameBattingLinesTable = pgTable(
     k: integer("k").notNull().default(0),
     hbp: integer("hbp").notNull().default(0),
     sac: integer("sac").notNull().default(0),
+    sf: integer("sf").notNull().default(0),
     sb: integer("sb").notNull().default(0),
     runs: integer("runs").notNull().default(0),
     sourceNote: text("source_note"),

@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
 import multer from "multer";
-import { db, battingStatsTable, gameBattingLinesTable, playersTable } from "@workspace/db";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { db, battingStatsTable, gameBattingLinesTable, gamesTable, playersTable } from "@workspace/db";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { getOwnedPlayer } from "../lib/ownership";
@@ -26,12 +26,13 @@ const BattingRowSchema = z.object({
   k: z.number().int().min(0).default(0),
   hbp: z.number().int().min(0).default(0),
   sac: z.number().int().min(0).default(0),
+  sf: z.number().int().min(0).default(0),
   sb: z.number().int().min(0).default(0),
   sourceNote: z.string().optional(),
 });
 
-function computeRates(row: { ab: number; hits: number; doubles: number; triples: number; hr: number; bb: number; hbp: number; sac: number }) {
-  const pa = row.ab + row.bb + row.hbp + row.sac;
+function computeRates(row: { ab: number; hits: number; doubles: number; triples: number; hr: number; bb: number; hbp: number; sac: number; sf: number }) {
+  const pa = row.ab + row.bb + row.hbp + row.sac + row.sf;
   const avg = row.ab > 0 ? row.hits / row.ab : 0;
   const obp = pa > 0 ? (row.hits + row.bb + row.hbp) / pa : 0;
   const tb = row.hits - row.doubles - row.triples - row.hr + row.doubles * 2 + row.triples * 3 + row.hr * 4;
@@ -66,6 +67,7 @@ router.get("/batting", async (req, res): Promise<void> => {
       k: r.k,
       hbp: r.hbp,
       sac: r.sac,
+      sf: r.sf,
       sb: r.sb,
       runs: r.runs,
       avg: r.avg,
@@ -100,6 +102,18 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
   // on top and the stat would appear to double. So before writing,
   // we subtract the per-game contribution and store only the manual
   // DELTA. Mental model for callers: "save what you see" still works.
+  //
+  // We must subtract the SAME per-game slice that `getBattingTotals`
+  // adds back: only games dated AFTER this player's season-import
+  // cutoff (all games when there's no cutoff). Otherwise an inline
+  // edit on a player who has a season override would store a wrong
+  // delta. The cutoff itself is preserved on the write below.
+  const existing = await db
+    .select()
+    .from(battingStatsTable)
+    .where(eq(battingStatsTable.playerId, playerId));
+  const cutoff = existing[0]?.seasonImportedAt ?? null;
+
   const perGameRows = await db
     .select({
       ab: sql<number>`coalesce(sum(${gameBattingLinesTable.ab}), 0)::int`,
@@ -112,18 +126,21 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
       k: sql<number>`coalesce(sum(${gameBattingLinesTable.k}), 0)::int`,
       hbp: sql<number>`coalesce(sum(${gameBattingLinesTable.hbp}), 0)::int`,
       sac: sql<number>`coalesce(sum(${gameBattingLinesTable.sac}), 0)::int`,
+      sf: sql<number>`coalesce(sum(${gameBattingLinesTable.sf}), 0)::int`,
       sb: sql<number>`coalesce(sum(${gameBattingLinesTable.sb}), 0)::int`,
     })
     .from(gameBattingLinesTable)
+    .innerJoin(gamesTable, eq(gamesTable.id, gameBattingLinesTable.gameId))
     .where(
       and(
         eq(gameBattingLinesTable.userId, userId),
         eq(gameBattingLinesTable.playerId, playerId),
+        cutoff ? gt(gamesTable.gameDate, cutoff) : undefined,
       ),
     );
   const pg = perGameRows[0] ?? {
     ab: 0, hits: 0, doubles: 0, triples: 0, hr: 0, rbi: 0,
-    bb: 0, k: 0, hbp: 0, sac: 0, sb: 0,
+    bb: 0, k: 0, hbp: 0, sac: 0, sf: 0, sb: 0,
   };
 
   // Reject impossible totals (incoming < per-game sum) up front rather
@@ -131,7 +148,7 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
   // is the source of truth and they should edit it there instead.
   const COUNT_KEYS = [
     "ab", "hits", "doubles", "triples", "hr", "rbi",
-    "bb", "k", "hbp", "sac", "sb",
+    "bb", "k", "hbp", "sac", "sf", "sb",
   ] as const;
   for (const key of COUNT_KEYS) {
     if (parsed.data[key] < pg[key]) {
@@ -153,7 +170,6 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
   // the unioned counts. Keep the column populated so legacy callers
   // that read the row directly still see sensible numbers.
   const rates = computeRates(manual);
-  const existing = await db.select().from(battingStatsTable).where(eq(battingStatsTable.playerId, playerId));
 
   if (existing.length > 0) {
     const [updated] = await db
@@ -233,8 +249,13 @@ const RestoreSchema = z.object({
       k: z.number().int().min(0).default(0),
       hbp: z.number().int().min(0).default(0),
       sac: z.number().int().min(0).default(0),
+      sf: z.number().int().min(0).default(0),
       sb: z.number().int().min(0).default(0),
       sourceNote: z.string().nullable().optional(),
+      // Preserve the season-import cutoff so undo is lossless — without
+      // this a restore would silently revert overridden players back to
+      // legacy additive behavior.
+      seasonImportedAt: z.coerce.date().nullable().optional(),
     }),
   ),
 });
@@ -286,6 +307,87 @@ router.post("/batting/restore", async (req, res): Promise<void> => {
   res.json({ restored });
 });
 
+// ---------------------------------------------------------------------------
+// Season override import. A coach uploads a SEASON stats screenshot whose
+// totals already include every game played so far. We store those FULL
+// totals on the manual `batting_stats` row (NOT a delta) and stamp
+// `seasonImportedAt = now()`. `getBattingTotals` then only ADDS per-game
+// `game_batting_lines` from games dated AFTER that cutoff — so the season
+// sheet overrides all prior box-score rollups while future games still
+// accumulate on top. One shared timestamp for the whole batch keeps the
+// cutoff consistent across players.
+// ---------------------------------------------------------------------------
+
+const ImportSeasonSchema = z.object({
+  rows: z.array(
+    z.object({
+      playerId: z.number().int(),
+      seasonLabel: z.string().default("Current"),
+      ab: z.number().int().min(0).default(0),
+      hits: z.number().int().min(0).default(0),
+      doubles: z.number().int().min(0).default(0),
+      triples: z.number().int().min(0).default(0),
+      hr: z.number().int().min(0).default(0),
+      rbi: z.number().int().min(0).default(0),
+      bb: z.number().int().min(0).default(0),
+      k: z.number().int().min(0).default(0),
+      hbp: z.number().int().min(0).default(0),
+      sac: z.number().int().min(0).default(0),
+      sf: z.number().int().min(0).default(0),
+      sb: z.number().int().min(0).default(0),
+      sourceNote: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+router.post("/batting/import-season", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const parsed = ImportSeasonSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+    return;
+  }
+  if (parsed.data.rows.length === 0) {
+    res.json({ imported: 0 });
+    return;
+  }
+  // Constrain to owned, non-deleted players — silently drop any stray ids.
+  const requestedIds = Array.from(new Set(parsed.data.rows.map((r) => r.playerId)));
+  const ownedRows = await db
+    .select({ id: playersTable.id })
+    .from(playersTable)
+    .where(
+      and(
+        eq(playersTable.userId, userId),
+        isNull(playersTable.deletedAt),
+        inArray(playersTable.id, requestedIds),
+      ),
+    );
+  const ownedSet = new Set(ownedRows.map((r) => r.id));
+  const safeRows = parsed.data.rows.filter((r) => ownedSet.has(r.playerId));
+
+  const seasonImportedAt = new Date();
+  let imported = 0;
+  for (const r of safeRows) {
+    const rates = computeRates(r);
+    await db
+      .insert(battingStatsTable)
+      .values({ ...r, ...rates, sourceNote: r.sourceNote ?? null, seasonImportedAt })
+      .onConflictDoUpdate({
+        target: battingStatsTable.playerId,
+        set: {
+          ...r,
+          ...rates,
+          sourceNote: r.sourceNote ?? null,
+          seasonImportedAt,
+          updatedAt: new Date(),
+        },
+      });
+    imported += 1;
+  }
+  res.json({ imported, seasonImportedAt });
+});
+
 router.post("/batting/extract", upload.single("file"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
@@ -328,11 +430,12 @@ Return format:
     "k": <int>,
     "hbp": <int>,
     "sac": <int>,
+    "sf": <int>,
     "sb": <int>
   }
 ]
 
-If a stat column is not visible, use 0. Only include players whose stats you can read. Return raw JSON array, no markdown.`;
+"sac" = sacrifice bunts, "sf" = sacrifice flies — they are SEPARATE columns; do not merge them. If a stat column is not visible, use 0. Only include players whose stats you can read. Return raw JSON array, no markdown.`;
 
   const response = await createChatCompletion({
     model: AI_MODEL,

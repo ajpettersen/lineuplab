@@ -1,8 +1,9 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   db,
   battingStatsTable,
   gameBattingLinesTable,
+  gamesTable,
   playersTable,
 } from "@workspace/db";
 
@@ -29,6 +30,7 @@ export type BattingTotalsRow = {
   k: number;
   hbp: number;
   sac: number;
+  sf: number;
   sb: number;
   runs: number;
   /** Number of distinct games rolled into the per-game portion. 0 if only manual stats. */
@@ -52,8 +54,9 @@ function recomputeRates(row: {
   bb: number;
   hbp: number;
   sac: number;
+  sf: number;
 }) {
-  const pa = row.ab + row.bb + row.hbp + row.sac;
+  const pa = row.ab + row.bb + row.hbp + row.sac + row.sf;
   if (pa === 0 && row.ab === 0) {
     return { avg: null, obp: null, slg: null, ops: null };
   }
@@ -98,12 +101,20 @@ export async function getBattingTotals(userId: string): Promise<BattingTotalsRow
         k: battingStatsTable.k,
         hbp: battingStatsTable.hbp,
         sac: battingStatsTable.sac,
+        sf: battingStatsTable.sf,
         sb: battingStatsTable.sb,
         updatedAt: battingStatsTable.updatedAt,
       })
       .from(battingStatsTable)
       .innerJoin(playersTable, eq(battingStatsTable.playerId, playersTable.id))
       .where(eq(playersTable.userId, userId)),
+    // Per-game (box-score) contribution. A player's per-game lines are
+    // only rolled into their season total for games dated AFTER their
+    // `seasonImportedAt` cutoff (set by a season-screenshot override) —
+    // games on/before the cutoff are considered already captured by the
+    // override's full totals, so they don't double-count. Players with
+    // no manual row (LEFT JOIN -> null cutoff) keep the legacy additive
+    // behavior (all per-game lines count).
     db
       .select({
         playerId: gameBattingLinesTable.playerId,
@@ -117,13 +128,27 @@ export async function getBattingTotals(userId: string): Promise<BattingTotalsRow
         k: sql<number>`coalesce(sum(${gameBattingLinesTable.k}), 0)::int`,
         hbp: sql<number>`coalesce(sum(${gameBattingLinesTable.hbp}), 0)::int`,
         sac: sql<number>`coalesce(sum(${gameBattingLinesTable.sac}), 0)::int`,
+        sf: sql<number>`coalesce(sum(${gameBattingLinesTable.sf}), 0)::int`,
         sb: sql<number>`coalesce(sum(${gameBattingLinesTable.sb}), 0)::int`,
         runs: sql<number>`coalesce(sum(${gameBattingLinesTable.runs}), 0)::int`,
         gamesRecorded: sql<number>`count(distinct ${gameBattingLinesTable.gameId})::int`,
         latestUpdate: sql<Date | null>`max(${gameBattingLinesTable.updatedAt})`,
       })
       .from(gameBattingLinesTable)
-      .where(eq(gameBattingLinesTable.userId, userId))
+      .innerJoin(gamesTable, eq(gamesTable.id, gameBattingLinesTable.gameId))
+      .leftJoin(
+        battingStatsTable,
+        eq(battingStatsTable.playerId, gameBattingLinesTable.playerId),
+      )
+      .where(
+        and(
+          eq(gameBattingLinesTable.userId, userId),
+          or(
+            isNull(battingStatsTable.seasonImportedAt),
+            gt(gamesTable.gameDate, battingStatsTable.seasonImportedAt),
+          ),
+        ),
+      )
       .groupBy(gameBattingLinesTable.playerId),
     db
       .select({
@@ -165,6 +190,7 @@ export async function getBattingTotals(userId: string): Promise<BattingTotalsRow
         k: 0,
         hbp: 0,
         sac: 0,
+        sf: 0,
         sb: 0,
         runs: 0,
         gamesRecorded: 0,
@@ -181,6 +207,7 @@ export async function getBattingTotals(userId: string): Promise<BattingTotalsRow
     cur.k += src.k ?? 0;
     cur.hbp += src.hbp ?? 0;
     cur.sac += src.sac ?? 0;
+    cur.sf += src.sf ?? 0;
     cur.sb += src.sb ?? 0;
     cur.runs += src.runs ?? 0;
     cur.gamesRecorded += src.gamesRecorded ?? 0;
@@ -264,6 +291,7 @@ export async function getBattingTotalsForPlayers(
         k: 0,
         hbp: 0,
         sac: 0,
+        sf: 0,
         sb: 0,
         runs: 0,
         gamesRecorded: 0,
@@ -315,6 +343,7 @@ type BattingLineInput = {
   k?: number;
   hbp?: number;
   sac?: number;
+  sf?: number;
   sb?: number;
   runs?: number;
 };
@@ -367,6 +396,7 @@ export async function replaceBattingLinesForGameTx(
       k: l.k ?? 0,
       hbp: l.hbp ?? 0,
       sac: l.sac ?? 0,
+      sf: l.sf ?? 0,
       sb: l.sb ?? 0,
       runs: l.runs ?? 0,
       sourceNote: sourceNote ?? null,

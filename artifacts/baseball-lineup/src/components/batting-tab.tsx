@@ -34,7 +34,7 @@ interface BattingRow {
   playerNumber: number | null;
   seasonLabel: string;
   ab: number; hits: number; doubles: number; triples: number; hr: number;
-  rbi: number; bb: number; k: number; hbp: number; sac: number; sb: number;
+  rbi: number; bb: number; k: number; hbp: number; sac: number; sf: number; sb: number;
   runs?: number;
   avg: number | null; obp: number | null; slg: number | null; ops: number | null;
   // Distinct games this player has a per-game batting line for
@@ -48,7 +48,7 @@ interface BattingRow {
   updatedAt: string;
 }
 
-type ExtractedRow = { playerId: number; playerName: string; ab: number; hits: number; doubles: number; triples: number; hr: number; rbi: number; bb: number; k: number; hbp: number; sac: number; sb: number };
+type ExtractedRow = { playerId: number; playerName: string; ab: number; hits: number; doubles: number; triples: number; hr: number; rbi: number; bb: number; k: number; hbp: number; sac: number; sf: number; sb: number };
 
 function useBattingStats() {
   return useQuery({
@@ -97,18 +97,26 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
   const startEdit = (playerId: number) => {
     const existing = statsMap[playerId];
     setEditId(playerId);
-    setEditData(existing ? { ...existing } : { playerId, ab: 0, hits: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sac: 0, sb: 0 });
+    setEditData(existing ? { ...existing } : { playerId, ab: 0, hits: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sac: 0, sf: 0, sb: 0 });
   };
 
   const saveEdit = async () => {
     if (!editId) return;
     setSaving(true);
     try {
-      await fetch(`${BASE}/api/batting/${editId}`, {
+      const resp = await fetch(`${BASE}/api/batting/${editId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editData),
       });
+      // Surface server-side rejections (e.g. a total typed below the
+      // recorded box-score sum returns 400) instead of falsely toasting
+      // success — otherwise a failed write looks saved and the table
+      // silently diverges from what the coach sees.
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => null);
+        throw new Error(body?.error ?? `Save failed (${resp.status})`);
+      }
       qc.invalidateQueries({ queryKey: ["batting-stats"] });
       toast({ title: "Stats saved" });
       setEditId(null);
@@ -173,15 +181,20 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     if (!extracted) return;
     setSaving(true);
     try {
-      for (const row of extracted) {
-        await fetch(`${BASE}/api/batting/${row.playerId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...row, sourceNote: "Extracted from image" }),
-        });
-      }
+      // Season screenshots carry FULL season-to-date totals, so we send
+      // them to the override endpoint (NOT per-row PUT). It stores the
+      // totals verbatim and stamps a cutoff so every prior box-score
+      // rollup is superseded while future games still accumulate.
+      const resp = await fetch(`${BASE}/api/batting/import-season`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: extracted.map((row) => ({ ...row, sourceNote: "Imported from season screenshot" })),
+        }),
+      });
+      if (!resp.ok) throw new Error(`import-season failed (${resp.status})`);
       qc.invalidateQueries({ queryKey: ["batting-stats"] });
-      toast({ title: `Saved stats for ${extracted.length} players` });
+      toast({ title: `Imported season stats for ${extracted.length} players` });
       setExtracted(null);
     } catch (err) {
       toastError(toast, "Failed to save extracted stats", err);
@@ -190,7 +203,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     }
   };
 
-  // Unified column spec for the batting stats table. PA is derived (AB+BB+HBP+SAC),
+  // Unified column spec for the batting stats table. PA is derived (AB+BB+HBP+SAC+SF),
   // R comes from rolled-up game lines (not editable here), and AVG/OBP/SLG/OPS are
   // derived rates. `editKey` marks the BattingStats column the cell maps to in the
   // manual edit form; columns without `editKey` render as derived/read-only in edit mode.
@@ -218,14 +231,15 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
     { label: "HBP", statKey: "hbp",     editKey: "hbp" },
     { label: "SB",  statKey: "sb",      editKey: "sb" },
     { label: "SAC", statKey: "sac",     editKey: "sac" },
+    { label: "SF",  statKey: "sf",      editKey: "sf" },
   ];
 
   const fmtAvg = (v: number | null | undefined) => v != null ? v.toFixed(3).replace(/^0/, "") : "—";
 
   /** PA is derived, never stored. Treat missing rows as "no plate appearances yet". */
-  const computePA = (s: { ab?: number | null; bb?: number | null; hbp?: number | null; sac?: number | null } | undefined | null): number | null => {
+  const computePA = (s: { ab?: number | null; bb?: number | null; hbp?: number | null; sac?: number | null; sf?: number | null } | undefined | null): number | null => {
     if (!s) return null;
-    return (s.ab ?? 0) + (s.bb ?? 0) + (s.hbp ?? 0) + (s.sac ?? 0);
+    return (s.ab ?? 0) + (s.bb ?? 0) + (s.hbp ?? 0) + (s.sac ?? 0) + (s.sf ?? 0);
   };
 
   /**
@@ -347,7 +361,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                   <th
                     key={c.statKey}
                     className="px-1 text-center"
-                    title={c.derived === "pa" ? "Plate Appearances = AB + BB + HBP + SAC" : undefined}
+                    title={c.derived === "pa" ? "Plate Appearances = AB + BB + HBP + SAC + SF" : undefined}
                   >
                     {c.label}
                   </th>
@@ -382,7 +396,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                             <td
                               key={c.statKey}
                               className="px-1 text-center text-[11px] font-bold text-yellow-900"
-                              title="Plate Appearances = AB + BB + HBP + SAC (auto-calculated)"
+                              title="Plate Appearances = AB + BB + HBP + SAC + SF (auto-calculated)"
                             >
                               {livePA ?? 0}
                             </td>
@@ -414,7 +428,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                       className="text-center px-2 font-medium text-muted-foreground select-none cursor-pointer hover:text-foreground"
                       title={
                         c.derived === "pa"
-                          ? "Plate Appearances = AB + BB + HBP + SAC. Click to sort."
+                          ? "Plate Appearances = AB + BB + HBP + SAC + SF. Click to sort."
                           : c.derived === "games"
                           ? "Games Played = distinct games with a saved box score. Pair with PA for plate appearances per game. Click to sort."
                           : "Click to sort"
@@ -455,7 +469,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                               <td
                                 key={c.statKey}
                                 className="px-1 text-center text-xs font-bold text-primary"
-                                title="Plate Appearances = AB + BB + HBP + SAC (auto-calculated)"
+                                title="Plate Appearances = AB + BB + HBP + SAC + SF (auto-calculated)"
                               >
                                 {livePA ?? 0}
                               </td>
@@ -494,7 +508,7 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                             <td
                               key={c.statKey}
                               className="text-center px-2 font-medium"
-                              title="Plate Appearances = AB + BB + HBP + SAC"
+                              title="Plate Appearances = AB + BB + HBP + SAC + SF"
                             >
                               {pa ?? "—"}
                             </td>
@@ -570,6 +584,9 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
           <div className="flex flex-col gap-4 py-2">
             <p className="text-sm text-muted-foreground">
               Upload a photo or screenshot of a scorebook, stat sheet, or document. The AI will read the batting stats and match them to your roster.
+            </p>
+            <p className="rounded-md bg-amber-50 border border-amber-200 p-2 text-xs text-amber-800">
+              Importing a <strong>season</strong> screenshot replaces all prior totals (including imported box scores) for each matched player as of today. Games you record afterward will add on top.
             </p>
             <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-8 cursor-pointer transition-colors ${uploading ? "opacity-50 pointer-events-none" : "hover:border-primary/50 hover:bg-muted/30"}`}>
               <Upload className="h-8 w-8 text-muted-foreground" />
