@@ -811,6 +811,21 @@ export default function FieldDisplay() {
     return map;
   }, [lineup, currentInning]);
 
+  // Inverse of `fieldByPos`: each player's defensive position for the
+  // current inning, keyed by playerId. The batting-order panel uses this
+  // to show a POS label per batter (matches the broadcast lineup graphic
+  // in the approved mockup). Bench / not-yet-placed players get no entry,
+  // so the row simply omits the label rather than faking one.
+  const posByPlayer = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const e of lineup) {
+      if (e.inning !== currentInning) continue;
+      if (e.position === "Bench") continue;
+      map.set(e.playerId, e.position);
+    }
+    return map;
+  }, [lineup, currentInning]);
+
   // Bench list for the current inning, name-sorted so the dugout can spot
   // their kids quickly. `entryId` is carried so each bench chip can be
   // dragged onto a field position (the row's `position` flips from
@@ -3050,6 +3065,23 @@ export default function FieldDisplay() {
                     >
                       {formatPlayerNameShort(r.playerName)}
                     </span>
+                    {/* Defensive position for THIS inning, broadcast-style
+                     *  POS column on the right (matches the mockup lineup
+                     *  graphic). Derived from real lineup data — players on
+                     *  the bench / not yet placed simply show nothing rather
+                     *  than a faked slot. Themed via the accent token so it
+                     *  follows the team's colors. */}
+                    {(() => {
+                      const fieldPos = posByPlayer.get(r.playerId);
+                      return fieldPos ? (
+                        <span
+                          className="shrink-0 flex items-center pr-2 sm:pr-3 font-['Roboto_Mono'] font-bold text-accent text-[10px] sm:text-xs uppercase tracking-wider tabular-nums"
+                          data-testid={`batter-pos-${r.playerId}`}
+                        >
+                          {fieldPos}
+                        </span>
+                      ) : null;
+                    })()}
                   </li>
                 );
               })}

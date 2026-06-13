@@ -26,6 +26,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
 import { ConflictListener } from "@/components/conflict-listener";
 import { PushNavigationListener } from "@/components/push-navigation-listener";
+import { TeamThemeApplier } from "@/components/team-theme-applier";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
 // Route components are code-split via React.lazy so the initial JS
@@ -438,6 +439,12 @@ function ProtectedApp() {
   return (
     <>
       <Show when="signed-in">
+        {/* Inject the active team's primary/secondary colors as CSS vars on
+            <html> for EVERY signed-in surface. This lives here (not inside
+            Layout) so the Field Display and Onboarding — which render OUTSIDE
+            the app shell — also pick up the team's brand colors. Mounted once
+            above the route Switch so navigation never re-flickers the theme. */}
+        <TeamThemeApplier />
         <PendingInviteRedirect />
         <OnboardingGate>
         {/* Single Suspense around the whole authed route tree so a

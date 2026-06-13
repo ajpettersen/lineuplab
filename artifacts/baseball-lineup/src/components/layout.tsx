@@ -40,7 +40,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TeamSwitcher } from "@/components/team-switcher";
-import { TeamThemeApplier } from "@/components/team-theme-applier";
 import { SyncStatusChip } from "@/components/sync-status-chip";
 import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
@@ -359,10 +358,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems: NavItem[] = [
     { href: "/", label: "Dashboard", icon: Home },
-    // Season-wide AI assistant — answers team-data questions (stats,
-    // rotation, schedule) and general coaching help. Distinct from the
-    // in-game Lineup Assistant on the game-detail page.
-    { href: "/ask", label: "Assistant", icon: Sparkles },
     // Team grouping: Roster + Arm Watch collapsed under one header.
     // Settings used to be tucked in here too but coaches kept missing
     // it inside the dropdown — promoted back to its own top-level tab
@@ -411,6 +406,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
           : []),
       ],
     },
+    // Season-wide AI assistant — answers team-data questions (stats,
+    // rotation, schedule) and general coaching help. Distinct from the
+    // in-game Lineup Assistant on the game-detail page. Sits just left of
+    // Settings at the end of the nav.
+    { href: "/ask", label: "Assistant", icon: Sparkles },
     // Settings as its own top-level tab — was previously a child of
     // the Team dropdown but coaches reported losing it inside the
     // menu. The persistent scroll-with-chevrons treatment on the
@@ -859,9 +859,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <CoachProfilePrompt />
       </Suspense>
-      {/* Inject per-team primary/secondary CSS variables on the html
-          element so the brand follows the active team. */}
-      <TeamThemeApplier />
+      {/* Per-team color CSS vars are injected once at the signed-in app root
+          (ProtectedApp in App.tsx) so they also cover full-screen surfaces
+          that render outside this shell (Field Display, Onboarding). */}
       {/* iOS-only nudge to "Add to Home Screen" so the app installs
           as a PWA — required for the service worker to keep the page
           available with no wifi at the field. Lazy-loaded; only ever
