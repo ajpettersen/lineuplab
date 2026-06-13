@@ -1185,6 +1185,38 @@ export default function FieldDisplay() {
   // tournament-specific batting-order math (top-of-order OPS, etc.)
   // already runs upstream in the lineup generator.
   const isTournament = game?.gameType === "tournament";
+  // ── Stakes Ladder ─────────────────────────────────────────────────
+  // ONE Field Display, five escalating game-context rungs. The persistent
+  // chrome is painted in the TEAM's accent color (see the broadcast→accent
+  // migration); gold returns ONLY at the championship rungs, where the
+  // `[data-fd-mode]` CSS re-points --accent to the fixed broadcast gold so
+  // it reads as a sparing "trophy metal" reward on top of the team's own
+  // identity — NOT as the app's default accent.
+  //
+  // Rung derivation (priority order):
+  //   champ-elevated → championship game AND our team currently leads
+  //                    (the momentum PEAK; reuses the same take-the-lead
+  //                     beat that already fires celebration confetti)
+  //   champ          → championship game (flagged, or kebab-forced)
+  //   bracket        → tournament game in the bracket stage
+  //   pool           → any other tournament game
+  //   league         → everything else (calm, team-quiet default)
+  const bracketStage =
+    game?.bracketStage === "bracket"
+      ? "bracket"
+      : game?.bracketStage === "pool"
+        ? "pool"
+        : null;
+  const fieldMode: "league" | "pool" | "bracket" | "champ" | "champ-elevated" =
+    isTournament && championshipMode
+      ? ourScore > oppScore
+        ? "champ-elevated"
+        : "champ"
+      : isTournament && bracketStage === "bracket"
+        ? "bracket"
+        : isTournament
+          ? "pool"
+          : "league";
 
   // One-shot joyful "welcome to the championship!" confetti. Fires once
   // when Championship Mode flips ON for this game (game loads as a
@@ -1812,9 +1844,16 @@ export default function FieldDisplay() {
     // height so the stacked layout can grow naturally.
     <div
       className={`min-h-[100dvh] max-lg:h-[100dvh] lg:h-[100dvh] bg-black text-slate-100 flex flex-col select-none max-lg:overflow-hidden lg:overflow-hidden ${
-        isTournament && championshipMode ? "fd-championship" : ""
-      }`}
-      data-championship={isTournament && championshipMode ? "true" : undefined}
+        fieldMode === "champ" || fieldMode === "champ-elevated"
+          ? "fd-championship"
+          : ""
+      } ${fieldMode === "champ-elevated" ? "fd-champ-elevated" : ""}`}
+      data-fd-mode={fieldMode}
+      data-championship={
+        fieldMode === "champ" || fieldMode === "champ-elevated"
+          ? "true"
+          : undefined
+      }
     >
       {/* Take-the-lead celebration overlay — portaled to document.body
        *  so it can't be clipped by any ancestor stacking context (the
@@ -1859,6 +1898,44 @@ export default function FieldDisplay() {
           </div>,
           document.body,
         )}
+      {/* Stakes Ladder banner — escalating game-context ribbon. Absent in
+       *  plain league play; appears for pool/bracket and turns into a gold
+       *  trophy ribbon at the championship rungs. shrink-0 so it never
+       *  steals flex space from the field. aria-hidden — the same context
+       *  is already conveyed by the game record + matchup title for AT
+       *  users, and this is decorative chrome. */}
+      {fieldMode !== "league" && (
+        <div
+          className="fd-stakes-banner"
+          data-fd-mode={fieldMode}
+          aria-hidden="true"
+          data-testid="fd-stakes-banner"
+        >
+          {fieldMode === "pool"
+            ? "Pool Play"
+            : fieldMode === "bracket"
+              ? "Bracket \u00B7 Win or Go Home"
+              : "\u{1F3C6} Championship \u{1F3C6}"}
+        </div>
+      )}
+      {/* Floating trophy flecks — championship PEAK only (our team leading
+       *  the title game). Deterministic offsets so they don't re-jitter on
+       *  every render; the whole layer is hidden under
+       *  prefers-reduced-motion (see index.css). */}
+      {fieldMode === "champ-elevated" && (
+        <div className="fd-champ-flecks" aria-hidden="true">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                left: `${(i * 6.3) % 100}%`,
+                animationDelay: `-${((i * 0.7) % 6).toFixed(2)}s`,
+                animationDuration: `${5 + (i % 4)}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
       {/* ── Header — broadcast lower-third (combined: team + inning + score + actions) ──
        *
        * Mobile layout note: the original single-row header packed exit +
@@ -1889,7 +1966,7 @@ export default function FieldDisplay() {
        *  iPad Safari (display:contents has known quirks as a flex item
        *  in WebKit). The wrapper-free approach above sidesteps both. */}
       <header
-        className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-broadcast-gold"} bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
+        className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-accent"} bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
         style={{
           // iPad status bar (clock / WiFi / battery) sits on top of the
           // page in installed-PWA / fullscreen mode (we set
@@ -1925,7 +2002,7 @@ export default function FieldDisplay() {
             variant="outline"
             size="sm"
             onClick={() => setEndGameDialogOpen(true)}
-            className="sm:hidden h-11 w-11 p-0 shrink-0 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 rounded-md"
+            className="sm:hidden h-11 w-11 p-0 shrink-0 border-accent/60 bg-[#0f172a] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-md"
             data-testid="button-mobile-exit"
             aria-label="Exit field display"
             title="Exit field display"
@@ -1980,7 +2057,7 @@ export default function FieldDisplay() {
               {/* Opponent has no per-team short-name field, so just auto-shorten
                *  to the city. Falls back to the raw stored value if the
                *  shortener returns empty (matches Schedule list behavior). */}
-              <span className="text-broadcast-gold truncate" title={game?.opponent ?? undefined}>
+              <span className="text-accent truncate" title={game?.opponent ?? undefined}>
                 {formatOpponentForMatchup(game?.opponent, teamName) || game?.opponent || ""}
               </span>
             </div>
@@ -1999,7 +2076,7 @@ export default function FieldDisplay() {
             size="lg"
             onClick={() => setCurrentInning((i) => Math.max(1, i - 1))}
             disabled={currentInning <= 1}
-            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-broadcast-gold disabled:opacity-30 rounded-none"
+            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
             data-testid="button-prev-inning"
             aria-label="Previous inning"
             /* `touch-action: manipulation` removes iOS Safari's 300 ms
@@ -2016,10 +2093,10 @@ export default function FieldDisplay() {
               Inning
             </div>
             <div
-              className="text-2xl sm:text-3xl font-bold tabular-nums leading-none mt-1 font-['Roboto_Mono'] text-broadcast-gold flex items-center justify-center gap-1"
+              className="text-2xl sm:text-3xl font-bold tabular-nums leading-none mt-1 font-['Roboto_Mono'] text-accent flex items-center justify-center gap-1"
               data-testid="text-current-inning"
             >
-              <span aria-hidden="true" className="text-broadcast-gold text-base sm:text-lg leading-none">▲</span>
+              <span aria-hidden="true" className="text-accent text-base sm:text-lg leading-none">▲</span>
               <span>{currentInning}</span>
               <span className="text-slate-600 text-sm sm:text-base font-bold">
                 / {innings}
@@ -2031,7 +2108,7 @@ export default function FieldDisplay() {
             size="lg"
             onClick={() => setCurrentInning((i) => Math.min(innings, i + 1))}
             disabled={currentInning >= innings}
-            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-broadcast-gold disabled:opacity-30 rounded-none"
+            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
             data-testid="button-next-inning"
             aria-label="Next inning"
             /* See prev-inning button for the touch-action rationale. */
@@ -2056,7 +2133,7 @@ export default function FieldDisplay() {
               onClick={() =>
                 saveGamePatchOptimistically({ innings: innings + 1 })
               }
-              className="h-10 px-2 sm:h-11 sm:px-3 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 rounded-none flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold"
+              className="h-10 px-2 sm:h-11 sm:px-3 border-accent/60 bg-[#0f172a] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-none flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold"
               data-testid="button-add-extra-inning"
               aria-label="Add extra inning"
               title="Add an extra inning"
@@ -2247,7 +2324,7 @@ export default function FieldDisplay() {
             variant="outline"
             size="sm"
             onClick={() => setEndGameDialogOpen(true)}
-            className="hidden sm:flex items-center gap-1.5 border-broadcast-gold/60 bg-[#0f172a] text-broadcast-gold hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
+            className="hidden sm:flex items-center gap-1.5 border-accent/60 bg-[#0f172a] text-accent hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
             data-testid="button-end-game"
             aria-label="End game or exit"
             title="End game or exit without ending"
@@ -2271,7 +2348,7 @@ export default function FieldDisplay() {
               sunlightMode
                 ? "text-amber-300 hover:text-amber-200 hover:bg-slate-800/60"
                 : dimMode
-                  ? "text-broadcast-gold hover:text-amber-200 hover:bg-slate-800/60"
+                  ? "text-accent hover:text-amber-200 hover:bg-slate-800/60"
                   : "text-slate-500 hover:text-white hover:bg-slate-800/60"
             }`}
             aria-label={
@@ -2405,7 +2482,7 @@ export default function FieldDisplay() {
                   }}
                   data-testid="menu-championship-mode"
                 >
-                  <Crown className="h-4 w-4 mr-2 text-broadcast-gold" />
+                  <Crown className="h-4 w-4 mr-2 text-accent" />
                   <span>
                     {championshipMode
                       ? "Exit Championship Mode"
@@ -2465,7 +2542,7 @@ export default function FieldDisplay() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="text-broadcast-gold focus:text-amber-200"
+                className="text-accent focus:text-amber-200"
                 onSelect={(e) => {
                   e.preventDefault();
                   setEndGameDialogOpen(true);
@@ -2558,7 +2635,7 @@ export default function FieldDisplay() {
             <button
               type="button"
               onClick={() => setShowTournamentPitches(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-broadcast-gold bg-[#06101f] border border-broadcast-gold/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-accent bg-[#06101f] border border-accent/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
               aria-label="Show tournament pitches"
               data-testid="button-show-tournament-pitches"
             >
@@ -2821,12 +2898,12 @@ export default function FieldDisplay() {
               cancel without hunting for the chip again. */}
           {selectedInfo && (
             <div
-              className="mt-2 sm:mt-3 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-broadcast-gold/15 border border-broadcast-gold rounded-md text-broadcast-gold text-xs sm:text-sm font-bold shadow-[0_2px_0_rgba(0,0,0,0.4)]"
+              className="mt-2 sm:mt-3 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-accent/15 border border-accent rounded-md text-accent text-xs sm:text-sm font-bold shadow-[0_2px_0_rgba(0,0,0,0.4)]"
               data-testid="swap-mode-banner"
               role="status"
               aria-live="polite"
             >
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-broadcast-gold text-black text-[10px] font-bold shrink-0">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent text-black text-[10px] font-bold shrink-0">
                 {selectedInfo.position === "Bench" ? "B" : selectedInfo.position}
               </span>
               <span className="flex-1 truncate">
@@ -2835,7 +2912,7 @@ export default function FieldDisplay() {
               <button
                 type="button"
                 onClick={() => setSelectedEntryId(null)}
-                className="inline-flex h-7 px-2 items-center justify-center rounded bg-broadcast-gold/20 hover:bg-broadcast-gold/30 text-broadcast-gold text-[11px] font-bold uppercase tracking-wider"
+                className="inline-flex h-7 px-2 items-center justify-center rounded bg-accent/20 hover:bg-accent/30 text-accent text-[11px] font-bold uppercase tracking-wider"
                 data-testid="button-cancel-swap"
                 aria-label="Cancel swap"
               >
@@ -2875,10 +2952,10 @@ export default function FieldDisplay() {
            *  static gold underline for an animated shimmer + add a small
            *  TROPHY pre-title above the heading so the panel reads as a
            *  TV "tournament graphic" insert. */}
-          <div className={`relative shrink-0 bg-[#0f172a] ${isTournament ? "border-b-0" : "border-b-2 border-broadcast-gold"} px-4 py-2 sm:py-3 text-center`}>
+          <div className={`relative shrink-0 bg-[#0f172a] ${isTournament ? "border-b-0" : "border-b-2 border-accent"} px-4 py-2 sm:py-3 text-center`}>
             {isTournament && (
               <div
-                className="flex items-center justify-center gap-1.5 mb-1 text-broadcast-gold/90"
+                className="flex items-center justify-center gap-1.5 mb-1 text-accent/90"
                 data-testid="tournament-pretitle"
               >
                 {championshipMode ? (
@@ -2896,7 +2973,7 @@ export default function FieldDisplay() {
                 )}
               </div>
             )}
-            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.3em] uppercase text-broadcast-gold leading-none">
+            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.3em] uppercase text-accent leading-none">
               Lineup
             </h2>
             {isTournament && (
@@ -3000,7 +3077,7 @@ export default function FieldDisplay() {
               className="flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_8px_0_rgba(0,0,0,0.7)] cursor-grabbing select-none overflow-hidden"
               data-testid="drag-overlay-chip"
             >
-              <div className="bg-broadcast-gold text-black font-bold font-['Roboto_Mono'] px-2 py-1 flex items-center justify-center text-xs uppercase tracking-wider min-w-[40px]">
+              <div className="bg-accent text-black font-bold font-['Roboto_Mono'] px-2 py-1 flex items-center justify-center text-xs uppercase tracking-wider min-w-[40px]">
                 {activeDragInfo.position === "Bench" ? "BN" : activeDragInfo.position}
               </div>
               <div className="px-3 py-1 font-bold text-sm text-white whitespace-nowrap tracking-wide flex items-center">
@@ -3040,11 +3117,11 @@ export default function FieldDisplay() {
           data-testid="mobile-tab-field"
           className={`flex-1 flex flex-col items-center justify-center gap-1 border-t-2 transition-colors ${
             mobileTab === "field"
-              ? "border-broadcast-gold text-white bg-white/5"
+              ? "border-accent text-white bg-white/5"
               : "border-transparent text-slate-500 hover:text-slate-300"
           }`}
         >
-          <MapIcon className={`h-5 w-5 ${mobileTab === "field" ? "text-broadcast-gold" : ""}`} aria-hidden="true" />
+          <MapIcon className={`h-5 w-5 ${mobileTab === "field" ? "text-accent" : ""}`} aria-hidden="true" />
           <span className="font-display text-[11px] font-bold uppercase tracking-[0.18em]">Field</span>
         </button>
         <button
@@ -3054,11 +3131,11 @@ export default function FieldDisplay() {
           data-testid="mobile-tab-order"
           className={`flex-1 flex flex-col items-center justify-center gap-1 border-t-2 transition-colors ${
             mobileTab === "order"
-              ? "border-broadcast-gold text-white bg-white/5"
+              ? "border-accent text-white bg-white/5"
               : "border-transparent text-slate-500 hover:text-slate-300"
           }`}
         >
-          <ListOrdered className={`h-5 w-5 ${mobileTab === "order" ? "text-broadcast-gold" : ""}`} aria-hidden="true" />
+          <ListOrdered className={`h-5 w-5 ${mobileTab === "order" ? "text-accent" : ""}`} aria-hidden="true" />
           <span className="font-display text-[11px] font-bold uppercase tracking-[0.18em]">Order</span>
         </button>
       </nav>
@@ -3669,11 +3746,11 @@ function DraggableFieldChip({
       }
       className={`relative inline-flex items-center bg-[#0b1a35]/95 border border-white/10 rounded-full shadow-lg touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
         isSelected
-          ? "ring-2 ring-broadcast-gold ring-offset-2 ring-offset-[#050d1a]"
+          ? "ring-2 ring-accent ring-offset-2 ring-offset-[#050d1a]"
           : isOver
-            ? "ring-2 ring-broadcast-gold"
+            ? "ring-2 ring-accent"
             : isSwapTarget
-              ? "outline outline-1 outline-dashed outline-broadcast-gold/60 outline-offset-2"
+              ? "outline outline-1 outline-dashed outline-accent/60 outline-offset-2"
               : ""
       } ${hidden ? "opacity-30" : ""}`}
       data-testid={`field-chip-${pos}`}
@@ -3683,10 +3760,10 @@ function DraggableFieldChip({
           : `${name} — tap to select, or drag`
       }
     >
-      <span className="text-broadcast-gold font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 lg:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px]">
+      <span className="text-accent font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 lg:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px]">
         {pos}
       </span>
-      <span className="w-px h-3 max-lg:landscape:h-3 sm:h-4 bg-broadcast-gold/50" aria-hidden />
+      <span className="w-px h-3 max-lg:landscape:h-3 sm:h-4 bg-accent/50" aria-hidden />
       <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center min-w-[52px] max-lg:landscape:min-w-[52px] sm:min-w-[96px] max-w-[96px] max-lg:landscape:max-w-[96px] sm:max-w-[170px]">
         <span className="text-[11px] max-lg:landscape:text-[11px] sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
           {formatPlayerNameShort(name)}
@@ -3717,9 +3794,9 @@ function EmptyFieldChip({
       aria-label={isSwapTarget ? `Send selected player to ${pos}` : undefined}
       className={`relative inline-flex items-center border border-dashed rounded-full shadow-md transition-colors overflow-hidden ${
         isOver
-          ? "bg-broadcast-gold/20 border-broadcast-gold"
+          ? "bg-accent/20 border-accent"
           : isSwapTarget
-            ? "bg-broadcast-gold/10 border-broadcast-gold/70 cursor-pointer"
+            ? "bg-accent/10 border-accent/70 cursor-pointer"
             : "bg-[#0b1a35]/70 border-white/15"
       }`}
       data-testid={`field-chip-${pos}-empty`}
@@ -3733,14 +3810,14 @@ function EmptyFieldChip({
       </span>
       <span
         className={`w-px h-3 max-lg:landscape:h-3 sm:h-4 ${
-          isOver || isSwapTarget ? "bg-broadcast-gold" : "bg-white/20"
+          isOver || isSwapTarget ? "bg-accent" : "bg-white/20"
         }`}
         aria-hidden
       />
       <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center min-w-[60px] max-lg:landscape:min-w-[60px] sm:min-w-[96px] max-w-[100px] max-lg:landscape:max-w-[100px] sm:max-w-[170px]">
         <span
           className={`text-[11px] max-lg:landscape:text-[11px] sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
-            isOver || isSwapTarget ? "text-broadcast-gold" : "text-slate-500"
+            isOver || isSwapTarget ? "text-accent" : "text-slate-500"
           }`}
         >
           {isOver ? "Drop here" : isSwapTarget ? "Tap to send" : "Open"}
@@ -3794,9 +3871,9 @@ function BenchStrip({
       aria-label={isSwapTarget ? "Send selected player to bench" : undefined}
       className={`mt-2 sm:mt-3 border bg-[#050d1a] px-3 sm:px-6 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
         isOver
-          ? "border-broadcast-gold ring-2 ring-broadcast-gold/60 bg-amber-950/20"
+          ? "border-accent ring-2 ring-accent/60 bg-amber-950/20"
           : isSwapTarget
-            ? "border-broadcast-gold/70 ring-1 ring-broadcast-gold/40 cursor-pointer"
+            ? "border-accent/70 ring-1 ring-accent/40 cursor-pointer"
             : "border-[#1a2a42]"
       }`}
       data-testid="bench-strip"
@@ -3876,10 +3953,10 @@ function DraggableBenchChip({
       data-bench-chip
       className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#0b1a35]/95 border rounded-full shadow-md transition-all whitespace-nowrap tracking-wide ${
         isSelected
-          ? "border-broadcast-gold ring-2 ring-broadcast-gold ring-offset-2 ring-offset-[#050d1a]"
+          ? "border-accent ring-2 ring-accent ring-offset-2 ring-offset-[#050d1a]"
           : isSwapTarget
-            ? "border-broadcast-gold outline outline-1 outline-dashed outline-broadcast-gold/60 outline-offset-2"
-            : "border-white/15 hover:border-broadcast-gold"
+            ? "border-accent outline outline-1 outline-dashed outline-accent/60 outline-offset-2"
+            : "border-white/15 hover:border-accent"
       } ${hidden ? "opacity-30" : ""}`}
       data-testid={`bench-name-${name}`}
       title={
@@ -3943,11 +4020,11 @@ function TournamentPitchesPanel({
 
   return (
     <div
-      className="relative w-full bg-[#06101f] border-t border-broadcast-gold/40 px-2 sm:px-4 py-2 sm:py-2.5"
+      className="relative w-full bg-[#06101f] border-t border-accent/40 px-2 sm:px-4 py-2 sm:py-2.5"
       data-testid="tournament-pitches-panel"
     >
       <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-broadcast-gold">
+        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-accent">
           <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
           Tournament Pitches
           {(dailyMax != null || tournamentMax != null) && (

@@ -592,13 +592,15 @@
  * field/lineup. The static gold-to-white-to-gold gradient still
  * reads as an upgraded chyron at a glance. */
 .fd-tourney-shimmer {
+  /* Painted in the TEAM accent (not hardcoded gold) so pool/bracket games
+   * read in the team's own colors. At the championship rungs the
+   * [data-fd-mode] block below re-points --accent to gold, so this same
+   * underline automatically becomes the trophy chyron. */
   background-image: linear-gradient(
     90deg,
-    rgba(245, 191, 66, 0.85) 0%,
-    rgba(255, 232, 150, 1) 35%,
-    rgba(255, 255, 255, 0.95) 50%,
-    rgba(255, 232, 150, 1) 65%,
-    rgba(245, 191, 66, 0.85) 100%
+    hsl(var(--accent) / 0.85) 0%,
+    hsl(var(--accent) / 0.45) 50%,
+    hsl(var(--accent) / 0.85) 100%
   );
 }
 
@@ -719,5 +721,109 @@
   }
   .fd-champ-score {
     text-shadow: 0 0 16px rgba(255, 232, 150, 0.9), 0 0 32px rgba(245, 191, 66, 0.6);
+  }
+}
+
+/* ─── Stakes Ladder ──────────────────────────────────────────────
+ * The Field Display is ONE screen whose intensity is driven by a single
+ * [data-fd-mode] rung on the root: league → pool → bracket → champ →
+ * champ-elevated. Persistent chrome is painted in the TEAM accent (the
+ * broadcast→accent migration in field-display.tsx / score-stepper.tsx);
+ * gold returns ONLY at the championship rungs, where we re-point --accent
+ * to the fixed broadcast gold for the whole subtree so every themed
+ * `accent` utility (header border, score numerals, active batter, end-game
+ * buttons) becomes "trophy metal" without per-element overrides. All
+ * motion honors prefers-reduced-motion.
+ * ──────────────────────────────────────────────────────────────── */
+
+/* Championship rungs reclaim gold as the subtree accent. */
+[data-fd-mode="champ"],
+[data-fd-mode="champ-elevated"] {
+  --accent: 42 95% 55%;
+  --accent-foreground: 220 85% 18%;
+}
+
+/* Escalating context ribbon above the header. */
+.fd-stakes-banner {
+  flex-shrink: 0;
+  width: 100%;
+  text-align: center;
+  font-family: "Oswald", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: clamp(0.7rem, 1.6vw, 0.95rem);
+  line-height: 1;
+  padding: 0.4rem 0.5rem;
+  position: relative;
+  z-index: 20;
+}
+.fd-stakes-banner[data-fd-mode="pool"] {
+  background: #0a1018;
+  color: hsl(var(--accent));
+  border-bottom: 1px solid hsl(var(--accent) / 0.4);
+}
+.fd-stakes-banner[data-fd-mode="bracket"] {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  animation: fd-bracket-banner-pulse 2.2s ease-in-out infinite;
+}
+.fd-stakes-banner[data-fd-mode="champ"],
+.fd-stakes-banner[data-fd-mode="champ-elevated"] {
+  /* --accent is gold here; keep an explicit warm trophy ribbon. */
+  background: linear-gradient(
+    90deg,
+    rgba(245, 191, 66, 0.16) 0%,
+    rgba(245, 191, 66, 0.42) 50%,
+    rgba(245, 191, 66, 0.16) 100%
+  );
+  color: #ffe896;
+  border-top: 1px solid rgba(245, 191, 66, 0.5);
+  border-bottom: 1px solid rgba(245, 191, 66, 0.5);
+  text-shadow: 0 0 10px rgba(245, 191, 66, 0.5);
+}
+
+@keyframes fd-bracket-banner-pulse {
+  0%, 100% { box-shadow: 0 0 14px hsl(var(--accent) / 0.4); }
+  50%      { box-shadow: 0 0 28px hsl(var(--accent) / 0.75); }
+}
+
+/* Championship PEAK only: falling gold flecks behind the chrome. */
+.fd-champ-flecks {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.fd-champ-flecks span {
+  position: absolute;
+  top: -8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgba(245, 191, 66, 0.85);
+  box-shadow: 0 0 8px rgba(245, 191, 66, 0.7);
+  animation-name: fd-champ-fleck-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes fd-champ-fleck-fall {
+  0%   { transform: translateY(-10px); opacity: 0; }
+  12%  { opacity: 0.9; }
+  100% { transform: translateY(102vh); opacity: 0; }
+}
+
+/* The peak rung breathes a touch faster than plain champ for extra lift. */
+.fd-championship.fd-champ-elevated {
+  animation-duration: 3.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fd-stakes-banner[data-fd-mode="bracket"] {
+    animation: none !important;
+  }
+  .fd-champ-flecks {
+    display: none !important;
   }
 }

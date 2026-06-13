@@ -123,7 +123,7 @@ export function ScoreStepper({ value, onChange, ariaLabel, testId, label, champi
       <button
         type="button"
         onClick={inc}
-        className="flex h-5 sm:h-6 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-broadcast-gold active:text-broadcast-gold transition-colors"
+        className="flex h-5 sm:h-6 items-center justify-center text-slate-500 hover:bg-slate-800/60 hover:text-accent active:text-accent transition-colors"
         aria-label={`Increase ${ariaLabel}`}
         data-testid={`${testId}-up`}
       >
@@ -141,7 +141,7 @@ export function ScoreStepper({ value, onChange, ariaLabel, testId, label, champi
         onPointerCancel={() => {
           startYRef.current = null;
         }}
-        className={`text-3xl sm:text-4xl lg:text-5xl font-bold tabular-nums text-broadcast-gold font-['Roboto_Mono'] px-2 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-broadcast-gold/60 leading-none ${
+        className={`text-3xl sm:text-4xl lg:text-5xl font-bold tabular-nums text-accent font-['Roboto_Mono'] px-2 cursor-ns-resize touch-none text-center hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none focus:ring-2 focus:ring-accent/60 leading-none ${
           championship ? "fd-champ-score" : ""
         }`}
       >
