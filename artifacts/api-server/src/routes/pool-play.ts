@@ -150,7 +150,7 @@ Return RAW JSON only, no markdown, no commentary:
       const response = await openai.chat.completions.create({
         model: "gpt-5.2",
         max_completion_tokens: 4000,
-        reasoning_effort: "minimal",
+        reasoning_effort: "none",
         messages: [{ role: "user", content }],
       });
       const text = response.choices[0]?.message?.content ?? "";
@@ -575,7 +575,7 @@ ${pageText}
       const response = await openai.chat.completions.create({
         model: "gpt-5.2",
         max_completion_tokens: 4000,
-        reasoning_effort: "minimal",
+        reasoning_effort: "none",
         messages: [{ role: "user", content: systemPrompt }],
       });
       const text = response.choices[0]?.message?.content ?? "";
@@ -759,7 +759,7 @@ Tournament context: "${tournament.name}"${tournament.location ? `, ${tournament.
       const response = await openai.chat.completions.create({
         model: "gpt-5.2",
         max_completion_tokens: 1000,
-        reasoning_effort: "minimal",
+        reasoning_effort: "none",
         messages: [{ role: "user", content }],
       });
       const text = response.choices[0]?.message?.content ?? "";
@@ -909,7 +909,7 @@ Emit a non-null parsedFormat as soon as you've gathered enough to be useful — 
       const response = await openai.chat.completions.create({
         model: "gpt-5.2",
         max_completion_tokens: 800,
-        reasoning_effort: "minimal",
+        reasoning_effort: "none",
         messages: chatMessages,
       });
       const text = response.choices[0]?.message?.content ?? "";

@@ -376,7 +376,7 @@ Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentSco
     // pitching, etc.) so each image contains independent data and
     // splitting them up is both faster and more accurate — the model
     // doesn't have to juggle 4 layouts in one prompt. With
-    // `reasoning_effort: "minimal"` (OCR is transcription, not
+    // `reasoning_effort: "none"` (OCR is transcription, not
     // reasoning) latency drops further.
     async function extractOne(f: Express.Multer.File): Promise<{
       batting: z.infer<typeof ExtractedBattingLine>[];
@@ -387,7 +387,7 @@ Use 0 for any stat column not visible. Use null (not 0) for ourScore/opponentSco
       const response = await openai.chat.completions.create({
         model: "gpt-5.2",
         max_completion_tokens: 3000,
-        reasoning_effort: "minimal",
+        reasoning_effort: "none",
         messages: [
           {
             role: "user",
