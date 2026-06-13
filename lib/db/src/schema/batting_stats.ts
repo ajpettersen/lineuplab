@@ -5,7 +5,10 @@ export const battingStatsTable = pgTable("batting_stats", {
   id: serial("id").primaryKey(),
   playerId: integer("player_id")
     .notNull()
-    .references(() => playersTable.id, { onDelete: "cascade" }),
+    .references(() => playersTable.id, { onDelete: "cascade" })
+    // One season-totals row per player — required by the ON CONFLICT (player_id)
+    // upserts in the season/box-score import routes.
+    .unique(),
   seasonLabel: text("season_label").notNull().default("Current"),
   ab: integer("ab").notNull().default(0),
   hits: integer("hits").notNull().default(0),
