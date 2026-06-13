@@ -21,6 +21,7 @@ import {
   ChevronRight,
   MoreHorizontal,
   LifeBuoy,
+  Sparkles,
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
@@ -358,6 +359,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems: NavItem[] = [
     { href: "/", label: "Dashboard", icon: Home },
+    // Season-wide AI assistant — answers team-data questions (stats,
+    // rotation, schedule) and general coaching help. Distinct from the
+    // in-game Lineup Assistant on the game-detail page.
+    { href: "/ask", label: "Assistant", icon: Sparkles },
     // Team grouping: Roster + Arm Watch collapsed under one header.
     // Settings used to be tucked in here too but coaches kept missing
     // it inside the dropdown — promoted back to its own top-level tab

@@ -40,6 +40,7 @@ import { useTeamSettings } from "@/hooks/use-team-settings";
 // Layout, ErrorBoundary, and the auth surface stay eagerly imported
 // because the shell renders them on every navigation.
 const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Ask = lazy(() => import("@/pages/ask"));
 const Players = lazy(() => import("@/pages/players"));
 const PlayerDetail = lazy(() => import("@/pages/player-detail"));
 const Games = lazy(() => import("@/pages/games"));
@@ -461,6 +462,7 @@ function ProtectedApp() {
               <ErrorBoundary key={location}>
               <Switch>
                 <Route path="/" component={Dashboard} />
+                <Route path="/ask" component={Ask} />
                 <Route path="/players" component={Players} />
                 <Route path="/players/:id" component={PlayerDetail} />
                 <Route path="/games/new" component={NewGame} />

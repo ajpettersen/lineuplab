@@ -48,6 +48,7 @@ async function loadFieldShapeAndDepth(userId: string): Promise<{
   return { activeFieldPositions, depthChart };
 }
 import { getOwnedGame } from "../lib/ownership";
+import { getRotationReport } from "../lib/assistant-tools";
 
 const router: IRouter = Router();
 router.use("/games", gateWrites("partial"));
@@ -63,7 +64,7 @@ You have access to the current saved lineup, the active roster, and the fairness
 
 Your job is to look at the coach's message and decide between three intents:
 
-INTENT "answer" — the coach is asking a question (e.g. "why did you put Henry at catcher in inning 1?", "who has the most bench time?", "is anyone playing the same position twice?"). Answer in 1-3 short sentences. Be concrete and reference players by their first name.
+INTENT "answer" — the coach is asking a question (e.g. "why did you put Henry at catcher in inning 1?", "who has the most bench time?", "is anyone playing the same position twice?") OR asking for advice/suggestions about this lineup (e.g. "who should sit?", "is this fair?", "any suggestions?"). Answer in 1-4 short sentences. Be concrete and reference players by their first name. When giving suggestions, GROUND them in the SEASON ROTATION REPORT provided below — e.g. favor sitting players with the lowest season bench rate, and getting field/pitching time to players who've sat the most or rarely play a position this season — so the advice improves season-long fairness, not just this one game.
 
 INTENT "regenerate" — the coach is giving an instruction that requires changing where players are placed (e.g. "I want Henry to catch the first 3 innings", "put Walter at pitcher in inning 4", "bench Charlie for innings 1-2"). Translate the instruction into a list of pinned assignments and provide a one-sentence explanation of what you're doing. The auto-generator will fill in every other slot.
 
@@ -232,6 +233,28 @@ router.post("/games/:id/ai-assistant", async (req, res): Promise<void> => {
     })
     .join("\n");
 
+  // Season rotation report (completed games + imported historical fielding)
+  // so the model can ground fairness suggestions in season-long playing time,
+  // not just this single game. Never fatal — if it fails we just omit it.
+  let rotationLines = "(no completed games yet)";
+  try {
+    const rotation = await getRotationReport(userId);
+    const activeIds = new Set(activePlayers.map((p) => p.id));
+    const withInnings = rotation
+      .filter((r) => activeIds.has(r.playerId) && r.totalInnings > 0)
+      .sort((a, b) => b.benchRatePct - a.benchRatePct);
+    if (withInnings.length > 0) {
+      rotationLines = withInnings
+        .map((r) => {
+          const g = r.groups;
+          return `${r.name}: ${r.gamesPlayed}G, bench ${r.benchRatePct}% (${r.benchInnings}/${r.totalInnings} inn); P${g.pitcher ?? 0} C${g.catcher ?? 0} IF${(g.cornerInfield ?? 0) + (g.middleInfield ?? 0)} OF${g.outfield ?? 0}`;
+        })
+        .join("\n");
+    }
+  } catch (err) {
+    req.log.warn({ err }, "Failed to load rotation report for in-game assistant");
+  }
+
   const userPrompt = `Game: vs. ${game.opponent} on ${game.gameDate.toISOString().slice(0, 10)} (${game.innings} innings)
 
 Active roster (only these playerIds may be used):
@@ -239,6 +262,9 @@ ${rosterLines}
 
 Current saved lineup:
 ${lineupGrid}
+
+Season rotation report (completed games so far — bench % and innings by area; higher bench % = has sat more this season):
+${rotationLines}
 
 Active constraints (informational, used by the auto-generator):
 ${constraintLines || "(none)"}

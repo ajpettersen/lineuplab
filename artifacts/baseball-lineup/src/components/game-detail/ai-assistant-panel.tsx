@@ -49,7 +49,7 @@ export function AiAssistantPanel({
           <Input
             value={aiInput}
             onChange={(e) => onAiInputChange(e.target.value)}
-            placeholder='Ask the assistant — e.g. "Why is Henry on the bench in inning 2?" or "Put Henry at catcher for the first 3 innings"'
+            placeholder='Lineup Assistant — e.g. "Who should sit to keep it fair?" or "Put Henry at catcher for the first 3 innings"'
             disabled={aiLoading}
             data-testid="input-ai-assistant"
             className="flex-1"
