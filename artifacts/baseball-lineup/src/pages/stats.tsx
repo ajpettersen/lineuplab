@@ -337,7 +337,20 @@ export default function Stats() {
   const playerStats = rawPlayerStats as unknown as ExtendedPlayerStats[];
   const { data: players = [] } = useListPlayers();
   const [groupInfield, setGroupInfield] = useState(true);
-  const displayGroupOrder = groupInfield ? GROUP_ORDER_MERGED : GROUP_ORDER;
+  // Pitcher can additionally be folded into the merged "Infield" column the
+  // same way catcher is — only meaningful in merged mode. Off by default so
+  // pitching stays its own column unless the coach opts in.
+  const [groupPitcher, setGroupPitcher] = useState(false);
+  // When pitcher is folded in, its innings join the infield bucket and the
+  // standalone "Pitcher" column drops out of the merged order.
+  const mergedInfieldParts: readonly string[] = groupPitcher
+    ? ["pitcher", ...MERGED_INFIELD_PARTS]
+    : MERGED_INFIELD_PARTS;
+  const displayGroupOrder = groupInfield
+    ? groupPitcher
+      ? ["infield", "outfield", "bench"]
+      : GROUP_ORDER_MERGED
+    : GROUP_ORDER;
   // Click-through to per-player game log — same dialog used on Season Stats.
   const [logPlayerId, setLogPlayerId] = useState<number | null>(null);
 
@@ -362,11 +375,11 @@ export default function Stats() {
       const cells = displayGroupOrder.map((g) => {
         const count =
           g === "infield"
-            ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groups[k] ?? 0), 0)
+            ? mergedInfieldParts.reduce((s, k) => s + (groups[k] ?? 0), 0)
             : (groups[g] ?? 0);
         const pct =
           g === "infield"
-            ? MERGED_INFIELD_PARTS.reduce((s, k) => s + (groupPct[k] ?? 0), 0)
+            ? mergedInfieldParts.reduce((s, k) => s + (groupPct[k] ?? 0), 0)
             : (groupPct[g] ?? 0);
         return { g, count, pct };
       });
@@ -421,18 +434,32 @@ export default function Stats() {
                       <p className="text-xs text-muted-foreground mt-1">
                         Includes live games + imported history.{" "}
                         {groupInfield
-                          ? "Infield = C + 1B/3B + 2B/SS."
+                          ? groupPitcher
+                            ? "Infield = P + C + 1B/3B + 2B/SS."
+                            : "Infield = C + 1B/3B + 2B/SS."
                           : "C = Catcher, CIF = Corner IF (1B/3B), MIF = Middle IF (2B/SS), OF = Outfield, P = Pitcher"}
                       </p>
                     </div>
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 cursor-pointer">
-                      <Checkbox
-                        checked={groupInfield}
-                        onCheckedChange={(v) => setGroupInfield(v === true)}
-                        data-testid="checkbox-group-infield"
-                      />
-                      Group catcher + infield as "Infield"
-                    </label>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <Checkbox
+                          checked={groupInfield}
+                          onCheckedChange={(v) => setGroupInfield(v === true)}
+                          data-testid="checkbox-group-infield"
+                        />
+                        Group catcher + infield as "Infield"
+                      </label>
+                      {groupInfield && (
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                          <Checkbox
+                            checked={groupPitcher}
+                            onCheckedChange={(v) => setGroupPitcher(v === true)}
+                            data-testid="checkbox-group-pitcher"
+                          />
+                          Include pitcher in "Infield"
+                        </label>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

@@ -33,6 +33,7 @@ import {
   useSnapshotPlan,
   useClearPlanSnapshot,
   useGetPreferences,
+  useGetPlayerStats,
   useGetTournament,
   getGetGameQueryKey,
   getGetGameLineupQueryKey,
@@ -146,6 +147,9 @@ export default function GameDetail() {
   // "Generate Lineup" (before the prefs query resolves) doesn't silently
   // bypass the gate or fire it incorrectly.
   const { data: prefs, isLoading: prefsLoading } = useGetPreferences();
+  // Season-wide playing-time data so in-game equity suggestions can ground
+  // their recommendations in season bench RATE (not just this game's counts).
+  const { data: seasonPlayerStats = [] } = useGetPlayerStats();
   // For tournament games we fetch the parent tournament so we can surface a
   // pitch-budget callout above the lineup ("Two pitchers are nearly out for
   // today"). Same data already powers PitchCountsCard — this just hoists a
@@ -2039,6 +2043,39 @@ export default function GameDetail() {
     }
     const items: Array<{ key: string; text: string; weight: number }> = [];
 
+    // (0) Season-wide playing-time heads-up — recommend getting the players
+    // who've sat the MOST across the whole season onto the field today. Ranked
+    // by bench RATE (share of innings sat), not raw count, so a kid who simply
+    // attended fewer games isn't unfairly flagged — the same metric the
+    // dashboard "Playing Time Heads Up" card uses. Only players actually in
+    // today's lineup are surfaced so the suggestion is actionable right now.
+    const seasonRateById = new Map<number, { rate: number; pct: number }>();
+    for (const sp of seasonPlayerStats as Array<{
+      playerId: number;
+      benchInnings: number;
+      totalInnings: number;
+    }>) {
+      if (sp.totalInnings > 0) {
+        const rate = sp.benchInnings / sp.totalInnings;
+        seasonRateById.set(sp.playerId, { rate, pct: Math.round(rate * 100) });
+      }
+    }
+    const seasonRecs = stats
+      .map((s) => ({ s, season: seasonRateById.get(s.playerId) }))
+      .filter(
+        (x): x is { s: Stats; season: { rate: number; pct: number } } =>
+          !!x.season && x.season.pct >= 25,
+      )
+      .sort((a, b) => b.season.rate - a.season.rate)
+      .slice(0, 2);
+    for (const { s, season } of seasonRecs) {
+      items.push({
+        key: `season-bench-${s.playerId}`,
+        text: `Season-wide, ${s.playerName} has sat ${season.pct}% of their innings — among the most on the team. Prioritize their field time today.`,
+        weight: 200 + season.pct,
+      });
+    }
+
     // (1) Bench equity — flag anyone sitting > 1 inning more than the team min.
     const minBench = Math.min(...stats.map((s) => s.bench));
     const benchOver = stats
@@ -2083,7 +2120,7 @@ export default function GameDetail() {
       items: items.slice(0, 5).map((i) => ({ key: i.key, text: i.text })),
       totalPlayers: stats.length,
     };
-  }, [displayLineup, game]);
+  }, [displayLineup, game, seasonPlayerStats]);
 
   // Reset the dismissal whenever the underlying saved lineup changes (a save
   // landed, a new game was opened, etc.) so a fresh round of insights gets a
