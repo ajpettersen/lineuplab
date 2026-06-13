@@ -3,6 +3,11 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/basketball-mode/FairMinutesLineup.tsx": () => import("../components/mockups/basketball-mode/FairMinutesLineup.tsx"),
   "./components/mockups/basketball-mode/Roster.tsx": () => import("../components/mockups/basketball-mode/Roster.tsx"),
+  "./components/mockups/field-display-modes/BracketPlay.tsx": () => import("../components/mockups/field-display-modes/BracketPlay.tsx"),
+  "./components/mockups/field-display-modes/Championship.tsx": () => import("../components/mockups/field-display-modes/Championship.tsx"),
+  "./components/mockups/field-display-modes/ChampionshipElevated.tsx": () => import("../components/mockups/field-display-modes/ChampionshipElevated.tsx"),
+  "./components/mockups/field-display-modes/League.tsx": () => import("../components/mockups/field-display-modes/League.tsx"),
+  "./components/mockups/field-display-modes/TournamentPool.tsx": () => import("../components/mockups/field-display-modes/TournamentPool.tsx"),
   "./components/mockups/field-display-chips/Current.tsx": () => import("../components/mockups/field-display-chips/Current.tsx"),
   "./components/mockups/field-display-chips/Medallion.tsx": () => import("../components/mockups/field-display-chips/Medallion.tsx"),
   "./components/mockups/field-display-chips/StackedCompact.tsx": () => import("../components/mockups/field-display-chips/StackedCompact.tsx"),
