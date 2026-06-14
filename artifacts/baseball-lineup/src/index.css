@@ -122,6 +122,29 @@
   --accent: 42 95% 55%;
   --accent-foreground: 220 85% 18%;
 
+  /* Field Display chrome — dark broadcast surfaces derived from the TEAM
+     primary so the dugout screen actually reads in the team's color (royal
+     blue, maroon, forest, …) instead of a generic slate. Each is a dark mix
+     of hsl(var(--primary)) over near-black: default navy teams look ~the
+     same, vivid primaries visibly tint the whole chrome. These recompute
+     automatically when <TeamThemeApplier> sets --primary on <html>. Gold/
+     accent stays reserved for highlights + the championship rungs. */
+  /* Fallback first (the original hardcoded slate) for browsers without
+     color-mix() support (iPad Safari < 16.2): they ignore the second
+     declaration and degrade to the prior broadcast look. */
+  --fd-bg: #04070d;
+  --fd-bg: color-mix(in srgb, hsl(var(--primary)) 22%, #04070d);
+  --fd-panel: #0f172a;
+  --fd-panel: color-mix(in srgb, hsl(var(--primary)) 38%, #070d18);
+  --fd-panel-deep: #050d1a;
+  --fd-panel-deep: color-mix(in srgb, hsl(var(--primary)) 28%, #04080f);
+  --fd-chip: #0b1a35;
+  --fd-chip: color-mix(in srgb, hsl(var(--primary)) 48%, #0a1426);
+  --fd-chip-soft: #0b1a35;
+  --fd-chip-soft: color-mix(in srgb, hsl(var(--primary)) 32%, #0a1426);
+  --fd-border: #1a2a42;
+  --fd-border: color-mix(in srgb, hsl(var(--primary)) 46%, #141d30);
+
   /* Destructive: classic red */
   --destructive: 350 70% 50%;
   --destructive-foreground: 0 0% 100%;

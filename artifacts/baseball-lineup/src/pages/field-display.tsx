@@ -1981,7 +1981,7 @@ export default function FieldDisplay() {
        *  iPad Safari (display:contents has known quirks as a flex item
        *  in WebKit). The wrapper-free approach above sidesteps both. */}
       <header
-        className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-accent"} bg-[#0f172a] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
+        className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-accent"} bg-[var(--fd-panel)] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
         style={{
           // iPad status bar (clock / WiFi / battery) sits on top of the
           // page in installed-PWA / fullscreen mode (we set
@@ -2017,7 +2017,7 @@ export default function FieldDisplay() {
             variant="outline"
             size="sm"
             onClick={() => setEndGameDialogOpen(true)}
-            className="sm:hidden h-11 w-11 p-0 shrink-0 border-accent/60 bg-[#0f172a] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-md"
+            className="sm:hidden h-11 w-11 p-0 shrink-0 border-accent/60 bg-[var(--fd-panel)] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-md"
             data-testid="button-mobile-exit"
             aria-label="Exit field display"
             title="Exit field display"
@@ -2085,13 +2085,13 @@ export default function FieldDisplay() {
          *  its own row next to the score steppers, the heavy bg made
          *  the inning controls look like a free-floating modal that
          *  didn't belong with the rest of the header. */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0 sm:bg-[#050d1a] sm:border-l sm:border-r sm:border-[#1a2a42] px-0 sm:px-4 py-1">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 sm:bg-[var(--fd-panel-deep)] sm:border-l sm:border-r sm:border-[var(--fd-border)] px-0 sm:px-4 py-1">
           <Button
             variant="outline"
             size="lg"
             onClick={() => setCurrentInning((i) => Math.max(1, i - 1))}
             disabled={currentInning <= 1}
-            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
+            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[var(--fd-border)] bg-[var(--fd-panel)] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
             data-testid="button-prev-inning"
             aria-label="Previous inning"
             /* `touch-action: manipulation` removes iOS Safari's 300 ms
@@ -2123,7 +2123,7 @@ export default function FieldDisplay() {
             size="lg"
             onClick={() => setCurrentInning((i) => Math.min(innings, i + 1))}
             disabled={currentInning >= innings}
-            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[#1a2a42] bg-[#0f172a] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
+            className="h-10 w-10 sm:h-11 sm:w-11 p-0 border-[var(--fd-border)] bg-[var(--fd-panel)] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
             data-testid="button-next-inning"
             aria-label="Next inning"
             /* See prev-inning button for the touch-action rationale. */
@@ -2148,7 +2148,7 @@ export default function FieldDisplay() {
               onClick={() =>
                 saveGamePatchOptimistically({ innings: innings + 1 })
               }
-              className="h-10 px-2 sm:h-11 sm:px-3 border-accent/60 bg-[#0f172a] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-none flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold"
+              className="h-10 px-2 sm:h-11 sm:px-3 border-accent/60 bg-[var(--fd-panel)] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-none flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold"
               data-testid="button-add-extra-inning"
               aria-label="Add extra inning"
               title="Add an extra inning"
@@ -2211,7 +2211,7 @@ export default function FieldDisplay() {
                 ? "text-amber-400 border-amber-400/60 bg-amber-950/30 opacity-100"
                 : justUpdated
                   ? "text-emerald-400 border-emerald-400/60 bg-emerald-950/30 opacity-100"
-                  : "text-slate-400 border-[#1a2a42] bg-[#050d1a] opacity-90"
+                  : "text-slate-400 border-[var(--fd-border)] bg-[var(--fd-panel-deep)] opacity-90"
             }`}
             data-testid="text-update-status"
             data-online={online ? "true" : "false"}
@@ -2339,7 +2339,7 @@ export default function FieldDisplay() {
             variant="outline"
             size="sm"
             onClick={() => setEndGameDialogOpen(true)}
-            className="hidden sm:flex items-center gap-1.5 border-accent/60 bg-[#0f172a] text-accent hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
+            className="hidden sm:flex items-center gap-1.5 border-accent/60 bg-[var(--fd-panel)] text-accent hover:bg-amber-950/40 hover:text-amber-200 px-3 py-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold rounded-none"
             data-testid="button-end-game"
             aria-label="End game or exit"
             title="End game or exit without ending"
@@ -2650,7 +2650,7 @@ export default function FieldDisplay() {
             <button
               type="button"
               onClick={() => setShowTournamentPitches(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-accent bg-[#06101f] border border-accent/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-accent bg-[var(--fd-bg)] border border-accent/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
               aria-label="Show tournament pitches"
               data-testid="button-show-tournament-pitches"
             >
@@ -2675,7 +2675,7 @@ export default function FieldDisplay() {
             <button
               type="button"
               onClick={() => setShowRotationTally(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-sky-300 bg-[#06101f] border border-sky-400/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] sm:text-xs font-broadcast uppercase tracking-wider text-sky-300 bg-[var(--fd-bg)] border border-sky-400/40 border-t-0 rounded-b-md hover:bg-[#0a1730] active:bg-[#0d1c3a]"
               aria-label="Show rotation tally"
               data-testid="button-show-rotation-tally"
             >
@@ -2728,7 +2728,7 @@ export default function FieldDisplay() {
       <main className="flex-1 min-h-0 grid grid-cols-1 max-lg:overflow-hidden lg:grid-cols-[1fr_minmax(320px,400px)] lg:overflow-hidden bg-black">
         {/* Field section: diagram fills the available height; bench strip pinned below */}
         <section
-          className={`flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden bg-[#03060a] ${
+          className={`flex flex-col p-3 sm:p-4 min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden bg-[var(--fd-bg)] ${
             mobileTab !== "field" ? "max-lg:hidden" : ""
           }`}
           data-testid="section-field"
@@ -2738,7 +2738,7 @@ export default function FieldDisplay() {
            *  on lg, where the parent already constrains height to the
            *  viewport and the field is allowed to fill whatever's left. */}
           <div
-            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:min-h-0 lg:min-h-0 border-2 border-[#1a2a42] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.35)]"
+            className="relative w-full flex-1 min-h-[320px] sm:min-h-[420px] max-lg:min-h-0 lg:min-h-0 border-2 border-[var(--fd-border)] overflow-hidden shadow-[inset_0_0_60px_rgba(0,0,0,0.35)]"
             style={{ background: lighting.grassGradient }}
             data-lighting={lighting.label}
             data-testid={`field-lighting-${lighting.label}`}
@@ -2959,7 +2959,7 @@ export default function FieldDisplay() {
          *  bat" tracker was removed because there's no way to know real
          *  game state without a GameChanger-style integration, and a
          *  stale indicator was worse than no indicator. */}
-        <aside className={`max-lg:border-t-0 lg:border-t-0 lg:border-l border-[#1a2a42] bg-gradient-to-b from-[#0f172a] to-[#050d1a] flex flex-col min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
+        <aside className={`max-lg:border-t-0 lg:border-t-0 lg:border-l border-[var(--fd-border)] bg-gradient-to-b from-[var(--fd-panel)] to-[var(--fd-panel-deep)] flex flex-col min-w-0 min-h-0 max-lg:overflow-hidden lg:overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] relative z-20 ${
           mobileTab !== "order" ? "max-lg:hidden" : ""
         }`}>
           {/* Broadcast-graphic LINEUP header — Oswald uppercase with a gold
@@ -2967,7 +2967,7 @@ export default function FieldDisplay() {
            *  static gold underline for an animated shimmer + add a small
            *  TROPHY pre-title above the heading so the panel reads as a
            *  TV "tournament graphic" insert. */}
-          <div className={`relative shrink-0 bg-[#0f172a] ${isTournament ? "border-b-0" : "border-b-2 border-accent"} px-4 py-2 sm:py-3 text-center`}>
+          <div className={`relative shrink-0 bg-[var(--fd-panel)] ${isTournament ? "border-b-0" : "border-b-2 border-accent"} px-4 py-2 sm:py-3 text-center`}>
             {isTournament && (
               <div
                 className="flex items-center justify-center gap-1.5 mb-1 text-accent/90"
@@ -3106,7 +3106,7 @@ export default function FieldDisplay() {
         <DragOverlay dropAnimation={null} style={{ zIndex: 1000 }}>
           {activeDragInfo ? (
             <div
-              className="flex items-stretch bg-[#0f172a] border border-[#1a2a42] shadow-[0_8px_0_rgba(0,0,0,0.7)] cursor-grabbing select-none overflow-hidden"
+              className="flex items-stretch bg-[var(--fd-panel)] border border-[var(--fd-border)] shadow-[0_8px_0_rgba(0,0,0,0.7)] cursor-grabbing select-none overflow-hidden"
               data-testid="drag-overlay-chip"
             >
               <div className="bg-accent text-black font-bold font-['Roboto_Mono'] px-2 py-1 flex items-center justify-center text-xs uppercase tracking-wider min-w-[40px]">
@@ -3138,7 +3138,7 @@ export default function FieldDisplay() {
        *  coaches can drag-and-drop between field and bench without
        *  leaving the panel. */}
       <nav
-        className="hidden max-lg:flex shrink-0 h-16 max-lg:landscape:h-12 bg-[#050d1a] border-t border-[#1a2a42] z-30"
+        className="hidden max-lg:flex shrink-0 h-16 max-lg:landscape:h-12 bg-[var(--fd-panel-deep)] border-t border-[var(--fd-border)] z-30"
         aria-label="Field display section"
         data-testid="mobile-tab-bar"
       >
@@ -3776,9 +3776,9 @@ function DraggableFieldChip({
             ? `${name} at ${pos} — tap to swap`
             : `${name} at ${pos} — tap to select, or drag to move`
       }
-      className={`relative inline-flex items-center bg-[#0b1a35]/95 border border-white/10 rounded-full shadow-lg touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
+      className={`relative inline-flex items-center bg-[var(--fd-chip)] border border-white/10 rounded-full shadow-lg touch-none cursor-grab active:cursor-grabbing select-none transition-all overflow-hidden ${
         isSelected
-          ? "ring-2 ring-accent ring-offset-2 ring-offset-[#050d1a]"
+          ? "ring-2 ring-accent ring-offset-2 ring-offset-[var(--fd-panel-deep)]"
           : isOver
             ? "ring-2 ring-accent"
             : isSwapTarget
@@ -3829,7 +3829,7 @@ function EmptyFieldChip({
           ? "bg-accent/20 border-accent"
           : isSwapTarget
             ? "bg-accent/10 border-accent/70 cursor-pointer"
-            : "bg-[#0b1a35]/70 border-white/15"
+            : "bg-[var(--fd-chip-soft)] border-white/15"
       }`}
       data-testid={`field-chip-${pos}-empty`}
     >
@@ -3901,12 +3901,12 @@ function BenchStrip({
       onClick={handleStripClick}
       role={isSwapTarget ? "button" : undefined}
       aria-label={isSwapTarget ? "Send selected player to bench" : undefined}
-      className={`mt-2 sm:mt-3 border bg-[#050d1a] px-3 sm:px-6 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
+      className={`mt-2 sm:mt-3 border bg-[var(--fd-panel-deep)] px-3 sm:px-6 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
         isOver
           ? "border-accent ring-2 ring-accent/60 bg-amber-950/20"
           : isSwapTarget
             ? "border-accent/70 ring-1 ring-accent/40 cursor-pointer"
-            : "border-[#1a2a42]"
+            : "border-[var(--fd-border)]"
       }`}
       data-testid="bench-strip"
     >
@@ -3983,9 +3983,9 @@ function DraggableBenchChip({
             : `${name} on bench — tap to select, or drag to a position`
       }
       data-bench-chip
-      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#0b1a35]/95 border rounded-full shadow-md transition-all whitespace-nowrap tracking-wide ${
+      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[var(--fd-chip)] border rounded-full shadow-md transition-all whitespace-nowrap tracking-wide ${
         isSelected
-          ? "border-accent ring-2 ring-accent ring-offset-2 ring-offset-[#050d1a]"
+          ? "border-accent ring-2 ring-accent ring-offset-2 ring-offset-[var(--fd-panel-deep)]"
           : isSwapTarget
             ? "border-accent outline outline-1 outline-dashed outline-accent/60 outline-offset-2"
             : "border-white/15 hover:border-accent"
@@ -4052,7 +4052,7 @@ function TournamentPitchesPanel({
 
   return (
     <div
-      className="relative w-full bg-[#06101f] border-t border-accent/40 px-2 sm:px-4 py-2 sm:py-2.5"
+      className="relative w-full bg-[var(--fd-bg)] border-t border-accent/40 px-2 sm:px-4 py-2 sm:py-2.5"
       data-testid="tournament-pitches-panel"
     >
       <div className="flex items-center justify-between mb-1.5">

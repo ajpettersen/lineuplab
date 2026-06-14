@@ -3,16 +3,25 @@ name: Field Display accent-token theming
 description: How the dugout Field Display is themed in team colors and how gold is re-introduced only at championship rungs.
 ---
 
-# Field Display theming via the `accent` token
+# Field Display theming: primary-derived surfaces + accent highlights
 
-The Field Display (`field-display.tsx`) is painted in the TEAM's color by routing
-all chrome through the Tailwind v4 `accent` utilities (`text-accent`,
-`border-accent`, `ring-accent`, `bg-accent`) instead of hardcoded gold. The old
-`broadcast-gold` utility class was the "this app is gold" smell.
+The dugout Field Display (`field-display.tsx`) is themed in TWO layers:
 
-**Rule:** new Field Display chrome should use `accent`-family utilities, never
-`broadcast-gold`, so it follows `team_settings` colors. Reserve literal gold for
-the championship "trophy" treatment only.
+1. **Dark chrome SURFACES (header bar, panels, position chips, borders, field
+   surround) are derived from the TEAM PRIMARY color** via `--fd-*` tokens in
+   `index.css` (`--fd-bg/--fd-panel/--fd-panel-deep/--fd-chip/--fd-chip-soft/--fd-border`),
+   each a `color-mix(in srgb, hsl(var(--primary)) N%, <near-black>)` (with a plain
+   hex fallback line first for iPad Safari < 16.2). This is what makes a royal-blue
+   (or maroon, forest…) team's WHOLE screen read in their color instead of generic
+   slate. Use `bg-[var(--fd-panel)]` etc., NOT hardcoded `#0f172a`/`#0b1a35`/…
+2. **HIGHLIGHTS (lineup title underline, inning number, active batter, POS labels,
+   end-game buttons) use the `accent` token** (Tailwind `text-accent`/`border-accent`/
+   `ring-accent`), which follows the team SECONDARY color and defaults to gold. The
+   old `broadcast-gold` utility was the "this app is hardcoded gold" smell.
+
+**Rule:** new chrome SURFACE → `--fd-*` (primary-derived); new HIGHLIGHT → `accent`
+utility. Never reintroduce hardcoded slate hexes or `broadcast-gold`. Reserve literal
+gold for the championship "trophy" treatment only.
 
 **The single lever for gold-at-championship:** in `index.css`,
 `[data-fd-mode="champ"],[data-fd-mode="champ-elevated"]{ --accent:42 95% 55%; --accent-foreground:220 85% 18%; }`
