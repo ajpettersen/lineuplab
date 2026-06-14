@@ -41,7 +41,8 @@ React + Express, Node.js 24, Drizzle ORM, Zod v4, Vite (manual vendor chunk spli
 
 ### Visual & branding
 - **Broadcast Visual Language**: app-wide aesthetic (Oswald display + Roboto Mono numerals).
-- **Team Branding**: `team_settings.primaryColor`/`secondaryColor` (nullable HSL strings `"H S% L%"`). `<TeamThemeApplier>` (in `Layout`) overrides primary/ring/accent CSS vars on `<html>`. Coaches pick preset swatches in Settings → Team Colors; `null` = app default.
+- **Team Branding**: `team_settings.primaryColor`/`secondaryColor` (nullable HSL strings `"H S% L%"`). `<TeamThemeApplier>` (mounted at the signed-in app root in `App.tsx`, NOT `Layout`) overrides primary/ring/accent CSS vars on `<html>`. Coaches pick preset swatches in Settings → Team Colors; `null` = app default.
+- **App-wide brand chrome**: the GLOBAL shell surfaces (sticky top header bar, mobile bottom nav, nav scroll-fade gradients in `layout.tsx`; dashboard `next-game-hero.tsx` radial) derive from the team PRIMARY via `--brand`/`--brand-d`/`--brand-dd`/`--brand-l`/`--brand-ll` tokens in `index.css` (`--brand` = `hsl(var(--primary))`; the rest are `color-mix` of primary with black/white, each with a plain-hsl default-navy fallback line first for iPad Safari <16.2). **Rule:** any new signed-in chrome surface must use `var(--brand*)` (or `primary`/`accent` tokens) — NEVER hardcoded `hsl(220 85% L%)` navy, or it won't follow custom team colors. The signed-out auth page (`App.tsx`) intentionally stays fixed navy (no team context yet).
 
 ### AI features
 - Roster import (image/text), lineup generation (natural language), practice-plan suggestions, and box-score import all use `gpt-5.2`.

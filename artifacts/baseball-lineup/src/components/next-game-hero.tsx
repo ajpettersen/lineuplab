@@ -79,7 +79,7 @@ export function NextGameHero({
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at top left, hsl(220 85% 28%) 0%, hsl(220 85% 18%) 55%, hsl(220 85% 14%) 100%)",
+            "radial-gradient(ellipse at top left, var(--brand-ll) 0%, var(--brand-d) 55%, var(--brand-dd) 100%)",
         }}
       />
       {/* Subtle diagonal grid overlay for sports-graphic texture. */}

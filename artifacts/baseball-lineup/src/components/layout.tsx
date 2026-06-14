@@ -437,10 +437,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
       <header
-        className="sticky top-0 z-30 border-b border-[hsl(220_85%_14%)] shadow-md"
+        className="sticky top-0 z-30 border-b border-[var(--brand-dd)] shadow-md"
         style={{
           background:
-            "linear-gradient(135deg, hsl(220 85% 18%) 0%, hsl(220 85% 24%) 60%, hsl(220 85% 20%) 100%)",
+            "linear-gradient(135deg, var(--brand-d) 0%, var(--brand-l) 55%, var(--brand) 100%)",
         }}
       >
         {/* Safe-area spacer: when the app runs as an installed PWA on
@@ -738,7 +738,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               if (!el) return;
               el.scrollBy({ left: -200, behavior: "smooth" });
             }}
-            className="absolute left-0 top-0 bottom-0 z-10 flex items-center justify-center w-8 cursor-pointer text-primary-foreground bg-gradient-to-r from-[hsl(220_85%_18%)] via-[hsl(220_85%_18%)]/85 to-transparent hover:from-[hsl(220_85%_22%)]"
+            className="absolute left-0 top-0 bottom-0 z-10 flex items-center justify-center w-8 cursor-pointer text-primary-foreground bg-gradient-to-r from-[var(--brand-d)] via-[var(--brand-d)]/85 to-transparent hover:from-[var(--brand)]"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -755,7 +755,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               if (!el) return;
               el.scrollBy({ left: 200, behavior: "smooth" });
             }}
-            className="absolute right-0 top-0 bottom-0 z-10 flex items-center justify-center w-8 cursor-pointer text-primary-foreground bg-gradient-to-l from-[hsl(220_85%_18%)] via-[hsl(220_85%_18%)]/85 to-transparent hover:from-[hsl(220_85%_22%)]"
+            className="absolute right-0 top-0 bottom-0 z-10 flex items-center justify-center w-8 cursor-pointer text-primary-foreground bg-gradient-to-l from-[var(--brand-d)] via-[var(--brand-d)]/85 to-transparent hover:from-[var(--brand)]"
           >
             <ChevronRight className="h-5 w-5" />
           </button>
@@ -784,10 +784,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
           Settings, Admin, Sign-out). Hidden on md+ where the
           horizontal top-bar nav is already visible. */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-[hsl(220_85%_14%)] shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.25)]"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--brand-dd)] shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.25)]"
         style={{
           background:
-            "linear-gradient(180deg, hsl(220 85% 22%) 0%, hsl(220 85% 18%) 100%)",
+            "linear-gradient(180deg, var(--brand) 0%, var(--brand-d) 100%)",
           paddingBottom: "env(safe-area-inset-bottom)",
           paddingLeft: "env(safe-area-inset-left)",
           paddingRight: "env(safe-area-inset-right)",

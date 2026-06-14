@@ -145,6 +145,23 @@
   --fd-border: #1a2a42;
   --fd-border: color-mix(in srgb, hsl(var(--primary)) 46%, #141d30);
 
+  /* App-wide brand chrome shades, derived from the TEAM primary so the
+     GLOBAL header bar, mobile bottom nav, nav fades, and dashboard hero
+     follow the team's color instead of a hardcoded navy. `--brand` is the
+     primary itself; the others are lighter/darker shades via color-mix.
+     A plain-hsl fallback (default navy) is declared first for browsers
+     without color-mix() (iPad Safari < 16.2). Recompute when
+     <TeamThemeApplier> sets --primary on <html>. */
+  --brand: hsl(var(--primary));
+  --brand-d: hsl(220 85% 19%);
+  --brand-d: color-mix(in srgb, hsl(var(--primary)) 88%, #000);
+  --brand-dd: hsl(220 85% 14%);
+  --brand-dd: color-mix(in srgb, hsl(var(--primary)) 64%, #000);
+  --brand-l: hsl(220 85% 25%);
+  --brand-l: color-mix(in srgb, hsl(var(--primary)) 94%, #fff);
+  --brand-ll: hsl(220 85% 28%);
+  --brand-ll: color-mix(in srgb, hsl(var(--primary)) 90%, #fff);
+
   /* Destructive: classic red */
   --destructive: 350 70% 50%;
   --destructive-foreground: 0 0% 100%;

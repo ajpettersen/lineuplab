@@ -39,3 +39,20 @@ If you add a new escalating rung or chrome element, drive it off `data-fd-mode`
 + `accent` utilities; do not add a parallel hardcoded color path. `TeamThemeApplier`
 overrides `--accent` but NOT `--accent-foreground` for custom teams, so don't lean
 on `accent-foreground` contrast for arbitrary team colors.
+
+# App-wide brand chrome (beyond the Field Display)
+
+The same primary-derived approach themes the MAIN app shell. The global sticky
+header, mobile bottom nav, nav scroll-fade gradients (`layout.tsx`) and the
+dashboard hero (`next-game-hero.tsx`) use `--brand`/`--brand-d`/`--brand-dd`/
+`--brand-l`/`--brand-ll` tokens (`index.css`): `--brand = hsl(var(--primary))`,
+the rest `color-mix(primary, black|white)`, each with a plain-hsl default-navy
+fallback line first (iPad Safari < 16.2).
+
+**Rule (the durable lesson):** any signed-in chrome surface must use
+`var(--brand*)` (or `primary`/`accent`/`--fd-*`) tokens — NEVER a hardcoded
+`hsl(220 85% L%)` navy. Hardcoded navy is why "the app stayed navy even though
+the team color is royal blue." The signed-out auth page (`App.tsx`) is the one
+intentional exception: no team context exists pre-login, so it stays fixed navy.
+Tailwind v4 DOES support opacity-on-var (`via-[var(--brand-d)]/85` compiles to a
+`color-mix(... transparent)` path), so that pattern is safe here.
