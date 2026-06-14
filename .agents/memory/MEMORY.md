@@ -1,8 +1,7 @@
 - [PWA white-screen on boot](pwa-white-screen-boot.md) — empty #root + lazy/Clerk/IDB boot = blank first paint; needs inline splash + chunk-error reload + cache cleanup.
 - [date-fns format render crash](date-fns-render-crash.md) — `format(new Date(x))` on null/invalid date throws in render → ErrorBoundary blanks whole page; use a safe-format wrapper.
-- [Team-color chrome tokens](field-display-accent-theming.md) — signed-in chrome must use `--brand*`/`--fd-*`/primary/accent tokens, NEVER hardcoded `hsl(220 85%)` navy, or custom team colors don't apply.
 - [Full-screen routes skip Layout providers](full-screen-routes-skip-layout-providers.md) — Field Display & /welcome render outside <Layout>; mount app-wide providers (theming) at signed-in root, not in Layout.
-- [Field Display accent theming](field-display-accent-theming.md) — dugout view uses `accent` utilities (not `broadcast-gold`); gold returns only via a `[data-fd-mode=champ]` `--accent` subtree override.
+- [Team-color chrome theming](field-display-accent-theming.md) — signed-in chrome (app shell + Field Display) must use `--brand*`/`--fd-*`/primary/accent tokens, NEVER hardcoded `hsl(220 85%)` navy; champ gold via `[data-fd-mode=champ]` `--accent` override.
 - [Adding a batting stat column](batting-stat-column-checklist.md) — hand-rolled batting routes (no codegen); a new stat must be threaded through schema, batting-totals, routes (incl. GET response map), and frontend or it silently drops on one surface.
 - [Field Display per-device toggles](field-display-per-device-toggles.md) — global localStorage visual-mode flags leak across games; key on per-game DB flag + session override reset on game id.
 - [Tournament/game date matching](tournament-date-matching.md) — match game↔tournament by comparing `YYYY-MM-DD` substrings client-side, NOT server-side date_trunc on UTC timestamps (evening-game off-by-one).
