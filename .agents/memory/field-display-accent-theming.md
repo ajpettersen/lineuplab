@@ -49,6 +49,13 @@ dashboard hero (`next-game-hero.tsx`) use `--brand`/`--brand-d`/`--brand-dd`/
 the rest `color-mix(primary, black|white)`, each with a plain-hsl default-navy
 fallback line first (iPad Safari < 16.2).
 
+**Matching the app shell:** the `--fd-*` surfaces must mix the primary at HIGH
+percentages (panel ~82%, chip ~88%, border ~78%, panel-deep ~66%, bg ~50%) so
+the dugout reads the same vivid team color as the app header (`--brand*` is
+64–100% primary). The original LOW mixes (~22–48%) over near-black looked navy
+even for a royal-blue team — that was the "FD looks more navy than the app" bug.
+Keep `--fd-bg` the darkest rung for depth behind the field.
+
 **Rule (the durable lesson):** any signed-in chrome surface must use
 `var(--brand*)` (or `primary`/`accent`/`--fd-*`) tokens — NEVER a hardcoded
 `hsl(220 85% L%)` navy. Hardcoded navy is why "the app stayed navy even though

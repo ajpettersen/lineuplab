@@ -133,17 +133,17 @@
      color-mix() support (iPad Safari < 16.2): they ignore the second
      declaration and degrade to the prior broadcast look. */
   --fd-bg: #04070d;
-  --fd-bg: color-mix(in srgb, hsl(var(--primary)) 22%, #04070d);
+  --fd-bg: color-mix(in srgb, hsl(var(--primary)) 50%, #04070d);
   --fd-panel: #0f172a;
-  --fd-panel: color-mix(in srgb, hsl(var(--primary)) 38%, #070d18);
+  --fd-panel: color-mix(in srgb, hsl(var(--primary)) 82%, #070d18);
   --fd-panel-deep: #050d1a;
-  --fd-panel-deep: color-mix(in srgb, hsl(var(--primary)) 28%, #04080f);
+  --fd-panel-deep: color-mix(in srgb, hsl(var(--primary)) 66%, #04080f);
   --fd-chip: #0b1a35;
-  --fd-chip: color-mix(in srgb, hsl(var(--primary)) 48%, #0a1426);
+  --fd-chip: color-mix(in srgb, hsl(var(--primary)) 88%, #0a1426);
   --fd-chip-soft: #0b1a35;
-  --fd-chip-soft: color-mix(in srgb, hsl(var(--primary)) 32%, #0a1426);
+  --fd-chip-soft: color-mix(in srgb, hsl(var(--primary)) 70%, #0a1426);
   --fd-border: #1a2a42;
-  --fd-border: color-mix(in srgb, hsl(var(--primary)) 46%, #141d30);
+  --fd-border: color-mix(in srgb, hsl(var(--primary)) 78%, #141d30);
 
   /* App-wide brand chrome shades, derived from the TEAM primary so the
      GLOBAL header bar, mobile bottom nav, nav fades, and dashboard hero

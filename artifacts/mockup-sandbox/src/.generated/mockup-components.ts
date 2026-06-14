@@ -18,13 +18,13 @@ export const modules: ModuleMap = {
   "./components/mockups/field-display-modes/ChampionshipElevated.tsx": () => import("../components/mockups/field-display-modes/ChampionshipElevated.tsx"),
   "./components/mockups/field-display-modes/League.tsx": () => import("../components/mockups/field-display-modes/League.tsx"),
   "./components/mockups/field-display-modes/TournamentPool.tsx": () => import("../components/mockups/field-display-modes/TournamentPool.tsx"),
-  "./components/mockups/tournament-planner/BullpenStack.tsx": () => import("../components/mockups/tournament-planner/BullpenStack.tsx"),
-  "./components/mockups/tournament-planner/MatrixGrid.tsx": () => import("../components/mockups/tournament-planner/MatrixGrid.tsx"),
-  "./components/mockups/tournament-planner/TimelineRail.tsx": () => import("../components/mockups/tournament-planner/TimelineRail.tsx"),
   "./components/mockups/top-bar/Current.tsx": () => import("../components/mockups/top-bar/Current.tsx"),
   "./components/mockups/top-bar/MediumBundle.tsx": () => import("../components/mockups/top-bar/MediumBundle.tsx"),
   "./components/mockups/top-bar/SmallBundle.tsx": () => import("../components/mockups/top-bar/SmallBundle.tsx"),
   "./components/mockups/top-bar/TeamGroupedDesktop.tsx": () => import("../components/mockups/top-bar/TeamGroupedDesktop.tsx"),
   "./components/mockups/top-bar/TeamGroupedMobile.tsx": () => import("../components/mockups/top-bar/TeamGroupedMobile.tsx"),
-  "./components/mockups/top-bar/TeamGroupedTablet.tsx": () => import("../components/mockups/top-bar/TeamGroupedTablet.tsx")
+  "./components/mockups/top-bar/TeamGroupedTablet.tsx": () => import("../components/mockups/top-bar/TeamGroupedTablet.tsx"),
+  "./components/mockups/tournament-planner/BullpenStack.tsx": () => import("../components/mockups/tournament-planner/BullpenStack.tsx"),
+  "./components/mockups/tournament-planner/MatrixGrid.tsx": () => import("../components/mockups/tournament-planner/MatrixGrid.tsx"),
+  "./components/mockups/tournament-planner/TimelineRail.tsx": () => import("../components/mockups/tournament-planner/TimelineRail.tsx")
 };
