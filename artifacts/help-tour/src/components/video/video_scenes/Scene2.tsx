@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import scheduleShot from '@assets/screenshots/lineuplab-schedule.webp';
 
 export function Scene2() {
   const [phase, setPhase] = useState(0);
@@ -24,38 +25,14 @@ export function Scene2() {
     >
       <div className="w-1/2 relative h-full flex items-center justify-center">
         <motion.div 
-          className="relative w-[450px] bg-[var(--color-bg-muted)]/60 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
-          initial={{ rotateY: -30, opacity: 0, z: -200 }}
-          animate={phase >= 2 ? { rotateY: 0, opacity: 1, z: 0 } : { rotateY: -30, opacity: 0, z: -200 }}
+          className="relative w-[620px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[var(--color-bg-muted)]"
+          initial={{ rotateY: -30, opacity: 0 }}
+          animate={phase >= 2 ? { rotateY: 0, opacity: 1 } : { rotateY: -30, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 200, damping: 20 }}
           style={{ perspective: 1000 }}
         >
-          <div className="bg-[var(--color-primary)] p-4 text-center">
-            <div className="text-[var(--color-bg-dark)] font-mono font-bold text-sm uppercase">Next Game</div>
-            <div className="text-[var(--color-bg-dark)] font-display text-3xl uppercase mt-1">Saturday, Oct 14</div>
-          </div>
-          <div className="p-8 flex flex-col gap-6">
-            <div className="flex justify-between items-center">
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold">LL</div>
-                <div className="mt-2 font-bold text-lg">Lineup Lab</div>
-              </div>
-              <div className="text-xl font-mono text-[var(--color-text-muted)]">VS</div>
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-2xl font-bold text-red-500">T</div>
-                <div className="mt-2 font-bold text-lg">Tigers</div>
-              </div>
-            </div>
-            <div className="h-px w-full bg-white/10" />
-            <div className="flex items-center gap-4 text-[var(--color-text-muted)]">
-              <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">📍</div>
-              <div>Centennial Park, Field 3</div>
-            </div>
-            <div className="flex items-center gap-4 text-[var(--color-text-muted)]">
-              <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">⏰</div>
-              <div>Arrive 9:00 AM • First Pitch 10:00 AM</div>
-            </div>
-          </div>
+          <img src={scheduleShot} alt="Lineup Lab schedule screen" className="block w-full h-auto" />
+          <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10 pointer-events-none" />
         </motion.div>
       </div>
 

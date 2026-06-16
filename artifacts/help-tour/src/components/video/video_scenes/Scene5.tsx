@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import statsShot from '@assets/screenshots/lineuplab-stats.webp';
 
 export function Scene5() {
   const [phase, setPhase] = useState(0);
@@ -55,25 +56,16 @@ export function Scene5() {
               </motion.p>
             </div>
             
-            <div className="w-1/2 flex justify-center items-end h-[400px] gap-6 pb-12">
-              {[40, 70, 50, 90, 60].map((h, i) => (
-                <motion.div 
-                  key={i}
-                  className="w-16 bg-gradient-to-t from-[var(--color-primary)]/20 to-[var(--color-primary)] rounded-t-xl shadow-[0_0_30px_rgba(245,158,11,0.3)] relative"
-                  initial={{ height: 0 }}
-                  animate={phase >= 2 ? { height: `${h}%` } : { height: 0 }}
-                  transition={{ delay: i * 0.1, duration: 1, type: 'spring' }}
-                >
-                  <motion.div 
-                    className="absolute -top-8 left-1/2 -translate-x-1/2 font-mono font-bold text-lg"
-                    initial={{ opacity: 0 }}
-                    animate={phase >= 2 ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: i * 0.1 + 0.5 }}
-                  >
-                    .{h + 200}
-                  </motion.div>
-                </motion.div>
-              ))}
+            <div className="w-1/2 flex justify-center items-center">
+              <motion.div
+                className="relative w-[560px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[var(--color-bg-muted)]"
+                initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                animate={phase >= 2 ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.9, y: 30 }}
+                transition={{ duration: 0.8, type: 'spring', stiffness: 120, damping: 20 }}
+              >
+                <img src={statsShot} alt="Lineup Lab season stats screen" className="block w-full h-auto" />
+                <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10 pointer-events-none" />
+              </motion.div>
             </div>
           </motion.div>
         )}
@@ -110,4 +102,3 @@ export function Scene5() {
     </motion.div>
   );
 }
-

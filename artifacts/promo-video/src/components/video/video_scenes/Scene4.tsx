@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import ipadMockup from '@assets/screenshots/829fbfaa-534f-4b86-8342-142c14deb2f6-00-7vs7tbsj9fs4_riker_replit_dev_mockup_preview_field-display-redesign_BroadcastBooth.png';
+import ipadMockup from '@assets/screenshots/lineuplab-field-display.webp';
 
 export function Scene4() {
   const [phase, setPhase] = useState(0);

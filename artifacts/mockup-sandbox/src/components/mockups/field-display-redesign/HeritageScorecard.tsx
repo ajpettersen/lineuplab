@@ -4,7 +4,7 @@ export function HeritageScorecard() {
   return (
     <div className="relative w-full h-[900px] overflow-hidden select-none" style={{ backgroundColor: "#F7F5EE", color: "#111C33", fontFamily: "'DM Serif Display', serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=Caveat:wght@400;700&display=swap" rel="stylesheet" />
-      <style dangerouslySetInlineStyle={{
+      <style dangerouslySetInnerHTML={{
         __html: `
           .paper-texture {
             background-image: 

@@ -43,7 +43,10 @@ const ROSTER = [
   { id: "p8", num: "18", name: "Owen Thomas", age: 11, role: "RHP, back-end" },
 ];
 
-const INITIAL_PITCHES = {
+type PitchRecord = { actual?: number; planned?: number };
+type GamePitches = Record<string, PitchRecord>;
+
+const INITIAL_PITCHES: Record<string, GamePitches> = {
   // gameId -> pitcherId -> { actual?: number, planned?: number }
   g1: { p1: { actual: 52 }, p3: { actual: 28 } },
   g2: { p2: { actual: 38 }, p4: { actual: 22 } },

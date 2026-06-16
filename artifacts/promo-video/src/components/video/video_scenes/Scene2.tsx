@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import appScreenshot from '@assets/screenshots/829fbfaa-534f-4b86-8342-142c14deb2f6-00-7vs7tbsj9fs4_riker_replit_dev_mockup_preview_field-display-redesign_PremiumCoachApp.png';
+import appScreenshot from '@assets/screenshots/lineuplab-ai-lineups.webp';
 
 export function Scene2() {
   const [phase, setPhase] = useState(0);

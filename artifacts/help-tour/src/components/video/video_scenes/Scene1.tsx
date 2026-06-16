@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import rosterShot from '@assets/screenshots/lineuplab-roster.webp';
 
 export function Scene1() {
   const [phase, setPhase] = useState(0);
@@ -13,13 +14,6 @@ export function Scene1() {
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);
-
-  const players = [
-    { name: 'Alex M.', pos: 'P / SS' },
-    { name: 'Jordan T.', pos: 'C / 1B' },
-    { name: 'Chris R.', pos: 'CF / OF' },
-    { name: 'Sam K.', pos: '3B' },
-  ];
 
   return (
     <motion.div 
@@ -58,31 +52,21 @@ export function Scene1() {
       </div>
 
       <div className="w-1/2 relative h-full flex items-center justify-center">
-        <div className="relative w-[400px] h-[500px] bg-[var(--color-bg-muted)]/50 backdrop-blur-md border border-white/10 rounded-2xl p-8 flex flex-col gap-4 shadow-2xl">
-          {players.map((p, i) => (
-            <motion.div
-              key={i}
-              className="w-full bg-[var(--color-bg-dark)]/80 rounded-xl p-4 flex items-center gap-4 border border-white/5"
-              initial={{ opacity: 0, x: 50, scale: 0.9 }}
-              animate={phase >= 3 ? { opacity: 1, x: 0, scale: 1 } : { opacity: 0, x: 50, scale: 0.9 }}
-              transition={{ delay: i * 0.15, type: 'spring', stiffness: 300, damping: 25 }}
-            >
-              <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center text-[var(--color-primary)] font-bold">
-                {p.name.charAt(0)}
-              </div>
-              <div className="flex-1">
-                <div className="text-xl font-bold">{p.name}</div>
-                <div className="text-sm text-[var(--color-text-muted)] font-mono">{p.pos}</div>
-              </div>
-            </motion.div>
-          ))}
-          
-          <motion.div
-            className="absolute -right-12 -bottom-12 w-32 h-32 bg-[var(--color-primary)]/20 rounded-full blur-2xl"
-            animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0.8, 0.5] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          />
-        </div>
+        <motion.div
+          className="relative w-[640px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[var(--color-bg-muted)]"
+          initial={{ opacity: 0, x: 50, scale: 0.92, rotateY: -12 }}
+          animate={phase >= 2 ? { opacity: 1, x: 0, scale: 1, rotateY: 0 } : { opacity: 0, x: 50, scale: 0.92, rotateY: -12 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+          style={{ perspective: 1000 }}
+        >
+          <img src={rosterShot} alt="Lineup Lab roster screen" className="block w-full h-auto" />
+          <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10 pointer-events-none" />
+        </motion.div>
+        <motion.div
+          className="absolute -right-12 -bottom-12 w-32 h-32 bg-[var(--color-primary)]/20 rounded-full blur-2xl"
+          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0.8, 0.5] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        />
       </div>
     </motion.div>
   );
