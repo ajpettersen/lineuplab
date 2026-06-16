@@ -7,19 +7,20 @@ import {
   AccordionContent,
 } from "@/components/ui/accordion";
 import { HelpCard } from "@/components/help-card";
+import { QuickTour } from "@/components/quick-tour";
 import { LifeBuoy, PlayCircle, ListChecks } from "lucide-react";
 
 /**
  * Help / FAQ page (`/help`). Three stacked surfaces:
- *   1. A sub-1-minute "Quick Tour" video (the `help-tour` video artifact,
- *      embedded via iframe at the proxy path `/help-tour/`).
+ *   1. A "Quick Tour" slideshow (`<QuickTour>`) — real app screenshots with
+ *      captions, rendered IN-APP (not an iframe).
  *   2. The AI "Ask the app" card (reused from the dashboard).
  *   3. A static FAQ accordion covering the core coaching workflow.
  *
- * The video is a separate (non-deployable) video-js artifact, so the iframe
- * points at the absolute proxy path `/help-tour/` rather than this app's
- * BASE_URL. It renders in the workspace preview; for a published build the
- * tour would need to be exported to a hosted file.
+ * The tour is built inside this deployable app (reusing the same real
+ * `public/feature-shots/*.webp` as the landing page) rather than embedding the
+ * separate, non-deployable `help-tour` video artifact — which was blank in
+ * published builds.
  */
 
 interface FaqEntry {
@@ -202,16 +203,7 @@ export default function Help() {
           </p>
         </CardHeader>
         <CardContent>
-          <div className="relative w-full overflow-hidden rounded-lg border border-border bg-black aspect-video">
-            <iframe
-              src="/help-tour/"
-              title="Lineup Lab Quick Tour"
-              className="absolute inset-0 h-full w-full"
-              loading="lazy"
-              allow="autoplay; fullscreen"
-              data-testid="iframe-help-tour"
-            />
-          </div>
+          <QuickTour />
         </CardContent>
       </Card>
 
