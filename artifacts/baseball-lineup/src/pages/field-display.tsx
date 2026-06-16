@@ -3070,7 +3070,7 @@ export default function FieldDisplay() {
             <div className="text-slate-500 text-sm">No batting order yet.</div>
           ) : (
             <ol
-              className="flex flex-col flex-1 min-h-0 gap-1 max-lg:gap-1.5 lg:gap-1"
+              className="flex flex-col flex-1 min-h-0 gap-0.5 lg:gap-1"
               data-testid="batting-order-list"
             >
               {battingOrder.map((r, idx) => {
@@ -3097,7 +3097,7 @@ export default function FieldDisplay() {
                 return (
                   <li
                     key={r.playerId}
-                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[2.25rem] sm:min-h-[2.5rem] overflow-hidden border border-transparent transition-all ${
+                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[1.75rem] lg:min-h-[2.5rem] overflow-hidden border border-transparent transition-all ${
                       idx % 2 === 0
                         ? "bg-slate-900/60"
                         : "bg-slate-900/30"
