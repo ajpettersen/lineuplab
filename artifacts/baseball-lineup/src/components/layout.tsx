@@ -351,10 +351,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location]);
 
   useEffect(() => {
-    if (teamName) {
-      document.title = `${teamName} • Lineup Lab`;
-    }
-  }, [teamName]);
+    document.title = "Lineup Lab";
+  }, []);
 
   // Sidebar order chosen by the coach: dashboard first, then schedule
   // (the most-touched coaching surface), then the analysis view, then the
