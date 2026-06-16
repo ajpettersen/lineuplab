@@ -98,7 +98,7 @@ export function TournamentNetworkCard({ tournamentId }: { tournamentId: number }
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div className="space-y-1">
             <CardTitle className="text-base flex items-center gap-2">
-              <Users className="h-4 w-4 text-purple-600" />
+              <Users className="h-4 w-4 text-amber-600" />
               Other coaches added this tournament
             </CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -138,7 +138,7 @@ export function TournamentNetworkCard({ tournamentId }: { tournamentId: number }
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div className="space-y-1">
           <CardTitle className="text-base flex items-center gap-2">
-            <Users className="h-4 w-4 text-purple-600" />
+            <Users className="h-4 w-4 text-amber-600" />
             Tournament Network
           </CardTitle>
           <p className="text-sm text-muted-foreground">

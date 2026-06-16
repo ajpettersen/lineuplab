@@ -155,12 +155,12 @@ export function TournamentFormatChatDialog({
             </div>
           )}
           {pendingFormat && (
-            <div className="rounded-md border border-purple-300 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/40 p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-sm font-semibold text-purple-900 dark:text-purple-200">
+            <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-200">
                 <Sparkles className="h-4 w-4" />
                 Proposed format
               </div>
-              <div className="text-sm text-purple-950 dark:text-purple-100 space-y-1">
+              <div className="text-sm text-amber-950 dark:text-amber-100 space-y-1">
                 {pendingFormat.teamCount != null && (
                   <div>Teams in pool: <span className="font-semibold">{pendingFormat.teamCount}</span></div>
                 )}

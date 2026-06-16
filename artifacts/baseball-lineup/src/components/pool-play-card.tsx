@@ -101,7 +101,7 @@ export function PoolPlayCard({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle className="flex items-center gap-2 text-lg">
-          <ListChecks className="h-5 w-5 text-purple-600" />
+          <ListChecks className="h-5 w-5 text-amber-600" />
           Pool Play Scenarios
         </CardTitle>
         <div className="flex flex-wrap gap-2 justify-end">
@@ -287,13 +287,13 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
   return (
     <div className="space-y-4">
       {analysis.ourTeamInsights.length > 0 && (
-        <div className="rounded-md border border-purple-200 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/40 p-3 space-y-1.5">
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-purple-900 dark:text-purple-200">
+        <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-3 space-y-1.5">
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-200">
             <Sparkles className="h-4 w-4" />
             For {poolPlay.ourTeamName}
           </div>
           {analysis.ourTeamInsights.map((line, i) => (
-            <div key={i} className="text-sm text-purple-950 dark:text-purple-100">
+            <div key={i} className="text-sm text-amber-950 dark:text-amber-100">
               {line}
             </div>
           ))}
@@ -328,7 +328,7 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
               {analysis.standingsToday.map((row, i) => (
                 <TableRow
                   key={row.teamName}
-                  className={row.teamName === poolPlay.ourTeamName ? "bg-purple-50/60 dark:bg-purple-950/20" : ""}
+                  className={row.teamName === poolPlay.ourTeamName ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}
                 >
                   <TableCell className="font-mono text-xs">{i + 1}</TableCell>
                   <TableCell className="font-medium">{row.teamName}</TableCell>
@@ -366,7 +366,7 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
               {analysis.projections.map((p) => {
                 const isUs = p.teamName === poolPlay.ourTeamName;
                 return (
-                  <TableRow key={p.teamName} className={isUs ? "bg-purple-50/60 dark:bg-purple-950/20" : ""}>
+                  <TableRow key={p.teamName} className={isUs ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}>
                     <TableCell className="font-medium">{p.teamName}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {pct(p.firstProb)}
@@ -1467,7 +1467,7 @@ function FormatExtractDialog({
               </div>
             )}
             {!existing && anyParsed && (
-              <div className="rounded-md border border-purple-200 bg-purple-50 p-2.5 text-xs text-purple-900">
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
                 You don't have any pool data yet. After applying the format,
                 use "Import screenshots" or "Edit" to add your pool teams.
               </div>

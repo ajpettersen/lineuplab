@@ -2291,7 +2291,7 @@ export default function GameDetail() {
         </Link>
       </div>
 
-      {/* Game Header — tournament games get a distinctive purple/indigo
+      {/* Game Header — tournament games get a distinctive gold
           treatment (top gradient stripe, ring, Trophy eyebrow with a
           link back to the parent tournament, and a faint trophy
           watermark) so the coach can tell at a glance this is a
@@ -2306,24 +2306,24 @@ export default function GameDetail() {
       <Card
         className={
           isTournament
-            ? "relative overflow-hidden border-purple-300/70 ring-1 ring-purple-200 shadow-[0_2px_18px_-6px_rgba(126,34,206,0.25)]"
+            ? "relative overflow-hidden border-amber-300/70 ring-1 ring-amber-200 shadow-[0_2px_18px_-6px_rgba(202,138,4,0.25)]"
             : ""
         }
         data-testid={isTournament ? "card-tournament-game-header" : undefined}
       >
         {isTournament && (
           <>
-            {/* Top gradient stripe — purple → indigo → purple, like a
-                championship banner across the top of the card. */}
+            {/* Top gradient stripe — gold gradient, like a championship
+                banner across the top of the card. */}
             <div
               aria-hidden
-              className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-purple-600 via-indigo-500 to-purple-600"
+              className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400"
             />
             {/* Faint Trophy watermark in the top-right; pointer-events-
                 none so it never intercepts clicks. */}
             <Trophy
               aria-hidden
-              className="pointer-events-none absolute -right-3 -top-3 h-28 w-28 text-purple-200/40 rotate-12"
+              className="pointer-events-none absolute -right-3 -top-3 h-28 w-28 text-amber-200/40 rotate-12"
               strokeWidth={1.25}
             />
           </>
@@ -2334,7 +2334,7 @@ export default function GameDetail() {
               {isTournament ? (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span
-                    className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 px-2.5 py-1 text-[11px] font-broadcast font-bold uppercase tracking-[0.16em] text-white shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 px-2.5 py-1 text-[11px] font-broadcast font-bold uppercase tracking-[0.16em] text-amber-950 shadow-sm"
                     data-testid="badge-tournament-eyebrow"
                   >
                     <Trophy className="h-3 w-3" />
@@ -2343,7 +2343,7 @@ export default function GameDetail() {
                   {tournamentName && game.tournamentId != null && (
                     <Link
                       href={`/tournaments/${game.tournamentId}`}
-                      className="text-xs font-medium text-purple-700 hover:text-purple-900 hover:underline truncate max-w-[16rem]"
+                      className="text-xs font-medium text-amber-700 hover:text-amber-900 hover:underline truncate max-w-[16rem]"
                       data-testid="link-parent-tournament"
                       title={tournamentName}
                     >
@@ -2724,16 +2724,16 @@ export default function GameDetail() {
           if (items.length === 0) return null;
           return (
             <div
-              className={`rounded-lg border border-purple-200 bg-purple-50 p-3 print:hidden ${mobileToolsOpen ? "" : "max-sm:hidden"}`}
+              className={`rounded-lg border border-amber-200 bg-amber-50 p-3 print:hidden ${mobileToolsOpen ? "" : "max-sm:hidden"}`}
               data-testid="tournament-pitch-callout"
             >
               <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 mt-0.5 text-purple-700 shrink-0" />
-                <div className="text-sm text-purple-900 min-w-0 flex-1">
+                <AlertCircle className="h-4 w-4 mt-0.5 text-amber-700 shrink-0" />
+                <div className="text-sm text-amber-900 min-w-0 flex-1">
                   <p className="font-medium leading-snug">
                     Pitch budget watch
                     {tournamentForCallout.data.effectiveDailyMax != null && (
-                      <span className="font-normal text-purple-700">
+                      <span className="font-normal text-amber-700">
                         {" "}
                         · daily max {tournamentForCallout.data.effectiveDailyMax}
                       </span>
@@ -2746,7 +2746,7 @@ export default function GameDetail() {
                         className="flex items-start gap-1.5"
                         data-testid={`pitch-callout-${p.playerId}`}
                       >
-                        <span className="text-purple-500">•</span>
+                        <span className="text-amber-500">•</span>
                         <span>
                           <span className="font-medium">{p.playerName}</span>
                           {p.restingUntil ? (
@@ -2771,7 +2771,7 @@ export default function GameDetail() {
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-2 text-xs text-purple-700">
+                  <p className="mt-2 text-xs text-amber-700">
                     Tap to record counts in the Pitch Counts card below.
                   </p>
                 </div>
@@ -3734,7 +3734,7 @@ export default function GameDetail() {
             {(game?.gameType === "league" || game?.gameType === "tournament") && (
               <div className={`rounded-md border px-3 py-2 text-xs ${
                 game.gameType === "tournament"
-                  ? "border-purple-200 bg-purple-50 text-purple-900"
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
                   : "border-blue-200 bg-blue-50 text-blue-900"
               }`}>
                 {game.gameType === "tournament"

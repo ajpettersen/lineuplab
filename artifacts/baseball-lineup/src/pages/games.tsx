@@ -93,7 +93,7 @@ type Game = {
 
 function GameTypeBadge({ gameType }: { gameType?: "league" | "tournament" | null }) {
   if (gameType === "league") return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">League</Badge>;
-  if (gameType === "tournament") return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Tournament</Badge>;
+  if (gameType === "tournament") return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Tournament</Badge>;
   return null;
 }
 

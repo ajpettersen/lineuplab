@@ -772,7 +772,7 @@ export default function TournamentDetail() {
                         variant="outline"
                         className={`text-[9px] font-display font-semibold tracking-[0.18em] px-1.5 py-0 mb-1.5 ${
                           g.bracketStage === "bracket"
-                            ? "border-purple-300/70 bg-purple-50 text-purple-900"
+                            ? "border-amber-300/70 bg-amber-50 text-amber-900"
                             : "border-slate-300 bg-slate-50 text-slate-700"
                         }`}
                         data-testid={`badge-game-stage-${g.id}`}

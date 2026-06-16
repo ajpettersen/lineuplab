@@ -456,7 +456,7 @@ export default function NewGame() {
             {gameType === "tournament" && tournamentsEnabled && (
               <div className="flex flex-col gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3">
                 <Label className="flex items-center gap-1.5 text-foreground">
-                  <Trophy className="h-4 w-4 text-purple-600" />
+                  <Trophy className="h-4 w-4 text-amber-600" />
                   Tournament
                 </Label>
                 <p className="text-xs text-muted-foreground -mt-0.5">
