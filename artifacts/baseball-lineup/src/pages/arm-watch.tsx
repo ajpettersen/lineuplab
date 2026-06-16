@@ -9,9 +9,12 @@ import {
   Calendar,
   Trophy,
   Info,
+  AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   HoverCard,
   HoverCardContent,
@@ -211,17 +214,31 @@ export default function ArmWatch() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="text-sm text-muted-foreground">Loading Arm Watch…</div>
+      <div className="container mx-auto p-4 sm:p-6 space-y-6">
+        <div className="flex items-center gap-2">
+          <Shield className="w-6 h-6 text-primary/40" />
+          <Skeleton className="h-8 w-48" />
+        </div>
+        <Skeleton className="h-4 w-full max-w-2xl" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 w-full rounded-lg" />
+          ))}
+        </div>
       </div>
     );
   }
   if (error || !data) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="text-sm text-rose-600">
-          Could not load Arm Watch.
-        </div>
+      <div className="container mx-auto p-4 sm:p-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Could not load Arm Watch</AlertTitle>
+          <AlertDescription>
+            Something went wrong fetching pitcher availability. Check your
+            connection and try refreshing the page.
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }

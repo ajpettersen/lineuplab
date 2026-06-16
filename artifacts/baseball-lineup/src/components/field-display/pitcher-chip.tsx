@@ -7,7 +7,7 @@ export function PitcherChip({ p }: { p: TPAvailability }) {
   // Tone: red when zero left today (or resting), amber when ≤15, green
   // otherwise. Slate when no cap is configured so we don't misleadingly
   // green-light an un-quantified pitcher.
-  let tone = "border-slate-600 text-slate-200 bg-[#0b1a35]/80";
+  let tone = "border-slate-600 text-slate-200 bg-[var(--fd-chip)]/80";
   if (resting || (todayLeft != null && todayLeft <= 0)) {
     tone = "border-red-500/60 text-red-200 bg-red-950/40";
   } else if (todayLeft != null && todayLeft <= 15) {
@@ -15,6 +15,14 @@ export function PitcherChip({ p }: { p: TPAvailability }) {
   } else if (todayLeft != null) {
     tone = "border-emerald-500/60 text-emerald-200 bg-emerald-950/40";
   }
+  // Color tone alone conveys availability (red/amber/green), which is
+  // invisible to screen readers — so prepend an sr-only status summary
+  // while leaving the visible text's native semantics intact.
+  const statusSummary = resting
+    ? `${formatPlayerNameShort(p.playerName)}, resting until ${resting.availableOn.slice(5)}.`
+    : `${formatPlayerNameShort(p.playerName)}, ${
+        todayLeft != null ? `${todayLeft} pitches left today` : "no pitch cap set"
+      }.`;
   return (
     <div
       // `cursor-default` + `select-none` deliberately de-emphasize
@@ -31,6 +39,7 @@ export function PitcherChip({ p }: { p: TPAvailability }) {
       className={`flex-shrink-0 min-w-[90px] sm:min-w-[105px] rounded-md border px-2 py-1 cursor-default select-none ${tone}`}
       data-testid={`tournament-pitch-chip-${p.playerId}`}
     >
+      <span className="sr-only">{statusSummary}</span>
       <div className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate">
         {formatPlayerNameShort(p.playerName)}
       </div>
