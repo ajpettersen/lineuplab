@@ -174,16 +174,26 @@ function NavGroupDropdown({
             scheduleClose();
           }}
           onClick={() => {
-            // Click is an explicit intent — bypass the hover-intent
-            // delay and toggle immediately. Keyboard users get the
-            // same instant response via onFocus below.
+            // Radix's trigger already toggles the menu on pointerdown
+            // (via onOpenChange). We must NOT toggle again here or the
+            // two toggles cancel out and a second click can't close it.
+            // We only clear any pending hover-intent open so it doesn't
+            // fight the click. Keyboard users open via Enter/Space/Arrow,
+            // also routed through onOpenChange.
             cancelOpen();
-            setOpen((o) => !o);
           }}
           onFocus={() => {
+            // Do NOT auto-open on focus. Radix restores focus to the
+            // trigger when the menu closes, so opening here created a
+            // reopen loop: hovering away (or onto a sibling like
+            // Assistant) closed the menu, Radix refocused the trigger,
+            // and this handler instantly bounced it back open — the
+            // "Statistics dropdown won't close" bug. Keyboard users
+            // still open it via Enter/Space/ArrowUp/Down, which Radix
+            // routes through onOpenChange. Here we only clear pending
+            // hover-intent timers.
             cancelClose();
             cancelOpen();
-            setOpen(true);
           }}
           className={`relative shrink-0 inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-2 rounded-md font-broadcast uppercase tracking-[0.1em] text-[13px] transition-colors ${
             isActive
