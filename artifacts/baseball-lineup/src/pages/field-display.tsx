@@ -2011,23 +2011,17 @@ export default function FieldDisplay() {
        * into a kebab dropdown below the `sm` breakpoint. The desktop layout
        * is unchanged.
        */}
-      {/* Mobile layout strategy:
-       *  - Header is a wrapping flex row at every viewport. The identity
-       *    cluster (Exit + team-vs-opp) gets `w-full` on mobile so it
-       *    forces a row-break, owning row 1 by itself — the team name
-       *    no longer fights the inning chip for horizontal space.
-       *  - Center (inning chip) + right (timer/score/kebab) then sit
-       *    together on row 2. The header's existing `justify-between`
-       *    naturally pins inning to the left edge and scores to the
-       *    right edge of that row, no extra wrapper needed.
-       *  - Desktop layout is byte-identical to before because at `sm:`
-       *    the left cluster reverts to `flex-1` and all three clusters
-       *    fit on a single row.
-       *  Earlier iteration used a `sm:contents` shim around center+right
-       *  to coerce a justify-between row on mobile; that triggered a
-       *  visual overlap of the inning chevron and the Exit button on
-       *  iPad Safari (display:contents has known quirks as a flex item
-       *  in WebKit). The wrapper-free approach above sidesteps both. */}
+      {/* Mobile layout strategy (phone portrait):
+       *  - Row 1: Exit + team-vs-opp title (flex-1) + Start timer, then
+       *    the kebab from the right cluster sits immediately to its right.
+       *  - Row 2: score steppers with the inning controls BETWEEN them
+       *    (US score · inning · THEM score), full width (`basis-full`).
+       *  - The desktop center cluster (inning broadcast chip) is hidden
+       *    on phone (`hidden sm:flex`); a compact inning control is
+       *    rendered inline in the score row instead.
+       *  - Desktop (sm+) is unchanged: left cluster is flex-1 and all
+       *    three clusters fit on a single row with the inning chip in
+       *    the middle. */}
       <header
         className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-accent"} bg-[var(--fd-panel)] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
         style={{
@@ -2046,8 +2040,8 @@ export default function FieldDisplay() {
           paddingTop: "max(0.5rem, env(safe-area-inset-top))",
         }}
       >
-        {/* Left cluster: exit + team vs opponent */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto sm:flex-1">
+        {/* Left cluster: exit + team vs opponent (+ Start/kebab on phone) */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           {/* Mobile Exit (back chevron). The earlier iteration removed
            *  this on the theory that the right-side End Game button
            *  was the single source of truth — but on phones the
@@ -2125,6 +2119,27 @@ export default function FieldDisplay() {
               </span>
             </div>
           </div>
+          {/* Phone-only: Start/Timer sits on row 1 next to the matchup
+              title; the kebab in the right cluster follows it. The inning
+              controls move down into the score row below. */}
+          <div className="sm:hidden ml-auto shrink-0">
+            <GameTimer
+              startedAt={game?.startedAt ?? null}
+              onStart={() =>
+                saveGamePatchOptimistically({
+                  startedAt: new Date().toISOString(),
+                })
+              }
+              onReset={() => saveGamePatchOptimistically({ startedAt: null })}
+              effectiveTimeLimits={game?.effectiveTimeLimits ?? null}
+              bracketStage={
+                game?.bracketStage === "pool" || game?.bracketStage === "bracket"
+                  ? game.bracketStage
+                  : null
+              }
+              gameId={game?.id}
+            />
+          </div>
         </div>
 
         {/* Center cluster: broadcast inning badge + compact controls.
@@ -2133,7 +2148,7 @@ export default function FieldDisplay() {
          *  its own row next to the score steppers, the heavy bg made
          *  the inning controls look like a free-floating modal that
          *  didn't belong with the rest of the header. */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0 sm:bg-[var(--fd-panel-deep)] sm:border-l sm:border-r sm:border-[var(--fd-border)] px-0 sm:px-4 py-1">
+        <div className="hidden sm:flex items-center gap-1 sm:gap-2 shrink-0 sm:bg-[var(--fd-panel-deep)] sm:border-l sm:border-r sm:border-[var(--fd-border)] px-0 sm:px-4 py-1">
           <Button
             variant="outline"
             size="lg"
@@ -2208,36 +2223,6 @@ export default function FieldDisplay() {
               <span className="hidden sm:inline">Extra</span>
             </Button>
           )}
-          {/* Phone-portrait Start/Timer placement.
-           *  On phone portrait the right cluster only has room for the
-           *  3-dot kebab, so the GameTimer (Start button → running clock)
-           *  was getting hidden behind score steppers and never seen. We
-           *  render a second GameTimer here, INSIDE the inning cluster,
-           *  visible only on phone portrait — so coaches see "Start" sit
-           *  immediately to the right of the inning chevrons where they
-           *  expect game-control buttons to live. The right-cluster
-           *  GameTimer is hidden on phone portrait via `max-sm:hidden`.
-           *  Two component instances tick independently but read the
-           *  same `startedAt` prop so the displayed time matches; cost
-           *  is one extra setInterval, acceptable for header-only UI. */}
-          <div className="sm:hidden ml-1">
-            <GameTimer
-              startedAt={game?.startedAt ?? null}
-              onStart={() =>
-                saveGamePatchOptimistically({
-                  startedAt: new Date().toISOString(),
-                })
-              }
-              onReset={() => saveGamePatchOptimistically({ startedAt: null })}
-              effectiveTimeLimits={game?.effectiveTimeLimits ?? null}
-              bracketStage={
-                game?.bracketStage === "pool" || game?.bracketStage === "bracket"
-                  ? game.bracketStage
-                  : null
-              }
-              gameId={game?.id}
-            />
-          </div>
         </div>
 
         {/* Right cluster: live status, score, fullscreen */}
@@ -2297,10 +2282,9 @@ export default function FieldDisplay() {
             * saved locally and synced on reconnect — and parents on
             * their phones see the same elapsed time as the dugout iPad.
             * See GameTimer docblock for sync semantics. */}
-          {/* Hidden on phone portrait — duplicate GameTimer renders
-           *  inside the inning cluster above so Start sits next to the
-           *  inning chevrons. sm+ keeps this one visible in the right
-           *  cluster (the desktop layout). */}
+          {/* Hidden on phone portrait — a duplicate GameTimer renders on
+           *  row 1 next to the matchup title there. sm+ keeps this one
+           *  visible in the right cluster (the desktop layout). */}
           <div className="hidden sm:flex">
             <GameTimer
               startedAt={game?.startedAt ?? null}
@@ -2624,7 +2608,7 @@ export default function FieldDisplay() {
          *  score sits on its own line below "inning + Start + kebab".
          *  Hidden on sm+ where the score lives inline in the right
          *  cluster above. */}
-        <div className="sm:hidden basis-full w-full flex items-center gap-1 justify-start pt-1" data-testid="header-score-row-portrait">
+        <div className="sm:hidden basis-full w-full flex items-center gap-2 justify-between pt-1" data-testid="header-score-row-portrait">
           <ScoreStepper
             value={ourScore}
             onChange={(next) =>
@@ -2635,9 +2619,64 @@ export default function FieldDisplay() {
             label={teamShortName || teamName || "Us"}
             championship={isTournament && championshipMode}
           />
-          <span className="text-3xl font-bold tabular-nums text-slate-700 leading-none font-['Roboto_Mono']">
-            –
-          </span>
+          {/* Inning controls sit BETWEEN the two scores on phone
+              portrait (moved out of the desktop center chip). */}
+          <div className="flex flex-col items-center shrink-0">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 leading-none font-display font-semibold mb-1.5">
+              Inning
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => setCurrentInning((i) => Math.max(1, i - 1))}
+                disabled={currentInning <= 1}
+                className="h-9 w-9 p-0 border-[var(--fd-border)] bg-[var(--fd-panel)] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
+                data-testid="button-prev-inning-portrait"
+                aria-label="Previous inning"
+                style={{ touchAction: "manipulation" }}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <div
+                className="text-2xl font-bold tabular-nums leading-none font-['Roboto_Mono'] text-accent flex items-center justify-center gap-1 min-w-[3rem]"
+                data-testid="text-current-inning-portrait"
+              >
+                <span aria-hidden="true" className="text-accent text-base leading-none">▲</span>
+                <span>{currentInning}</span>
+                <span className="text-slate-600 text-sm font-bold">/ {innings}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => setCurrentInning((i) => Math.min(innings, i + 1))}
+                disabled={currentInning >= innings}
+                className="h-9 w-9 p-0 border-[var(--fd-border)] bg-[var(--fd-panel)] text-slate-100 hover:bg-slate-800 hover:text-accent disabled:opacity-30 rounded-none"
+                data-testid="button-next-inning-portrait"
+                aria-label="Next inning"
+                style={{ touchAction: "manipulation" }}
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+            {currentInning >= innings && innings < 12 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  saveGamePatchOptimistically({ innings: innings + 1 })
+                }
+                className="mt-1 h-7 px-2 border-accent/60 bg-[var(--fd-panel)] text-accent hover:bg-amber-950/40 hover:text-amber-200 rounded-none flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] font-display font-semibold"
+                data-testid="button-add-extra-inning-portrait"
+                aria-label="Add extra inning"
+                title="Add an extra inning"
+                style={{ touchAction: "manipulation" }}
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Extra
+              </Button>
+            )}
+          </div>
           <ScoreStepper
             value={oppScore}
             onChange={(next) =>
