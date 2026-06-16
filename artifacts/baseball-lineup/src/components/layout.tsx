@@ -562,7 +562,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 );
               })}
             </nav>
-            <div className="mt-auto border-t border-sidebar-border p-4">
+            <div className="mt-auto border-t border-sidebar-border p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
               {displayIdentity && (
                 <div
                   className="text-xs text-sidebar-foreground/60 mb-2 truncate"
