@@ -353,14 +353,15 @@
     @apply text-3xl md:text-4xl font-bold uppercase tracking-[0.04em] leading-none;
     font-family: "Oswald", system-ui, sans-serif;
   }
-  /* Thin gold "broadcast strip" — apply via the BroadcastCard wrapper to
-     give a card the lower-third feel without redoing chrome from scratch. */
+  /* Thin "broadcast strip" — apply via the BroadcastCard wrapper to give a
+     card the lower-third feel without redoing chrome from scratch. Tracks the
+     team `accent` token (gold by default) so custom-themed teams theme it too. */
   .broadcast-stripe::before {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
     height: 3px;
-    background: var(--color-broadcast-gold);
+    background: hsl(var(--accent));
   }
 
   input[type="search"]::-webkit-search-cancel-button {

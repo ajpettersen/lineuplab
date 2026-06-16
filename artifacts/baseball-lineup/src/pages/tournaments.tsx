@@ -165,7 +165,7 @@ export default function Tournaments() {
         <div>
           <div className="eyebrow text-primary/70">Multi-Game</div>
           <h1 className="page-title text-foreground mt-1 flex items-center gap-3">
-            <Trophy className="h-7 w-7 text-purple-600" />
+            <Trophy className="h-7 w-7 text-accent" />
             Tournaments
           </h1>
           <p className="text-sm text-muted-foreground mt-2">
@@ -336,7 +336,7 @@ export default function Tournaments() {
             // clicks the shortcut.
             <Card
               key={t.id}
-              className="cursor-pointer transition-colors hover:border-primary/40"
+              className="group relative overflow-hidden broadcast-stripe cursor-pointer transition-all hover:border-primary/40 hover:shadow-md motion-safe:hover:-translate-y-0.5"
               data-testid={`card-tournament-${t.id}`}
               onClick={() => navigate(`/tournaments/${t.id}`)}
               role="button"
@@ -363,7 +363,7 @@ export default function Tournaments() {
                     {status.label}
                   </Badge>
                   <CardTitle className="text-base flex items-center gap-2 min-w-0">
-                    <Trophy className="h-4 w-4 text-purple-600 shrink-0" />
+                    <Trophy className="h-4 w-4 text-accent shrink-0" />
                     <span className="truncate">{t.name}</span>
                   </CardTitle>
                 </div>

@@ -321,6 +321,18 @@ export default function TournamentDetail() {
          *  this weekend" before scrolling. Edit / Delete sit in the
          *  upper-right so the destructive button stays out of the
          *  primary glance path. */}
+        <div
+          className="relative overflow-hidden rounded-xl border border-white/10 shadow-lg shadow-black/20"
+          style={{
+            background:
+              "linear-gradient(135deg, var(--brand-l) 0%, var(--brand-d) 55%, var(--brand-dd) 100%)",
+          }}
+          data-testid="tournament-hero"
+        >
+          {/* Gold broadcast lower-third stripe — uses the team accent token so
+           *  custom teams theme it; default teams keep trophy gold. */}
+          <div className="absolute inset-x-0 top-0 h-[3px] bg-accent" aria-hidden="true" />
+          <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1 space-y-2">
             <Badge
@@ -335,11 +347,11 @@ export default function TournamentDetail() {
               />
               {status.label}
             </Badge>
-            <h1 className="page-title text-foreground flex items-center gap-3">
-              <Trophy className="h-7 w-7 text-purple-600 shrink-0" />
+            <h1 className="page-title text-white flex items-center gap-3">
+              <Trophy className="h-7 w-7 text-accent shrink-0" />
               <span className="truncate">{tournament.name}</span>
             </h1>
-            <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="text-sm text-white/70 flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
                 {format(tournamentDateAsLocal(tournament.startDate), "MMM d")} –{" "}
@@ -353,23 +365,24 @@ export default function TournamentDetail() {
               )}
             </div>
             {tournament.notes && (
-              <p className="text-sm text-muted-foreground">{tournament.notes}</p>
+              <p className="text-sm text-white/70">{tournament.notes}</p>
             )}
           </div>
           <div className="flex gap-2 shrink-0">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => setEditOpen(true)}
+              className="text-white/85 hover:text-white hover:bg-white/10"
               data-testid="button-edit-tournament"
             >
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
               Edit
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="text-red-600 hover:text-red-700"
+              className="text-red-300 hover:text-red-200 hover:bg-white/10"
               onClick={() => setConfirmDelete(true)}
               data-testid="button-delete-tournament"
             >
@@ -384,49 +397,49 @@ export default function TournamentDetail() {
          *  right. Grid collapses to 2 cols on phone so each stat still
          *  has breathing room. */}
         <div
-          className="mt-4 rounded-lg border bg-card/60 px-3 py-3 sm:px-4 sm:py-3"
+          className="mt-4 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-3 sm:px-4 sm:py-3 backdrop-blur-sm"
           data-testid="tournament-hero-stats"
         >
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <div>
-              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-white/55">
                 Record
               </div>
               <div
-                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5"
+                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5 text-accent"
                 data-testid="text-tournament-record"
               >
                 {recordLabel}
               </div>
             </div>
             <div>
-              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-white/55">
                 Games
               </div>
               <div
-                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5"
+                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5 text-white"
                 data-testid="text-tournament-games-progress"
               >
                 {record.played}
-                <span className="text-base text-muted-foreground">/{record.total}</span>
+                <span className="text-base text-white/50">/{record.total}</span>
               </div>
             </div>
             <div>
-              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-white/55">
                 Pitches
               </div>
               <div
-                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5"
+                className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5 text-white"
                 data-testid="text-tournament-total-pitches"
               >
                 {tournamentPitchTotal}
               </div>
             </div>
             <div>
-              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-muted-foreground">
+              <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-white/55">
                 Pitchers
               </div>
-              <div className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5">
+              <div className="text-xl sm:text-2xl font-bold font-['Roboto_Mono'] tabular-nums mt-0.5 text-white">
                 {tournament.pitcherAvailability.length}
               </div>
             </div>
@@ -436,22 +449,22 @@ export default function TournamentDetail() {
            *  "{dailyLabel} · {tournamentLabel} · {restTiersLabel}"
            *  outline badge — now split so each is independently
            *  scannable and the time-limit chip can sit alongside. */}
-          <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="text-xs">
+          <div className="mt-3 pt-3 border-t border-white/10 flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="text-xs border-white/20 text-white/80">
               {dailyLabel}
             </Badge>
             {tournamentLabel && (
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="outline" className="text-xs border-white/20 text-white/80">
                 {tournamentLabel}
               </Badge>
             )}
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className="text-xs border-white/20 text-white/80">
               {restTiersLabel}
             </Badge>
             {hasAnyTimeLimit && (
               <Badge
                 variant="outline"
-                className="text-xs gap-1 flex items-center"
+                className="text-xs gap-1 flex items-center border-white/20 text-white/80"
                 data-testid="badge-tournament-time-limits"
                 aria-label="Time limits: pool no-new / hard, bracket no-new / hard"
               >
@@ -460,6 +473,8 @@ export default function TournamentDetail() {
                 {fmtPair(tlBracketNoNew, tlBracketHard)}
               </Badge>
             )}
+          </div>
+          </div>
           </div>
         </div>
       </div>
