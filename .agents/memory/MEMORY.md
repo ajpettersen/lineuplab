@@ -1,5 +1,6 @@
 - [PWA white-screen on boot](pwa-white-screen-boot.md) — empty #root + lazy/Clerk/IDB boot = blank first paint; needs inline splash + chunk-error reload + cache cleanup.
 - [date-fns format render crash](date-fns-render-crash.md) — `format(new Date(x))` on null/invalid date throws in render → ErrorBoundary blanks whole page; use a safe-format wrapper.
+- [Render SVG → PNG (app icons)](render-svg-to-png.md) — rasterize brand assets deterministically via ImageMagick (librsvg delegate), NOT AI gen; maskable icons need full-bleed bg + center safe zone.
 - [SportsEngine roadmap idea](../../docs/ideas/sportsengine-competitive-roadmap.md) — stored product roadmap to compete with SportsEngine; pivot is org-hierarchy + parent accounts first, not yet built.
 - [Radix dropdown reopen loop](radix-dropdown-hover-nav.md) — controlled DropdownMenu trigger `onFocus={setOpen(true)}` reopens on close (focus-restore); manual onClick toggle double-fires. Let Radix own focus/click.
 - [Full-screen routes skip Layout providers](full-screen-routes-skip-layout-providers.md) — Field Display & /welcome render outside <Layout>; mount app-wide providers (theming) at signed-in root, not in Layout.

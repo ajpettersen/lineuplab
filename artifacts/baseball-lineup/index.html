@@ -76,45 +76,163 @@
          JS bundle downloads, React mounts, Clerk does its network
          handshake, and the IndexedDB query cache rehydrates — several
          seconds on a phone or a cold cache. Without anything in #root
-         the user stares at a pure white screen the whole time. This
-         inline markup (no external CSS/JS, so it renders on the very
-         first paint) shows a branded spinner immediately. createRoot's
-         render() replaces #root's children, so the splash vanishes the
-         moment the React tree mounts — no teardown code needed. Colors
-         are hard-coded from the theme tokens (--background 215 30% 98%,
-         --primary 220 85% 22%) so there's no light→dark flash when the
-         app takes over. prefers-reduced-motion stops the spin. -->
+         the user stares at a blank screen the whole time. This inline
+         markup (no external CSS/JS, so it paints on the very first
+         frame) shows a branded "base runner" splash: a baseball laps the
+         infield diamond while the wordmark and an indeterminate bar sit
+         below. createRoot's render() replaces #root's children, so the
+         splash vanishes the moment the React tree mounts — no teardown
+         code needed. The navy backdrop matches the PWA manifest
+         background_color (#0a2552) so a standalone launch has no color
+         flash. Oswald is requested in <head> but may not be ready on the
+         first frame; the wordmark falls back to system sans and swaps in
+         when the font loads. prefers-reduced-motion parks the runner at
+         home and stops all motion. -->
     <style>
       #boot-splash {
         position: fixed;
         inset: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: hsl(215 30% 98%);
+        gap: 38px;
+        background: radial-gradient(
+          110% 90% at 50% 34%,
+          #14336c 0%,
+          #0a2552 52%,
+          #061a3d 100%
+        );
       }
-      #boot-splash .boot-spinner {
-        width: 28px;
-        height: 28px;
-        border: 3px solid hsl(220 85% 22% / 0.2);
-        border-top-color: hsl(220 85% 22%);
-        border-radius: 9999px;
-        animation: boot-spin 0.7s linear infinite;
+      #boot-splash .bs-stage {
+        position: relative;
+        width: 200px;
+        height: 200px;
       }
-      @keyframes boot-spin {
-        to {
-          transform: rotate(360deg);
-        }
+      #boot-splash .bs-field {
+        position: absolute;
+        inset: 0;
+      }
+      #boot-splash .bs-field .bs-path {
+        stroke-dasharray: 6 8;
+        animation: bs-stitch 6s linear infinite;
+      }
+      #boot-splash .bs-runner {
+        position: absolute;
+        left: 50%;
+        top: 85%;
+        transform: translate(-50%, -50%);
+        animation: bs-run 2.8s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+      }
+      #boot-splash .bs-foot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+      #boot-splash .bs-word {
+        font-family: "Oswald", system-ui, sans-serif;
+        font-weight: 600;
+        font-size: 30px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #f1f5ff;
+      }
+      #boot-splash .bs-word b {
+        font-weight: 600;
+        color: #f5b324;
+      }
+      #boot-splash .bs-bar {
+        position: relative;
+        width: 188px;
+        height: 4px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      #boot-splash .bs-bar span {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 42%;
+        border-radius: 4px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          #ffd56b,
+          #f5b324,
+          transparent
+        );
+        animation: bs-indeterminate 1.5s ease-in-out infinite;
+      }
+      @keyframes bs-run {
+        0% { left: 50%; top: 85%; }
+        25% { left: 85%; top: 50%; }
+        50% { left: 50%; top: 15%; }
+        75% { left: 15%; top: 50%; }
+        100% { left: 50%; top: 85%; }
+      }
+      @keyframes bs-stitch {
+        to { stroke-dashoffset: -200; }
+      }
+      @keyframes bs-indeterminate {
+        0% { left: -42%; }
+        100% { left: 100%; }
       }
       @media (prefers-reduced-motion: reduce) {
-        #boot-splash .boot-spinner {
+        #boot-splash .bs-runner,
+        #boot-splash .bs-field .bs-path {
           animation: none;
+        }
+        #boot-splash .bs-bar span {
+          animation: none;
+          left: 0;
+          width: 100%;
+          opacity: 0.6;
         }
       }
     </style>
     <div id="root">
       <div id="boot-splash" role="status" aria-label="Loading Lineup Lab">
-        <div class="boot-spinner"></div>
+        <div class="bs-stage">
+          <svg class="bs-field" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="bsgold" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#ffe08a" />
+                <stop offset="55%" stop-color="#f5b324" />
+                <stop offset="100%" stop-color="#d98c0b" />
+              </linearGradient>
+            </defs>
+            <path
+              class="bs-path"
+              d="M100 30 L170 100 L100 170 L30 100 Z"
+              fill="rgba(245,179,36,0.06)"
+              stroke="url(#bsgold)"
+              stroke-width="4"
+              stroke-linejoin="round"
+            />
+            <rect x="162" y="92" width="16" height="16" rx="3" fill="url(#bsgold)" transform="rotate(45 170 100)" />
+            <rect x="92" y="22" width="16" height="16" rx="3" fill="url(#bsgold)" transform="rotate(45 100 30)" />
+            <rect x="22" y="92" width="16" height="16" rx="3" fill="url(#bsgold)" transform="rotate(45 30 100)" />
+            <path
+              d="M91 162 L109 162 L109 170 L100 178 L91 170 Z"
+              fill="#ffffff"
+              stroke="#d98c0b"
+              stroke-width="1.5"
+            />
+          </svg>
+          <span class="bs-runner">
+            <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+              <circle cx="17" cy="17" r="14" fill="#ffffff" stroke="#d98c0b" stroke-width="2" />
+              <path d="M8 11 Q17 7 26 11" stroke="#d42a2a" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M8 23 Q17 27 26 23" stroke="#d42a2a" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </span>
+        </div>
+        <div class="bs-foot">
+          <div class="bs-word">Lineup <b>Lab</b></div>
+          <div class="bs-bar"><span></span></div>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
