@@ -213,10 +213,10 @@ export function PitchCountsCard({ gameId, game }: Props) {
           <CardTitle className="text-base">Pitch Counts</CardTitle>
           {tournamentId != null && tournamentQuery.data && (
             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
-              <Trophy className="h-3.5 w-3.5 text-purple-600" />
+              <Trophy className="h-3.5 w-3.5 text-accent" />
               <Link
                 href={`/tournaments/${tournamentId}`}
-                className="text-purple-700 hover:underline font-medium"
+                className="text-primary hover:underline font-medium"
               >
                 {tournamentQuery.data.name}
               </Link>
@@ -276,7 +276,7 @@ export function PitchCountsCard({ gameId, game }: Props) {
                 )}
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
                 <Button
                   type="button"
                   variant="outline"
