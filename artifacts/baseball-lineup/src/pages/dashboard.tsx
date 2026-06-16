@@ -395,11 +395,13 @@ export default function Dashboard() {
                     For every active player we compute their bench rate
                     (innings sat ÷ innings played) across all completed
                     games. The score is{" "}
-                    <span className="font-mono">100 − stddev × 200</span>.
-                    100 means every player has been benched the same
-                    fraction of the time. The score drops as some players
-                    sit noticeably more than others. Practices and
-                    uncompleted games don't count.
+                    <span className="font-mono">100 − stddev × 400</span>,
+                    where stddev is the standard deviation of those bench
+                    rates (how much they vary). 100 means every player sits
+                    the same share of innings; the score drops quickly as
+                    bench time gets lopsided — a stddev of 20 percentage
+                    points lands near 20. Practices and uncompleted games
+                    don't count.
                   </p>
                 </TooltipContent>
               </Tooltip>

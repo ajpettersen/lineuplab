@@ -114,7 +114,7 @@ React + Express, Node.js 24, Drizzle ORM, Zod v4, Vite (manual vendor chunk spli
 - Copy a new lineup from any past game; import lineup from screenshot (PNG/JPEG/WebP, ≤6 MB).
 - Edit recorded lineups even after a game is marked complete.
 - "Lock" players into positions for an inning or all innings.
-- "Lineup Fairness" dial (0-100 slider); info tooltip explains the score (per-player bench-rate stddev across completed games, scored 100 − stddev × 200).
+- "Lineup Fairness" dial (0-100 slider); info tooltip explains the score (per-player bench-rate stddev across completed games, scored 100 − stddev × 400 — multiplier tuned so the realistic spread uses the full 0-100 range; a bench-rate stddev of ~0.20 ≈ score 20).
 - Bulk roster import via AI (text or screenshot); paste iCal/webcal URL to import schedules.
 - AI Assistant that answers "why" questions and regenerates lineups from natural language.
 - Editable game cards (pencil icon); inline lineup editing with drag-and-drop + copy to Sheets.

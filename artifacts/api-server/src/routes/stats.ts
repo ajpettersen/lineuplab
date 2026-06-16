@@ -87,7 +87,11 @@ router.get("/stats/season", async (req, res): Promise<void> => {
     const mean = benchByPlayer.reduce((a, b) => a + b, 0) / benchByPlayer.length;
     const variance = benchByPlayer.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / benchByPlayer.length;
     const stddev = Math.sqrt(variance);
-    fairnessScore = Math.max(0, Math.round(100 - stddev * 200));
+    // Multiplier tuned so the realistic range of bench-rate spreads uses the
+    // full 0-100 spectrum: stddev 0 → 100 (everyone sits the same share), and
+    // a lopsided ~25-percentage-point spread → 0. A 20pp spread lands near 20.
+    // (Was ×200, which pinned almost every real team in the high 80s-90s.)
+    fairnessScore = Math.max(0, Math.round(100 - stddev * 400));
   }
 
   res.json({ totalGames, completedGames, totalInnings, positionDistribution, fairnessScore });
