@@ -1,0 +1,85 @@
+/* Lineup Lab — brand tokens + animation keyframes for app-icon and
+   app-load explorations. Navy + gold broadcast language. */
+.bl-root {
+  --bl-navy: #0a2552;
+  --bl-navy-d: #061a3d;
+  --bl-navy-dd: #04122c;
+  --bl-navy-l: #143a78;
+  --bl-gold: #f5b324;
+  --bl-gold-l: #ffd56b;
+  --bl-gold-d: #d98c0b;
+  --bl-seam: #d42a2a;
+  --bl-ball: #ffffff;
+  --bl-ball-sh: #d8e0ee;
+  font-family: "Bricolage Grotesque", system-ui, sans-serif;
+}
+.bl-display { font-family: "Oswald", system-ui, sans-serif; }
+.bl-mono { font-family: "Roboto Mono", ui-monospace, monospace; }
+
+/* iOS-style home-screen wallpaper backdrop */
+.bl-wall {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(120,150,210,0.28), transparent 60%),
+    linear-gradient(165deg, #1c2c4e 0%, #0c1a34 55%, #070f22 100%);
+}
+
+/* squircle icon shell */
+.bl-tile {
+  border-radius: 23%;
+  box-shadow: 0 26px 60px -18px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.10);
+  position: relative;
+  overflow: hidden;
+}
+.bl-tile::after { /* top gloss */
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0) 42%);
+  pointer-events: none;
+}
+.bl-sheen {
+  position: absolute; top: 0; bottom: 0; width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent);
+  filter: blur(2px);
+  animation: bl-sheen 4.8s ease-in-out infinite;
+}
+@keyframes bl-sheen {
+  0% { transform: translateX(-160%) skewX(-16deg); }
+  55%, 100% { transform: translateX(360%) skewX(-16deg); }
+}
+
+@keyframes bl-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes bl-stitch { to { stroke-dashoffset: -200; } }
+@keyframes bl-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.045); }
+}
+@keyframes bl-indeterminate {
+  0% { left: -42%; }
+  100% { left: 100%; }
+}
+@keyframes bl-rowcycle {
+  0% { opacity: 0; transform: translateY(15px); }
+  10% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; transform: translateY(0); }
+  93% { opacity: 0; transform: translateY(-9px); }
+  100% { opacity: 0; }
+}
+@keyframes bl-baserun {
+  0% { left: 50%; top: 87%; }
+  25% { left: 87%; top: 50%; }
+  50% { left: 50%; top: 13%; }
+  75% { left: 13%; top: 50%; }
+  100% { left: 50%; top: 87%; }
+}
+@keyframes bl-glow {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bl-sheen,
+  [class*="bl-anim"] { animation: none !important; }
+}
