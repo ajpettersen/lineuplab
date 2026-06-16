@@ -40,7 +40,7 @@ import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crown, Flag, ListOrdered, Map as MapIcon, Maximize2, Minus, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, Volume2, VolumeX, WifiOff, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crown, Flag, ListOrdered, Map as MapIcon, Maximize2, Moon, MoreVertical, Play, Plus, RotateCcw, Sparkles, Sun, SunDim, Trophy, Volume2, VolumeX, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -59,14 +59,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   ALL_FIELD_POSITIONS,
@@ -349,26 +341,68 @@ export default function FieldDisplay() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const saveLineup = useSaveLineup();
-  // Per-game pitch counts. Loaded so the "how many pitches did Sarah
-  // throw?" prompt that fires on pitcher removal can ADD to whatever's
-  // already on file rather than overwrite it (the upsert endpoint is
-  // REPLACE-semantics). Cheap query — one tiny row per pitcher this
-  // game — and the same data is the source of truth for the Tournament
-  // Pitches Panel above, so loading it here also keeps that panel
-  // fresher on the iPad.
+  // Per-game pitch counts. Loaded so the End Game dialog can pre-fill
+  // each pitcher's total and so the upsert there can REPLACE the saved
+  // value with the coach's end-of-game entry. Cheap query — one tiny
+  // row per pitcher this game — and the same data is the source of
+  // truth for the Tournament Pitches Panel above, so loading it here
+  // also keeps that panel fresher on the iPad.
   const { data: gamePitchCounts = [] } = useGetGamePitchCounts(id, {
     query: { enabled: id > 0, queryKey: getGetGamePitchCountsQueryKey(id) },
   });
-  const upsertPitchCount = useUpsertGamePitchCount();
-  // Queue of "this pitcher just came off the mound" prompts. Each entry
-  // pops a small modal asking for pitch count; submitting (or skipping)
-  // shifts the next one in. A queue (not a single value) so two rapid
-  // P swaps both get captured — see saveLineupOptimistically below for
-  // detection. Skip = "don't record", not "record 0" — coaches may not
-  // be tracking pitches this game at all.
-  const [pitcherPromptQueue, setPitcherPromptQueue] = useState<
-    { playerId: number; playerName: string }[]
-  >([]);
+  // Lookup of pitcher playerId → display name, kept current so the
+  // hook-level onError (which fires AFTER the Field Display has
+  // unmounted on exit) can name the player whose save failed. Populated
+  // by an effect once `gamePitchers` is derived further down.
+  const pitcherNamesRef = useRef<Record<number, string>>({});
+  // Pitch upserts are REPLACE/idempotent (keyed on gameId+playerId) and
+  // are registered in the offline mutation allowlist (mutation-defaults
+  // → `upsertGamePitchCount`), so an end-game save made while OFFLINE
+  // pauses, dehydrates to IndexedDB, and auto-resumes on reconnect even
+  // across an app reload. `retry` covers the flaky-but-online case where
+  // a single POST times out on parking-lot WiFi (the network is "up" so
+  // React Query won't pause it); without a retry that one outing would
+  // be lost the moment we navigate away from the dialog.
+  //
+  // onSuccess/onError live at the HOOK level (not per-`mutate` call) on
+  // purpose: both exit paths fire these upserts and then immediately
+  // `setLocation(...)`, which unmounts Field Display. In TanStack Query
+  // v5, callbacks passed to `mutate(vars, {...})` only run while the
+  // observer still has listeners, so a terminal success/failure landing
+  // after navigation would be SILENT. Hook-level callbacks run with the
+  // mutation itself and fire regardless of mount state.
+  const upsertPitchCount = useUpsertGamePitchCount({
+    mutation: {
+      retry: 4,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 15000),
+      onSuccess: () => {
+        qc.invalidateQueries({
+          queryKey: getGetGamePitchCountsQueryKey(id),
+        });
+        if (tournamentId != null) {
+          qc.invalidateQueries({
+            queryKey: getGetTournamentQueryKey(tournamentId),
+          });
+        }
+      },
+      onError: (_err, vars) => {
+        const name = pitcherNamesRef.current[vars.data.playerId] ?? "A pitcher";
+        toast({
+          title: "Couldn't save pitches",
+          description: `${name}'s pitch count didn't save — re-enter it from the game page.`,
+          variant: "destructive",
+        });
+      },
+    },
+  });
+  // End Game dialog pitch-count entry. Keyed by playerId; the coach
+  // fills these in once per pitcher when wrapping up the game (we no
+  // longer interrupt mid-game when a pitcher leaves the mound). Empty
+  // string = "leave as-is / not tracking" so a coach who doesn't care
+  // about pitch limits is never forced to type a number.
+  const [dialogPitchCounts, setDialogPitchCounts] = useState<
+    Record<number, string>
+  >({});
   // Tapped-out-pitcher confirm state. When a coach drags somebody onto
   // "P" who has 0 pitches left today, we stash the would-be lineup +
   // the violation details here and pop an AlertDialog. Confirm commits
@@ -1062,19 +1096,54 @@ export default function FieldDisplay() {
     }
   }, [game, ourScore, oppScore, celebrate, celebrateSound]);
 
-  // Sync the End Game dialog's score editors from the live game state
-  // every time the dialog opens — the coach may have tapped the
-  // header steppers since the last open and we want the dialog to
-  // reflect the current optimistic score, not a stale one. Only
-  // overwrites on the open transition so typing inside the dialog
-  // isn't fighting a re-sync.
+  // Distinct pitchers who appeared at "P" in ANY inning this game, in
+  // first-seen order. Drives the End Game dialog's pitch-count entry
+  // (basketball etc. never has a "P" slot, so this is naturally empty
+  // and the section hides itself).
+  const gamePitchers = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const e of lineup) {
+      if (e.position === "P" && !seen.has(e.playerId)) {
+        seen.set(e.playerId, e.playerName);
+      }
+    }
+    return Array.from(seen, ([playerId, playerName]) => ({
+      playerId,
+      playerName,
+    }));
+  }, [lineup]);
+
+  // Keep the playerId → name lookup current so the pitch-upsert hook's
+  // onError can name the right pitcher even after exit unmounts us.
+  useEffect(() => {
+    const map: Record<number, string> = {};
+    for (const p of gamePitchers) map[p.playerId] = p.playerName;
+    pitcherNamesRef.current = map;
+  }, [gamePitchers]);
+
+  // Sync the End Game dialog's score editors AND pitch-count inputs
+  // from the live state every time the dialog opens — the coach may
+  // have tapped the header steppers since the last open and we want the
+  // dialog to reflect the current optimistic score, not a stale one.
+  // Pitch inputs pre-fill from whatever's already on file (usually 0)
+  // so a stat-keeper's earlier entry isn't clobbered. Only overwrites
+  // on the open transition so typing inside the dialog isn't fighting a
+  // re-sync.
   useEffect(() => {
     if (endGameDialogOpen) {
       setDialogOurScore(ourScore);
       setDialogOppScore(oppScore);
+      const initPitches: Record<number, string> = {};
+      for (const p of gamePitchers) {
+        const existing =
+          gamePitchCounts.find((pc) => pc.playerId === p.playerId)?.pitches ??
+          0;
+        initPitches[p.playerId] = existing > 0 ? String(existing) : "";
+      }
+      setDialogPitchCounts(initPitches);
     }
-    // We intentionally only depend on endGameDialogOpen — the score
-    // values are read on the open transition only.
+    // We intentionally only depend on endGameDialogOpen — the score and
+    // pitch values are read on the open transition only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endGameDialogOpen]);
 
@@ -1087,6 +1156,31 @@ export default function FieldDisplay() {
     if (dialogOurScore !== ourScore) patch.ourScore = dialogOurScore;
     if (dialogOppScore !== oppScore) patch.opponentScore = dialogOppScore;
     if (Object.keys(patch).length > 0) saveGamePatchOptimistically(patch);
+  };
+
+  // Persist the End Game dialog's pitch-count entries. REPLACE
+  // semantics — the coach enters each pitcher's FINAL total for the
+  // game — so we only upsert rows whose value actually changed from
+  // what's on file. Blank input = "leave as-is", so it's skipped.
+  // Fired-and-forgotten (not awaited) so exit navigation isn't blocked
+  // on a parking-lot connection. Success/failure handling lives on the
+  // hook (see `useUpsertGamePitchCount` above) so it survives the
+  // unmount that follows exit navigation.
+  const persistDialogPitchCounts = () => {
+    for (const p of gamePitchers) {
+      const raw = dialogPitchCounts[p.playerId];
+      if (raw == null || raw.trim() === "") continue;
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed)) continue;
+      const clamped = Math.max(0, Math.min(500, parsed));
+      const existing =
+        gamePitchCounts.find((pc) => pc.playerId === p.playerId)?.pitches ?? 0;
+      if (clamped === existing) continue;
+      upsertPitchCount.mutate({
+        id,
+        data: { playerId: p.playerId, pitches: clamped },
+      });
+    }
   };
 
   // Pick the field lighting palette based on the game's scheduled start.
@@ -1479,37 +1573,6 @@ export default function FieldDisplay() {
    * of the save/queue logic.
    */
   const _commitLineupSave = (nextLineup: LineupEntry[]) => {
-    // ── Pitcher-removal detection ──
-    // Compare who's at "P" in the CURRENT inning before vs. after the
-    // move. Anyone who came off the mound — whether swapped to bench
-    // or swapped with another fielder — gets prompted for their pitch
-    // count so the tournament-day availability math stays honest. We
-    // read PREVIOUS state from the React-Query cache (since `lineup`
-    // here is the closed-over value at apply-time, which is the right
-    // pre-move snapshot). One drag can only displace one P slot, so we
-    // queue removals serially rather than batch-prompting.
-    const prevP = lineup
-      .filter((e) => e.inning === currentInning && e.position === "P")
-      .map((e) => e.playerId);
-    const nextP = nextLineup
-      .filter((e) => e.inning === currentInning && e.position === "P")
-      .map((e) => e.playerId);
-    const removedPlayerIds = prevP.filter((pid) => !nextP.includes(pid));
-    if (removedPlayerIds.length > 0) {
-      // Find each removed player's display name from the current cache
-      // and stage prompts. The prompt UI honors a queue so two rapid
-      // P swaps (unusual but possible) both get captured.
-      const additions = removedPlayerIds
-        .map((pid) => {
-          const entry = lineup.find((e) => e.playerId === pid);
-          return entry ? { playerId: pid, playerName: entry.playerName } : null;
-        })
-        .filter((x): x is { playerId: number; playerName: string } => x != null);
-      if (additions.length > 0) {
-        setPitcherPromptQueue((q) => [...q, ...additions]);
-      }
-    }
-
     const queryKey = getGetGameLineupQueryKey(id);
     qc.setQueryData(queryKey, nextLineup);
     pendingLineupRef.current = nextLineup;
@@ -3221,13 +3284,6 @@ export default function FieldDisplay() {
        * The score on the field display already syncs through the
        * same patch chain, so any pending +1 taps on the score
        * stepper are persisted before navigation happens. */}
-      {/* Pitcher-removed pitch-count prompt. Renders one modal per
-       *  queued removal; on submit/skip it shifts the queue. Submit
-       *  ADDS to the existing pitch count on file so a multi-outing
-       *  pitcher (came in, came out, came back in, came out again)
-       *  accumulates correctly. Skip = "not tracking" — leaves the
-       *  pitch count untouched so a coach who doesn't care about
-       *  pitch limits isn't forced to type a number every swap. */}
       {/* Tapped-out-pitcher confirm. Coach has dragged someone onto P
        *  who has zero pitches available today under the tournament's
        *  daily cap. Cancel drops the move; Confirm commits it
@@ -3337,69 +3393,6 @@ export default function FieldDisplay() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {pitcherPromptQueue.length > 0 && (
-        <PitcherPitchesPrompt
-          key={`${pitcherPromptQueue[0]!.playerId}-${pitcherPromptQueue.length}`}
-          playerName={pitcherPromptQueue[0]!.playerName}
-          existingPitches={
-            gamePitchCounts.find(
-              (pc) => pc.playerId === pitcherPromptQueue[0]!.playerId,
-            )?.pitches ?? 0
-          }
-          // Skip is the ONLY user-initiated dequeue path. Failed
-          // saves keep the prompt open (see onSubmit return value)
-          // so a flaky-WiFi POST doesn't quietly drop the coach's
-          // entered count. Successful saves dequeue in onSubmit.
-          onSkip={() => setPitcherPromptQueue((q) => q.slice(1))}
-          onSubmit={async (addPitches) => {
-            const head = pitcherPromptQueue[0]!;
-            const existing =
-              gamePitchCounts.find((pc) => pc.playerId === head.playerId)
-                ?.pitches ?? 0;
-            // Clamp at the server's documented 0..500 range. We use
-            // the clamped total in BOTH the POST and the success
-            // toast so a coach who fat-fingered "1500" sees the
-            // capped value reflected in the confirmation message
-            // (instead of being told something different was saved
-            // than what shows up on the tournament board).
-            const clampedTotal = Math.max(0, Math.min(500, existing + addPitches));
-            try {
-              await upsertPitchCount.mutateAsync({
-                id,
-                data: { playerId: head.playerId, pitches: clampedTotal },
-              });
-            } catch {
-              // Leave the prompt up so the coach can retry with the
-              // same entered number — a dugout iPad on parking-lot
-              // WiFi sees enough transient failures that auto-
-              // dropping the entry would make this feature lossy.
-              toast({
-                title: "Couldn't save pitches",
-                description: "Tap Save again, or Skip to dismiss.",
-                variant: "destructive",
-              });
-              return false;
-            }
-            // Refresh the source-of-truth for the Tournament Pitches
-            // Panel (PitchCounts query) AND the tournament-wide
-            // availability board (Tournament query — its
-            // pitcherAvailability[] is recomputed server-side from
-            // these rows).
-            qc.invalidateQueries({ queryKey: getGetGamePitchCountsQueryKey(id) });
-            if (tournamentId != null) {
-              qc.invalidateQueries({
-                queryKey: getGetTournamentQueryKey(tournamentId),
-              });
-            }
-            toast({
-              title: "Pitches logged",
-              description: `${head.playerName}: +${addPitches} (total ${clampedTotal})`,
-            });
-            setPitcherPromptQueue((q) => q.slice(1));
-            return true;
-          }}
-        />
-      )}
       <AlertDialog open={endGameDialogOpen} onOpenChange={setEndGameDialogOpen}>
         <AlertDialogContent data-testid="dialog-end-game">
           <AlertDialogHeader>
@@ -3444,6 +3437,52 @@ export default function FieldDisplay() {
             </div>
           </div>
 
+          {/* End-of-game pitch-count capture. Replaces the old mid-game
+            * "how many pitches did X throw?" interruption that fired
+            * whenever a pitcher left the mound — coaches asked to log it
+            * once, at the end, instead. One optional input per pitcher
+            * who appeared this game; blank = leave as-is. Persisted on
+            * either exit path via persistDialogPitchCounts(). */}
+          {gamePitchers.length > 0 && (
+            <div
+              className="my-2 rounded-md border bg-muted/40 p-4"
+              data-testid="end-game-pitch-counts"
+            >
+              <p className="text-sm font-medium">Pitch counts (optional)</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Log how many pitches each pitcher threw so tournament
+                limits stay accurate. Leave blank to skip.
+              </p>
+              <div className="grid gap-2">
+                {gamePitchers.map((p) => (
+                  <div
+                    key={p.playerId}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <span className="truncate text-sm">{p.playerName}</span>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={500}
+                      value={dialogPitchCounts[p.playerId] ?? ""}
+                      onChange={(e) =>
+                        setDialogPitchCounts((m) => ({
+                          ...m,
+                          [p.playerId]: e.target.value,
+                        }))
+                      }
+                      onFocus={(e) => e.currentTarget.select()}
+                      placeholder="0"
+                      className="h-10 w-20 text-center font-mono"
+                      data-testid={`input-end-game-pitches-${p.playerId}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogCancel
               data-testid="button-end-game-keep-coaching"
@@ -3455,10 +3494,12 @@ export default function FieldDisplay() {
               type="button"
               variant="outline"
               onClick={() => {
-                // Persist score edits through the offline-aware patch
-                // chain BEFORE navigating away. The chain queues to
-                // localStorage if offline so the score isn't lost.
+                // Persist score edits AND pitch counts through their
+                // offline-aware paths BEFORE navigating away. The score
+                // chain queues to localStorage if offline so it isn't
+                // lost; pitch counts fire-and-forget (see helper).
                 persistDialogScores();
+                persistDialogPitchCounts();
                 setEndGameDialogOpen(false);
                 setLocation(`/games/${id}`);
               }}
@@ -3468,11 +3509,12 @@ export default function FieldDisplay() {
             </Button>
             <AlertDialogAction
               onClick={() => {
-                // Save score edits first, then optimistically flip
-                // status. Both ride the same offline-aware patch chain,
-                // so a captive-portal exit still records everything
-                // and POSTs on reconnect.
+                // Save score edits and pitch counts first, then
+                // optimistically flip status. Scores/status ride the
+                // same offline-aware patch chain, so a captive-portal
+                // exit still records everything and POSTs on reconnect.
                 persistDialogScores();
+                persistDialogPitchCounts();
                 if ((game?.status ?? "upcoming") !== "completed") {
                   saveGamePatchOptimistically({ status: "completed" });
                 }
@@ -3509,156 +3551,6 @@ interface FieldPositionSlotProps {
   onChipTap: (entryId: number) => void;
   /** Tap an empty position — only meaningful while something is selected. */
   onEmptyTap: (pos: FieldPos) => void;
-}
-
-/**
- * Compact +/- stepper used inside the End Game dialog to capture the
- * final score. Intentionally simple (no swipe gestures, no broadcast
- * styling) so it reads clearly on the white AlertDialog surface — the
- * dugout-broadcast `<ScoreStepper>` looks wrong in this context. The
- * value flows out via `onChange`; the parent owns the persisted side
- * (it batches the change into the offline-aware patch chain on exit,
- * NOT on every tap, so a coach who rapidly taps +5 doesn't generate 5
- * separate PATCH attempts).
- */
-/**
- * Modal that pops the moment a pitcher is dragged off the "P" slot,
- * asking the coach for the pitch count of the OUTING that just ended.
- * Lives as a sibling of the End-Game AlertDialog rather than reusing
- * `useConfirm` because we need a number entry, not a boolean. The
- * submitted value is ADDED to whatever's already on file (the upsert
- * endpoint is REPLACE — addition is done by the caller), so a relief
- * pitcher who comes back in later in the game accumulates correctly
- * across multiple outings. Skip is a first-class option so coaches
- * who aren't tracking pitch counts aren't forced to type a number on
- * every defensive shuffle.
- */
-interface PitcherPitchesPromptProps {
-  playerName: string;
-  existingPitches: number;
-  /**
-   * Resolves to `true` when the save succeeded (caller should
-   * dequeue) or `false` when it failed (caller should leave the
-   * prompt open so the coach can retry without losing their input).
-   */
-  onSubmit: (addPitches: number) => Promise<boolean>;
-  /** Coach explicitly dismissed — never called by save failures. */
-  onSkip: () => void;
-}
-
-function PitcherPitchesPrompt({
-  playerName,
-  existingPitches,
-  onSubmit,
-  onSkip,
-}: PitcherPitchesPromptProps) {
-  const [raw, setRaw] = useState<string>("");
-  // In-flight lock — prevents double-submits from a rapid double-tap
-  // on Save AND blocks Skip / backdrop-close while a POST is mid-air.
-  // Without this, a coach who tap-tap-taps Save on a slow connection
-  // could fire two upserts and (worse) two queue-shifts, silently
-  // discarding the next queued prompt.
-  const [submitting, setSubmitting] = useState(false);
-  const parsed = Number.parseInt(raw, 10);
-  const valid = Number.isFinite(parsed) && parsed >= 0 && parsed <= 500;
-  const adjust = (delta: number) => {
-    if (submitting) return;
-    const current = Number.isFinite(parsed) ? parsed : 0;
-    const next = Math.max(0, Math.min(500, current + delta));
-    setRaw(String(next));
-  };
-  const handleSave = async () => {
-    if (submitting || !valid || parsed === 0) return;
-    setSubmitting(true);
-    try {
-      // Caller dequeues internally on success; we just need to
-      // release the lock on failure so the coach can retry.
-      await onSubmit(parsed);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        // Block accidental backdrop / Esc dismissal while saving so
-        // an iPad coach can't lose the in-flight entry by tapping
-        // outside the modal mid-POST.
-        if (!open && !submitting) onSkip();
-      }}
-    >
-      <DialogContent className="sm:max-w-md" data-testid="dialog-pitcher-pitches">
-        <DialogHeader>
-          <DialogTitle>How many pitches did {playerName} throw?</DialogTitle>
-          <DialogDescription>
-            {existingPitches > 0
-              ? `Already logged today: ${existingPitches}. We'll add to that total.`
-              : "Logged on this game so the tournament pitch counts stay accurate."}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex items-center justify-center gap-3 py-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-10 w-10"
-            onClick={() => adjust(-5)}
-            disabled={submitting}
-            aria-label="Decrease by 5"
-            data-testid="button-pitches-minus-5"
-          >
-            <Minus className="h-4 w-4" />
-          </Button>
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={500}
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-            autoFocus
-            disabled={submitting}
-            placeholder="0"
-            className="h-12 w-24 text-center text-2xl font-mono"
-            data-testid="input-pitches"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-10 w-10"
-            onClick={() => adjust(5)}
-            disabled={submitting}
-            aria-label="Increase by 5"
-            data-testid="button-pitches-plus-5"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onSkip}
-            disabled={submitting}
-            data-testid="button-pitches-skip"
-          >
-            Skip
-          </Button>
-          <Button
-            type="button"
-            disabled={submitting || !valid || parsed === 0}
-            onClick={handleSave}
-            data-testid="button-pitches-save"
-          >
-            {submitting ? "Saving…" : "Save pitches"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 /**
