@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { bumpOfflineQueueCount } from "@/lib/offline-queue";
 import { drainOfflineWrites } from "@/lib/offline-drain";
+import { OFFLINE_RESUME_COMPLETE_EVENT } from "@/lib/prefetch-offline";
 
 /**
  * Global "wifi is back" handler.
@@ -58,6 +59,10 @@ export function OnlineResumer() {
         // listener is firing concurrently.
         await drainOfflineWrites();
         await qc.invalidateQueries();
+        // Now that queued writes are flushed and queries refreshed, it's
+        // safe for the offline prefetcher to warm upcoming games without
+        // clobbering still-pending edits with stale GETs.
+        window.dispatchEvent(new Event(OFFLINE_RESUME_COMPLETE_EVENT));
       } finally {
         bumpOfflineQueueCount();
         inFlightRef.current = false;
@@ -75,6 +80,9 @@ export function OnlineResumer() {
     if (typeof navigator !== "undefined" && navigator.onLine) {
       void drainOfflineWrites().then(() => {
         bumpOfflineQueueCount();
+        // Signal the offline prefetcher that the boot drain is done, so
+        // it can warm upcoming games after any leftover writes flushed.
+        window.dispatchEvent(new Event(OFFLINE_RESUME_COMPLETE_EVENT));
       });
     }
     return () => {

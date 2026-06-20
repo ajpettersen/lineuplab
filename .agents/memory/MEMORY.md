@@ -11,3 +11,4 @@
 - [Load perf is boot/shell, not code-splitting](load-perf-is-boot-not-splitting.md) — routes already lazy + vendors already split; "slow load" = Clerk/IndexedDB boot. Fix with intent prefetch + lazy non-first-paint shell.
 - [Multi-sport architecture](multi-sport-architecture.md) — per-team `team_settings.sport`; gate sport-specific surfaces on `sportProfile.features.*` (NOT hardcoded sport / `usesTournaments`); `@workspace/sport-profiles` is the registry.
 - [PWA hijacks embedded iframes](pwa-iframe-artifact-denylist.md) — embedding an artifact via iframe needs its path on baseball-lineup's `navigateFallbackDenylist` or the SW serves index.html into the frame (prod-only).
+- [Offline prefetch race-safety](offline-prefetch-race-safety.md) — background cache-warming must SKIP games with pending offline writes (not gate on an event/queue handshake) or it clobbers optimistic Field Display state.

@@ -24,6 +24,7 @@ import { ConfirmProvider } from "@/lib/confirm";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OnlineResumer } from "@/components/online-resumer";
+import { OfflinePrefetcher } from "@/components/offline-prefetcher";
 import { ConflictListener } from "@/components/conflict-listener";
 import { PushNavigationListener } from "@/components/push-navigation-listener";
 import { TeamThemeApplier } from "@/components/team-theme-applier";
@@ -585,6 +586,7 @@ function ClerkProviderWithRoutes() {
       >
         <ClerkQueryClientCacheInvalidator />
         <OnlineResumer />
+        <OfflinePrefetcher />
         <ConflictListener />
         <PushNavigationListener />
         <TooltipProvider>

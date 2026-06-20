@@ -39,6 +39,41 @@ export function isPendingWriteKey(key: string): boolean {
   return PENDING_KEY_PATTERNS.some((r) => r.test(key));
 }
 
+/** Same patterns as above, but capturing the trailing gameId. */
+const PENDING_GAME_ID_PATTERNS: RegExp[] = [
+  /^fd-pending-save-v1:(\d+)$/,
+  /^fd-pending-game-patch-v1:(\d+)$/,
+];
+
+/**
+ * Game ids that currently have an unsynced offline write queued. Used by
+ * the offline prefetcher to skip warming those games — a server GET
+ * would otherwise cache pre-drain state over the coach's optimistic
+ * edits. Once a game's write drains, its key disappears and it becomes
+ * eligible to warm again.
+ */
+export function getPendingWriteGameIds(): Set<number> {
+  const ids = new Set<number>();
+  if (typeof localStorage === "undefined") return ids;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      for (const re of PENDING_GAME_ID_PATTERNS) {
+        const m = re.exec(k);
+        if (m) {
+          ids.add(Number(m[1]));
+          break;
+        }
+      }
+    }
+  } catch {
+    // Private mode / disabled storage — treat as none pending.
+    return ids;
+  }
+  return ids;
+}
+
 function scanLocalStorage(): number {
   if (typeof localStorage === "undefined") return 0;
   let n = 0;
