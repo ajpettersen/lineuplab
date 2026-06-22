@@ -34,3 +34,13 @@ here):**
 Don't reach for server/deployment debugging first when a published SPA/PWA
 "white screens" — check whether `index.html` renders anything before JS
 boots.
+
+**Follow-up gotcha — render-blocking CSS defeats the inline splash:** even
+with the inline splash in `#root`, a plain `<link rel="stylesheet">` in
+`<head>` (e.g. the Google Fonts CSS) is render-blocking — the browser
+paints NOTHING, not even the inline splash, until that external stylesheet
+downloads. On a phone/cold cache that IS the white gap before the splash.
+Fix: load font CSS async via `<link rel="preload" as="style"
+onload="this.rel='stylesheet'">` + a `<noscript>` fallback. Keep any
+critical above-the-splash CSS inline. Rule: nothing render-blocking in
+`<head>` if you want the inline boot splash to paint on the first frame.

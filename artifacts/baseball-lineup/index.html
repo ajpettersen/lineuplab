@@ -69,7 +69,18 @@
          index.css. This trims a meaningful chunk of font bytes off the
          mobile/iPad first load (previously Inter was downloaded but
          never used, and Oswald + Roboto Mono were each fetched twice). -->
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Load the font CSS ASYNCHRONOUSLY so it never blocks first paint.
+         A plain `rel="stylesheet"` in <head> is render-blocking: the
+         browser paints NOTHING — not even the inline boot splash below —
+         until that external stylesheet finishes downloading, which on a
+         phone or cold cache is the multi-second WHITE screen before the
+         splash appears. The preload+onload swap downloads the CSS off the
+         critical path and promotes it to a stylesheet once ready, so the
+         branded splash paints on the very first frame. The splash and app
+         both fall back to system fonts until the webfonts swap in
+         (`display=swap`). <noscript> keeps fonts working without JS. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap"></noscript>
   </head>
   <body>
     <!-- Instant boot splash. The app's real UI doesn't paint until the
