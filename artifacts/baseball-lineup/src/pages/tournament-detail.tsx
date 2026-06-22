@@ -47,6 +47,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal, safeFormatDate } from "@/lib/tournament-date";
+import { AddGameToTournamentDialog } from "@/components/add-game-to-tournament-dialog";
 import { PoolPlayCard } from "@/components/pool-play-card";
 import { TournamentNetworkCard } from "@/components/tournament-network-card";
 import {
@@ -157,15 +158,6 @@ export default function TournamentDetail() {
   // desc). Default is "fresh" because the surface is most useful
   // before a game; the workhorse sort was the legacy default.
   const [availabilitySort, setAvailabilitySort] = useState<"fresh" | "workhorse">("fresh");
-
-  const linkedGameIds = useMemo(
-    () => new Set((tournament?.games ?? []).map((g) => g.id)),
-    [tournament],
-  );
-  const availableGames = useMemo(
-    () => allGames.filter((g) => !linkedGameIds.has(g.id)),
-    [allGames, linkedGameIds],
-  );
 
   // Roll up per-game pitch totals + per-pitcher breakdown from the
   // outings the tournament endpoint already ships. The Games card
@@ -928,70 +920,13 @@ export default function TournamentDetail() {
         isPending={updateTournament.isPending}
       />
 
-      {/* Add game dialog */}
-      <Dialog open={addGameOpen} onOpenChange={setAddGameOpen}>
-        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add a game</DialogTitle>
-            <DialogDescription>
-              Create a new game for this tournament, or link one that's already on your schedule.
-            </DialogDescription>
-          </DialogHeader>
-          {/* Always-available "create new" CTA so a coach can build a
-              tournament's schedule from scratch without bouncing through
-              the main Schedule page first. The new-game form reads the
-              ?tournamentId query param, pre-selects gameType=tournament,
-              and links the game back to this tournament on save. */}
-          <Link href={`/games/new?tournamentId=${tournamentId}`}>
-            <Button
-              className="w-full justify-center"
-              data-testid="button-create-game-for-tournament"
-            >
-              <Plus className="h-4 w-4 mr-1.5" />
-              Create new game
-            </Button>
-          </Link>
-          {availableGames.length > 0 && (
-            <>
-              <div className="text-xs text-muted-foreground text-center">
-                or link an existing game
-              </div>
-              <ul className="divide-y border rounded-md max-h-[40dvh] overflow-y-auto">
-                {availableGames.map((g) => (
-                  <li
-                    key={g.id}
-                    className="p-3 flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">vs {g.opponent}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {safeFormatDate(g.gameDate, "EEE, MMM d · h:mm a", "Date TBD")}
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        updateGame.mutate(
-                          { id: g.id, data: { tournamentId } },
-                          { onSuccess: () => setAddGameOpen(false) },
-                        );
-                      }}
-                      disabled={updateGame.isPending}
-                      data-testid={`button-link-game-${g.id}`}
-                    >
-                      Link
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddGameOpen(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Add game dialog — shared with the tournaments listing cards so
+          there's ONE consistent "add a game to this tournament" flow. */}
+      <AddGameToTournamentDialog
+        tournamentId={tournamentId}
+        open={addGameOpen}
+        onOpenChange={setAddGameOpen}
+      />
 
       {/* Delete confirmation */}
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>

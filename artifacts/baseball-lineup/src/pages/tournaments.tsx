@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal } from "@/lib/tournament-date";
+import { AddGameToTournamentDialog } from "@/components/add-game-to-tournament-dialog";
 import {
   computeTournamentStatus,
   computeTournamentRecord,
@@ -72,6 +73,10 @@ export default function Tournaments() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  // Which tournament's "add a game" dialog is open (null = closed). Shared
+  // with the tournament detail page so the card shortcut and the detail page
+  // offer the exact same create-or-link flow.
+  const [addGameForTournament, setAddGameForTournament] = useState<number | null>(null);
   const { data: tournaments = [], isLoading } = useListTournaments();
   // Pull team defaults so the dialog can show "Team default: 85" hints
   // — coach inherits whenever they leave the per-tournament field blank.
@@ -373,10 +378,11 @@ export default function Tournaments() {
                   className="h-7 px-2 text-xs shrink-0"
                   onClick={(e) => {
                     // Don't bubble up to the Card's navigate handler —
-                    // we want the shortcut to skip the detail page and
-                    // drop the coach straight into the new-game form.
+                    // open the SAME "add a game" dialog used on the
+                    // tournament detail page (create new OR link existing)
+                    // so there's one consistent flow everywhere.
                     e.stopPropagation();
-                    navigate(`/games/new?tournamentId=${t.id}`);
+                    setAddGameForTournament(t.id);
                   }}
                   data-testid={`button-add-game-tournament-${t.id}`}
                   aria-label={`Add a game to ${t.name}`}
@@ -425,6 +431,16 @@ export default function Tournaments() {
             );
           })}
         </div>
+      )}
+
+      {addGameForTournament != null && (
+        <AddGameToTournamentDialog
+          tournamentId={addGameForTournament}
+          open={addGameForTournament != null}
+          onOpenChange={(o) => {
+            if (!o) setAddGameForTournament(null);
+          }}
+        />
       )}
     </div>
   );
