@@ -9,6 +9,7 @@
 - [Field Display per-device toggles](field-display-per-device-toggles.md) — global localStorage visual-mode flags leak across games; key on per-game DB flag + session override reset on game id.
 - [Tournament/game date matching](tournament-date-matching.md) — match game↔tournament by comparing `YYYY-MM-DD` substrings client-side, NOT server-side date_trunc on UTC timestamps (evening-game off-by-one).
 - [Load perf is boot/shell, not code-splitting](load-perf-is-boot-not-splitting.md) — routes already lazy + vendors already split; "slow load" = Clerk/IndexedDB boot. Fix with intent prefetch + lazy non-first-paint shell.
+- [Inning-1 start fairness gap](inning1-start-fairness-gap.md) — inning-1 fairness term is structurally 0 (no in-game bench history yet) so same kids start benched; fix needs a season-history signal, gated on equity>0.5 not the competitiveness slider.
 - [Multi-sport architecture](multi-sport-architecture.md) — per-team `team_settings.sport`; gate sport-specific surfaces on `sportProfile.features.*` (NOT hardcoded sport / `usesTournaments`); `@workspace/sport-profiles` is the registry.
 - [PWA hijacks embedded iframes](pwa-iframe-artifact-denylist.md) — embedding an artifact via iframe needs its path on baseball-lineup's `navigateFallbackDenylist` or the SW serves index.html into the frame (prod-only).
 - [Offline prefetch race-safety](offline-prefetch-race-safety.md) — background cache-warming must SKIP games with pending offline writes (not gate on an event/queue handshake) or it clobbers optimistic Field Display state.

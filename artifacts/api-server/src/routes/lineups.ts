@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, inArray, isNull, ne, isNotNull, or, gte } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, isNotNull, or, gte, sql } from "drizzle-orm";
 import { db, playersTable, gamesTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, teamSettingsTable } from "@workspace/db";
 import { getBattingTotalsForPlayers } from "../lib/batting-totals";
 import {
@@ -233,6 +233,37 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
     }
   }
 
+  // Background "first-inning starts" stat: for every roster player, count past
+  // saved games they appeared in (gamesPlayed) and how many of those they took
+  // the field — not benched — in inning 1 (starts). The generator turns this
+  // into a start-rate and, only when the coach is leaning fair (equity > 0.5),
+  // nudges below-average starters onto the field in the opening inning so
+  // first-inning bench time evens out over the season. Excludes the game being
+  // generated. Always passed; the generator gates on the equity dial.
+  const startsRows = await db
+    .select({
+      playerId: lineupEntriesTable.playerId,
+      gamesPlayed: sql<number>`count(distinct ${lineupEntriesTable.gameId})`,
+      starts: sql<number>`count(distinct ${lineupEntriesTable.gameId}) filter (where ${lineupEntriesTable.inning} = 1 and ${lineupEntriesTable.position} <> 'Bench')`,
+    })
+    .from(lineupEntriesTable)
+    .innerJoin(gamesTable, eq(lineupEntriesTable.gameId, gamesTable.id))
+    .where(
+      and(
+        eq(gamesTable.userId, userId),
+        isNull(gamesTable.deletedAt),
+        ne(gamesTable.id, params.data.id),
+      ),
+    )
+    .groupBy(lineupEntriesTable.playerId);
+  const playerSeasonStarts = new Map<number, { starts: number; gamesPlayed: number }>();
+  for (const r of startsRows) {
+    playerSeasonStarts.set(r.playerId, {
+      starts: Number(r.starts),
+      gamesPlayed: Number(r.gamesPlayed),
+    });
+  }
+
   const generated = generateFairLineup(
     players,
     innings,
@@ -241,6 +272,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
       gameType: (game.gameType === "league" || game.gameType === "tournament") ? game.gameType : null,
       competitiveness: game.competitiveness ?? null,
       playerPreferredSlot,
+      playerSeasonStarts,
       playerSeasonPlateAppearances: paMap,
       playerSeasonOBP: obpMap,
       playerSeasonSLG: slgMap,

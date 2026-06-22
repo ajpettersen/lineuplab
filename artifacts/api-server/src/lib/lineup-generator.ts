@@ -65,6 +65,24 @@ export interface LineupConstraints {
    */
   playerPreferredSlot?: Map<number, number>;
   /**
+   * Season first-inning start history per playerId, used ONLY to even out who
+   * opens the game on the bench. Each entry is `{ starts, gamesPlayed }` where
+   * `starts` = past games this player took the field in inning 1 (not benched)
+   * and `gamesPlayed` = past games the player appeared in at all.
+   *
+   * Inning 1 has no in-game bench history yet, so the normal fairness term is 0
+   * for everyone there and the opening lineup falls to preferred-position
+   * contests + input order — which makes the same kids start on the bench game
+   * after game. Consulted ONLY in inning 1 and ONLY when the equity dial is
+   * above the balanced midpoint (`equity > 0.5`) — i.e. the coach is leaning
+   * toward fair playing time. At/below 0.5 (competitive / tournament games,
+   * which force a low equity) it is ignored so the best players keep starting.
+   * The generator converts these to a start-rate and nudges lower-than-average
+   * starters onto the field in the opening inning. Defense in later innings and
+   * the batting order are unaffected.
+   */
+  playerSeasonStarts?: Map<number, { starts: number; gamesPlayed: number }>;
+  /**
    * Team-wide batting style (from team_settings.batting_style):
    *  - "continuous" → every player on the roster gets a batting slot
    *    (everyone bats, slots 1..N).
@@ -211,6 +229,45 @@ export function generateFairLineup(
     // Linear decay: rank 0 → 1.0, rank 5+ → 0.
     const decay = Math.max(0, 1 - rank * 0.2);
     return baseDepthBonus * depthBonusFactor * decay;
+  };
+
+  // First-inning start balancing. Inning 1 carries no in-game bench history, so
+  // the fairness term is 0 for everyone there and the opening lineup otherwise
+  // falls to preferred-position contests + input order — the same kids keep
+  // starting on the bench. When the coach is leaning fair (equity > 0.5) we
+  // convert the season start history into a per-player start RATE and nudge
+  // below-average starters onto the field in inning 1. Disabled at/below the
+  // balanced midpoint so competitive / tournament lineups (which force a low
+  // equity) still start the best players.
+  const startHistory = constraints.playerSeasonStarts;
+  const startBalancingActive = equity > 0.5 && !!startHistory && startHistory.size > 0;
+  const startRate = new Map<number, number>();
+  let teamAvgStartRate = 0;
+  if (startBalancingActive) {
+    let sum = 0;
+    let cnt = 0;
+    for (const p of players) {
+      const h = startHistory!.get(p.id);
+      if (!h || h.gamesPlayed <= 0) continue; // brand-new player: stays neutral
+      const rate = h.starts / h.gamesPlayed;
+      startRate.set(p.id, rate);
+      sum += rate;
+      cnt += 1;
+    }
+    teamAvgStartRate = cnt > 0 ? sum / cnt : 0;
+  }
+  // Nudge strength ramps from 0 at equity 0.5 to ~50 at equity 1.0, so the
+  // fairer the coach plays the harder it balances starts. At their typical
+  // equity (~0.8) the spread between a never-starter and an always-starter is
+  // ~30 points — on par with the must-play boost, enough to flip the opening
+  // contest without overriding hard pins, bench rules, or must-play.
+  const startBalanceScale = startBalancingActive ? (equity - 0.5) * 2 * 50 : 0;
+  const startBalanceBonus = (playerId: number): number => {
+    if (!startBalancingActive) return 0;
+    const rate = startRate.get(playerId);
+    if (rate === undefined) return 0; // brand-new player: no nudge either way
+    // Below-average starters get a positive push; above-average a negative one.
+    return (teamAvgStartRate - rate) * startBalanceScale;
   };
 
   // Player-specific constraints
@@ -373,9 +430,13 @@ export function generateFairLineup(
           // strongest possible push toward this slot in tournament play.
           const aDepth = depthBonusFor(a.id, pos);
           const bDepth = depthBonusFor(b.id, pos);
+          // First-inning start balancing (per-player, inning 1 only). Pushes
+          // below-average starters onto the field in the opening inning.
+          const aStart = inning === 1 ? startBalanceBonus(a.id) : 0;
+          const bStart = inning === 1 ? startBalanceBonus(b.id) : 0;
           const scoreDiff =
-            (scorePlayer(b.id, inning, isLastInning) + bMust + bPref + bDepth) -
-            (scorePlayer(a.id, inning, isLastInning) + aMust + aPref + aDepth);
+            (scorePlayer(b.id, inning, isLastInning) + bMust + bPref + bDepth + bStart) -
+            (scorePlayer(a.id, inning, isLastInning) + aMust + aPref + aDepth + aStart);
           if (scoreDiff !== 0) return scoreDiff;
           // Final tiebreaker: still prefer preferred positions (matches legacy at e>=0.5).
           // We do NOT add a depth-chart tiebreaker here — once the bonus
