@@ -188,6 +188,14 @@ export default function GameDetail() {
   // saved `global_equity_weight` constraint when the dialog opens. Persisted
   // back to that same constraint on Generate so the next game remembers it.
   const [equityValue, setEquityValue] = useState<number>(50);
+  // Per-game competitiveness OVERRIDE (batting order only), consolidated into
+  // the Generate dialog so the per-game tweak lives in the SAME place as the
+  // overall Fairness Dial default (instead of being a separate slider buried
+  // in the new-game / edit-game forms). Off = null = follow the default;
+  // on = an explicit 0-100 stored on `games.competitiveness` and persisted via
+  // PATCH right before generating (mirrors how the fairness dial persists).
+  const [competitivenessOn, setCompetitivenessOn] = useState<boolean>(false);
+  const [competitiveness, setCompetitiveness] = useState<number>(50);
   // Tracks whether the user has touched the slider since the dialog opened.
   // Prevents a slow seed-fetch from clobbering an in-progress drag.
   const equityTouchedRef = useRef(false);
@@ -631,6 +639,15 @@ export default function GameDetail() {
     setSelectedPlayerIds(players.filter((p) => p.active).map((p) => p.id));
     setPreviewLineup(null);
     setGenerateOpen(true);
+    // Seed the per-game competitiveness override from the saved game value:
+    // null = follow the default (toggle off); a number = explicit override.
+    if (typeof game?.competitiveness === "number") {
+      setCompetitivenessOn(true);
+      setCompetitiveness(game.competitiveness);
+    } else {
+      setCompetitivenessOn(false);
+      setCompetitiveness(50);
+    }
     // Reset the "user touched the slider" flag and bump the seed token so any
     // in-flight fetch from a prior open is ignored when it returns.
     equityTouchedRef.current = false;
@@ -1153,6 +1170,37 @@ export default function GameDetail() {
     if (!persistOk) {
       toast({
         title: "Couldn't save fairness setting",
+        description: "Generating with the previously saved value.",
+        variant: "destructive",
+      });
+    }
+    // Persist the per-game competitiveness OVERRIDE onto the game row before
+    // generating (the server reads `games.competitiveness` fresh during
+    // generation). Off → null = follow the Fairness Dial default. We refresh
+    // the game query so the seeded value matches on the next open.
+    try {
+      const nextComp = competitivenessOn
+        ? Math.max(0, Math.min(100, Math.round(competitiveness)))
+        : null;
+      if (nextComp !== (game?.competitiveness ?? null)) {
+        const patchResp = await fetch(`${BASE}/api/games/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ competitiveness: nextComp }),
+        });
+        if (patchResp.ok) {
+          await qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
+        } else {
+          toast({
+            title: "Couldn't save this game's balance",
+            description: "Generating with the previously saved value.",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch {
+      toast({
+        title: "Couldn't save this game's balance",
         description: "Generating with the previously saved value.",
         variant: "destructive",
       });
@@ -3703,7 +3751,7 @@ export default function GameDetail() {
             </p>
             <div className="rounded-md border bg-muted/30 px-3 py-3 flex flex-col gap-2" data-testid="generate-fairness-section">
               <div className="flex items-baseline justify-between">
-                <Label className="text-sm font-medium">Fairness Dial</Label>
+                <Label className="text-sm font-medium">Fairness Dial · your default for every game</Label>
                 <span
                   className="text-base font-bold font-mono text-primary"
                   data-testid="generate-fairness-value"
@@ -3728,8 +3776,64 @@ export default function GameDetail() {
                 <span>Most equitable</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Lower keeps stronger players in their preferred spots; higher rotates everyone evenly. We'll remember this as your default.
+                Lower keeps stronger players in their preferred spots; higher rotates everyone evenly. We'll remember this as your default for all games.
               </p>
+              <div className="flex flex-col gap-1.5 pt-2 mt-1 border-t border-border/60">
+                <button
+                  type="button"
+                  onClick={() => setCompetitivenessOn((v) => !v)}
+                  className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
+                    competitivenessOn
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/40"
+                  }`}
+                  data-testid="button-toggle-competitiveness"
+                >
+                  <Checkbox
+                    checked={competitivenessOn}
+                    className="mt-0.5 pointer-events-none"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-foreground">
+                      Use a different balance for just this game
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Optional. Overrides the batting order for this game only — your default above is unchanged.
+                    </span>
+                  </span>
+                </button>
+                {competitivenessOn && (
+                  <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Equitable</span>
+                      <span className="font-mono text-sm font-medium text-foreground" data-testid="generate-competitiveness-value">
+                        {competitiveness}
+                      </span>
+                      <span>Competitive</span>
+                    </div>
+                    <Slider
+                      value={[competitiveness]}
+                      onValueChange={(v) => setCompetitiveness(v[0] ?? 50)}
+                      min={0}
+                      max={100}
+                      step={5}
+                      data-testid="slider-competitiveness"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {competitiveness <= 33
+                        ? "Even out plate appearances — under-used players bat earlier."
+                        : competitiveness >= 67
+                          ? "Best OPS order, learning from how you usually bat each player."
+                          : "Balanced — blends fair plate appearances with your best bats."}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80">
+                      Saved for this game when you tap Generate.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
             {(game?.gameType === "league" || game?.gameType === "tournament") && (
               <div className={`rounded-md border px-3 py-2 text-xs ${

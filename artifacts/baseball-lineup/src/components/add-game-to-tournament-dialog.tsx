@@ -5,6 +5,7 @@ import {
   useListGames,
   useUpdateGame,
   getGetTournamentQueryKey,
+  getListTournamentsQueryKey,
   getListGamesQueryKey,
   getGetGameQueryKey,
 } from "@workspace/api-client-react";
@@ -48,6 +49,10 @@ export function AddGameToTournamentDialog({
         void qc.invalidateQueries({
           queryKey: getGetTournamentQueryKey(tournamentId),
         });
+        // Refresh the tournaments listing too — its cards show per-tournament
+        // aggregates (gameCount / pitchers / total pitches) that go stale after
+        // a link, since this dialog is also opened from the listing page.
+        void qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
         void qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
         if (vars.id) {
           void qc.invalidateQueries({ queryKey: getGetGameQueryKey(vars.id) });

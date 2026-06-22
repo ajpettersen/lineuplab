@@ -15,8 +15,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -73,12 +71,6 @@ export default function NewGame() {
   const [gameType, setGameType] = useState<"none" | "league" | "tournament">(
     tournamentIdFromQuery != null && tournamentsEnabled ? "tournament" : "none",
   );
-  // Optional per-game competitiveness override (0-100) for the batting order.
-  // Off → null (use the Game Type / global default). On → an explicit value
-  // blending equitable PAs (low) with best-bats-first + learned slots (high).
-  const [competitivenessOn, setCompetitivenessOn] = useState(false);
-  const [competitiveness, setCompetitiveness] = useState(50);
-
   // Tournament attachment for tournament-type games. When the coach
   // picks gameType=tournament we require them to either pick an
   // existing tournament or quick-create one inline (otherwise a
@@ -213,7 +205,6 @@ export default function NewGame() {
           innings: parseInt(innings) || 6,
           notes: notes.trim() || null,
           gameType: effectiveGameType,
-          competitiveness: competitivenessOn ? competitiveness : null,
           ...(autoMatchedTournamentId != null
             ? { tournamentId: autoMatchedTournamentId }
             : {}),
@@ -398,60 +389,6 @@ export default function NewGame() {
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => setCompetitivenessOn((v) => !v)}
-                className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
-                  competitivenessOn
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/40"
-                }`}
-                data-testid="button-toggle-competitiveness"
-              >
-                <Checkbox
-                  checked={competitivenessOn}
-                  className="mt-0.5 pointer-events-none"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                />
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">
-                    Set a custom competitiveness
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    Fine-tune the batting order for this game. Overrides the
-                    Game Type default above.
-                  </span>
-                </span>
-              </button>
-              {competitivenessOn && (
-                <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Equitable</span>
-                    <span className="font-mono text-sm font-medium text-foreground">
-                      {competitiveness}
-                    </span>
-                    <span>Competitive</span>
-                  </div>
-                  <Slider
-                    value={[competitiveness]}
-                    onValueChange={(v) => setCompetitiveness(v[0] ?? 50)}
-                    min={0}
-                    max={100}
-                    step={5}
-                    data-testid="slider-competitiveness"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {competitiveness <= 33
-                      ? "Even out plate appearances — under-used players bat earlier."
-                      : competitiveness >= 67
-                        ? "Best OPS order, learning from how you usually bat each player."
-                        : "Balanced — blends fair plate appearances with your best bats."}
-                  </p>
-                </div>
-              )}
             </div>
             {gameType === "tournament" && tournamentsEnabled && (
               <div className="flex flex-col gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3">
