@@ -74,6 +74,35 @@ export function getPendingWriteGameIds(): Set<number> {
   return ids;
 }
 
+/**
+ * Keys with an in-flight POST right now. Both the cross-page drain
+ * (`offline-drain.ts`) and the Field Display's per-page flush can fire
+ * on the SAME browser `online` event and would otherwise POST the same
+ * `fd-pending-*` key twice (idempotent, but wasted battery/bandwidth on
+ * a flaky field connection). They both `tryClaimWriteKey` before
+ * posting and `releaseWriteKey` in a `finally`, so whichever path runs
+ * first owns the POST and the other skips that pass. Claims live only
+ * for the duration of a single POST — nothing is ever dropped, so this
+ * is safe alongside the "every error is transient" data-loss policy.
+ */
+const inFlightWriteKeys = new Set<string>();
+
+/**
+ * Try to claim a pending-write key for an in-flight POST. Returns
+ * `false` if another drainer already holds it — the caller should skip
+ * posting this pass and let its normal retry path pick the key up later.
+ */
+export function tryClaimWriteKey(key: string): boolean {
+  if (inFlightWriteKeys.has(key)) return false;
+  inFlightWriteKeys.add(key);
+  return true;
+}
+
+/** Release a key claimed via `tryClaimWriteKey`. Always call in a `finally`. */
+export function releaseWriteKey(key: string): void {
+  inFlightWriteKeys.delete(key);
+}
+
 function scanLocalStorage(): number {
   if (typeof localStorage === "undefined") return 0;
   let n = 0;

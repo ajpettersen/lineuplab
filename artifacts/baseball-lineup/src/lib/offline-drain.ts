@@ -4,7 +4,42 @@ import {
   type LineupEntry,
   type UpdateGameBody,
 } from "@workspace/api-client-react";
-import { bumpOfflineQueueCount, isPendingWriteKey } from "./offline-queue";
+import {
+  bumpOfflineQueueCount,
+  isPendingWriteKey,
+  releaseWriteKey,
+  tryClaimWriteKey,
+} from "./offline-queue";
+
+/**
+ * Dispatched on `window` when a queued offline write has failed to sync
+ * `STUCK_THRESHOLD` times in a row. A global listener (see
+ * <OnlineResumer>) surfaces a toast so the coach knows a change is
+ * stuck instead of it retrying forever invisibly. The write is NEVER
+ * dropped — see the "transient error" data-loss policy in
+ * field-display's flushSave docblock — this is feedback only.
+ */
+export const OFFLINE_WRITE_STUCK_EVENT = "offline-write-stuck";
+
+/** Consecutive failures before we surface the "stuck" toast. */
+const STUCK_THRESHOLD = 3;
+
+/** Per-key running count of consecutive failed drain attempts. */
+const failureCounts = new Map<string, number>();
+
+/**
+ * Keys we've already toasted about, so a still-failing write doesn't
+ * re-toast on every drain pass. Reset (alongside failureCounts) when
+ * the key drains successfully or disappears from the queue, so a later
+ * write to the same gameId starts with a clean slate.
+ */
+const notifiedStuck = new Set<string>();
+
+/** Forget a key's stuck-tracking state (on success or when it leaves the queue). */
+function resetStuckState(key: string): void {
+  failureCounts.delete(key);
+  notifiedStuck.delete(key);
+}
 
 /**
  * Cross-page drain of the offline write queue.
@@ -141,6 +176,13 @@ async function runDrain(): Promise<void> {
   const items = snapshotPending();
   if (items.length === 0) return;
 
+  // Drop stuck-tracking for keys that have left the queue (drained or
+  // cleared elsewhere) so a fresh write to the same gameId starts clean.
+  const liveKeys = new Set(items.map((it) => it.storageKey));
+  for (const k of [...failureCounts.keys()]) {
+    if (!liveKeys.has(k)) resetStuckState(k);
+  }
+
   for (const item of items) {
     // Re-read the raw value RIGHT BEFORE posting so we pick up any
     // newer writes the field-display's flushSave queued during this
@@ -155,11 +197,18 @@ async function runDrain(): Promise<void> {
     }
     if (currentRaw == null) continue;
 
+    // Claim the key so the field-display's per-page flush (which can
+    // fire on the very same `online` event) doesn't POST it in
+    // parallel. If it's already in flight there, skip — its own retry
+    // path will reconcile.
+    if (!tryClaimWriteKey(item.storageKey)) continue;
+
     try {
       if (item.kind === "lineup") {
         const entries = safeParse<LineupEntry[]>(currentRaw);
         if (!Array.isArray(entries) || entries.length === 0) {
           clearKey(item.storageKey);
+          resetStuckState(item.storageKey);
           continue;
         }
         await postLineup({ ...item, entries });
@@ -167,10 +216,14 @@ async function runDrain(): Promise<void> {
         const patch = safeParse<UpdateGameBody>(currentRaw);
         if (!patch) {
           clearKey(item.storageKey);
+          resetStuckState(item.storageKey);
           continue;
         }
         await postGamePatch({ ...item, patch });
       }
+
+      // POST succeeded — reset the stuck counter for this key.
+      resetStuckState(item.storageKey);
 
       // Success: only clear if the value hasn't changed under us
       // since we read currentRaw. If it has, leave the new value in
@@ -189,7 +242,32 @@ async function runDrain(): Promise<void> {
       }
     } catch {
       // Leave the key in localStorage for the next online flip /
-      // page-level retry. Don't bump count (count is unchanged).
+      // page-level retry. Don't bump count (count is unchanged). But
+      // count consecutive failures — a "poison pill" (e.g. a write
+      // that passed client checks but is persistently rejected
+      // server-side) would otherwise retry forever with no feedback.
+      // Surface a one-shot toast once we cross the threshold so the
+      // coach knows; we still never drop the write.
+      const n = (failureCounts.get(item.storageKey) ?? 0) + 1;
+      failureCounts.set(item.storageKey, n);
+      if (
+        n >= STUCK_THRESHOLD &&
+        !notifiedStuck.has(item.storageKey) &&
+        typeof window !== "undefined"
+      ) {
+        notifiedStuck.add(item.storageKey);
+        try {
+          window.dispatchEvent(
+            new CustomEvent(OFFLINE_WRITE_STUCK_EVENT, {
+              detail: { gameId: item.gameId, kind: item.kind },
+            }),
+          );
+        } catch {
+          // CustomEvent unsupported / no window — ignore.
+        }
+      }
+    } finally {
+      releaseWriteKey(item.storageKey);
     }
   }
 }

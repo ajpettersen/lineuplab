@@ -90,6 +90,7 @@ import { ScoreStepper } from "@/components/field-display/score-stepper";
 import { GameTimer } from "@/components/field-display/game-timer";
 import { PitcherChip } from "@/components/field-display/pitcher-chip";
 import { DialogScoreInput } from "@/components/field-display/dialog-score-input";
+import { releaseWriteKey, tryClaimWriteKey } from "@/lib/offline-queue";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -665,6 +666,29 @@ export default function FieldDisplay() {
     // Run-once-per-game-id; the flush functions are stable enough for our
     // purposes (closures over stable ids).
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Prune stale "approaching pitch cap" warn flags. The latch
+  // (`fd-pitch-warn-v1:<gameId>:<pitcherId>`) is intentionally never
+  // cleared during a game (warn once per pitcher per game), but it was
+  // also never cleaned up afterward, so the keys accumulated forever
+  // across every game/pitcher a coach ever managed. On entry to a game
+  // we drop the flags belonging to OTHER games, bounding the total to
+  // the current game's pitchers.
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const prefix = "fd-pitch-warn-v1:";
+      const keepPrefix = `${prefix}${id}:`;
+      const stale: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix) && !k.startsWith(keepPrefix)) stale.push(k);
+      }
+      for (const k of stale) localStorage.removeItem(k);
+    } catch {
+      // Private mode / quota — best-effort cleanup, safe to skip.
+    }
   }, [id]);
 
   // When the browser flips from offline → online, drain any pending
@@ -1488,6 +1512,15 @@ export default function FieldDisplay() {
         // re-call flushSave when connectivity returns.
         if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
+        // Claim the key so the App-level cross-page drain
+        // (<OnlineResumer> → drainOfflineWrites), which fires on the
+        // SAME `online` event, doesn't POST this snapshot in parallel.
+        // If it already holds the key, skip this pass and keep our
+        // pending state intact — a later flush (online effect / 30s
+        // timer / next drag) reconciles.
+        const claimKey = pendingSaveKey(id);
+        if (!tryClaimWriteKey(claimKey)) return;
+
         // Mark as in-flight so a follow-up drag during this save sets a
         // fresh ref value (which the next chained .then will pick up).
         pendingLineupRef.current = null;
@@ -1542,6 +1575,8 @@ export default function FieldDisplay() {
             saveJSON(pendingSaveKey(id), toSave);
           }
           setHasUnsyncedLineup(true);
+        } finally {
+          releaseWriteKey(claimKey);
         }
       })
       .catch(() => {
@@ -1660,6 +1695,13 @@ export default function FieldDisplay() {
         );
         if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
+        // Claim the key so the App-level cross-page drain doesn't PATCH
+        // this same key in parallel on the shared `online` event. If
+        // it's already in flight there, skip and keep our pending state
+        // intact for a later flush to reconcile.
+        const claimKey = pendingGamePatchKey(id);
+        if (!tryClaimWriteKey(claimKey)) return;
+
         pendingGamePatchRef.current = null;
         try {
           await qc.cancelQueries({ queryKey });
@@ -1684,6 +1726,8 @@ export default function FieldDisplay() {
             saveJSON(pendingGamePatchKey(id), patch);
           }
           setHasUnsyncedScore(true);
+        } finally {
+          releaseWriteKey(claimKey);
         }
       })
       .catch(() => {

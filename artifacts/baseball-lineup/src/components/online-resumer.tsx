@@ -1,8 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { bumpOfflineQueueCount } from "@/lib/offline-queue";
-import { drainOfflineWrites } from "@/lib/offline-drain";
+import {
+  drainOfflineWrites,
+  OFFLINE_WRITE_STUCK_EVENT,
+} from "@/lib/offline-drain";
 import { OFFLINE_RESUME_COMPLETE_EVENT } from "@/lib/prefetch-offline";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * Global "wifi is back" handler.
@@ -42,7 +46,26 @@ import { OFFLINE_RESUME_COMPLETE_EVENT } from "@/lib/prefetch-offline";
  */
 export function OnlineResumer() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const inFlightRef = useRef(false);
+
+  // Surface a toast when a queued offline write gets stuck (a
+  // persistent server rejection that would otherwise retry forever
+  // invisibly). The write is never dropped — this is feedback only so
+  // the coach knows to reopen the game / check connectivity.
+  useEffect(() => {
+    const onStuck = () => {
+      toast({
+        variant: "destructive",
+        title: "A change couldn't sync",
+        description:
+          "A saved game update keeps failing to reach the server. It's still queued — reopen that game's Field Display or check your connection to retry.",
+        duration: 10000,
+      });
+    };
+    window.addEventListener(OFFLINE_WRITE_STUCK_EVENT, onStuck);
+    return () => window.removeEventListener(OFFLINE_WRITE_STUCK_EVENT, onStuck);
+  }, [toast]);
 
   useEffect(() => {
     const handleOnline = async () => {
