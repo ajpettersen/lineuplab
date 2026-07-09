@@ -1,5 +1,5 @@
 import ical from "node-ical";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   db,
   gamesTable,
@@ -196,6 +196,7 @@ export async function syncIcalForUser(
           opponent: ev.opponent || "TBD",
           gameDate: new Date(ev.gameDate),
           location: ev.location,
+          rowVersion: sql`${gamesTable.rowVersion} + 1`,
         },
         // Don't resurrect soft-deleted games — if the coach trashed an
         // event we should not re-create it on the next sync just because
@@ -252,6 +253,7 @@ export async function runIcalSyncTickOnce(): Promise<void> {
           icalLastSyncAt: new Date(),
           icalLastSyncError: error,
           icalLastSyncCount: error ? null : upserted,
+          rowVersion: sql`${teamSettingsTable.rowVersion} + 1`,
         })
         .where(eq(teamSettingsTable.userId, c.userId));
       logger.info(

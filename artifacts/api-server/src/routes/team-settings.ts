@@ -1,5 +1,11 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -138,6 +144,11 @@ router.get("/team-settings", async (req, res): Promise<void> => {
 
 router.patch("/team-settings", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdateBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -194,12 +205,20 @@ router.patch("/team-settings", async (req, res): Promise<void> => {
   }
   if (parsed.data.icalAutoSync !== undefined)
     patch.icalAutoSync = parsed.data.icalAutoSync;
-  const [updated] = await db
-    .update(teamSettingsTable)
-    .set(patch)
-    .where(eq(teamSettingsTable.userId, userId))
-    .returning();
-  res.json(updated);
+  const result = await versionedUpdate(db, teamSettingsTable, {
+    set: patch,
+    where: eq(teamSettingsTable.userId, userId),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Team settings not found" });
+    return;
+  }
+  res.json(result.row);
 });
 
 /**
@@ -216,6 +235,7 @@ router.post("/team-settings/complete-onboarding", async (req, res): Promise<void
     .set({
       onboardingCompletedAt: sql`now()`,
       updatedAt: sql`now()`,
+      rowVersion: sql`${teamSettingsTable.rowVersion} + 1`,
     })
     .where(eq(teamSettingsTable.userId, userId))
     .returning();

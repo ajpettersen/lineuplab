@@ -6,6 +6,12 @@ import {
   getGetGameLineupQueryOptions,
   getGetGamePitchCountsQueryOptions,
   getGetTournamentQueryOptions,
+  getListDashboardTasksQueryOptions,
+  getListPracticesQueryOptions,
+  getGetTeamSettingsQueryOptions,
+  getGetPreferencesQueryOptions,
+  getGetSeasonStatsQueryOptions,
+  getListTournamentsQueryOptions,
   type Game,
 } from "@workspace/api-client-react";
 import { getPendingWriteGameIds } from "./offline-queue";
@@ -124,11 +130,17 @@ export function prefetchOfflineData(qc: QueryClient): Promise<void> {
   if (inFlight) return inFlight;
 
   inFlight = (async () => {
-    // Roster is read on nearly every page; warm it alongside the games.
-    void qc.prefetchQuery({
-      ...getListPlayersQueryOptions(),
-      staleTime: PREFETCH_STALE_MS,
-    });
+    // Top-level surfaces a coach lands on after a cold offline launch:
+    // roster, dashboard, practices, settings/preferences, season stats,
+    // and the tournaments list. Warming these means the whole app shell
+    // has data to render with zero bars — not just the game pages.
+    void qc.prefetchQuery({ ...getListPlayersQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...getListDashboardTasksQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...getListPracticesQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...getGetTeamSettingsQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...getGetPreferencesQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...getGetSeasonStatsQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...getListTournamentsQueryOptions(), staleTime: PREFETCH_STALE_MS });
 
     let games: Game[];
     try {

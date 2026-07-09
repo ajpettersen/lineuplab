@@ -1,5 +1,12 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
@@ -114,7 +121,7 @@ router.get("/practices", async (req, res): Promise<void> => {
   );
 });
 
-router.post("/practices", async (req, res): Promise<void> => {
+router.post("/practices", idempotent("createPractice"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = CreatePracticeBody.safeParse(req.body);
   if (!parsed.success) {
@@ -170,6 +177,11 @@ router.patch("/practices/:id", async (req, res): Promise<void> => {
   const params = UpdatePracticeParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
     return;
   }
   const parsed = UpdatePracticeBody.safeParse(req.body);
@@ -241,14 +253,23 @@ router.patch("/practices/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [updated] = await db
-    .update(practicesTable)
-    .set(updates)
-    .where(
-      and(eq(practicesTable.id, owned.id), eq(practicesTable.userId, userId)),
-    )
-    .returning();
-  res.json(updated);
+  const result = await versionedUpdate(db, practicesTable, {
+    set: updates,
+    where: and(
+      eq(practicesTable.id, owned.id),
+      eq(practicesTable.userId, userId),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Practice not found" });
+    return;
+  }
+  res.json(result.row);
 });
 
 // Soft delete — see games.ts / players.ts. Practice attendance rows
@@ -260,18 +281,25 @@ router.delete("/practices/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const result = await db
-    .update(practicesTable)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(practicesTable.id, params.data.id),
-        eq(practicesTable.userId, userId),
-        isNull(practicesTable.deletedAt),
-      ),
-    )
-    .returning({ id: practicesTable.id });
-  if (result.length === 0) {
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
+  const result = await versionedUpdate(db, practicesTable, {
+    set: { deletedAt: new Date() },
+    where: and(
+      eq(practicesTable.id, params.data.id),
+      eq(practicesTable.userId, userId),
+      isNull(practicesTable.deletedAt),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Practice not found" });
     return;
   }
@@ -289,7 +317,7 @@ router.post("/practices/:id/restore", async (req, res): Promise<void> => {
   }
   const [practice] = await db
     .update(practicesTable)
-    .set({ deletedAt: null })
+    .set({ deletedAt: null, rowVersion: sql`${practicesTable.rowVersion} + 1` })
     .where(
       and(
         eq(practicesTable.id, params.data.id),
@@ -362,6 +390,7 @@ router.put("/practices/:id/attendance", async (req, res): Promise<void> => {
             attended: entry.attended,
             notes: entry.notes ?? null,
             recordedAt: new Date(),
+            rowVersion: sql`${practiceAttendanceTable.rowVersion} + 1`,
           },
         });
     }

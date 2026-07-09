@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { withSync } from "@/lib/sync-envelope";
 import { format } from "date-fns";
 
 type Game = {
@@ -167,10 +168,12 @@ export function PitchCountsCard({ gameId, game }: Props) {
       return;
     }
     upsert.mutate(
-      {
+      // Server upsert keyed on (gameId, playerId) — idempotent, so a
+      // queued offline save replays exactly-once via the Idempotency-Key.
+      withSync({
         id: gameId,
         data: { playerId: player.id, pitches: value },
-      },
+      }),
       {
         // Drop this player's local draft so the hydration effect picks
         // up the freshly-saved value (and any concurrent updates from
@@ -189,7 +192,7 @@ export function PitchCountsCard({ gameId, game }: Props) {
 
   const clear = (playerId: number) => {
     delMutation.mutate(
-      { gameId, playerId },
+      withSync({ gameId, playerId }),
       {
         onSuccess: () => {
           setDrafts((d) => {

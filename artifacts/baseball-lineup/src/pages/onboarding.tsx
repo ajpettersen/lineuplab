@@ -47,6 +47,7 @@ import {
   DEFAULT_SPORT,
   type SportId,
 } from "@workspace/sport-profiles";
+import { withSync } from "@/lib/sync-envelope";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -217,25 +218,33 @@ export default function Onboarding() {
             teamShortName.trim() ||
             trimmedName.split(/\s+/).slice(-1)[0]?.slice(0, 20) ||
             trimmedName.slice(0, 20);
-          await updateSettings.mutateAsync({
-            data: {
-              teamName: trimmedName,
-              teamShortName: shortName,
-            },
-          });
+          await updateSettings.mutateAsync(
+            withSync(
+              {
+                data: {
+                  teamName: trimmedName,
+                  teamShortName: shortName,
+                },
+              },
+              settings?.rowVersion,
+            ),
+          );
           await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
           return true;
         }
         case "sport":
-          await updateSettings.mutateAsync({
-            data: { sport },
-          });
+          await updateSettings.mutateAsync(
+            withSync({ data: { sport } }, settings?.rowVersion),
+          );
           await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
           return true;
         case "colors":
-          await updateSettings.mutateAsync({
-            data: { primaryColor, secondaryColor },
-          });
+          await updateSettings.mutateAsync(
+            withSync(
+              { data: { primaryColor, secondaryColor } },
+              settings?.rowVersion,
+            ),
+          );
           await qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
           return true;
         default:

@@ -62,6 +62,8 @@ import { format } from "date-fns";
 import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
@@ -432,8 +434,12 @@ export default function Games() {
   const handleDelete = () => {
     if (!deleteId) return;
     const idToDelete = deleteId;
+    // Pin the delete to the schedule row's current version — if another
+    // coach edited this game since our list loaded, the server 409s and
+    // the conflict tray lets us decide instead of silently deleting.
+    const rowVersion = games.find((g) => g.id === idToDelete)?.rowVersion;
     deleteGame.mutate(
-      { id: idToDelete },
+      withSync({ id: idToDelete }, rowVersion),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
@@ -449,11 +455,17 @@ export default function Games() {
               }
             },
           });
-          setDeleteId(null);
         },
-        onError: (err) => toastError(toast, "Failed to delete game", err),
+        onError: (err) => {
+          // 409 conflicts are handled by the global ConflictListener
+          // (toast + tray); a second "failed" toast here would read as
+          // a bug rather than a resolvable conflict.
+          if (isVersionConflict(err)) return;
+          toastError(toast, "Failed to delete game", err);
+        },
       }
     );
+    setDeleteId(null);
   };
 
   const refresh = () => qc.invalidateQueries({ queryKey: getListGamesQueryKey() });

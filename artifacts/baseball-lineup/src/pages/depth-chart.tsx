@@ -41,6 +41,8 @@ import { GripVertical, Star, X, Plus, ListOrdered, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { usePermission } from "@/hooks/use-permission";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 
 const POSITION_LABELS: Record<string, string> = {
   P: "Pitcher",
@@ -85,6 +87,10 @@ export default function DepthChart() {
         void qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
       },
       onError: (err) => {
+        // 409 conflicts are surfaced by the global ConflictListener
+        // (toast + tray); skip the local "failed" toast so it doesn't
+        // double up on a resolvable conflict.
+        if (isVersionConflict(err)) return;
         toast({
           title: "Could not save depth chart",
           description: err instanceof Error ? err.message : String(err),
@@ -150,7 +156,12 @@ export default function DepthChart() {
   }, [players]);
 
   const persist = (nextChart: Record<string, number[]>) => {
-    update.mutate({ data: { depthChart: nextChart } });
+    // Pin to the settings row version we loaded so a concurrent depth-
+    // chart edit from another device 409s into the conflict tray rather
+    // than silently clobbering (see sync-envelope.ts).
+    update.mutate(
+      withSync({ data: { depthChart: nextChart } }, settingsQuery.data?.rowVersion),
+    );
   };
 
   const sensors = useSensors(

@@ -29,6 +29,7 @@ import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal } from "@/lib/tournament-date";
 import { AddGameToTournamentDialog } from "@/components/add-game-to-tournament-dialog";
+import { withSync } from "@/lib/sync-envelope";
 import {
   computeTournamentStatus,
   computeTournamentRecord,
@@ -147,18 +148,20 @@ export default function Tournaments() {
       toast({ title: "End date can't be before start date", variant: "destructive" });
       return;
     }
-    create.mutate({
-      data: {
-        name: trimmed,
-        startDate,
-        endDate,
-        location: location.trim() || null,
-        notes: notes.trim() || null,
-        dailyPitchMax: parseOptionalInt(dailyMax),
-        tournamentPitchMax: parseOptionalInt(tournamentMax),
-        restTiers,
-      },
-    });
+    create.mutate(
+      withSync({
+        data: {
+          name: trimmed,
+          startDate,
+          endDate,
+          location: location.trim() || null,
+          notes: notes.trim() || null,
+          dailyPitchMax: parseOptionalInt(dailyMax),
+          tournamentPitchMax: parseOptionalInt(tournamentMax),
+          restTiers,
+        },
+      }),
+    );
   };
 
   const teamDailyDefault = teamSettings?.defaultDailyPitchMax ?? null;

@@ -1,4 +1,5 @@
 import { pgTable, text, serial, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { rowVersion } from "./row-version";
 
 /**
  * Web Push subscription endpoints owned by individual coaches.
@@ -35,6 +36,7 @@ export const pushSubscriptionsTable = pgTable(
   "push_subscriptions",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     teamOwnerUserId: text("team_owner_user_id").notNull(),
     endpoint: text("endpoint").notNull(),

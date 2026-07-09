@@ -38,6 +38,8 @@ import {
 import { UserPlus, Trash2, ChevronRight, CircleUser, Sparkles, Image as ImageIcon, Upload, X, AlertTriangle, Info, ShieldCheck, Users, ListOrdered } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 import { usePermission } from "@/hooks/use-permission";
 import { useSportProfile } from "@/hooks/use-sport-profile";
 import {
@@ -601,7 +603,10 @@ function AddPlayerDialog({
       return;
     }
     createPlayer.mutate(
-      {
+      // withSync stamps a per-attempt Idempotency-Key into the mutation
+      // variables so an offline-queued create replays exactly-once even
+      // if the response is lost mid-sync (see sync-envelope.ts).
+      withSync({
         data: {
           firstName: f,
           lastName: l,
@@ -613,21 +618,25 @@ function AddPlayerDialog({
           canPitch,
           active: true,
         },
-      },
+      }),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
           toast({ title: "Player added" });
-          onClose();
-          setFirstName("");
-          setLastName("");
-          setNumber("");
-          setPreferred([]);
-          setCanPitch(false);
         },
         onError: (err) => toastError(toast, "Failed to add player", err),
       }
     );
+    // Close + reset immediately (not in onSuccess): while offline the
+    // mutation pauses in the queue and onSuccess wouldn't fire until
+    // reconnect — the coach would be stuck staring at an open dialog.
+    // The sync chip shows the queued write; failures surface via toast.
+    onClose();
+    setFirstName("");
+    setLastName("");
+    setNumber("");
+    setPreferred([]);
+    setCanPitch(false);
   };
 
   return (
@@ -939,8 +948,13 @@ export default function Players() {
   const handleDelete = () => {
     if (!deleteId) return;
     const idToDelete = deleteId;
+    // Pin the delete to the roster row's current version — if another
+    // coach edited this player since our list loaded, the server 409s
+    // and the conflict tray lets us decide instead of silently deleting
+    // their newer edits.
+    const rowVersion = players.find((p) => p.id === idToDelete)?.rowVersion;
     deletePlayer.mutate(
-      { id: idToDelete },
+      withSync({ id: idToDelete }, rowVersion),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
@@ -956,11 +970,17 @@ export default function Players() {
               }
             },
           });
-          setDeleteId(null);
         },
-        onError: (err) => toastError(toast, "Failed to delete player", err),
+        onError: (err) => {
+          // 409 conflicts are handled by the global ConflictListener
+          // (toast + tray); a second "failed" toast here would read as
+          // a bug rather than a resolvable conflict.
+          if (isVersionConflict(err)) return;
+          toastError(toast, "Failed to delete player", err);
+        },
       }
     );
+    setDeleteId(null);
   };
 
   return (

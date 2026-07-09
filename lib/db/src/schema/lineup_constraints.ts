@@ -1,10 +1,12 @@
 import { pgTable, serial, integer, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { playersTable } from "./players";
+import { rowVersion } from "./row-version";
 
 export const lineupConstraintsTable = pgTable(
   "lineup_constraints",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     type: text("type").notNull(),
     playerId: integer("player_id").references(() => playersTable.id, { onDelete: "cascade" }),

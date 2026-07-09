@@ -41,6 +41,7 @@ import {
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TeamSwitcher } from "@/components/team-switcher";
 import { SyncStatusChip } from "@/components/sync-status-chip";
+import { OfflineBanner } from "@/components/offline-banner";
 import { useTeamContext } from "@/hooks/use-team-context";
 import { usePermission } from "@/hooks/use-permission";
 import { useAdminMe } from "@/hooks/use-admin";
@@ -771,6 +772,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
         </div>
       </header>
+      <OfflineBanner />
       <main
         // Bottom padding has to clear TWO things on mobile:
         //   (a) the new fixed bottom tab bar (~56px tall), and

@@ -82,6 +82,14 @@ These are the *rules and rationale* that aren't obvious from reading any single 
 - **`usesTournaments`** (default `true`): master switch for tournament UI discoverability; existing tournament rows still render when off.
 - **`usesGameChanger`** (default `false`): surfaces a box-score dashboard task for past games and (with opt-in) Web Push box-score reminders (~2h after game). Push scheduler polls with a single-flight atomic claim; no-ops if VAPID env vars are missing.
 
+### Full-app offline mode & conflict resolution
+- **Server optimistic locking**: mutable rows carry `rowVersion` (bumped on every UPDATE); guarded write routes require `If-Match` and return a `409 { code: "row_version_conflict", current }` envelope on mismatch. `Idempotency-Key` middleware dedupes replayed creates/writes (offline queue replay-safe).
+- **Client sync envelope**: `withSync(vars)` (`src/lib/sync-envelope.ts`) stamps `Idempotency-Key`/`If-Match` into a `_sync` field on mutation variables; generated client strips it into headers. Bespoke direct calls use `syncRequestInit(newSyncMeta())` (idempotency-only, intentional LWW).
+- **Centralized optimistic updates**: `mutation-defaults.ts` sets `onMutate`/`onError`/`onSettled` defaults per operation (update/delete of games, players, practices, tournaments + teamSettings/preferences singletons) — call sites don't hand-roll cache patches. Paused (offline) mutations persist via the dehydrated mutation cache and replay on reconnect.
+- **Conflict resolution UI**: global listener converts 409s into entries in the conflict store (`conflict-registry.ts`); the sync-status chip shows a red badge and opens the conflict tray (Keep mine / Keep theirs / Merge where a resolver supports it). Call sites use `isVersionConflict(err)` to skip their own error toast. Resolutions log to a per-device localStorage history shown under Settings → Game Day → "Sync issues".
+- **Warm cache + banner**: `prefetch-offline.ts` warms top-level queries (roster, dashboard tasks, practices, settings, preferences, season stats, tournaments) plus per-game data; a global `<OfflineBanner>` in Layout shows "offline — data from N min ago" from the newest `dataUpdatedAt`.
+- **Exclusions**: Field Display keeps its own localStorage queue (LWW by design); AI and file/blob mutations are not offline-queued.
+
 ### Soft delete & undo
 - `players`, `games`, `practices`, `tournaments` carry nullable `deletedAt`. DELETE stamps; `/:id/restore` clears. Every read filters `isNull(deletedAt)` (admin routes don't, for audit). Box-score and manual-batting deletes use snapshot+restore with a ~10s Undo toast.
 

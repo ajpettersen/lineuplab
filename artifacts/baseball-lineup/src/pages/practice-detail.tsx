@@ -61,6 +61,8 @@ import {
 import { format } from "date-fns";
 import { showUndoToast, restoreEntity } from "@/lib/undo-toast";
 import { useToast } from "@/hooks/use-toast";
+import { withSync, newSyncMeta, syncRequestInit } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 
 function makeBlockId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -135,12 +137,16 @@ export default function PracticeDetailPage() {
         void qc.invalidateQueries({ queryKey: getGetPracticeQueryKey(practiceId) });
         void qc.invalidateQueries({ queryKey: getListPracticesQueryKey() });
       },
-      onError: (err) =>
+      onError: (err) => {
+        // 409 conflicts are surfaced by the global ConflictListener
+        // (toast + tray); a second "failed" toast would read as a bug.
+        if (isVersionConflict(err)) return;
         toast({
           title: "Couldn't save",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
-        }),
+        });
+      },
     },
   });
 
@@ -162,6 +168,15 @@ export default function PracticeDetailPage() {
           },
         });
         window.history.back();
+      },
+      onError: (err) => {
+        // 409 conflicts are surfaced by the global ConflictListener.
+        if (isVersionConflict(err)) return;
+        toast({
+          title: "Couldn't delete practice",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
       },
     },
   });
@@ -226,18 +241,23 @@ export default function PracticeDetailPage() {
   };
   const submitHeader = () => {
     update.mutate(
-      {
-        id: practiceId,
-        data: {
-          date: combineDateTimeISO(hDate, hTime),
-          durationMinutes: hDuration,
-          title: hTitle.trim() || null,
-          focusAreas: hFocus,
-          notes: hNotes.trim() || null,
+      withSync(
+        {
+          id: practiceId,
+          data: {
+            date: combineDateTimeISO(hDate, hTime),
+            durationMinutes: hDuration,
+            title: hTitle.trim() || null,
+            focusAreas: hFocus,
+            notes: hNotes.trim() || null,
+          },
         },
-      },
-      { onSuccess: () => setEditHeaderOpen(false) },
+        practice?.rowVersion,
+      ),
     );
+    // Close immediately (not in onSuccess): while offline the update
+    // pauses in the queue and onSuccess wouldn't fire until reconnect.
+    setEditHeaderOpen(false);
   };
 
   // ---- Focus points ("Things to work on") — coach-authored bullet
@@ -270,7 +290,14 @@ export default function PracticeDetailPage() {
           await qc.cancelQueries({
             queryKey: getGetPracticeQueryKey(practiceId),
           });
-          await updatePractice(practiceId, { focusPoints: toSave });
+          await updatePractice(
+            practiceId,
+            { focusPoints: toSave },
+            // Idempotency-only envelope (no If-Match): this bespoke
+            // single-flight chain keeps last-writer-wins REPLACE
+            // semantics for the JSONB focusPoints column.
+            syncRequestInit(newSyncMeta()),
+          );
           if (pendingFocusPointsRef.current == null) {
             void qc.invalidateQueries({
               queryKey: getGetPracticeQueryKey(practiceId),
@@ -369,7 +396,14 @@ export default function PracticeDetailPage() {
           await qc.cancelQueries({
             queryKey: getGetPracticeQueryKey(practiceId),
           });
-          await updatePractice(practiceId, { blocks: reindex(toSave) });
+          await updatePractice(
+            practiceId,
+            { blocks: reindex(toSave) },
+            // Idempotency-only envelope (no If-Match): this bespoke
+            // single-flight chain keeps last-writer-wins REPLACE
+            // semantics for the JSONB blocks column.
+            syncRequestInit(newSyncMeta()),
+          );
           // Clear list-page cache so list shows current block count;
           // skip detail invalidation if a newer edit is already pending
           // (otherwise the refetch would race with our next PATCH).
@@ -594,7 +628,14 @@ export default function PracticeDetailPage() {
         pendingAttRef.current = new Map();
         if (entries.length === 0) return;
         try {
-          await replacePracticeAttendance(practiceId, { entries });
+          await replacePracticeAttendance(
+            practiceId,
+            { entries },
+            // Idempotency-only envelope (no If-Match): attendance is an
+            // idempotent full REPLACE, so this bespoke single-flight
+            // chain stays last-writer-wins.
+            syncRequestInit(newSyncMeta()),
+          );
           if (pendingAttRef.current.size === 0) {
             void qc.invalidateQueries({
               queryKey: getGetPracticeQueryKey(practiceId),
@@ -748,7 +789,7 @@ export default function PracticeDetailPage() {
             size="sm"
             onClick={() => {
               if (confirm("Delete this practice? Attendance will be lost.")) {
-                del.mutate({ id: practiceId });
+                del.mutate(withSync({ id: practiceId }, practice?.rowVersion));
               }
             }}
             data-testid="button-delete-practice"

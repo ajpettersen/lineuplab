@@ -1,5 +1,13 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+  versionedDelete,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
 import multer from "multer";
 import { db, battingStatsTable, gameBattingLinesTable, gamesTable, playersTable } from "@workspace/db";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
@@ -268,6 +276,9 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
   const playerId = parseInt(req.params.playerId);
   if (isNaN(playerId)) { res.status(400).json({ error: "Invalid player ID" }); return; }
 
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) { rejectBadIfMatch(res); return; }
+
   // Confirm the target player belongs to this coach before any write lands.
   if (!(await getOwnedPlayer(userId, playerId))) {
     res.status(404).json({ error: "Player not found" });
@@ -354,12 +365,20 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
   const rates = computeRates(manual);
 
   if (existing.length > 0) {
-    const [updated] = await db
-      .update(battingStatsTable)
-      .set({ ...manual, ...rates, updatedAt: new Date() })
-      .where(eq(battingStatsTable.playerId, playerId))
-      .returning();
-    res.json(updated);
+    const result = await versionedUpdate(db, battingStatsTable, {
+      set: { ...manual, ...rates, updatedAt: new Date() },
+      where: eq(battingStatsTable.playerId, playerId),
+      ifMatch: ifm.version,
+    });
+    if (result.kind === "conflict") {
+      sendConflict(res, result.current);
+      return;
+    }
+    if (result.kind === "missing") {
+      res.status(404).json({ error: "Player not found" });
+      return;
+    }
+    res.json(result.row);
   } else {
     const [created] = await db
       .insert(battingStatsTable)
@@ -372,11 +391,22 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
 router.delete("/batting/:playerId", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const playerId = parseInt(req.params.playerId);
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) { rejectBadIfMatch(res); return; }
   if (!(await getOwnedPlayer(userId, playerId))) {
     res.status(404).json({ error: "Player not found" });
     return;
   }
-  await db.delete(battingStatsTable).where(eq(battingStatsTable.playerId, playerId));
+  const result = await versionedDelete(db, battingStatsTable, {
+    where: eq(battingStatsTable.playerId, playerId),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  // Preserve legacy behavior: a missing row is treated as a successful
+  // no-op delete (this route never 404'd on an absent stats row).
   res.status(204).send();
 });
 
@@ -482,7 +512,13 @@ router.post("/batting/restore", async (req, res): Promise<void> => {
       .values({ ...r, ...rates, sourceNote: r.sourceNote ?? null })
       .onConflictDoUpdate({
         target: battingStatsTable.playerId,
-        set: { ...r, ...rates, sourceNote: r.sourceNote ?? null, updatedAt: new Date() },
+        set: {
+          ...r,
+          ...rates,
+          sourceNote: r.sourceNote ?? null,
+          updatedAt: new Date(),
+          rowVersion: sql`${battingStatsTable.rowVersion} + 1`,
+        },
       });
     restored += 1;
   }
@@ -522,7 +558,7 @@ const ImportSeasonSchema = z.object({
   ),
 });
 
-router.post("/batting/import-season", async (req, res): Promise<void> => {
+router.post("/batting/import-season", idempotent("importSeasonBatting"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = ImportSeasonSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -563,6 +599,7 @@ router.post("/batting/import-season", async (req, res): Promise<void> => {
           sourceNote: r.sourceNote ?? null,
           seasonImportedAt,
           updatedAt: new Date(),
+          rowVersion: sql`${battingStatsTable.rowVersion} + 1`,
         },
       });
     imported += 1;

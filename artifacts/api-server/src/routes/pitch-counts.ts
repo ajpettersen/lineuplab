@@ -1,6 +1,12 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, isNull } from "drizzle-orm";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedDelete,
+} from "../lib/concurrency";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   db,
   pitchCountsTable,
@@ -111,6 +117,7 @@ router.post("/games/:id/pitch-counts", async (req, res): Promise<void> => {
         pitches: parsed.data.pitches,
         notes: parsed.data.notes ?? null,
         recordedAt: new Date(),
+        rowVersion: sql`${pitchCountsTable.rowVersion} + 1`,
       },
     })
     .returning();
@@ -126,22 +133,29 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    const ifm = parseIfMatch(req);
+    if (!ifm.ok) {
+      rejectBadIfMatch(res);
+      return;
+    }
     const ownedId = await ensureGameOwned(userId, params.data.gameId);
     if (ownedId === null) {
       res.status(404).json({ error: "Game not found" });
       return;
     }
-    const result = await db
-      .delete(pitchCountsTable)
-      .where(
-        and(
-          eq(pitchCountsTable.userId, userId),
-          eq(pitchCountsTable.gameId, ownedId),
-          eq(pitchCountsTable.playerId, params.data.playerId),
-        ),
-      )
-      .returning({ id: pitchCountsTable.id });
-    if (result.length === 0) {
+    const result = await versionedDelete(db, pitchCountsTable, {
+      where: and(
+        eq(pitchCountsTable.userId, userId),
+        eq(pitchCountsTable.gameId, ownedId),
+        eq(pitchCountsTable.playerId, params.data.playerId),
+      ),
+      ifMatch: ifm.version,
+    });
+    if (result.kind === "conflict") {
+      sendConflict(res, result.current);
+      return;
+    }
+    if (result.kind === "missing") {
       res.status(404).json({ error: "Pitch count not found" });
       return;
     }

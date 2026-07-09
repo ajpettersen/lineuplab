@@ -1,11 +1,13 @@
 import { pgTable, text, serial, timestamp, integer, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { rowVersion } from "./row-version";
 
 export const playersTable = pgTable(
   "players",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     // `name` is kept as the canonical "First Last" display string and is
     // re-derived on every write from firstName + lastName. Existing reads

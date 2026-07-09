@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
+import { withSync } from "@/lib/sync-envelope";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 import { Upload, Trash2, X, Plus, Sparkles, AlertCircle, RotateCcw } from "lucide-react";
@@ -366,27 +367,35 @@ export function BoxScoreImportDialog({
       //    destructive trims of lineup entries, locks, and AI pins,
       //    which we don't want to apply unless the box score is
       //    actually persisted.
-      await save.mutateAsync({
-        id: gameId,
-        data: {
-          batting: validBatting.map(({ _key, ...rest }) => rest),
-          pitching: validPitching.map(({ _key, ...rest }) => rest),
-          ourScore: ourScore.trim() === "" ? null : Number(ourScore),
-          opponentScore: opponentScore.trim() === "" ? null : Number(opponentScore),
-          imagePaths,
-          markCompleted: true,
-        },
-      });
+      await save.mutateAsync(
+        // Server REPLACES all lines for the game in one transaction, so a
+        // queued offline save replays idempotently via the Idempotency-Key.
+        withSync({
+          id: gameId,
+          data: {
+            batting: validBatting.map(({ _key, ...rest }) => rest),
+            pitching: validPitching.map(({ _key, ...rest }) => rest),
+            ourScore: ourScore.trim() === "" ? null : Number(ourScore),
+            opponentScore: opponentScore.trim() === "" ? null : Number(opponentScore),
+            imagePaths,
+            markCompleted: true,
+          },
+        }),
+      );
       // 2. Now (best-effort) shorten the game. If this fails the box
       //    score is still saved; the coach can re-edit innings from
       //    the game card. We surface the error in a toast below.
       let trimError: unknown = null;
       if (trimmedLast < gameInnings) {
         try {
-          await updateGame.mutateAsync({
-            id: gameId,
-            data: { innings: trimmedLast },
-          });
+          await updateGame.mutateAsync(
+            // No cached game row here to pin against — falls back to
+            // last-writer-wins (undefined rowVersion).
+            withSync({
+              id: gameId,
+              data: { innings: trimmedLast },
+            }),
+          );
         } catch (err) {
           trimError = err;
         }

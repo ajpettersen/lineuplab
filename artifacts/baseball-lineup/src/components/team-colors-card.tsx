@@ -18,6 +18,8 @@ import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, Palette, RotateCcw, Check } from "lucide-react";
 import { usePermission } from "@/hooks/use-permission";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 
 const APP_DEFAULT_PRIMARY = "220 85% 22%";
 const APP_DEFAULT_SECONDARY = "42 95% 55%";
@@ -296,19 +298,24 @@ export function TeamColorsCard() {
 
   const handleSave = () => {
     update.mutate(
-      {
-        data: {
-          primaryColor: primary === APP_DEFAULT_PRIMARY ? null : primary,
-          secondaryColor:
-            secondary === APP_DEFAULT_SECONDARY ? null : secondary,
+      withSync(
+        {
+          data: {
+            primaryColor: primary === APP_DEFAULT_PRIMARY ? null : primary,
+            secondaryColor:
+              secondary === APP_DEFAULT_SECONDARY ? null : secondary,
+          },
         },
-      },
+        data?.rowVersion,
+      ),
       {
         onSuccess: () => {
           void qc.invalidateQueries({ queryKey: getGetTeamSettingsQueryKey() });
           toast({ title: "Team colors saved" });
         },
         onError: (err) => {
+          // 409 conflicts are surfaced by the global ConflictListener.
+          if (isVersionConflict(err)) return;
           toast({
             title: "Couldn't save team colors",
             description: err instanceof Error ? err.message : String(err),

@@ -47,6 +47,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal, safeFormatDate } from "@/lib/tournament-date";
+import { withSync } from "@/lib/sync-envelope";
 import { AddGameToTournamentDialog } from "@/components/add-game-to-tournament-dialog";
 import { PoolPlayCard } from "@/components/pool-play-card";
 import { TournamentNetworkCard } from "@/components/tournament-network-card";
@@ -751,7 +752,12 @@ export default function TournamentDetail() {
                     size="sm"
                     className="absolute top-1 right-1 h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
                     onClick={() =>
-                      updateGame.mutate({ id: g.id, data: { tournamentId: null } })
+                      updateGame.mutate(
+                        withSync(
+                          { id: g.id, data: { tournamentId: null } },
+                          g.rowVersion,
+                        ),
+                      )
                     }
                     aria-label="Remove from tournament"
                     data-testid={`button-remove-game-${g.id}`}
@@ -916,7 +922,11 @@ export default function TournamentDetail() {
         tournament={tournament}
         teamDailyDefault={teamSettings?.defaultDailyPitchMax ?? null}
         teamTournamentDefault={teamSettings?.defaultTournamentPitchMax ?? null}
-        onSubmit={(data) => updateTournament.mutate({ id: tournamentId, data })}
+        onSubmit={(data) =>
+          updateTournament.mutate(
+            withSync({ id: tournamentId, data }, tournament.rowVersion),
+          )
+        }
         isPending={updateTournament.isPending}
       />
 
@@ -941,7 +951,11 @@ export default function TournamentDetail() {
             <Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button>
             <Button
               variant="destructive"
-              onClick={() => deleteTournament.mutate({ id: tournamentId })}
+              onClick={() =>
+                deleteTournament.mutate(
+                  withSync({ id: tournamentId }, tournament.rowVersion),
+                )
+              }
               disabled={deleteTournament.isPending}
               data-testid="button-confirm-delete-tournament"
             >

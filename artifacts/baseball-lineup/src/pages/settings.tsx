@@ -29,10 +29,13 @@ import {
 } from "@/components/ui/select";
 import { SPORT_PROFILES, SPORT_IDS, type SportId } from "@workspace/sport-profiles";
 import { useToast } from "@/hooks/use-toast";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
 import { CoachesCard } from "@/components/coaches-card";
+import { SyncIssuesCard } from "@/components/sync-issues-card";
 import { TeamColorsCard } from "@/components/team-colors-card";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
 import type { RestTier } from "@/lib/pitch-rulesets";
@@ -133,6 +136,8 @@ export default function Settings() {
         toast({ title: "Team branding saved" });
       },
       onError: (err) => {
+        // 409 conflicts are surfaced by the global ConflictListener.
+        if (isVersionConflict(err)) return;
         toast({
           title: "Could not save team branding",
           description: err instanceof Error ? err.message : String(err),
@@ -149,6 +154,8 @@ export default function Settings() {
         toast({ title: "Defaults saved" });
       },
       onError: (err) => {
+        // 409 conflicts are surfaced by the global ConflictListener.
+        if (isVersionConflict(err)) return;
         toast({
           title: "Could not save defaults",
           description: err instanceof Error ? err.message : String(err),
@@ -253,33 +260,43 @@ export default function Settings() {
       });
       return;
     }
-    updateTeam.mutate({
-      data: {
-        teamName: name,
-        teamShortName: short,
-        sport,
-        battingStyle,
-        defaultDailyPitchMax: parseOptionalInt(defaultDailyMax),
-        defaultTournamentPitchMax: parseOptionalInt(defaultTournamentMax),
-        defaultRestTiers,
-        usesGameChanger,
-      },
-    });
+    updateTeam.mutate(
+      withSync(
+        {
+          data: {
+            teamName: name,
+            teamShortName: short,
+            sport,
+            battingStyle,
+            defaultDailyPitchMax: parseOptionalInt(defaultDailyMax),
+            defaultTournamentPitchMax: parseOptionalInt(defaultTournamentMax),
+            defaultRestTiers,
+            usesGameChanger,
+          },
+        },
+        teamQuery.data?.rowVersion,
+      ),
+    );
   };
 
   const onSavePrefs = () => {
-    updatePrefs.mutate({
-      data: {
-        defaultInnings: innings,
-        defaultMaxInningsPerPosition: maxPos,
-        defaultMaxInningsBench: maxBench,
-        defaultEnsureAllPositions: ensureAll,
-        defaultPitcherRotation: pitcherRotation,
-        alwaysLockPitcherCatcher: alwaysLockPC,
-        showFairnessScore: showFairness,
-        showEquitySuggestions: showEquityTips,
-      },
-    });
+    updatePrefs.mutate(
+      withSync(
+        {
+          data: {
+            defaultInnings: innings,
+            defaultMaxInningsPerPosition: maxPos,
+            defaultMaxInningsBench: maxBench,
+            defaultEnsureAllPositions: ensureAll,
+            defaultPitcherRotation: pitcherRotation,
+            alwaysLockPitcherCatcher: alwaysLockPC,
+            showFairnessScore: showFairness,
+            showEquitySuggestions: showEquityTips,
+          },
+        },
+        prefsQuery.data?.rowVersion,
+      ),
+    );
   };
 
   // Tabs are driven by the URL hash so deep links from the dashboard
@@ -683,7 +700,9 @@ export default function Settings() {
               checked={usesTournaments}
               onCheckedChange={(v) => {
                 setUsesTournaments(v);
-                updateTeam.mutate({ data: { usesTournaments: v } });
+                updateTeam.mutate(
+                  withSync({ data: { usesTournaments: v } }, teamQuery.data?.rowVersion),
+                );
               }}
               disabled={teamLoading || !canEditTeam}
               data-testid="switch-uses-tournaments"
@@ -710,7 +729,9 @@ export default function Settings() {
                 // Persist ONLY this field so we don't clobber unsaved
                 // edits the coach has typed into the Team Branding card
                 // above (the PATCH route accepts partial updates).
-                updateTeam.mutate({ data: { usesGameChanger: v } });
+                updateTeam.mutate(
+                  withSync({ data: { usesGameChanger: v } }, teamQuery.data?.rowVersion),
+                );
               }}
               disabled={teamLoading || !canEditTeam}
               data-testid="switch-uses-gamechanger"
@@ -745,7 +766,9 @@ export default function Settings() {
               checked={showSelectPositions}
               onCheckedChange={(v) => {
                 setShowSelectPositions(v);
-                updateTeam.mutate({ data: { showSelectPositions: v } });
+                updateTeam.mutate(
+                  withSync({ data: { showSelectPositions: v } }, teamQuery.data?.rowVersion),
+                );
               }}
               disabled={teamLoading || !canEditTeam}
               data-testid="switch-show-select-positions"
@@ -806,6 +829,7 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
       </Card>
+      <SyncIssuesCard />
       </TabsContent>
 
       <TabsContent value="constraints" className="space-y-6 mt-4">

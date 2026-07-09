@@ -12,6 +12,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { practicesTable } from "./practices";
 import { playersTable } from "./players";
+import { rowVersion } from "./row-version";
 
 /**
  * One row per (practice, player) the coach has marked attendance for.
@@ -33,6 +34,7 @@ export const practiceAttendanceTable = pgTable(
   "practice_attendance",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     practiceId: integer("practice_id")
       .notNull()

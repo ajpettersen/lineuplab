@@ -5,11 +5,30 @@
  * Baseball Lineup Manager API
  * OpenAPI spec version: 0.1.0
  */
+export type ConflictErrorCode =
+  (typeof ConflictErrorCode)[keyof typeof ConflictErrorCode];
+
+export const ConflictErrorCode = {
+  row_version_conflict: "row_version_conflict",
+  idempotency_in_flight: "idempotency_in_flight",
+} as const;
+
+/**
+ * Returned with HTTP 409 when an If-Match row version no longer matches — another device changed the record. `current` is the row as it exists now.
+ */
+export interface ConflictError {
+  error: string;
+  code: ConflictErrorCode;
+  current?: unknown;
+}
+
 export interface HealthStatus {
   status: string;
 }
 
 export interface Player {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   /** Display name "First Last", server-derived from firstName + lastName. */
   name: string;
@@ -121,6 +140,8 @@ export interface PlanSnapshotEntry {
 }
 
 export interface Game {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   opponent: string;
   gameDate: string;
@@ -290,6 +311,8 @@ export interface UpdateGameBody {
 }
 
 export interface LineupEntry {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   gameId: number;
   playerId: number;
@@ -461,6 +484,8 @@ depth chart configured.
 export type TeamSettingsDepthChart = { [key: string]: number[] };
 
 export interface TeamSettings {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   userId: string;
   teamName: string;
   teamShortName: string;
@@ -621,6 +646,8 @@ export interface UpdateTeamSettingsBody {
 }
 
 export interface UserPreferences {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   userId: string;
   /**
    * @minimum 1
@@ -650,6 +677,8 @@ export interface UserPreferences {
 }
 
 export interface Tournament {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   name: string;
   startDate: string;
@@ -1070,6 +1099,8 @@ export interface UpdateTournamentBody {
 }
 
 export interface PitchCount {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   gameId: number;
   playerId: number;
@@ -1238,6 +1269,8 @@ export interface PracticeBlock {
 }
 
 export interface Practice {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   date: string;
   durationMinutes: number;
@@ -1261,6 +1294,8 @@ export type PracticeSummary = Practice & {
 };
 
 export interface PracticeAttendance {
+  /** Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH/DELETE to detect conflicts. */
+  rowVersion?: number;
   id: number;
   practiceId: number;
   playerId: number;

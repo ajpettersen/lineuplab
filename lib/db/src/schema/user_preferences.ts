@@ -1,6 +1,7 @@
 import { pgTable, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { rowVersion } from "./row-version";
 
 /**
  * Per-coach defaults for game and lineup creation. One row per Clerk user.
@@ -10,6 +11,7 @@ import { z } from "zod/v4";
  */
 export const userPreferencesTable = pgTable("user_preferences", {
   userId: text("user_id").primaryKey(),
+  rowVersion: rowVersion(),
   defaultInnings: integer("default_innings").notNull().default(6),
   defaultMaxInningsPerPosition: integer("default_max_innings_per_position").notNull().default(2),
   defaultMaxInningsBench: integer("default_max_innings_bench").notNull().default(2),

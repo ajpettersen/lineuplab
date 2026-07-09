@@ -1,46 +1,36 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ApiError } from "@workspace/api-client-react";
+import { ApiError, ConflictErrorCode } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { addConflict } from "@/lib/conflict-registry";
 
 /**
  * Global 409 Conflict listener.
  *
- * Subscribes to the React Query MutationCache and surfaces a toast
- * whenever ANY mutation fails with a 409 Conflict from the server.
+ * Subscribes to the React Query MutationCache and, whenever ANY
+ * mutation fails with the server's optimistic-lock 409
+ * (`code: "row_version_conflict"`, emitted by the If-Match middleware),
+ * records a `VersionConflict` in the conflict store and points the
+ * coach at the sync chip to resolve it.
  *
  * Why a global listener rather than per-mutation `onError` handlers:
  *   - Conflict semantics are uniform — "someone else changed this
- *     row, your edit was rejected." There's no per-domain phrasing
- *     that's better than a clear "Pick which version to keep" prompt
- *     pointed at the freshest server data.
- *   - The full-app offline mode work registers ~25+ mutations with
- *     identical conflict handling; threading the same handler
- *     through each `useMutation` call site would balloon the diff
- *     and create drift over time.
- *   - When the server-side `If-Match` rollout lands (Phase 3 of the
- *     offline-mode task), every PATCH/PUT/DELETE will start emitting
- *     409s on optimistic-lock failure. This listener picks them up
- *     automatically — no per-call wiring needed.
+ *     row, pick which version to keep." Threading the same handler
+ *     through ~25 `useMutation` call sites would balloon the diff
+ *     and drift over time.
+ *   - Every If-Match-guarded PATCH/DELETE emits the same 409 shape,
+ *     so new mutations get conflict handling for free.
  *
- * Toast behavior (current):
- *   - Single destructive toast informing the coach their edit was
- *     rejected. No action button — we simply invalidate every
- *     query so the UI refreshes to the server's current version.
- *     The coach's attempted edit is discarded and they can
- *     re-apply on top of the fresh state if they still want it.
+ * Resolution lives in the conflict TRAY (popover on the sync-status
+ * chip), not in the toast: a toast is too small for a field-by-field
+ * "mine vs theirs" diff, auto-dismisses, and can't stack five
+ * conflicts after a long offline drain. The toast is purely a
+ * "something needs your attention — tap the chip" nudge.
  *
- * Why no diff/merge UI:
- *   - This is a youth-baseball coaching tool, not a Git client.
- *     A surprised coach in the dugout needs to know "my change
- *     didn't stick" plus an obvious path forward, not a
- *     three-way merge.
- *   - The deeper Phase 3 work registers per-domain resolvers
- *     (e.g. attendance MERGES across devices instead of conflicting
- *     at all) and may add a richer "pick which version to keep"
- *     two-action toast once there's a known winning UX. This
- *     generic listener is the safe fallback for the long tail of
- *     mutations until then.
+ * Business-state 409s (e.g. `snapshotPlan`'s "No lineup to snapshot",
+ * lineup-generator lock clashes, `idempotency_in_flight` retries) are
+ * ignored here — they already have their own UX. Only the explicit
+ * `row_version_conflict` code triggers the conflict flow.
  *
  * Mounted once inside PersistQueryClientProvider so it shares the
  * same QueryClient instance.
@@ -59,40 +49,37 @@ export function ConflictListener() {
       if (!(err instanceof ApiError)) return;
       if (err.status !== 409) return;
 
-      // Pull a human-readable hint from the error body if the server
-      // bothered to send one (`{ message }` / `{ error }` shape used
-      // by the rest of the API).
       const data = err.data as
-        | { message?: string; error?: string; conflictType?: string }
+        | { error?: string; code?: string; current?: unknown }
         | null;
+      if (data?.code !== ConflictErrorCode.row_version_conflict) return;
 
-      // Gate on a server-emitted marker so we don't toast on
-      // business-state 409s that already have their own UX (e.g.
-      // `snapshotPlan` returns 409 "No lineup to snapshot"; lineup
-      // generator returns 409 when locks conflict). Only when the
-      // server explicitly marks the response as an optimistic-lock
-      // conflict (set by the future If-Match middleware) do we show
-      // the generic "pick which version" toast. Until that ships,
-      // this listener is intentionally dormant — better silent than
-      // wrong.
-      if (data?.conflictType !== "version") return;
+      const mutationKey = event.mutation.options.mutationKey;
+      const op =
+        Array.isArray(mutationKey) && typeof mutationKey[0] === "string"
+          ? mutationKey[0]
+          : "unknown";
 
-      const detail =
-        (typeof data.message === "string" && data.message) ||
-        (typeof data.error === "string" && data.error) ||
-        "Someone else changed this while you were editing.";
+      const current =
+        data.current && typeof data.current === "object"
+          ? (data.current as Record<string, unknown>)
+          : null;
 
-      toast({
-        title: "Edit conflicted",
-        description: `${detail} The latest version has been reloaded.`,
-        variant: "destructive",
-        duration: 12_000,
-        // When per-domain resolvers land they'll register their
-        // own conflict handlers (e.g. attendance MERGES across
-        // devices) that fire before this generic fallback.
-        action: undefined,
+      const conflict = addConflict({
+        op,
+        variables: event.mutation.state.variables,
+        current,
       });
 
+      toast({
+        title: "Someone else changed this",
+        description: `${conflict.label} was updated on another device while you were editing. Tap the sync chip in the header to pick which version to keep.`,
+        variant: "destructive",
+        duration: 12_000,
+      });
+
+      // Refresh reads so the coach compares against the live server
+      // state; the pending edit itself is parked in the conflict tray.
       void qc.invalidateQueries();
     });
     return () => {

@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, pushSubscriptionsTable, type PushSubscriptionRow } from "@workspace/db";
 import { logger } from "./logger";
 
@@ -84,7 +84,10 @@ export async function sendPushToSubscription(
     );
     await db
       .update(pushSubscriptionsTable)
-      .set({ lastUsedAt: new Date() })
+      .set({
+        lastUsedAt: new Date(),
+        rowVersion: sql`${pushSubscriptionsTable.rowVersion} + 1`,
+      })
       .where(eq(pushSubscriptionsTable.id, sub.id));
     return "sent";
   } catch (err) {

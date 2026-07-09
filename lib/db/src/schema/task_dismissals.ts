@@ -8,6 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { gamesTable } from "./games";
+import { rowVersion } from "./row-version";
 
 /**
  * Per-coach dismissal log for derived dashboard tasks ("score not
@@ -26,6 +27,7 @@ export const taskDismissalsTable = pgTable(
   "task_dismissals",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     gameId: integer("game_id")
       .notNull()

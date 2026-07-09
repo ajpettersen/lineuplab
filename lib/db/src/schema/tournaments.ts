@@ -2,6 +2,7 @@ import { pgTable, text, serial, timestamp, integer, jsonb, index } from "drizzle
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import type { RestTier } from "./team_settings";
+import { rowVersion } from "./row-version";
 
 /**
  * Pool-play scenario data attached to a tournament. Coaches upload
@@ -169,6 +170,7 @@ export const tournamentsTable = pgTable(
   "tournaments",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     name: text("name").notNull(),
     startDate: timestamp("start_date", { withTimezone: true }).notNull(),

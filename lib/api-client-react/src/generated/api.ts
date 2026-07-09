@@ -18,6 +18,7 @@ import type {
 
 import type {
   BoxScoreState,
+  ConflictError,
   CreateGameBody,
   CreatePlayerBody,
   CreatePracticeBody,
@@ -422,7 +423,7 @@ export const updatePlayer = async (
 };
 
 export const getUpdatePlayerMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -463,13 +464,13 @@ export type UpdatePlayerMutationResult = NonNullable<
   Awaited<ReturnType<typeof updatePlayer>>
 >;
 export type UpdatePlayerMutationBody = BodyType<UpdatePlayerBody>;
-export type UpdatePlayerMutationError = ErrorType<void>;
+export type UpdatePlayerMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Update a player
  */
 export const useUpdatePlayer = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -506,7 +507,7 @@ export const deletePlayer = async (
 };
 
 export const getDeletePlayerMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -547,13 +548,13 @@ export type DeletePlayerMutationResult = NonNullable<
   Awaited<ReturnType<typeof deletePlayer>>
 >;
 
-export type DeletePlayerMutationError = ErrorType<void>;
+export type DeletePlayerMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Delete a player
  */
 export const useDeletePlayer = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -821,7 +822,7 @@ export const updateGame = async (
 };
 
 export const getUpdateGameMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -862,13 +863,13 @@ export type UpdateGameMutationResult = NonNullable<
   Awaited<ReturnType<typeof updateGame>>
 >;
 export type UpdateGameMutationBody = BodyType<UpdateGameBody>;
-export type UpdateGameMutationError = ErrorType<void>;
+export type UpdateGameMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Update a game (e.g. mark as completed, set score)
  */
 export const useUpdateGame = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -905,7 +906,7 @@ export const deleteGame = async (
 };
 
 export const getDeleteGameMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -946,13 +947,13 @@ export type DeleteGameMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteGame>>
 >;
 
-export type DeleteGameMutationError = ErrorType<void>;
+export type DeleteGameMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Delete a game
  */
 export const useDeleteGame = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1646,7 +1647,7 @@ export const updateTeamSettings = async (
 };
 
 export const getUpdateTeamSettingsMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1687,13 +1688,13 @@ export type UpdateTeamSettingsMutationResult = NonNullable<
   Awaited<ReturnType<typeof updateTeamSettings>>
 >;
 export type UpdateTeamSettingsMutationBody = BodyType<UpdateTeamSettingsBody>;
-export type UpdateTeamSettingsMutationError = ErrorType<void>;
+export type UpdateTeamSettingsMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Update the current coach's team branding
  */
 export const useUpdateTeamSettings = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2062,7 +2063,7 @@ export const updateTournament = async (
 };
 
 export const getUpdateTournamentMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2103,13 +2104,13 @@ export type UpdateTournamentMutationResult = NonNullable<
   Awaited<ReturnType<typeof updateTournament>>
 >;
 export type UpdateTournamentMutationBody = BodyType<UpdateTournamentBody>;
-export type UpdateTournamentMutationError = ErrorType<void>;
+export type UpdateTournamentMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Update a tournament
  */
 export const useUpdateTournament = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2146,7 +2147,7 @@ export const deleteTournament = async (
 };
 
 export const getDeleteTournamentMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2187,13 +2188,13 @@ export type DeleteTournamentMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteTournament>>
 >;
 
-export type DeleteTournamentMutationError = ErrorType<void>;
+export type DeleteTournamentMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Delete a tournament (linked games are detached, not deleted)
  */
 export const useDeleteTournament = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3422,7 +3423,7 @@ export const deleteGamePitchCount = async (
 };
 
 export const getDeleteGamePitchCountMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3463,13 +3464,13 @@ export type DeleteGamePitchCountMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteGamePitchCount>>
 >;
 
-export type DeleteGamePitchCountMutationError = ErrorType<void>;
+export type DeleteGamePitchCountMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Delete a player's pitch count for this game
  */
 export const useDeleteGamePitchCount = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4108,7 +4109,7 @@ export const updatePractice = async (
 };
 
 export const getUpdatePracticeMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4149,13 +4150,13 @@ export type UpdatePracticeMutationResult = NonNullable<
   Awaited<ReturnType<typeof updatePractice>>
 >;
 export type UpdatePracticeMutationBody = BodyType<UpdatePracticeBody>;
-export type UpdatePracticeMutationError = ErrorType<void>;
+export type UpdatePracticeMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Update a practice's metadata or replace its blocks
  */
 export const useUpdatePractice = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4192,7 +4193,7 @@ export const deletePractice = async (
 };
 
 export const getDeletePracticeMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4233,13 +4234,13 @@ export type DeletePracticeMutationResult = NonNullable<
   Awaited<ReturnType<typeof deletePractice>>
 >;
 
-export type DeletePracticeMutationError = ErrorType<void>;
+export type DeletePracticeMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Delete a practice (attendance cascades)
  */
 export const useDeletePractice = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4703,7 +4704,7 @@ export const updatePreferences = async (
 };
 
 export const getUpdatePreferencesMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4744,13 +4745,13 @@ export type UpdatePreferencesMutationResult = NonNullable<
   Awaited<ReturnType<typeof updatePreferences>>
 >;
 export type UpdatePreferencesMutationBody = BodyType<UpdatePreferencesBody>;
-export type UpdatePreferencesMutationError = ErrorType<void>;
+export type UpdatePreferencesMutationError = ErrorType<void | ConflictError>;
 
 /**
  * @summary Update the current coach's preferences
  */
 export const useUpdatePreferences = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | ConflictError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<

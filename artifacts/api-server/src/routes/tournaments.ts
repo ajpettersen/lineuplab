@@ -1,5 +1,12 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
 import { simulatePoolPlay } from "../lib/pool-play-simulator";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -180,7 +187,7 @@ router.get("/tournaments", async (req, res): Promise<void> => {
   );
 });
 
-router.post("/tournaments", async (req, res): Promise<void> => {
+router.post("/tournaments", idempotent("createTournament"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = CreateTournamentBody.safeParse(req.body);
   if (!parsed.success) {
@@ -507,6 +514,11 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdateTournamentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -563,21 +575,23 @@ router.patch("/tournaments/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [updated] = await db
-    .update(tournamentsTable)
-    .set(updates)
-    .where(
-      and(
-        eq(tournamentsTable.id, params.data.id),
-        eq(tournamentsTable.userId, userId),
-      ),
-    )
-    .returning();
-  if (!updated) {
+  const result = await versionedUpdate(db, tournamentsTable, {
+    set: updates,
+    where: and(
+      eq(tournamentsTable.id, params.data.id),
+      eq(tournamentsTable.userId, userId),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Tournament not found" });
     return;
   }
-  res.json(updated as Tournament);
+  res.json(result.row as Tournament);
 });
 
 // Soft delete — sets `deletedAt`. Unlike the previous hard delete, we
@@ -593,18 +607,25 @@ router.delete("/tournaments/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [tournament] = await db
-    .update(tournamentsTable)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(tournamentsTable.id, params.data.id),
-        eq(tournamentsTable.userId, userId),
-        isNull(tournamentsTable.deletedAt),
-      ),
-    )
-    .returning();
-  if (!tournament) {
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
+  const result = await versionedUpdate(db, tournamentsTable, {
+    set: { deletedAt: new Date() },
+    where: and(
+      eq(tournamentsTable.id, params.data.id),
+      eq(tournamentsTable.userId, userId),
+      isNull(tournamentsTable.deletedAt),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Tournament not found" });
     return;
   }
@@ -622,7 +643,7 @@ router.post("/tournaments/:id/restore", async (req, res): Promise<void> => {
   }
   const [tournament] = await db
     .update(tournamentsTable)
-    .set({ deletedAt: null })
+    .set({ deletedAt: null, rowVersion: sql`${tournamentsTable.rowVersion} + 1` })
     .where(
       and(
         eq(tournamentsTable.id, params.data.id),

@@ -1,5 +1,11 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, isNull, gt } from "drizzle-orm";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { clerkClient } from "@clerk/express";
@@ -457,6 +463,11 @@ router.patch("/team/members/:memberUserId", async (req, res): Promise<void> => {
     res.status(400).json({ error: "memberUserId required" });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdateMemberBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -514,19 +525,28 @@ router.patch("/team/members/:memberUserId", async (req, res): Promise<void> => {
   if (body.role !== undefined) updates.role = body.role;
   if (body.permission !== undefined) updates.permission = body.permission;
 
-  const [updated] = await db
-    .update(teamMembershipsTable)
-    .set(updates)
-    .where(eq(teamMembershipsTable.id, existing.id))
-    .returning();
+  const result = await versionedUpdate(db, teamMembershipsTable, {
+    set: updates,
+    where: eq(teamMembershipsTable.id, existing.id),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Coach not on this team" });
+    return;
+  }
 
+  const updated = result.row;
   res.json({
-    id: updated!.id,
-    memberUserId: updated!.memberUserId,
-    displayName: updated!.displayName,
-    role: updated!.role,
-    permission: isPermissionTier(updated!.permission) ? updated!.permission : "view",
-    isOwner: updated!.isOwner,
+    id: updated.id,
+    memberUserId: updated.memberUserId,
+    displayName: updated.displayName,
+    role: updated.role,
+    permission: isPermissionTier(updated.permission) ? updated.permission : "view",
+    isOwner: updated.isOwner,
   });
 });
 

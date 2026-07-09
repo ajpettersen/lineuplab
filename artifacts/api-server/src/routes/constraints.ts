@@ -1,5 +1,13 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+  versionedDelete,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
 import { db, lineupConstraintsTable, playersTable } from "@workspace/db";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -44,7 +52,7 @@ router.get("/constraints", async (req, res): Promise<void> => {
   res.json(constraints);
 });
 
-router.post("/constraints", async (req, res): Promise<void> => {
+router.post("/constraints", idempotent("createConstraint"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = CreateConstraintSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -69,27 +77,45 @@ router.post("/constraints", async (req, res): Promise<void> => {
 router.patch("/constraints/:id", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const id = parseInt(req.params.id);
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const { active } = req.body;
-  const [updated] = await db
-    .update(lineupConstraintsTable)
-    .set({ active })
-    .where(and(eq(lineupConstraintsTable.id, id), eq(lineupConstraintsTable.userId, userId)))
-    .returning();
-  if (!updated) {
+  const result = await versionedUpdate(db, lineupConstraintsTable, {
+    set: { active },
+    where: and(eq(lineupConstraintsTable.id, id), eq(lineupConstraintsTable.userId, userId)),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Constraint not found" });
     return;
   }
-  res.json(updated);
+  res.json(result.row);
 });
 
 router.delete("/constraints/:id", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const id = parseInt(req.params.id);
-  const result = await db
-    .delete(lineupConstraintsTable)
-    .where(and(eq(lineupConstraintsTable.id, id), eq(lineupConstraintsTable.userId, userId)))
-    .returning();
-  if (result.length === 0) {
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
+  const result = await versionedDelete(db, lineupConstraintsTable, {
+    where: and(eq(lineupConstraintsTable.id, id), eq(lineupConstraintsTable.userId, userId)),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Constraint not found" });
     return;
   }

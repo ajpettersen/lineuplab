@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import { idempotent } from "../middlewares/idempotency";
 import { and, eq, inArray, isNull, ne, isNotNull, or, gte, sql } from "drizzle-orm";
 import { db, playersTable, gamesTable, lineupEntriesTable, lineupConstraintsTable, lineupLocksTable, teamSettingsTable } from "@workspace/db";
 import { getBattingTotalsForPlayers } from "../lib/batting-totals";
@@ -326,7 +327,7 @@ router.post("/games/:id/lineup/generate", async (req, res): Promise<void> => {
   res.json(entries);
 });
 
-router.post("/games/:id/lineup/save", async (req, res): Promise<void> => {
+router.post("/games/:id/lineup/save", idempotent("saveLineup"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = SaveLineupParams.safeParse(req.params);
   if (!params.success) {

@@ -11,6 +11,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { gamesTable } from "./games";
 import { playersTable } from "./players";
+import { rowVersion } from "./row-version";
 
 /**
  * One row per (game, player) the coach has tracked pitches for. The
@@ -37,6 +38,7 @@ export const pitchCountsTable = pgTable(
   "pitch_counts",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     gameId: integer("game_id")
       .notNull()

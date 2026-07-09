@@ -2,6 +2,7 @@ import { pgTable, text, serial, timestamp, integer, index, jsonb, uniqueIndex, b
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { rowVersion } from "./row-version";
 
 // Snapshot of a single lineup_entries row, captured before the coach overrides
 // the saved lineup with a post-game photo. We freeze the player NAME (not just
@@ -18,6 +19,7 @@ export const gamesTable = pgTable(
   "games",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     opponent: text("opponent").notNull(),
     gameDate: timestamp("game_date", { withTimezone: true }).notNull(),

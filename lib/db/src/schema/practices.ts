@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { rowVersion } from "./row-version";
 
 /**
  * One coach-authored practice plan. The plan blocks (warmup, drills,
@@ -79,6 +80,7 @@ export const practicesTable = pgTable(
   "practices",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     /** Scheduled start of the practice (date + time). */
     date: timestamp("date", { withTimezone: true }).notNull(),

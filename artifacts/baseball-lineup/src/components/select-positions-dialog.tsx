@@ -20,6 +20,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Settings2 } from "lucide-react";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 
 const STANDARD_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"] as const;
 const TEN_PLAYER_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "LCF", "RCF", "RF"] as const;
@@ -67,26 +69,37 @@ export function SelectPositionsDialog() {
     if (open) setMode(currentMode);
   }, [open, currentMode]);
 
-  const onSave = async () => {
+  const onSave = () => {
     const positions =
       mode === "ten" ? [...TEN_PLAYER_POSITIONS] : [...STANDARD_POSITIONS];
-    try {
-      await update.mutateAsync({ data: { activeFieldPositions: positions } });
-      toast({
-        title: "Positions updated",
-        description:
-          mode === "ten"
-            ? "Lineups now use a 10-player field (LCF + RCF)."
-            : "Lineups now use the standard 9 positions (CF).",
-      });
-      setOpen(false);
-    } catch (err) {
-      toast({
-        title: "Couldn't save positions",
-        description: err instanceof Error ? err.message : "Please try again.",
-        variant: "destructive",
-      });
-    }
+    update.mutate(
+      // Pin to the settings row version so a concurrent edit from another
+      // device 409s into the conflict tray instead of silently clobbering.
+      withSync({ data: { activeFieldPositions: positions } }, data?.rowVersion),
+      {
+        onSuccess: () => {
+          toast({
+            title: "Positions updated",
+            description:
+              mode === "ten"
+                ? "Lineups now use a 10-player field (LCF + RCF)."
+                : "Lineups now use the standard 9 positions (CF).",
+          });
+        },
+        onError: (err) => {
+          // 409 conflicts are handled by the global ConflictListener.
+          if (isVersionConflict(err)) return;
+          toast({
+            title: "Couldn't save positions",
+            description: err instanceof Error ? err.message : "Please try again.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+    // Close immediately (not in onSuccess): while offline the mutation
+    // pauses and onSuccess won't fire until reconnect.
+    setOpen(false);
   };
 
   return (

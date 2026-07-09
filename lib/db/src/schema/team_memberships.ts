@@ -9,6 +9,7 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { rowVersion } from "./row-version";
 
 /**
  * Multi-coach access. A "team" is identified by the head coach's Clerk
@@ -46,6 +47,7 @@ export const teamMembershipsTable = pgTable(
   "team_memberships",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     ownerUserId: text("owner_user_id").notNull(),
     memberUserId: text("member_user_id").notNull(),
     memberEmail: text("member_email"),

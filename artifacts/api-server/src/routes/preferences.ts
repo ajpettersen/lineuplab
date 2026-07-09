@@ -1,5 +1,11 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, userPreferencesTable, type UserPreferences } from "@workspace/db";
@@ -43,6 +49,11 @@ router.get("/preferences", async (req, res): Promise<void> => {
 
 router.patch("/preferences", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdateBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -53,12 +64,20 @@ router.patch("/preferences", async (req, res): Promise<void> => {
   for (const [k, v] of Object.entries(parsed.data)) {
     if (v !== undefined) updates[k] = v;
   }
-  const [updated] = await db
-    .update(userPreferencesTable)
-    .set(updates)
-    .where(eq(userPreferencesTable.userId, userId))
-    .returning();
-  res.json(updated);
+  const result = await versionedUpdate(db, userPreferencesTable, {
+    set: updates,
+    where: eq(userPreferencesTable.userId, userId),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Preferences not found" });
+    return;
+  }
+  res.json(result.row);
 });
 
 export default router;

@@ -1,6 +1,13 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
-import { and, eq, isNull } from "drizzle-orm";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import multer from "multer";
 import { z } from "zod";
 import {
@@ -161,7 +168,7 @@ router.post("/players/extract", upload.single("file"), async (req, res): Promise
   res.json({ extracted: result.players });
 });
 
-router.post("/players/bulk", async (req, res): Promise<void> => {
+router.post("/players/bulk", idempotent("bulkImportPlayers"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = BulkBodySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -253,6 +260,7 @@ router.post("/players/bulk", async (req, res): Promise<void> => {
             preferredPositions: mergedPositions,
             canPitch: mergedCanPitch,
             eligiblePositions: deriveEligible(mergedCanPitch),
+            rowVersion: sql`${playersTable.rowVersion} + 1`,
           })
           .where(
             and(
@@ -303,7 +311,7 @@ router.get("/players", async (req, res): Promise<void> => {
   res.json(players);
 });
 
-router.post("/players", async (req, res): Promise<void> => {
+router.post("/players", idempotent("createPlayer"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = CreatePlayerBody.safeParse(req.body);
   if (!parsed.success) {
@@ -369,6 +377,11 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdatePlayerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -412,16 +425,23 @@ router.patch("/players/:id", async (req, res): Promise<void> => {
   const effectiveCanPitch = d.canPitch ?? existing.canPitch;
   updates.eligiblePositions = deriveEligible(effectiveCanPitch);
 
-  const [player] = await db
-    .update(playersTable)
-    .set(updates)
-    .where(and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)))
-    .returning();
-  if (!player) {
+  const result = await versionedUpdate(db, playersTable, {
+    set: updates,
+    where: and(
+      eq(playersTable.id, params.data.id),
+      eq(playersTable.userId, userId),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Player not found" });
     return;
   }
-  res.json(player);
+  res.json(result.row);
 });
 
 // Soft delete — sets `deletedAt` so the trashed player can be restored
@@ -436,18 +456,25 @@ router.delete("/players/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [player] = await db
-    .update(playersTable)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(playersTable.id, params.data.id),
-        eq(playersTable.userId, userId),
-        isNull(playersTable.deletedAt),
-      ),
-    )
-    .returning();
-  if (!player) {
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
+  const result = await versionedUpdate(db, playersTable, {
+    set: { deletedAt: new Date() },
+    where: and(
+      eq(playersTable.id, params.data.id),
+      eq(playersTable.userId, userId),
+      isNull(playersTable.deletedAt),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Player not found" });
     return;
   }
@@ -467,7 +494,7 @@ router.post("/players/:id/restore", async (req, res): Promise<void> => {
   }
   const [player] = await db
     .update(playersTable)
-    .set({ deletedAt: null })
+    .set({ deletedAt: null, rowVersion: sql`${playersTable.rowVersion} + 1` })
     .where(
       and(eq(playersTable.id, params.data.id), eq(playersTable.userId, userId)),
     )

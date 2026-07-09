@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, historicalFieldingTable, playersTable } from "@workspace/db";
+import { idempotent } from "../middlewares/idempotency";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
@@ -55,7 +56,7 @@ router.get("/history/fielding", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-router.post("/history/fielding", async (req, res): Promise<void> => {
+router.post("/history/fielding", idempotent("importHistoricalFielding"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = ImportBodySchema.safeParse(req.body);
   if (!parsed.success) {

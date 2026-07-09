@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
+import { withSync } from "@/lib/sync-envelope";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -707,9 +708,13 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
                       },
                     );
                   } else if (t.gameId != null && t.type !== "tournament_network") {
-                    dismiss.mutate({
-                      data: { gameId: t.gameId, taskType: t.type },
-                    });
+                    // withSync stamps an Idempotency-Key so a queued
+                    // dismiss replays exactly-once after an offline reload.
+                    dismiss.mutate(
+                      withSync({
+                        data: { gameId: t.gameId, taskType: t.type },
+                      }),
+                    );
                   }
                 }}
                 disabled={dismiss.isPending || dismissTournamentNetwork.isPending}

@@ -33,6 +33,8 @@ import {
 import { ArrowLeft, Loader2, Plus, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 
 function todayISO() {
@@ -129,18 +131,20 @@ export default function NewGame() {
       toast({ title: "End date can't be before start date", variant: "destructive" });
       return;
     }
-    createTournament.mutate({
-      data: {
-        name: trimmed,
-        startDate: newTournamentStart,
-        endDate: newTournamentEnd,
-        location: newTournamentLocation.trim() || null,
-        notes: null,
-        dailyPitchMax: null,
-        tournamentPitchMax: null,
-        restTiers: null,
-      },
-    });
+    createTournament.mutate(
+      withSync({
+        data: {
+          name: trimmed,
+          startDate: newTournamentStart,
+          endDate: newTournamentEnd,
+          location: newTournamentLocation.trim() || null,
+          notes: null,
+          dailyPitchMax: null,
+          tournamentPitchMax: null,
+          restTiers: null,
+        },
+      }),
+    );
   };
 
   // Apply the coach's preferred default once preferences load,
@@ -197,7 +201,7 @@ export default function NewGame() {
           ? null
           : gameType;
     createGame.mutate(
-      {
+      withSync({
         data: {
           opponent: opponent.trim(),
           gameDate: new Date(gameDate).toISOString(),
@@ -209,7 +213,7 @@ export default function NewGame() {
             ? { tournamentId: autoMatchedTournamentId }
             : {}),
         },
-      },
+      }),
       {
         onSuccess: (game) => {
           qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
@@ -229,7 +233,10 @@ export default function NewGame() {
           const linkTournamentId = selectedTournamentId ?? tournamentIdFromQuery;
           if (linkTournamentId != null && gameType === "tournament") {
             updateGame.mutate(
-              { id: game.id, data: { tournamentId: linkTournamentId } },
+              withSync(
+                { id: game.id, data: { tournamentId: linkTournamentId } },
+                game.rowVersion,
+              ),
               {
                 onSuccess: () => {
                   qc.invalidateQueries({ queryKey: getListGamesQueryKey() });
@@ -244,7 +251,14 @@ export default function NewGame() {
                     navigate(`/games/${game.id}`);
                   }
                 },
-                onError: () => {
+                onError: (err) => {
+                  // 409 conflicts are handled by the global ConflictListener
+                  // (toast + tray) — the game itself was created fine, so
+                  // drop the coach on it without a duplicate "failed" toast.
+                  if (isVersionConflict(err)) {
+                    navigate(`/games/${game.id}`);
+                    return;
+                  }
                   // Game was created successfully; tournament link
                   // failed. Surface the partial success and drop the
                   // coach on the game page so they can re-link manually.

@@ -1,6 +1,12 @@
 import { useEffect, useRef, lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
-import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  MutationCache,
+  useQueryClient,
+  type MutationOptions,
+  type MutationState,
+} from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import {
   queryPersister,
@@ -101,7 +107,40 @@ function RouteFallback() {
 //
 // Long-lived background data (team context, admin lookups, per-player
 // game logs) sets its own staleTime locally and overrides this default.
+/**
+ * MutationCache that prefers the mutationFn registered via
+ * `setMutationDefaults` (see lib/mutation-defaults.ts) over the one the
+ * generated Orval hooks bake in.
+ *
+ * Why: the generated hooks ALWAYS supply their own `mutationFn`, and
+ * React Query's option merge lets hook options win over defaults — so
+ * the sync-aware default fn (the one that turns `vars._sync` into
+ * `Idempotency-Key` / `If-Match` headers) would only ever run for
+ * REPLAYED paused mutations, never for live saves. That silently
+ * downgraded every live edit to last-writer-wins. Overriding `build`
+ * makes live and replayed mutations take the identical code path.
+ */
+class SyncAwareMutationCache extends MutationCache {
+  override build<TData, TError, TVariables, TContext>(
+    client: QueryClient,
+    options: MutationOptions<TData, TError, TVariables, TContext>,
+    state?: MutationState<TData, TError, TVariables, TContext>,
+  ) {
+    if (options.mutationKey) {
+      const defaults = client.getMutationDefaults(options.mutationKey);
+      if (defaults.mutationFn) {
+        options = {
+          ...options,
+          mutationFn: defaults.mutationFn as typeof options.mutationFn,
+        };
+      }
+    }
+    return super.build(client, options, state);
+  }
+}
+
 const queryClient = new QueryClient({
+  mutationCache: new SyncAwareMutationCache(),
   defaultOptions: {
     queries: {
       gcTime: PERSIST_MAX_AGE,

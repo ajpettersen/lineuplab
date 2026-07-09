@@ -1,5 +1,12 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
 import { and, eq, gt, isNull, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -145,7 +152,7 @@ router.get("/games/with-lineups", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-router.post("/games", async (req, res): Promise<void> => {
+router.post("/games", idempotent("createGame"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = CreateGameBody.safeParse(req.body);
   if (!parsed.success) {
@@ -309,7 +316,7 @@ router.post("/games/import-ical/preview", async (req, res): Promise<void> => {
 });
 
 // Bulk create games from iCal import (confirmed selection)
-router.post("/games/import-ical/confirm", async (req, res): Promise<void> => {
+router.post("/games/import-ical/confirm", idempotent("confirmICalImport"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const parsed = ConfirmICalBodySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -420,6 +427,11 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdateGameBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -502,9 +514,17 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
       return "INVALID_CHAMPIONSHIP" as const;
     }
 
+    // Optimistic-concurrency check: when the client pinned a version
+    // (offline-queued edit), refuse to clobber a row another device
+    // changed in the meantime. `existing` was read inside this same
+    // transaction, so the compare-then-update is race-free.
+    if (ifm.version != null && existing.rowVersion !== ifm.version) {
+      return { conflict: existing } as const;
+    }
+
     const [updated] = await tx
       .update(gamesTable)
-      .set(updates)
+      .set({ ...updates, rowVersion: sql`${gamesTable.rowVersion} + 1` })
       .where(
         and(
           eq(gamesTable.id, params.data.id),
@@ -556,6 +576,10 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
     });
     return;
   }
+  if (game != null && typeof game === "object" && "conflict" in game) {
+    sendConflict(res, game.conflict);
+    return;
+  }
   if (!game) {
     res.status(404).json({ error: "Game not found" });
     return;
@@ -566,7 +590,7 @@ router.patch("/games/:id", async (req, res): Promise<void> => {
 // Snapshot the currently-saved lineup into games.plan_snapshot. Used by the
 // mobile photo-override flow when the coach picks "Keep original as plan"
 // before replacing the lineup with what actually happened in the game.
-router.post("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
+router.post("/games/:id/snapshot-plan", idempotent("snapshotPlan"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = GetGameParams.safeParse(req.params);
   if (!params.success) {
@@ -615,7 +639,7 @@ router.post("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
   }
   const [updated] = await db
     .update(gamesTable)
-    .set({ planSnapshot: snapshot })
+    .set({ planSnapshot: snapshot, rowVersion: sql`${gamesTable.rowVersion} + 1` })
     .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
     .returning();
   res.json(updated);
@@ -632,7 +656,7 @@ router.delete("/games/:id/snapshot-plan", async (req, res): Promise<void> => {
   }
   const [updated] = await db
     .update(gamesTable)
-    .set({ planSnapshot: null })
+    .set({ planSnapshot: null, rowVersion: sql`${gamesTable.rowVersion} + 1` })
     .where(and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)))
     .returning();
   if (!updated) {
@@ -653,18 +677,25 @@ router.delete("/games/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [game] = await db
-    .update(gamesTable)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(gamesTable.id, params.data.id),
-        eq(gamesTable.userId, userId),
-        isNull(gamesTable.deletedAt),
-      ),
-    )
-    .returning();
-  if (!game) {
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
+  const result = await versionedUpdate(db, gamesTable, {
+    set: { deletedAt: new Date() },
+    where: and(
+      eq(gamesTable.id, params.data.id),
+      eq(gamesTable.userId, userId),
+      isNull(gamesTable.deletedAt),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Game not found" });
     return;
   }
@@ -682,7 +713,7 @@ router.post("/games/:id/restore", async (req, res): Promise<void> => {
   }
   const [game] = await db
     .update(gamesTable)
-    .set({ deletedAt: null })
+    .set({ deletedAt: null, rowVersion: sql`${gamesTable.rowVersion} + 1` })
     .where(
       and(eq(gamesTable.id, params.data.id), eq(gamesTable.userId, userId)),
     )

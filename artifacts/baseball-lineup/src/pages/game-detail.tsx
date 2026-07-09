@@ -88,6 +88,8 @@ import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, Cli
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 import { AiAssistantPanel } from "@/components/game-detail/ai-assistant-panel";
 import { type Entry } from "@/components/game-detail/types";
 import {
@@ -1405,7 +1407,10 @@ export default function GameDetail() {
     opts?: { silent?: boolean },
   ) => {
     saveLineup.mutate(
-      {
+      // saveLineup REPLACES all entries for the game server-side, so a
+      // queued offline save replays idempotently — withSync stamps an
+      // Idempotency-Key (no rowVersion pin needed for a full replace).
+      withSync({
         id,
         data: {
           entries: lineupToSave.map((e) => ({
@@ -1415,7 +1420,7 @@ export default function GameDetail() {
             battingOrder: e.battingOrder ?? null,
           })),
         },
-      },
+      }),
       {
         onSuccess: (savedEntries) => {
           // Jump the lineup cache straight to the saved state. The
@@ -1891,14 +1896,19 @@ export default function GameDetail() {
 
   const handleMarkComplete = () => {
     updateGame.mutate(
-      {
-        id,
-        data: {
-          status: "completed",
-          ourScore: parseInt(ourScore) || 0,
-          opponentScore: parseInt(opponentScore) || 0,
+      // Pin to the game row's current version so a concurrent edit on
+      // another device surfaces a conflict instead of being overwritten.
+      withSync(
+        {
+          id,
+          data: {
+            status: "completed",
+            ourScore: parseInt(ourScore) || 0,
+            opponentScore: parseInt(opponentScore) || 0,
+          },
         },
-      },
+        game?.rowVersion,
+      ),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
@@ -1911,11 +1921,17 @@ export default function GameDetail() {
           qc.invalidateQueries({ queryKey: getGetSeasonStatsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetPlayerStatsQueryKey() });
           toast({ title: "Game marked as completed" });
-          setCompleteOpen(false);
         },
-        onError: (err) => toastError(toast, "Failed to update game", err),
+        onError: (err) => {
+          // 409 conflicts are handled by the global ConflictListener.
+          if (isVersionConflict(err)) return;
+          toastError(toast, "Failed to update game", err);
+        },
       }
     );
+    // Close the dialog immediately — while offline the mutation pauses
+    // and onSuccess won't fire until reconnect.
+    setCompleteOpen(false);
   };
 
   /**
@@ -1936,7 +1952,7 @@ export default function GameDetail() {
     });
     if (!ok) return;
     updateGame.mutate(
-      { id, data: { innings: removed - 1 } },
+      withSync({ id, data: { innings: removed - 1 } }, game?.rowVersion),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
@@ -1953,7 +1969,11 @@ export default function GameDetail() {
             description: `Game is now ${removed - 1} inning${removed - 1 === 1 ? "" : "s"} long.`,
           });
         },
-        onError: (err) => toastError(toast, "Failed to remove inning", err),
+        onError: (err) => {
+          // 409 conflicts are handled by the global ConflictListener.
+          if (isVersionConflict(err)) return;
+          toastError(toast, "Failed to remove inning", err);
+        },
       },
     );
   };
@@ -1962,7 +1982,7 @@ export default function GameDetail() {
     const last = parseInt(endEarlyLastInning);
     if (!Number.isFinite(last) || last < 1 || last >= (game?.innings ?? 0)) return;
     updateGame.mutate(
-      { id, data: { innings: last } },
+      withSync({ id, data: { innings: last } }, game?.rowVersion),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetGameQueryKey(id) });
@@ -1977,12 +1997,18 @@ export default function GameDetail() {
           setPreviewLineup(null);
           setSelectedEntryId(null);
           toast({ title: `Game shortened to ${last} inning${last === 1 ? "" : "s"}` });
-          setEndEarlyOpen(false);
-          setEndEarlyLastInning("");
         },
-        onError: (err) => toastError(toast, "Failed to shorten game", err),
+        onError: (err) => {
+          // 409 conflicts are handled by the global ConflictListener.
+          if (isVersionConflict(err)) return;
+          toastError(toast, "Failed to shorten game", err);
+        },
       },
     );
+    // Close + reset the dialog immediately so the flow works offline
+    // (the paused mutation's onSuccess won't fire until reconnect).
+    setEndEarlyOpen(false);
+    setEndEarlyLastInning("");
   };
 
   const innings = game?.innings ?? 6;

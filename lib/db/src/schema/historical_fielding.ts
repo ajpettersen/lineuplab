@@ -1,8 +1,10 @@
 import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
 import { playersTable } from "./players";
+import { rowVersion } from "./row-version";
 
 export const historicalFieldingTable = pgTable("historical_fielding", {
   id: serial("id").primaryKey(),
+  rowVersion: rowVersion(),
   playerId: integer("player_id")
     .notNull()
     .references(() => playersTable.id, { onDelete: "cascade" }),

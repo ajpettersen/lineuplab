@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { safeFormatDate } from "@/lib/tournament-date";
+import { withSync } from "@/lib/sync-envelope";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -117,7 +118,9 @@ export function AddGameToTournamentDialog({
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      updateGame.mutate({ id: g.id, data: { tournamentId } });
+                      updateGame.mutate(
+                        withSync({ id: g.id, data: { tournamentId } }, g.rowVersion),
+                      );
                     }}
                     disabled={updateGame.isPending}
                     data-testid={`button-link-game-${g.id}`}

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { Readable } from "stream";
@@ -580,6 +580,7 @@ router.post("/games/:id/box-score", async (req, res): Promise<void> => {
             pitches: p.pitches,
             notes: p.notes ?? null,
             recordedAt: importedAt,
+            rowVersion: sql`${pitchCountsTable.rowVersion} + 1`,
           },
         });
     }
@@ -624,6 +625,7 @@ router.post("/games/:id/box-score", async (req, res): Promise<void> => {
         if (!nextSet.has(p)) await deleteBoxScoreImage(p);
       }
     }
+    gameUpdate.rowVersion = sql`${gamesTable.rowVersion} + 1`;
     await tx.update(gamesTable).set(gameUpdate).where(eq(gamesTable.id, id));
   });
 
@@ -684,7 +686,11 @@ router.delete("/games/:id/box-score", async (req, res): Promise<void> => {
   const priorImagePaths = game.boxScoreImagePaths ?? [];
   await db
     .update(gamesTable)
-    .set({ boxScoreImportedAt: null, boxScoreImagePaths: null })
+    .set({
+      boxScoreImportedAt: null,
+      boxScoreImagePaths: null,
+      rowVersion: sql`${gamesTable.rowVersion} + 1`,
+    })
     .where(eq(gamesTable.id, id));
   res.json({
     gameId: id,
@@ -770,6 +776,7 @@ router.post(
               pitches: p.pitches,
               notes: p.notes ?? null,
               recordedAt: importedAt,
+              rowVersion: sql`${pitchCountsTable.rowVersion} + 1`,
             },
           });
       }
@@ -788,6 +795,7 @@ router.post(
         }
         upd.boxScoreImagePaths = safe.length > 0 ? safe : null;
       }
+      upd.rowVersion = sql`${gamesTable.rowVersion} + 1`;
       await tx.update(gamesTable).set(upd).where(eq(gamesTable.id, id));
     });
     res.json({ gameId: id, restoredLines: safeLines.length, restoredPitchers: safePitches.length });

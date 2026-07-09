@@ -23,3 +23,5 @@ export * from "./ai_usage_log";
 export * from "./ai_assistant_questions";
 export * from "./coach_activity_pings";
 export * from "./push_subscriptions";
+export * from "./idempotency_keys";
+export * from "./row-version";

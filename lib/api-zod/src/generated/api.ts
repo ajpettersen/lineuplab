@@ -19,6 +19,12 @@ export const HealthCheckResponse = zod.object({
  * @summary List all players
  */
 export const ListPlayersResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   name: zod
     .string()
@@ -67,6 +73,12 @@ export const GetPlayerParams = zod.object({
 });
 
 export const GetPlayerResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   name: zod
     .string()
@@ -111,6 +123,12 @@ export const UpdatePlayerBody = zod.object({
 });
 
 export const UpdatePlayerResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   name: zod
     .string()
@@ -150,6 +168,12 @@ export const listGamesResponseCompetitivenessMin = 0;
 export const listGamesResponseCompetitivenessMax = 100;
 
 export const ListGamesResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   opponent: zod.string(),
   gameDate: zod.coerce.date(),
@@ -288,6 +312,12 @@ export const getGameResponseCompetitivenessMin = 0;
 export const getGameResponseCompetitivenessMax = 100;
 
 export const GetGameResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   opponent: zod.string(),
   gameDate: zod.coerce.date(),
@@ -445,6 +475,12 @@ export const updateGameResponseCompetitivenessMin = 0;
 export const updateGameResponseCompetitivenessMax = 100;
 
 export const UpdateGameResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   opponent: zod.string(),
   gameDate: zod.coerce.date(),
@@ -557,6 +593,12 @@ export const snapshotPlanResponseCompetitivenessMin = 0;
 export const snapshotPlanResponseCompetitivenessMax = 100;
 
 export const SnapshotPlanResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   opponent: zod.string(),
   gameDate: zod.coerce.date(),
@@ -661,6 +703,12 @@ export const clearPlanSnapshotResponseCompetitivenessMin = 0;
 export const clearPlanSnapshotResponseCompetitivenessMax = 100;
 
 export const ClearPlanSnapshotResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   opponent: zod.string(),
   gameDate: zod.coerce.date(),
@@ -762,6 +810,12 @@ export const GetGameLineupParams = zod.object({
 });
 
 export const GetGameLineupResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   gameId: zod.number(),
   playerId: zod.number(),
@@ -814,6 +868,12 @@ export const GenerateLineupBody = zod.object({
 });
 
 export const GenerateLineupResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   gameId: zod.number(),
   playerId: zod.number(),
@@ -845,6 +905,12 @@ export const SaveLineupBody = zod.object({
 });
 
 export const SaveLineupResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   gameId: zod.number(),
   playerId: zod.number(),
@@ -899,6 +965,12 @@ export const getTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
 export const getTeamSettingsResponseDefaultRestTiersTwoItemDaysRestMin = 0;
 
 export const GetTeamSettingsResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
@@ -1099,6 +1171,12 @@ export const updateTeamSettingsResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
 export const updateTeamSettingsResponseDefaultRestTiersTwoItemDaysRestMin = 0;
 
 export const UpdateTeamSettingsResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
@@ -1208,6 +1286,12 @@ export const completeOnboardingResponseDefaultRestTiersTwoItemMaxPitchesMin = 0;
 export const completeOnboardingResponseDefaultRestTiersTwoItemDaysRestMin = 0;
 
 export const CompleteOnboardingResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   userId: zod.string(),
   teamName: zod.string(),
   teamShortName: zod.string(),
@@ -1318,6 +1402,12 @@ export const listTournamentsResponseOneRestTiersTwoItemDaysRestMin = 0;
 
 export const ListTournamentsResponseItem = zod
   .object({
+    rowVersion: zod
+      .number()
+      .optional()
+      .describe(
+        "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+      ),
     id: zod.number(),
     name: zod.string(),
     startDate: zod.coerce.date(),
@@ -1519,6 +1609,12 @@ export const getTournamentResponseTwoPoolPlayTwoByeCountMax = 8;
 
 export const GetTournamentResponse = zod
   .object({
+    rowVersion: zod
+      .number()
+      .optional()
+      .describe(
+        "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+      ),
     id: zod.number(),
     name: zod.string(),
     startDate: zod.coerce.date(),
@@ -1591,6 +1687,12 @@ export const GetTournamentResponse = zod
     zod.object({
       games: zod.array(
         zod.object({
+          rowVersion: zod
+            .number()
+            .optional()
+            .describe(
+              "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+            ),
           id: zod.number(),
           opponent: zod.string(),
           gameDate: zod.coerce.date(),
@@ -2077,6 +2179,12 @@ export const updateTournamentResponseRestTiersTwoItemMaxPitchesMin = 0;
 export const updateTournamentResponseRestTiersTwoItemDaysRestMin = 0;
 
 export const UpdateTournamentResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   name: zod.string(),
   startDate: zod.coerce.date(),
@@ -3029,6 +3137,12 @@ export const GetGamePitchCountsParams = zod.object({
 export const getGamePitchCountsResponsePitchesMin = 0;
 
 export const GetGamePitchCountsResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   gameId: zod.number(),
   playerId: zod.number(),
@@ -3062,6 +3176,12 @@ export const UpsertGamePitchCountBody = zod.object({
 export const upsertGamePitchCountResponsePitchesMin = 0;
 
 export const UpsertGamePitchCountResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   gameId: zod.number(),
   playerId: zod.number(),
@@ -3123,6 +3243,12 @@ export const GetBoxScoreResponse = zod
     ),
     pitching: zod.array(
       zod.object({
+        rowVersion: zod
+          .number()
+          .optional()
+          .describe(
+            "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+          ),
         id: zod.number(),
         gameId: zod.number(),
         playerId: zod.number(),
@@ -3306,6 +3432,12 @@ export const listPracticesResponseOneBlocksItemDurationMinutesMax = 240;
 
 export const ListPracticesResponseItem = zod
   .object({
+    rowVersion: zod
+      .number()
+      .optional()
+      .describe(
+        "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+      ),
     id: zod.number(),
     date: zod.coerce.date(),
     durationMinutes: zod.number(),
@@ -3421,6 +3553,12 @@ export const getPracticeResponseOneBlocksItemDurationMinutesMax = 240;
 
 export const GetPracticeResponse = zod
   .object({
+    rowVersion: zod
+      .number()
+      .optional()
+      .describe(
+        "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+      ),
     id: zod.number(),
     date: zod.coerce.date(),
     durationMinutes: zod.number(),
@@ -3485,6 +3623,12 @@ export const GetPracticeResponse = zod
     zod.object({
       attendance: zod.array(
         zod.object({
+          rowVersion: zod
+            .number()
+            .optional()
+            .describe(
+              "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+            ),
           id: zod.number(),
           practiceId: zod.number(),
           playerId: zod.number(),
@@ -3587,6 +3731,12 @@ export const updatePracticeResponseBlocksItemOrderIndexMin = 0;
 export const updatePracticeResponseBlocksItemDurationMinutesMax = 240;
 
 export const UpdatePracticeResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   date: zod.coerce.date(),
   durationMinutes: zod.number(),
@@ -3673,6 +3823,12 @@ export const ReplacePracticeAttendanceBody = zod.object({
 });
 
 export const ReplacePracticeAttendanceResponseItem = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   id: zod.number(),
   practiceId: zod.number(),
   playerId: zod.number(),
@@ -3851,6 +4007,12 @@ export const getPreferencesResponseDefaultMaxInningsBenchMin = 0;
 export const getPreferencesResponseDefaultMaxInningsBenchMax = 15;
 
 export const GetPreferencesResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   userId: zod.string(),
   defaultInnings: zod
     .number()
@@ -3941,6 +4103,12 @@ export const updatePreferencesResponseDefaultMaxInningsBenchMin = 0;
 export const updatePreferencesResponseDefaultMaxInningsBenchMax = 15;
 
 export const UpdatePreferencesResponse = zod.object({
+  rowVersion: zod
+    .number()
+    .optional()
+    .describe(
+      "Optimistic-concurrency version, incremented on every update. Send back in If-Match on PATCH\/DELETE to detect conflicts.",
+    ),
   userId: zod.string(),
   defaultInnings: zod
     .number()

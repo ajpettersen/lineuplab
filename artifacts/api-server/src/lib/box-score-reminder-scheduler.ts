@@ -98,7 +98,10 @@ export async function runBoxScoreReminderTickOnce(): Promise<void> {
       //    worker grabbed it) — skip.
       const claimed = await db
         .update(gamesTable)
-        .set({ boxScoreReminderSentAt: new Date() })
+        .set({
+          boxScoreReminderSentAt: new Date(),
+          rowVersion: sql`${gamesTable.rowVersion} + 1`,
+        })
         .where(
           and(
             eq(gamesTable.id, c.gameId),

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, pushSubscriptionsTable } from "@workspace/db";
 import { getVapidPublicKey, pushEnabled } from "../lib/push";
@@ -67,6 +67,7 @@ router.post("/push/subscribe", async (req, res) => {
         p256dh: keys.p256dh,
         auth: keys.auth,
         userAgent: userAgent ?? null,
+        rowVersion: sql`${pushSubscriptionsTable.rowVersion} + 1`,
       },
     });
 

@@ -1,5 +1,11 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
 import { z } from "zod";
 import { clerkClient } from "@clerk/express";
 import {
@@ -30,6 +36,11 @@ router.put("/coach-profile", async (req, res): Promise<void> => {
   const userId = req.userId!;
   const ownerUserId = req.ownerUserId!;
 
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const parsed = UpdateProfileBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
@@ -54,21 +65,23 @@ router.put("/coach-profile", async (req, res): Promise<void> => {
     await ensureOwnerMembership(userId, email);
   }
 
-  const [updated] = await db
-    .update(teamMembershipsTable)
-    .set({
+  const result = await versionedUpdate(db, teamMembershipsTable, {
+    set: {
       displayName,
       role: role ?? null,
-    })
-    .where(
-      and(
-        eq(teamMembershipsTable.ownerUserId, ownerUserId),
-        eq(teamMembershipsTable.memberUserId, userId),
-      ),
-    )
-    .returning();
+    },
+    where: and(
+      eq(teamMembershipsTable.ownerUserId, ownerUserId),
+      eq(teamMembershipsTable.memberUserId, userId),
+    ),
+    ifMatch: ifm.version,
+  });
 
-  if (!updated) {
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     // Caller has no membership row on the active team (e.g. a master
     // admin viewing a foreign team). Profile edits don't make sense in
     // that context — they'd accidentally create a stub coach row on a
@@ -79,6 +92,7 @@ router.put("/coach-profile", async (req, res): Promise<void> => {
     return;
   }
 
+  const updated = result.row;
   res.json({
     displayName: updated.displayName,
     role: updated.role,

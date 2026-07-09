@@ -2,11 +2,13 @@ import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { gamesTable } from "./games";
 import { playersTable } from "./players";
+import { rowVersion } from "./row-version";
 
 export const lineupLocksTable = pgTable(
   "lineup_locks",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     gameId: integer("game_id")
       .notNull()
       .references(() => gamesTable.id, { onDelete: "cascade" }),

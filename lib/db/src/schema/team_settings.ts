@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { rowVersion } from "./row-version";
 
 /**
  * Per-coach team branding + tournament defaults. One row per Clerk user.
@@ -14,6 +15,7 @@ import { z } from "zod/v4";
  */
 export const teamSettingsTable = pgTable("team_settings", {
   userId: text("user_id").primaryKey(),
+  rowVersion: rowVersion(),
   teamName: text("team_name").notNull(),
   teamShortName: text("team_short_name").notNull(),
   /**

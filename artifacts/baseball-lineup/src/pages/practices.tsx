@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { withSync } from "@/lib/sync-envelope";
 
 function todayDateInputValue() {
   const now = new Date();
@@ -78,10 +79,9 @@ export default function Practices() {
       onSuccess: (created) => {
         void qc.invalidateQueries({ queryKey: getListPracticesQueryKey() });
         toast({ title: "Practice created" });
-        setOpen(false);
-        setTitle("");
-        setNotes("");
-        setFocusAreas([]);
+        // Navigation needs the server-assigned id, so it stays in
+        // onSuccess (the dialog close/reset moved to submit() below so
+        // it fires immediately even while the create is queued offline).
         if (openAfterCreate) {
           setLocation(`/practices/${created.id}`);
         }
@@ -102,15 +102,24 @@ export default function Practices() {
   };
 
   const submit = () => {
-    create.mutate({
-      data: {
-        date: combineDateTimeISO(date, time),
-        durationMinutes: duration,
-        title: title.trim() || null,
-        focusAreas,
-        notes: notes.trim() || null,
-      },
-    });
+    create.mutate(
+      withSync({
+        data: {
+          date: combineDateTimeISO(date, time),
+          durationMinutes: duration,
+          title: title.trim() || null,
+          focusAreas,
+          notes: notes.trim() || null,
+        },
+      }),
+    );
+    // Close + reset immediately (not in onSuccess): while offline the
+    // create pauses in the queue and onSuccess wouldn't fire until
+    // reconnect, leaving the coach staring at an open dialog.
+    setOpen(false);
+    setTitle("");
+    setNotes("");
+    setFocusAreas([]);
   };
 
   return (

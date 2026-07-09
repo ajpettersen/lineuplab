@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { gamesTable } from "./games";
 import { playersTable } from "./players";
+import { rowVersion } from "./row-version";
 
 /**
  * One row per (game, player) for batting stats imported from a box
@@ -43,6 +44,7 @@ export const gameBattingLinesTable = pgTable(
   "game_batting_lines",
   {
     id: serial("id").primaryKey(),
+    rowVersion: rowVersion(),
     userId: text("user_id").notNull(),
     gameId: integer("game_id")
       .notNull()

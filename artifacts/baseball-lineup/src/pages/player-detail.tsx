@@ -18,6 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Edit, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
+import { withSync } from "@/lib/sync-envelope";
+import { isVersionConflict } from "@/lib/conflict-registry";
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 
@@ -95,6 +97,7 @@ export default function PlayerDetail() {
   };
 
   const handleSave = () => {
+    if (!player) return;
     const f = firstName.trim();
     const l = lastName.trim();
     if (!f) {
@@ -106,31 +109,46 @@ export default function PlayerDetail() {
     // toggling a preferred position. The server schema allows an empty
     // lastName for the same reason (see replit.md → "Roster Names").
     updatePlayer.mutate(
-      {
-        id,
-        data: {
-          firstName: f,
-          lastName: l,
-          number: number ? parseInt(number) : null,
-          // eligiblePositions is server-derived from canPitch; we send the
-          // current full list (server overwrites it) just to satisfy the
-          // generated zod schema, which still requires the field.
-          eligiblePositions: ALL_POSITIONS,
-          preferredPositions: preferred,
-          canPitch,
-          active,
+      // Pin the edit to the row version we loaded so a concurrent edit
+      // from another device 409s into the conflict tray instead of
+      // being silently overwritten (see sync-envelope.ts).
+      withSync(
+        {
+          id,
+          data: {
+            firstName: f,
+            lastName: l,
+            number: number ? parseInt(number) : null,
+            // eligiblePositions is server-derived from canPitch; we send the
+            // current full list (server overwrites it) just to satisfy the
+            // generated zod schema, which still requires the field.
+            eligiblePositions: ALL_POSITIONS,
+            preferredPositions: preferred,
+            canPitch,
+            active,
+          },
         },
-      },
+        player.rowVersion,
+      ),
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetPlayerQueryKey(id) });
           qc.invalidateQueries({ queryKey: getListPlayersQueryKey() });
           toast({ title: "Player updated" });
-          setEditing(false);
         },
-        onError: (err) => toastError(toast, "Failed to update", err),
+        onError: (err) => {
+          // 409 conflicts are handled globally by the ConflictListener
+          // (toast + tray); a local "failed" toast would double up.
+          if (isVersionConflict(err)) return;
+          toastError(toast, "Failed to update", err);
+        },
       }
     );
+    // Leave edit mode immediately (not in onSuccess): while offline the
+    // mutation pauses and onSuccess won't fire until reconnect — the
+    // coach shouldn't be stuck in the edit form. The sync chip surfaces
+    // the queued write.
+    setEditing(false);
   };
 
   if (isLoading) {

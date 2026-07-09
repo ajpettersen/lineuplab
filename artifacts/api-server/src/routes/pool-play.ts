@@ -1,6 +1,12 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import { and, eq, isNull } from "drizzle-orm";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedUpdate,
+} from "../lib/concurrency";
 import { z } from "zod";
 import {
   db,
@@ -997,6 +1003,11 @@ router.put("/tournaments/:id/pool-play", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const tournament = await getOwnedTournament(params.data.id, userId);
   if (!tournament) {
     res.status(404).json({ error: "Tournament not found" });
@@ -1039,15 +1050,22 @@ router.put("/tournaments/:id/pool-play", async (req, res): Promise<void> => {
     ...poolPlay,
     updatedAt: new Date().toISOString(),
   };
-  await db
-    .update(tournamentsTable)
-    .set({ poolPlay: toStore })
-    .where(
-      and(
-        eq(tournamentsTable.id, params.data.id),
-        eq(tournamentsTable.userId, userId),
-      ),
-    );
+  const result = await versionedUpdate(db, tournamentsTable, {
+    set: { poolPlay: toStore },
+    where: and(
+      eq(tournamentsTable.id, params.data.id),
+      eq(tournamentsTable.userId, userId),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Tournament not found" });
+    return;
+  }
 
   const poolPlayAnalysis = simulatePoolPlay(toStore);
   res.json({ poolPlay: toStore, poolPlayAnalysis });
@@ -1064,20 +1082,32 @@ router.delete("/tournaments/:id/pool-play", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   const tournament = await getOwnedTournament(params.data.id, userId);
   if (!tournament) {
     res.status(404).json({ error: "Tournament not found" });
     return;
   }
-  await db
-    .update(tournamentsTable)
-    .set({ poolPlay: null })
-    .where(
-      and(
-        eq(tournamentsTable.id, params.data.id),
-        eq(tournamentsTable.userId, userId),
-      ),
-    );
+  const result = await versionedUpdate(db, tournamentsTable, {
+    set: { poolPlay: null },
+    where: and(
+      eq(tournamentsTable.id, params.data.id),
+      eq(tournamentsTable.userId, userId),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Tournament not found" });
+    return;
+  }
   res.status(204).end();
 });
 

@@ -277,7 +277,10 @@ router.post("/tournaments/:id/network/join", async (req, res): Promise<void> => 
   // Clear any pending dismiss flag — the coach made an active choice.
   await db
     .update(tournamentsTable)
-    .set({ networkPromptDismissedAt: null })
+    .set({
+      networkPromptDismissedAt: null,
+      rowVersion: sql`${tournamentsTable.rowVersion} + 1`,
+    })
     .where(eq(tournamentsTable.id, tournament.id));
 
   res.status(201).json({ network: networkRow, membership });
@@ -375,7 +378,10 @@ router.post(
     }
     await db
       .update(tournamentsTable)
-      .set({ networkPromptDismissedAt: sql`now()` })
+      .set({
+        networkPromptDismissedAt: sql`now()`,
+        rowVersion: sql`${tournamentsTable.rowVersion} + 1`,
+      })
       .where(eq(tournamentsTable.id, tournament.id));
     res.status(204).end();
   },

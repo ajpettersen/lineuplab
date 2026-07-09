@@ -1,5 +1,12 @@
 import { Router, type IRouter } from "express";
 import { gateWrites } from "../lib/permissions";
+import {
+  parseIfMatch,
+  rejectBadIfMatch,
+  sendConflict,
+  versionedDelete,
+} from "../lib/concurrency";
+import { idempotent } from "../middlewares/idempotency";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, playersTable, lineupLocksTable } from "@workspace/db";
@@ -67,7 +74,7 @@ router.get("/games/:id/locks", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-router.post("/games/:id/locks", async (req, res): Promise<void> => {
+router.post("/games/:id/locks", idempotent("createLock"), async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const params = ListParams.safeParse(req.params);
   if (!params.success) {
@@ -241,21 +248,28 @@ router.delete("/games/:id/locks/:lockId", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid params" });
     return;
   }
+  const ifm = parseIfMatch(req);
+  if (!ifm.ok) {
+    rejectBadIfMatch(res);
+    return;
+  }
   // Ownership: must own the parent game before any deletes can land.
   if (!(await getOwnedGame(userId, params.data.id))) {
     res.status(404).json({ error: "Lock not found" });
     return;
   }
-  const result = await db
-    .delete(lineupLocksTable)
-    .where(
-      and(
-        eq(lineupLocksTable.id, params.data.lockId),
-        eq(lineupLocksTable.gameId, params.data.id),
-      ),
-    )
-    .returning();
-  if (result.length === 0) {
+  const result = await versionedDelete(db, lineupLocksTable, {
+    where: and(
+      eq(lineupLocksTable.id, params.data.lockId),
+      eq(lineupLocksTable.gameId, params.data.id),
+    ),
+    ifMatch: ifm.version,
+  });
+  if (result.kind === "conflict") {
+    sendConflict(res, result.current);
+    return;
+  }
+  if (result.kind === "missing") {
     res.status(404).json({ error: "Lock not found" });
     return;
   }
