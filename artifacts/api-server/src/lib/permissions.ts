@@ -29,6 +29,31 @@ export function isMasterAdmin(userId: string | undefined | null): boolean {
 }
 
 /**
+ * Is `userId` the head coach (owner) of the team identified by
+ * `ownerKey`? Two ways to own a team:
+ *   1. Personal team — the scope key IS the user's own Clerk id.
+ *   2. Additional team — a synthetic `team_…` key whose owner-row
+ *      (`isOwner = true`) in team_memberships points at this user.
+ *      Created via POST /api/teams.
+ */
+export async function isTeamOwnerUser(
+  userId: string,
+  ownerKey: string,
+): Promise<boolean> {
+  if (userId === ownerKey) return true;
+  const [row] = await db
+    .select({ isOwner: teamMembershipsTable.isOwner })
+    .from(teamMembershipsTable)
+    .where(
+      and(
+        eq(teamMembershipsTable.ownerUserId, ownerKey),
+        eq(teamMembershipsTable.memberUserId, userId),
+      ),
+    );
+  return row?.isOwner === true;
+}
+
+/**
  * Resolve the calling user's permission tier on the given team owner's
  * data scope. Short-circuits:
  *   - userId === ownerUserId → 'full' (the owner is always full).

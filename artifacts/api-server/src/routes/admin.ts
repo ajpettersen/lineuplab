@@ -35,6 +35,8 @@ interface ClerkLite {
 }
 
 async function fetchClerkLite(userId: string): Promise<ClerkLite> {
+  // Synthetic team keys are not Clerk user ids — skip the doomed call.
+  if (userId.startsWith("team_")) return { email: null, name: null };
   try {
     const u = await clerkClient.users.getUser(userId);
     const email =
@@ -62,7 +64,13 @@ async function fetchClerkLiteMany(
   userIds: readonly string[],
 ): Promise<Map<string, ClerkLite>> {
   const out = new Map<string, ClerkLite>();
-  const unique = Array.from(new Set(userIds));
+  // Synthetic team keys (`team_<uuid>` — additional teams created via
+  // POST /api/teams) are NOT Clerk user ids. Filter them out up front
+  // so a bad id can't fail an entire getUserList chunk and blank out
+  // identity data for the real users sharing that chunk.
+  const unique = Array.from(new Set(userIds)).filter(
+    (id) => !id.startsWith("team_"),
+  );
   if (unique.length === 0) return out;
   const CHUNK = 100;
   for (let i = 0; i < unique.length; i += CHUNK) {

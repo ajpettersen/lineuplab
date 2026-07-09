@@ -15,7 +15,7 @@ import {
   DEFAULT_TEAM_SHORT_NAME,
   type PermissionTier,
 } from "@workspace/db";
-import { assertPermission, isMasterAdmin } from "../lib/permissions";
+import { assertPermission, isMasterAdmin, isTeamOwnerUser } from "../lib/permissions";
 
 const router: IRouter = Router();
 
@@ -116,34 +116,42 @@ router.get("/team/context", async (req, res): Promise<void> => {
     ? true
     : !!displayName && displayName.trim().length >= 2;
 
+  // ALL memberships for this user, split into teams they own (their
+  // personal team + any additional teams created via POST /api/teams)
+  // vs teams they joined as an assistant coach.
   const memberships = await db
-    .select({ ownerUserId: teamMembershipsTable.ownerUserId })
+    .select({
+      ownerUserId: teamMembershipsTable.ownerUserId,
+      isOwner: teamMembershipsTable.isOwner,
+    })
     .from(teamMembershipsTable)
-    .where(
-      and(
-        eq(teamMembershipsTable.memberUserId, userId),
-        eq(teamMembershipsTable.isOwner, false),
-      ),
-    );
+    .where(eq(teamMembershipsTable.memberUserId, userId));
 
-  const otherOwnerIds = memberships.map((m) => m.ownerUserId);
-  const allOwnerIds = Array.from(new Set([userId, ...otherOwnerIds]));
+  const extraOwnedIds = memberships
+    .filter((m) => m.isOwner && m.ownerUserId !== userId)
+    .map((m) => m.ownerUserId);
+  const otherOwnerIds = memberships
+    .filter((m) => !m.isOwner)
+    .map((m) => m.ownerUserId);
+  const allOwnerIds = Array.from(
+    new Set([userId, ...extraOwnedIds, ...otherOwnerIds]),
+  );
   const labels = await fetchTeamLabels(allOwnerIds);
+  const toSummary = (oid: string) => ({
+    ownerUserId: oid,
+    teamName: labels[oid]!.teamName,
+    teamShortName: labels[oid]!.teamShortName,
+  });
 
   res.json({
     userId,
     activeOwnerUserId: ownerUserId,
-    isOwner: userId === ownerUserId,
-    ownedTeam: {
-      ownerUserId: userId,
-      teamName: labels[userId]!.teamName,
-      teamShortName: labels[userId]!.teamShortName,
-    },
-    memberOf: otherOwnerIds.map((oid) => ({
-      ownerUserId: oid,
-      teamName: labels[oid]!.teamName,
-      teamShortName: labels[oid]!.teamShortName,
-    })),
+    isOwner: userId === ownerUserId || profileRow?.isOwner === true,
+    ownedTeam: toSummary(userId),
+    // Personal team first, then additional owned teams by creation
+    // order (membership id ascending is close enough — ids are serial).
+    ownedTeams: [userId, ...extraOwnedIds].map(toSummary),
+    memberOf: otherOwnerIds.map(toSummary),
     currentUser: {
       displayName,
       role,
@@ -152,6 +160,79 @@ router.get("/team/context", async (req, res): Promise<void> => {
       isMasterAdmin: isMasterAdmin(userId),
     },
   });
+});
+
+const CreateTeamBody = z.object({
+  teamName: z.string().trim().min(2, "Team name is too short").max(60),
+  teamShortName: z.string().trim().min(1).max(20).optional(),
+});
+
+/**
+ * POST /api/teams — create an ADDITIONAL team owned by the calling
+ * user (e.g. a new season/year, or a second squad). The team gets a
+ * synthetic scope key (`team_<uuid>`) that flows through the exact
+ * same tenancy plumbing as a personal team:
+ *   - team_settings row keyed by the synthetic id (name/branding)
+ *   - team_memberships owner-row (isOwner = true, permission 'full')
+ *     so resolveTeamContext + permission checks work unchanged
+ *   - user_active_team pointer switched to the new team so the very
+ *     next request scopes to it
+ *
+ * The creator's coach profile (displayName/role) is carried over from
+ * their personal owner-row so they aren't re-prompted for their name.
+ */
+router.post("/teams", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const parsed = CreateTeamBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+  const teamName = parsed.data.teamName;
+  const teamShortName =
+    parsed.data.teamShortName?.trim() ||
+    (teamName.split(/\s+/)[0] ?? DEFAULT_TEAM_SHORT_NAME).slice(0, 20);
+
+  const teamKey = `team_${crypto.randomUUID()}`;
+
+  // Carry the coach's profile over from their personal owner-row (if
+  // they have one) so the new team doesn't re-prompt for display name.
+  const [personalRow] = await db
+    .select()
+    .from(teamMembershipsTable)
+    .where(
+      and(
+        eq(teamMembershipsTable.ownerUserId, userId),
+        eq(teamMembershipsTable.memberUserId, userId),
+      ),
+    );
+
+  await db.transaction(async (tx) => {
+    await tx.insert(teamSettingsTable).values({
+      userId: teamKey,
+      teamName,
+      teamShortName,
+    });
+    await tx.insert(teamMembershipsTable).values({
+      ownerUserId: teamKey,
+      memberUserId: userId,
+      memberEmail: personalRow?.memberEmail ?? null,
+      displayName: personalRow?.displayName ?? null,
+      role: personalRow?.role ?? null,
+      isOwner: true,
+      permission: "full",
+    });
+    await tx
+      .insert(userActiveTeamTable)
+      .values({ userId, activeOwnerUserId: teamKey })
+      .onConflictDoUpdate({
+        target: userActiveTeamTable.userId,
+        set: { activeOwnerUserId: teamKey, updatedAt: new Date() },
+      });
+  });
+
+  req.log.info({ teamKey }, "Created additional team");
+  res.status(201).json({ ownerUserId: teamKey, teamName, teamShortName });
 });
 
 const ActiveBody = z.object({ ownerUserId: z.string().min(1) });
@@ -388,7 +469,8 @@ router.patch("/team/members/:memberUserId", async (req, res): Promise<void> => {
   }
 
   const isSelf = memberUserId === userId;
-  const callerIsOwner = userId === ownerUserId || isMasterAdmin(userId);
+  const callerIsOwner =
+    (await isTeamOwnerUser(userId, ownerUserId)) || isMasterAdmin(userId);
 
   // Permission edits require owner-equivalent authority.
   if (body.permission !== undefined && !callerIsOwner) {
@@ -459,14 +541,27 @@ router.delete("/team/members/:memberUserId", async (req, res): Promise<void> => 
   // Allow self-removal (a coach leaves the team) without an owner-tier
   // permission check; otherwise require 'full' access (head coach can
   // remove any other coach). Refuse to delete the owner-row entirely
-  // — the head coach can't kick themselves off their own team.
-  if (memberUserId === ownerUserId) {
+  // — the head coach can't kick themselves off their own team. The
+  // owner-row check must look at `isOwner` (not `memberUserId ===
+  // ownerUserId`) because on additional teams the scope key is a
+  // synthetic id, not the owner's userId.
+  const [targetRow] = await db
+    .select({ isOwner: teamMembershipsTable.isOwner })
+    .from(teamMembershipsTable)
+    .where(
+      and(
+        eq(teamMembershipsTable.ownerUserId, ownerUserId),
+        eq(teamMembershipsTable.memberUserId, memberUserId),
+      ),
+    );
+  if (targetRow?.isOwner) {
     res.status(400).json({ error: "Head coach can't be removed from their own team" });
     return;
   }
   if (memberUserId !== userId) {
     // Not self-removal — caller must have full access.
-    const callerIsOwner = userId === ownerUserId || isMasterAdmin(userId);
+    const callerIsOwner =
+      (await isTeamOwnerUser(userId, ownerUserId)) || isMasterAdmin(userId);
     if (!callerIsOwner) {
       const [callerRow] = await db
         .select({ permission: teamMembershipsTable.permission })
@@ -531,7 +626,7 @@ router.get("/invites/:token", async (req, res): Promise<void> => {
   if (invite.revokedAt) status = "revoked";
   else if (invite.acceptedAt) status = "accepted";
   else if (invite.expiresAt.getTime() < Date.now()) status = "expired";
-  else if (invite.ownerUserId === userId) status = "self";
+  else if (await isTeamOwnerUser(userId, invite.ownerUserId)) status = "self";
   else {
     const [m] = await db
       .select({ id: teamMembershipsTable.id })
@@ -587,7 +682,7 @@ router.post("/invites/:token/accept", async (req, res): Promise<void> => {
     if (invite.acceptedAt) return { ok: false as const, status: 410, error: "Invite already used" };
     if (invite.expiresAt.getTime() < Date.now())
       return { ok: false as const, status: 410, error: "Invite expired" };
-    if (invite.ownerUserId === userId)
+    if (await isTeamOwnerUser(userId, invite.ownerUserId))
       return {
         ok: false as const,
         status: 400,

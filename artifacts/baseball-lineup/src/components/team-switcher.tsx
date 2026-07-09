@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Check, ChevronDown, LogOut, Users } from "lucide-react";
+import { Check, ChevronDown, LayoutGrid, LogOut, Plus, Users } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,17 +13,19 @@ import { useTeamContext, useSwitchTeam } from "@/hooks/use-team-context";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Small dropdown shown in the header when the user belongs to more than
- * one team. Clicking a row swaps the active team (server-side pointer)
- * and clears the React Query cache so all data refetches in the new
- * scope.
+ * Header dropdown for switching between teams. Lists every team the
+ * user is head coach of (personal team + any additional season/year
+ * teams) plus teams they've joined as an assistant, and links to the
+ * "My Teams" picker page where new teams can be created.
+ *
+ * Clicking a row swaps the active team (server-side pointer) and
+ * clears the React Query cache so all data refetches in the new scope.
  *
  * Special case: a master admin who has switched INTO a foreign team
  * they don't otherwise belong to (admin "view as this team" flow) won't
- * have that team in `memberOf`, so the dropdown would normally hide
- * itself. In that case we render a clearly-labeled "Return to <my team>"
- * button instead, so the admin can always get back to their own team
- * with one click.
+ * have that team in their lists, so we render a clearly-labeled
+ * "Return to <my team>" button instead — the admin can always get back
+ * to their own team with one click.
  */
 export function TeamSwitcher({ className }: { className?: string }) {
   const { data: ctx, isLoading } = useTeamContext();
@@ -33,10 +35,13 @@ export function TeamSwitcher({ className }: { className?: string }) {
 
   if (isLoading || !ctx) return null;
 
+  const ownedTeams = ctx.ownedTeams ?? [ctx.ownedTeam];
+  const allTeams = [...ownedTeams, ...ctx.memberOf];
+  const ownedIds = new Set(ownedTeams.map((t) => t.ownerUserId));
+
   const viewingForeignAsAdmin =
     ctx.currentUser.isMasterAdmin &&
-    ctx.activeOwnerUserId !== ctx.ownedTeam.ownerUserId &&
-    !ctx.memberOf.some((t) => t.ownerUserId === ctx.activeOwnerUserId);
+    !allTeams.some((t) => t.ownerUserId === ctx.activeOwnerUserId);
 
   const handleSwitch = (ownerUserId: string) => {
     if (ownerUserId === ctx.activeOwnerUserId) return;
@@ -89,12 +94,8 @@ export function TeamSwitcher({ className }: { className?: string }) {
     );
   }
 
-  // Past this point the admin (if any) is NOT in view-as mode — that
-  // case is handled by the early return above. So the dropdown only
-  // ever lists the user's own team plus teams they've actually joined.
-  if (ctx.memberOf.length === 0) return null;
-
-  const allTeams = [ctx.ownedTeam, ...ctx.memberOf];
+  // Single-team users still get the dropdown — it's the discoverable
+  // home of "Create a new team" and the My Teams page.
   const active = allTeams.find((t) => t.ownerUserId === ctx.activeOwnerUserId);
 
   return (
@@ -119,7 +120,7 @@ export function TeamSwitcher({ className }: { className?: string }) {
         <DropdownMenuSeparator />
         {allTeams.map((t) => {
           const isActive = t.ownerUserId === ctx.activeOwnerUserId;
-          const isOwn = t.ownerUserId === ctx.ownedTeam.ownerUserId;
+          const isOwn = ownedIds.has(t.ownerUserId);
           return (
             <DropdownMenuItem
               key={t.ownerUserId}
@@ -133,12 +134,29 @@ export function TeamSwitcher({ className }: { className?: string }) {
               <div className="flex flex-col flex-1 min-w-0">
                 <span className="truncate font-medium">{t.teamName}</span>
                 <span className="text-xs text-muted-foreground">
-                  {isOwn ? "Your team" : "Assistant coach"}
+                  {isOwn ? "Head coach" : "Assistant coach"}
                 </span>
               </div>
             </DropdownMenuItem>
           );
         })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => setLocation("/teams")}
+          data-testid="menu-item-all-teams"
+          className="gap-2"
+        >
+          <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+          My Teams
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => setLocation("/teams?create=1")}
+          data-testid="menu-item-create-team"
+          className="gap-2"
+        >
+          <Plus className="h-4 w-4 text-muted-foreground" />
+          Create a new team
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

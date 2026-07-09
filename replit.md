@@ -38,7 +38,9 @@ These are the *rules and rationale* that aren't obvious from reading any single 
 - **Fair rotation reuse**: `generateFairLineup` is sport-agnostic (e.g. basketball passes court positions + `skipBattingOrder`); pitcher exclusion only fires on a literal "P".
 
 ### Core
-- **Multi-tenancy**: data isolation per coach (`Clerk userId`); `assertPermission` middleware gates write routes.
+- **Multi-tenancy**: data isolation per team scope key (`ownerUserId`); `assertPermission` middleware gates write routes.
+- **Multi-team (one coach, many teams)**: a coach's first team is keyed by their Clerk userId; additional teams (`POST /api/teams`) get a synthetic `team_<uuid>` scope key = a `team_settings` row + an owner membership row (`isOwner=true`, `full`). No `teams` table. **Rules:** never check ownership via `userId === ownerUserId` (use `isTeamOwnerUser()`); never pass scope keys to Clerk lookups without filtering `team_`-prefixed ids; the team's owner-row is the membership with `isOwner=true`. `/teams` is the picker page; the header switcher always renders. See `.agents/memory/multi-team-synthetic-keys.md`.
+- **Team-scope cache reset**: switching/creating teams (and invite accept) must use `resetQueries()` + persisted-cache purge — `qc.clear()` doesn't notify mounted observers and leaves stale UI. See `.agents/memory/react-query-clear-vs-reset.md`.
 - **Permission tiers** (`team_memberships.permission`): `view < upload < partial < full` (linear rank). Owner locked to `full`. Server enforces via `assertPermission`; web hides write controls via `usePermission()`. `upload` = stat-keeper (read-only EXCEPT box-score routes). **`role` (free-form display label) is decoupled from `permission` (capabilities).**
 - **Master admin bypass**: `MASTER_ADMIN_USER_IDS` enables `/admin`; admin routes intentionally skip the `deletedAt` filter for audit.
 

@@ -1,6 +1,30 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import { purgePersistedQueryCache } from "@/lib/query-persister";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/**
+ * Wipe + refetch EVERYTHING after the active team scope changes
+ * (switch team / create team / accept invite).
+ *
+ * Why resetQueries and not qc.clear(): clear() silently REMOVES all
+ * queries without notifying mounted observers — components keep
+ * rendering their last data until something else forces a re-render,
+ * so the header/team name would stay on the OLD team after a switch.
+ * resetQueries() resets every query to initial state AND notifies
+ * observers, refetching all active queries under the new team scope.
+ * We also purge the IndexedDB-persisted cache so a throttled dehydrate
+ * of the old team's data can't be restored later.
+ */
+async function resetTeamScopedCache(qc: QueryClient): Promise<void> {
+  void purgePersistedQueryCache().catch(() => {});
+  await qc.resetQueries();
+}
 
 export type PermissionTier = "full" | "partial" | "upload" | "view";
 
@@ -29,7 +53,10 @@ export interface TeamContext {
   userId: string;
   activeOwnerUserId: string;
   isOwner: boolean;
+  /** The user's personal (first) team — kept for the admin "return to my team" flow. */
   ownedTeam: TeamSummary;
+  /** ALL teams the user is head coach of: personal team first, then extra teams. */
+  ownedTeams: TeamSummary[];
   memberOf: TeamSummary[];
   currentUser: CurrentUserContext;
 }
@@ -83,8 +110,33 @@ export function useSwitchTeam() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ownerUserId }),
       }),
-    onSuccess: () => {
-      qc.clear();
+    onSuccess: async () => {
+      await resetTeamScopedCache(qc);
+    },
+  });
+}
+
+export interface CreateTeamInput {
+  teamName: string;
+  teamShortName?: string;
+}
+
+/**
+ * Create an ADDITIONAL team owned by the calling user (new season/year,
+ * second squad, …). The server switches the active team to the new one,
+ * so on success we wipe the React Query cache — same as switching teams.
+ */
+export function useCreateTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTeamInput) =>
+      fetchJson<TeamSummary>(`${BASE}/api/teams`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    onSuccess: async () => {
+      await resetTeamScopedCache(qc);
     },
   });
 }
@@ -275,9 +327,9 @@ export function useAcceptInvite() {
       fetchJson<TeamSummary>(`${BASE}/api/invites/${encodeURIComponent(token)}/accept`, {
         method: "POST",
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       // Wipe everything — we're now scoped to a different team.
-      qc.clear();
+      await resetTeamScopedCache(qc);
     },
   });
 }
