@@ -2142,17 +2142,18 @@ export default function FieldDisplay() {
                *  Schedule list and Game Detail header so editing the
                *  opponent on a game card updates the field display the
                *  same way:
-               *  1) Coach-set short name from Settings (deliberate override
-               *     for tight headers).
-               *  2) Otherwise the FULL team name from settings (e.g.
-               *     "Minnetonka Blue") — NOT auto-shortened, because the
-               *     coach explicitly asked for the full settings name to
-               *     show on every matchup.
+               *  1) The FULL team name from settings (e.g.
+               *     "Minnetonka Blue Blazers") — the coach explicitly asked
+               *     the Field Display top bar to show the complete name,
+               *     overriding the short-name preference used by tighter
+               *     surfaces like the scoreboard bug.
+               *  2) Coach-set short name only as a fallback when the full
+               *     name is somehow empty.
                *  3) "Team" placeholder if settings haven't loaded yet.
                * Tooltip always shows the FULL official name so coaches can
                * still confirm they're looking at the right matchup. */}
               <span className="text-white truncate" title={teamName || undefined}>
-                {teamShortName || teamName || "Team"}
+                {teamName || teamShortName || "Team"}
               </span>
               <span className="text-slate-500 font-normal text-xs sm:text-sm shrink-0">vs.</span>
               {/* Opponent has no per-team short-name field, so just auto-shorten
@@ -3082,8 +3083,9 @@ export default function FieldDisplay() {
         {/* Batting panel layout per viewport (unified):
          *  Single equal-distribution flex column at every viewport — 9
          *  batters get tall comfortable rows, 18 batters get shorter
-         *  rows that still read clearly (min-h-[2.25rem] floor keeps
-         *  them tappable). The list fills the panel height exactly and
+         *  rows that still read clearly (a small min-h floor keeps
+         *  them legible — kept low so a 12-batter order fits with NO
+         *  scrolling on the dugout iPad). The list fills the panel height exactly and
          *  shows no scrollbar whenever the roster fits; only a deep
          *  roster that overflows the min-h floor scrolls (see the inner
          *  container's `overflow-y-auto` note below). The "currently at
@@ -3180,7 +3182,7 @@ export default function FieldDisplay() {
                 return (
                   <li
                     key={r.playerId}
-                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[1.75rem] lg:min-h-[2.5rem] overflow-hidden border border-transparent transition-all ${
+                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[1.5rem] lg:min-h-[1.875rem] overflow-hidden border border-transparent transition-all ${
                       idx % 2 === 0
                         ? "bg-slate-900/60"
                         : "bg-slate-900/30"

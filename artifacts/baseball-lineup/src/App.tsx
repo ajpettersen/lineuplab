@@ -126,17 +126,40 @@ class SyncAwareMutationCache extends MutationCache {
     options: MutationOptions<TData, TError, TVariables, TContext>,
     state?: MutationState<TData, TError, TVariables, TContext>,
   ) {
-    if (options.mutationKey) {
-      const defaults = client.getMutationDefaults(options.mutationKey);
-      if (defaults.mutationFn) {
-        options = {
-          ...options,
-          mutationFn: defaults.mutationFn as typeof options.mutationFn,
-        };
-      }
-    }
-    return super.build(client, options, state);
+    const mutation = super.build(
+      client,
+      swapInSyncAwareFn(client, options),
+      state,
+    );
+    // NOTE: this monkey-patch relies on React Query internals
+    // (MutationObserver pushes options onto a pending mutation via
+    // `mutation.setOptions`) — revalidate on any @tanstack/* upgrade.
+    // `useMutation` calls `observer.setOptions()` on EVERY render, and
+    // while the mutation is pending the observer pushes those options
+    // (with the generated hook's own mutationFn) back onto the mutation —
+    // clobbering the swap above before the fetch even fires. Intercept
+    // setOptions so the sync-aware fn survives re-renders.
+    const originalSetOptions = mutation.setOptions.bind(mutation);
+    mutation.setOptions = (opts) =>
+      originalSetOptions(
+        swapInSyncAwareFn(
+          client,
+          opts as MutationOptions<TData, TError, TVariables, TContext>,
+        ),
+      );
+    return mutation;
   }
+}
+
+function swapInSyncAwareFn<TData, TError, TVariables, TContext>(
+  client: QueryClient,
+  options: MutationOptions<TData, TError, TVariables, TContext>,
+): MutationOptions<TData, TError, TVariables, TContext> {
+  if (!options.mutationKey) return options;
+  const defaultFn = client.getMutationDefaults(options.mutationKey).mutationFn;
+  return defaultFn
+    ? { ...options, mutationFn: defaultFn as typeof options.mutationFn }
+    : options;
 }
 
 const queryClient = new QueryClient({

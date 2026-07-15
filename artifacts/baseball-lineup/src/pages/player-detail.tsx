@@ -57,6 +57,16 @@ export default function PlayerDetail() {
   const [preferred, setPreferred] = useState<string[]>([]);
   const [canPitch, setCanPitch] = useState(false);
   const [active, setActive] = useState(true);
+  // rowVersion snapshotted when the edit form OPENS. Pinning the save to
+  // the live query's rowVersion instead is subtly wrong: a background
+  // refetch (window focus, invalidation) between opening the form and
+  // pressing Save silently refreshes the version, so a concurrent edit
+  // from another device gets clobbered without a 409 even though the
+  // coach never saw it. The If-Match must reflect what the FORM was
+  // populated from.
+  const [editRowVersion, setEditRowVersion] = useState<number | undefined>(
+    undefined,
+  );
 
   const startEdit = () => {
     if (!player) return;
@@ -87,6 +97,7 @@ export default function PlayerDetail() {
     setPreferred(player.preferredPositions);
     setCanPitch(player.canPitch);
     setActive(player.active);
+    setEditRowVersion(player.rowVersion);
     setEditing(true);
   };
 
@@ -128,7 +139,7 @@ export default function PlayerDetail() {
             active,
           },
         },
-        player.rowVersion,
+        editRowVersion,
       ),
       {
         onSuccess: () => {

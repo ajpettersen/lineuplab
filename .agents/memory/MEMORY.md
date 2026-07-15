@@ -15,4 +15,5 @@
 - [Multi-team synthetic keys](multi-team-synthetic-keys.md) — extra teams use `team_<uuid>` scope keys; never check ownership via `userId === ownerUserId`, never feed scope keys to Clerk lookups.
 - [React Query clear() vs resetQueries()](react-query-clear-vs-reset.md) — qc.clear() doesn't notify mounted observers (stale UI after team switch); scope changes need resetQueries + persisted-cache purge.
 - [Field Display offline drainers](field-display-offline-drainers.md) — two independent drainers (per-page flush + cross-page drain) must share an in-flight claim or they double-POST; never drop a write on error (May 2026 policy) — surface feedback instead.
+- [RQ mutation defaults clobbered mid-pending](react-query-mutation-defaults-clobber.md) — MutationCache.build swap isn't enough; useMutation re-renders push generated mutationFn back onto pending mutations — patch mutation.setOptions too.
 - [Offline prefetch race-safety](offline-prefetch-race-safety.md) — background cache-warming must SKIP games with pending offline writes (not gate on an event/queue handshake) or it clobbers optimistic Field Display state.
