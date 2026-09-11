@@ -5,6 +5,10 @@ packages:
   - lib/integrations/*
   - scripts
 
+allowBuilds:
+  '@clerk/shared': true
+  esbuild: true
+
 autoInstallPeers: false
 
 catalog:

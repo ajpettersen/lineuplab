@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -63,5 +65,19 @@ app.use(
 );
 
 app.use("/api", router);
+
+// Serve the built frontend from the same origin/process so Clerk's session
+// cookie stays first-party (see clerkProxyMiddleware) and the frontend's
+// relative /api fetches keep working without CORS or a separate domain.
+if (process.env.NODE_ENV === "production") {
+  const staticDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../baseball-lineup/dist",
+  );
+  app.use(express.static(staticDir));
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+}
 
 export default app;
