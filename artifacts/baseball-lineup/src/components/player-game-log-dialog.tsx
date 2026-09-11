@@ -9,6 +9,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { formatOpponentForMatchup } from "@/lib/team-name";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { SprayChart, useSprayChart } from "@/components/spray-chart";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -116,6 +117,8 @@ export function PlayerGameLogDialog({
     staleTime: 30_000,
   });
 
+  const { data: sprayEvents = [] } = useSprayChart(playerId, open);
+
   // Season summary across the rows (bat + pitch). Computed client-side
   // from the same rows shown below so the totals always match what the
   // table is rendering — no risk of a roll-up endpoint disagreeing.
@@ -212,6 +215,13 @@ export function PlayerGameLogDialog({
                 </div>
               </div>
             </div>
+
+            {sprayEvents.length > 0 && (
+              <div className="mt-4">
+                <div className="text-xs uppercase text-muted-foreground mb-2">Spray Chart</div>
+                <SprayChart events={sprayEvents} />
+              </div>
+            )}
 
             {data.games.length === 0 ? (
               <p className="text-sm text-muted-foreground italic py-6 text-center">
