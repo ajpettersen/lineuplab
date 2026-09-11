@@ -70,10 +70,19 @@ app.use("/api", router);
 // cookie stays first-party (see clerkProxyMiddleware) and the frontend's
 // relative /api fetches keep working without CORS or a separate domain.
 if (process.env.NODE_ENV === "production") {
-  const staticDir = path.resolve(
+  const artifactsDir = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../baseball-lineup/dist/public",
+    "../..",
   );
+
+  // The landing page embeds this at /promo-video/ via an iframe; it must be
+  // mounted before the SPA catch-all below or that swallows the path first.
+  app.use(
+    "/promo-video",
+    express.static(path.join(artifactsDir, "promo-video/dist/public")),
+  );
+
+  const staticDir = path.join(artifactsDir, "baseball-lineup/dist/public");
   app.use(express.static(staticDir));
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(staticDir, "index.html"));
