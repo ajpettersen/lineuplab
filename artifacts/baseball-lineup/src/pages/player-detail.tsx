@@ -8,7 +8,7 @@ import {
   getGetPlayerQueryKey,
   getGetPlayerStatsQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,8 +20,23 @@ import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
+import { SprayChart, useSprayChart } from "@/components/spray-chart";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+
+interface BattingRow {
+  playerId: number;
+  ab: number; hits: number; doubles: number; triples: number; hr: number;
+  rbi: number; bb: number; k: number; hbp: number; sac: number; sf: number; sb: number;
+  runs?: number;
+  avg: number | null; obp: number | null; slg: number | null; ops: number | null;
+}
+
+function fmtAvg(v: number | null | undefined) {
+  return v != null ? v.toFixed(3).replace(/^0/, "") : "—";
+}
 
 const POSITION_LABELS: Record<string, string> = {
   P: "Pitcher",
@@ -48,6 +63,17 @@ export default function PlayerDetail() {
     | (typeof allStats[number] & { unavailableInnings?: number })
     | undefined;
   const updatePlayer = useUpdatePlayer();
+  const { data: battingStats = [] } = useQuery({
+    queryKey: ["batting-stats"],
+    queryFn: async (): Promise<BattingRow[]> => {
+      const r = await fetch(`${BASE}/api/batting`);
+      if (!r.ok) throw new Error(`GET /api/batting failed (${r.status})`);
+      const data = await r.json();
+      return Array.isArray(data) ? (data as BattingRow[]) : [];
+    },
+  });
+  const battingLine = battingStats.find((b) => b.playerId === id);
+  const { data: sprayEvents = [] } = useSprayChart(id, !!id);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
@@ -327,6 +353,47 @@ export default function PlayerDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* Batting */}
+      {battingLine && (battingLine.ab > 0 || sprayEvents.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Batting</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold">{battingLine.ab}</div>
+                <div className="text-xs text-muted-foreground">AB</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold">{battingLine.hits}</div>
+                <div className="text-xs text-muted-foreground">H</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold">{battingLine.hr}</div>
+                <div className="text-xs text-muted-foreground">HR</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold">{battingLine.rbi}</div>
+                <div className="text-xs text-muted-foreground">RBI</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold font-mono">{fmtAvg(battingLine.avg)}</div>
+                <div className="text-xs text-muted-foreground">AVG</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold font-mono">{battingLine.ops != null ? battingLine.ops.toFixed(3) : "—"}</div>
+                <div className="text-xs text-muted-foreground">OPS</div>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">Spray Chart</Label>
+              <SprayChart events={sprayEvents} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rotation Report */}
       {stats && (

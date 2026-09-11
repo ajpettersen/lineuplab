@@ -9,7 +9,7 @@ import {
 } from "../lib/concurrency";
 import { idempotent } from "../middlewares/idempotency";
 import multer from "multer";
-import { db, battingStatsTable, gameBattingLinesTable, gamesTable, playersTable } from "@workspace/db";
+import { db, battingStatsTable, battedBallEventsTable, gameBattingLinesTable, gamesTable, playersTable } from "@workspace/db";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { AI_MODEL, createChatCompletion } from "../lib/ai";
@@ -386,6 +386,34 @@ router.put("/batting/:playerId", async (req, res): Promise<void> => {
       .returning();
     res.status(201).json(created);
   }
+});
+
+router.get("/batting/:playerId/spray-chart", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const playerId = parseInt(req.params.playerId);
+  if (isNaN(playerId)) { res.status(400).json({ error: "Invalid player ID" }); return; }
+
+  if (!(await getOwnedPlayer(userId, playerId))) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      id: battedBallEventsTable.id,
+      gameId: battedBallEventsTable.gameId,
+      result: battedBallEventsTable.result,
+      battedBallType: battedBallEventsTable.battedBallType,
+      direction: battedBallEventsTable.direction,
+    })
+    .from(battedBallEventsTable)
+    .where(
+      and(
+        eq(battedBallEventsTable.userId, userId),
+        eq(battedBallEventsTable.playerId, playerId),
+      ),
+    );
+  res.json(rows);
 });
 
 router.delete("/batting/:playerId", async (req, res): Promise<void> => {

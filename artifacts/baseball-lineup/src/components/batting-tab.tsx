@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown, MoreVertical } from "lucide-react";
+import { Upload, Plus, Wand2, Trash2, ArrowUp, ArrowDown, ArrowUpDown, MoreVertical, MapPinned } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { showUndoToast, postJson } from "@/lib/undo-toast";
 import { PlayerGameLogDialog } from "@/components/player-game-log-dialog";
+import { SprayChartDialog } from "@/components/spray-chart-dialog";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -91,6 +92,10 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
   // Click-through: opens the per-player game-log dialog. Reused across
   // every stat-table click site.
   const [logPlayerId, setLogPlayerId] = useState<number | null>(null);
+  // Spray-chart dialog trigger: separate from the game-log dialog so a
+  // coach can jump straight to "where does this kid hit the ball" from
+  // the stats table without going through the per-game breakdown.
+  const [sprayPlayer, setSprayPlayer] = useState<{ id: number; name: string } | null>(null);
 
   const statsMap = Object.fromEntries(battingStats.map((b) => [b.playerId, b]));
 
@@ -576,6 +581,16 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
                       })}
                       <td className="py-2.5 pl-2 whitespace-nowrap">
                         <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 w-7 p-0"
+                            title="Spray chart"
+                            aria-label={`View spray chart for ${p.name}`}
+                            onClick={() => setSprayPlayer({ id: p.id, name: p.name })}
+                          >
+                            <MapPinned className="h-3.5 w-3.5" />
+                          </Button>
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => startEdit(p.id)}>
                             <Plus className="h-3 w-3 mr-0.5" />{s ? "Edit" : "Add"}
                           </Button>
@@ -664,6 +679,13 @@ export function BattingTab({ players }: { players: { id: number; name: string; n
         playerId={logPlayerId}
         open={logPlayerId != null}
         onOpenChange={(v) => !v && setLogPlayerId(null)}
+      />
+
+      <SprayChartDialog
+        playerId={sprayPlayer?.id ?? null}
+        playerName={sprayPlayer?.name}
+        open={sprayPlayer != null}
+        onOpenChange={(v) => !v && setSprayPlayer(null)}
       />
     </div>
   );
