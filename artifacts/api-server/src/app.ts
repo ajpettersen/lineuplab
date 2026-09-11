@@ -72,7 +72,7 @@ app.use("/api", router);
 if (process.env.NODE_ENV === "production") {
   const staticDir = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../baseball-lineup/dist",
+    "../../baseball-lineup/dist/public",
   );
   app.use(express.static(staticDir));
   app.get(/^(?!\/api).*/, (_req, res) => {
