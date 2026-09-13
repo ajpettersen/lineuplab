@@ -15,6 +15,7 @@ import {
   teamInvitesTable,
   teamSettingsTable,
   userActiveTeamTable,
+  playersTable,
   ensureOwnerMembership,
   isPermissionTier,
   DEFAULT_TEAM_NAME,
@@ -168,9 +169,55 @@ router.get("/team/context", async (req, res): Promise<void> => {
   });
 });
 
+/**
+ * GET /api/teams/:ownerUserId/players — minimal roster listing for a
+ * team the caller OWNS (not necessarily their currently-active team).
+ * Powers the "clone roster from…" checklist on the create-team dialog,
+ * where a coach needs to see e.g. their Summer team's players while
+ * they're mid-flow creating a new Fall team. Refuses teams the caller
+ * doesn't own — this is a read of another tenant's roster, so it needs
+ * the same ownership check as the clone itself.
+ */
+router.get("/teams/:ownerUserId/players", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const sourceOwnerId = req.params.ownerUserId;
+
+  if (!(await isTeamOwnerUser(userId, sourceOwnerId))) {
+    res.status(403).json({ error: "Not an owner of that team" });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      id: playersTable.id,
+      name: playersTable.name,
+      number: playersTable.number,
+    })
+    .from(playersTable)
+    .where(
+      and(
+        eq(playersTable.userId, sourceOwnerId),
+        isNull(playersTable.deletedAt),
+        eq(playersTable.active, true),
+      ),
+    )
+    .orderBy(playersTable.number, playersTable.name);
+
+  res.json(rows);
+});
+
 const CreateTeamBody = z.object({
   teamName: z.string().trim().min(2, "Team name is too short").max(60),
   teamShortName: z.string().trim().min(1).max(20).optional(),
+  // Optional roster clone: copy team_settings (branding, sport, batting
+  // style, pitch defaults, field layout) and a chosen subset of players
+  // from another team the caller owns — e.g. a Fall roster that's mostly
+  // the same kids as Summer, minus a couple who aren't playing. Depth
+  // chart entries for the cloned players carry over too (remapped onto
+  // the new player ids); players NOT selected are simply absent from the
+  // new roster and the new depth chart, same as any player being removed.
+  cloneFromOwnerUserId: z.string().min(1).optional(),
+  playerIds: z.array(z.number().int()).optional(),
 });
 
 /**
@@ -186,6 +233,13 @@ const CreateTeamBody = z.object({
  *
  * The creator's coach profile (displayName/role) is carried over from
  * their personal owner-row so they aren't re-prompted for their name.
+ *
+ * When `cloneFromOwnerUserId` is given (and owned by the caller), the
+ * new team also gets a copy of that team's settings/branding and the
+ * selected players (by id) from its roster, with the depth chart
+ * remapped onto the newly-created player rows. Games, lineups, and
+ * stats are intentionally NOT copied — a cloned team starts a fresh
+ * season's history even when most of the roster carries over.
  */
 router.post("/teams", async (req, res): Promise<void> => {
   const userId = req.userId!;
@@ -198,6 +252,12 @@ router.post("/teams", async (req, res): Promise<void> => {
   const teamShortName =
     parsed.data.teamShortName?.trim() ||
     (teamName.split(/\s+/)[0] ?? DEFAULT_TEAM_SHORT_NAME).slice(0, 20);
+  const cloneFromOwnerUserId = parsed.data.cloneFromOwnerUserId;
+
+  if (cloneFromOwnerUserId && !(await isTeamOwnerUser(userId, cloneFromOwnerUserId))) {
+    res.status(403).json({ error: "Not an owner of the team you're cloning from" });
+    return;
+  }
 
   const teamKey = `team_${crypto.randomUUID()}`;
 
@@ -213,11 +273,106 @@ router.post("/teams", async (req, res): Promise<void> => {
       ),
     );
 
+  // Source team_settings to clone branding/defaults from. Fetched
+  // outside the transaction since it's read-only and only feeds the
+  // insert below.
+  const sourceSettings = cloneFromOwnerUserId
+    ? (
+        await db
+          .select()
+          .from(teamSettingsTable)
+          .where(eq(teamSettingsTable.userId, cloneFromOwnerUserId))
+      )[0]
+    : undefined;
+
+  const playerIdsToClone =
+    cloneFromOwnerUserId && parsed.data.playerIds && parsed.data.playerIds.length > 0
+      ? parsed.data.playerIds
+      : [];
+
+  let clonedPlayerCount = 0;
+
   await db.transaction(async (tx) => {
+    // Depth chart is remapped onto the NEW player ids created below, so
+    // it's computed after the player insert but written as part of the
+    // same team_settings row.
+    let depthChart: Record<string, number[]> = {};
+
+    if (cloneFromOwnerUserId && playerIdsToClone.length > 0) {
+      const sourcePlayers = await tx
+        .select()
+        .from(playersTable)
+        .where(
+          and(
+            eq(playersTable.userId, cloneFromOwnerUserId),
+            inArray(playersTable.id, playerIdsToClone),
+            isNull(playersTable.deletedAt),
+          ),
+        );
+
+      if (sourcePlayers.length > 0) {
+        const inserted = await tx
+          .insert(playersTable)
+          .values(
+            sourcePlayers.map((p) => ({
+              userId: teamKey,
+              name: p.name,
+              firstName: p.firstName,
+              lastName: p.lastName,
+              number: p.number,
+              eligiblePositions: p.eligiblePositions,
+              preferredPositions: p.preferredPositions,
+              canPitch: p.canPitch,
+              active: p.active,
+              notes: p.notes,
+            })),
+          )
+          .returning({ id: playersTable.id });
+        clonedPlayerCount = inserted.length;
+
+        // sourcePlayers and `inserted` come from the same single
+        // multi-row insert built off the same array, so they're in
+        // the same order — safe to zip by index for the id map.
+        const oldToNew = new Map<number, number>();
+        sourcePlayers.forEach((p, i) => {
+          const newId = inserted[i]?.id;
+          if (newId != null) oldToNew.set(p.id, newId);
+        });
+
+        if (sourceSettings?.depthChart) {
+          for (const [position, oldIds] of Object.entries(sourceSettings.depthChart)) {
+            const remapped = oldIds
+              .map((id) => oldToNew.get(id))
+              .filter((id): id is number => id != null);
+            if (remapped.length > 0) depthChart[position] = remapped;
+          }
+        }
+      }
+    }
+
     await tx.insert(teamSettingsTable).values({
       userId: teamKey,
       teamName,
       teamShortName,
+      ...(sourceSettings
+        ? {
+            sport: sourceSettings.sport,
+            battingStyle: sourceSettings.battingStyle,
+            defaultDailyPitchMax: sourceSettings.defaultDailyPitchMax,
+            defaultTournamentPitchMax: sourceSettings.defaultTournamentPitchMax,
+            defaultRestTiers: sourceSettings.defaultRestTiers,
+            activeFieldPositions: sourceSettings.activeFieldPositions,
+            usesGameChanger: sourceSettings.usesGameChanger,
+            usesTournaments: sourceSettings.usesTournaments,
+            showSelectPositions: sourceSettings.showSelectPositions,
+            primaryColor: sourceSettings.primaryColor,
+            secondaryColor: sourceSettings.secondaryColor,
+            // Cloning is a returning coach setting up a new season, not
+            // a fresh signup — skip the onboarding wizard on the new team.
+            onboardingCompletedAt: new Date(),
+          }
+        : {}),
+      depthChart,
     });
     await tx.insert(teamMembershipsTable).values({
       ownerUserId: teamKey,
@@ -237,8 +392,8 @@ router.post("/teams", async (req, res): Promise<void> => {
       });
   });
 
-  req.log.info({ teamKey }, "Created additional team");
-  res.status(201).json({ ownerUserId: teamKey, teamName, teamShortName });
+  req.log.info({ teamKey, clonedFrom: cloneFromOwnerUserId, clonedPlayerCount }, "Created additional team");
+  res.status(201).json({ ownerUserId: teamKey, teamName, teamShortName, clonedPlayerCount });
 });
 
 const ActiveBody = z.object({ ownerUserId: z.string().min(1) });

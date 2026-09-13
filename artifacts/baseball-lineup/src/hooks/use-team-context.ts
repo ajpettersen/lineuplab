@@ -119,6 +119,13 @@ export function useSwitchTeam() {
 export interface CreateTeamInput {
   teamName: string;
   teamShortName?: string;
+  /** Clone branding/settings + a chosen subset of players from another team you own. */
+  cloneFromOwnerUserId?: string;
+  playerIds?: number[];
+}
+
+export interface CreateTeamResult extends TeamSummary {
+  clonedPlayerCount?: number;
 }
 
 /**
@@ -130,7 +137,7 @@ export function useCreateTeam() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateTeamInput) =>
-      fetchJson<TeamSummary>(`${BASE}/api/teams`, {
+      fetchJson<CreateTeamResult>(`${BASE}/api/teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
@@ -138,6 +145,31 @@ export function useCreateTeam() {
     onSuccess: async () => {
       await resetTeamScopedCache(qc);
     },
+  });
+}
+
+export interface CloneRosterPlayer {
+  id: number;
+  name: string;
+  number: number | null;
+}
+
+/**
+ * Roster of a team the caller OWNS, for the "clone from…" checklist on
+ * the create-team dialog. Not the active-team player list — this can
+ * point at any team in `ownedTeams`, which is why it's a plain fetch
+ * keyed by ownerUserId rather than reusing the generated `useListPlayers`
+ * hook (that one always scopes to whatever team is currently active).
+ */
+export function useTeamRosterForClone(ownerUserId: string | null) {
+  return useQuery<CloneRosterPlayer[]>({
+    queryKey: ["team", "clone-roster", ownerUserId],
+    queryFn: () =>
+      fetchJson<CloneRosterPlayer[]>(
+        `${BASE}/api/teams/${encodeURIComponent(ownerUserId!)}/players`,
+      ),
+    enabled: !!ownerUserId,
+    staleTime: 30_000,
   });
 }
 

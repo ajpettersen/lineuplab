@@ -13,10 +13,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   useTeamContext,
   useSwitchTeam,
   useCreateTeam,
+  useTeamRosterForClone,
 } from "@/hooks/use-team-context";
 import { useToast } from "@/hooks/use-toast";
 
@@ -40,6 +49,36 @@ export default function Teams() {
   const [createOpen, setCreateOpen] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
+  // "" = start fresh with an empty roster. Any other value = ownerUserId
+  // of a team the coach owns, whose settings + a chosen subset of
+  // players get copied into the new team.
+  const [cloneFromId, setCloneFromId] = useState<string>("");
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<number>>(new Set());
+  const { data: cloneRoster = [], isLoading: cloneRosterLoading } =
+    useTeamRosterForClone(cloneFromId || null);
+
+  // Default every player to "included" each time a new source team's
+  // roster loads, so the common case (keep almost everyone) needs zero
+  // clicks — the coach just unchecks the couple of kids who aren't
+  // playing this season.
+  useEffect(() => {
+    setSelectedPlayerIds(new Set(cloneRoster.map((p) => p.id)));
+  }, [cloneRoster]);
+
+  const resetCreateForm = () => {
+    setTeamName("");
+    setCloneFromId("");
+    setSelectedPlayerIds(new Set());
+  };
+
+  const togglePlayer = (id: number) => {
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   // Deep link: /teams?create=1 opens the dialog immediately.
   useEffect(() => {
@@ -93,12 +132,24 @@ export default function Teams() {
       return;
     }
     createTeam.mutate(
-      { teamName: name },
       {
-        onSuccess: () => {
+        teamName: name,
+        ...(cloneFromId
+          ? { cloneFromOwnerUserId: cloneFromId, playerIds: Array.from(selectedPlayerIds) }
+          : {}),
+      },
+      {
+        onSuccess: (result) => {
           setCreateOpen(false);
-          setTeamName("");
-          toast({ title: `${name} created`, description: "You're now on your new team." });
+          resetCreateForm();
+          const cloned = result.clonedPlayerCount ?? 0;
+          toast({
+            title: `${name} created`,
+            description:
+              cloned > 0
+                ? `Copied ${cloned} player${cloned === 1 ? "" : "s"} and your team settings. You're now on your new team.`
+                : "You're now on your new team.",
+          });
           setLocation("/");
         },
         onError: (err) => {
@@ -209,32 +260,114 @@ export default function Teams() {
         </Card>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) resetCreateForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create a new team</DialogTitle>
             <DialogDescription>
-              Starts a fresh team with its own roster, schedule, and stats.
-              You can switch between your teams anytime.
+              Starts a new team with its own schedule and stats. Optionally
+              copy your roster and settings from a team you already coach.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="new-team-name">Team name</Label>
-            <Input
-              id="new-team-name"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              placeholder="e.g. Rockets 12U — 2027"
-              maxLength={60}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleCreate();
-                }
-              }}
-              data-testid="input-new-team-name"
-            />
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-team-name">Team name</Label>
+              <Input
+                id="new-team-name"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                placeholder="e.g. Rockets 12U — Fall 2026"
+                maxLength={60}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleCreate();
+                  }
+                }}
+                data-testid="input-new-team-name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="clone-from-team">Clone roster &amp; settings from</Label>
+              <Select
+                value={cloneFromId || "none"}
+                onValueChange={(v) => setCloneFromId(v === "none" ? "" : v)}
+              >
+                <SelectTrigger id="clone-from-team" data-testid="select-clone-from-team">
+                  <SelectValue placeholder="Start with an empty roster" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Start with an empty roster</SelectItem>
+                  {ownedTeams.map((t) => (
+                    <SelectItem key={t.ownerUserId} value={t.ownerUserId}>
+                      {t.teamName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {cloneFromId && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">
+                    Players to bring over ({selectedPlayerIds.size} of {cloneRoster.length})
+                  </Label>
+                  {cloneRoster.length > 0 && (
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline"
+                      onClick={() =>
+                        setSelectedPlayerIds(
+                          selectedPlayerIds.size === cloneRoster.length
+                            ? new Set()
+                            : new Set(cloneRoster.map((p) => p.id)),
+                        )
+                      }
+                    >
+                      {selectedPlayerIds.size === cloneRoster.length ? "Deselect all" : "Select all"}
+                    </button>
+                  )}
+                </div>
+                {cloneRosterLoading ? (
+                  <p className="text-sm text-muted-foreground italic py-2">Loading roster…</p>
+                ) : cloneRoster.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic py-2">
+                    That team has no active players to copy.
+                  </p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
+                    {cloneRoster.map((p) => (
+                      <label
+                        key={p.id}
+                        className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40"
+                      >
+                        <Checkbox
+                          checked={selectedPlayerIds.has(p.id)}
+                          onCheckedChange={() => togglePlayer(p.id)}
+                        />
+                        <span className="font-medium">{p.name}</span>
+                        {p.number != null && (
+                          <span className="text-xs text-muted-foreground">#{p.number}</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Depth chart positions carry over for the players you keep.
+                  Games, lineups, and stats stay with the original team.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
