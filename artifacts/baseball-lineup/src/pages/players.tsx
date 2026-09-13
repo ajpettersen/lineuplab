@@ -888,9 +888,7 @@ function PositionCoveragePanel({
                         {level === "thin" && (
                           <Info className="h-3 w-3" aria-hidden />
                         )}
-                        <span>
-                          {pos} / {count}
-                        </span>
+                        <span>{count}</span>
                       </div>
                     </div>
                   </TooltipTrigger>

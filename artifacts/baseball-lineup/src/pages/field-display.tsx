@@ -2085,7 +2085,20 @@ export default function FieldDisplay() {
         }}
       >
         {/* Left cluster: exit + team vs opponent (+ Start/kebab on phone) */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+        {/* `sm:min-w-[...]` is load-bearing, not decorative: this is the
+         *  ONLY header cluster with `min-w-0`, so when the row (inning
+         *  chip + timer + score steppers + End Game) doesn't all fit at
+         *  once, flexbox satisfies that by shrinking THIS cluster —  and
+         *  since nothing else here has a floor, it can shrink the team
+         *  names all the way to 0 visible characters ("VS." with nothing
+         *  on either side) rather than wrapping. Common iPad/laptop
+         *  widths hit this. The header already has `flex-wrap` for
+         *  exactly this case — it just never engaged because this was
+         *  the only participant allowed to collapse. Giving it a floor
+         *  means the OTHER clusters wrap to a second row instead once
+         *  the team names hit their minimum, which is the trade-off
+         *  coaches actually want (always show who's playing). */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 sm:min-w-[200px] md:min-w-[260px] lg:min-w-[340px] flex-1">
           {/* Mobile Exit (back chevron). The earlier iteration removed
            *  this on the theory that the right-side End Game button
            *  was the single source of truth — but on phones the
