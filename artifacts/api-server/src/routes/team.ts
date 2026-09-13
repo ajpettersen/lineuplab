@@ -202,16 +202,17 @@ router.get("/team/context", async (req, res): Promise<void> => {
  * team the caller OWNS (not necessarily their currently-active team).
  * Powers the "clone roster from…" checklist on the create-team dialog,
  * where a coach needs to see e.g. their Summer team's players while
- * they're mid-flow creating a new Fall team. Refuses teams the caller
- * doesn't own — this is a read of another tenant's roster, so it needs
- * the same ownership check as the clone itself.
+ * they're mid-flow creating a new Fall team. Any membership tier on the
+ * source team is enough — this only reads the roster, it doesn't
+ * change anything, and plenty of coaches run their real team as a
+ * member (not the owner) of a team someone else's account created.
  */
 router.get("/teams/:ownerUserId/players", async (req, res): Promise<void> => {
   const userId = req.userId!;
   const sourceOwnerId = req.params.ownerUserId;
 
-  if (!(await isTeamOwnerUser(userId, sourceOwnerId))) {
-    res.status(403).json({ error: "Not an owner of that team" });
+  if (!(await getUserPermission(userId, sourceOwnerId))) {
+    res.status(403).json({ error: "Not a member of that team" });
     return;
   }
 
@@ -239,8 +240,10 @@ const CreateTeamBody = z.object({
   teamShortName: z.string().trim().min(1).max(20).optional(),
   // Optional roster clone: copy team_settings (branding, sport, batting
   // style, pitch defaults, field layout) and a chosen subset of players
-  // from another team the caller owns — e.g. a Fall roster that's mostly
-  // the same kids as Summer, minus a couple who aren't playing. Depth
+  // from another team the caller belongs to (owner OR a regular member
+  // — e.g. an assistant coach cloning the roster of a team someone
+  // else's account owns) — e.g. a Fall roster that's mostly the same
+  // kids as Summer, minus a couple who aren't playing. Depth
   // chart entries for the cloned players carry over too (remapped onto
   // the new player ids); players NOT selected are simply absent from the
   // new roster and the new depth chart, same as any player being removed.
@@ -262,9 +265,10 @@ const CreateTeamBody = z.object({
  * The creator's coach profile (displayName/role) is carried over from
  * their personal owner-row so they aren't re-prompted for their name.
  *
- * When `cloneFromOwnerUserId` is given (and owned by the caller), the
- * new team also gets a copy of that team's settings/branding and the
- * selected players (by id) from its roster, with the depth chart
+ * When `cloneFromOwnerUserId` is given (and the caller belongs to that
+ * team, as owner or member), the new team also gets a copy of that
+ * team's settings/branding and the selected players (by id) from its
+ * roster, with the depth chart
  * remapped onto the newly-created player rows. Games, lineups, and
  * stats are intentionally NOT copied — a cloned team starts a fresh
  * season's history even when most of the roster carries over.
@@ -282,8 +286,8 @@ router.post("/teams", async (req, res): Promise<void> => {
     (teamName.split(/\s+/)[0] ?? DEFAULT_TEAM_SHORT_NAME).slice(0, 20);
   const cloneFromOwnerUserId = parsed.data.cloneFromOwnerUserId;
 
-  if (cloneFromOwnerUserId && !(await isTeamOwnerUser(userId, cloneFromOwnerUserId))) {
-    res.status(403).json({ error: "Not an owner of the team you're cloning from" });
+  if (cloneFromOwnerUserId && !(await getUserPermission(userId, cloneFromOwnerUserId))) {
+    res.status(403).json({ error: "Not a member of the team you're cloning from" });
     return;
   }
 

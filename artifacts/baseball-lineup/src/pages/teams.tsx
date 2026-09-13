@@ -479,7 +479,7 @@ export default function Teams() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Start with an empty roster</SelectItem>
-                  {ownedTeams.map((t) => (
+                  {allTeams.map((t) => (
                     <SelectItem key={t.ownerUserId} value={t.ownerUserId}>
                       {t.teamName}
                     </SelectItem>
