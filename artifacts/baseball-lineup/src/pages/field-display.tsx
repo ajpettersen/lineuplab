@@ -2095,20 +2095,21 @@ export default function FieldDisplay() {
         }}
       >
         {/* Left cluster: exit + team vs opponent (+ Start/kebab on phone) */}
-        {/* `sm:min-w-[...]` is load-bearing, not decorative: this is the
-         *  ONLY header cluster with `min-w-0`, so when the row (inning
-         *  chip + timer + score steppers + End Game) doesn't all fit at
-         *  once, flexbox satisfies that by shrinking THIS cluster —  and
-         *  since nothing else here has a floor, it can shrink the team
-         *  names all the way to 0 visible characters ("VS." with nothing
-         *  on either side) rather than wrapping. Common iPad/laptop
-         *  widths hit this. The header already has `flex-wrap` for
-         *  exactly this case — it just never engaged because this was
-         *  the only participant allowed to collapse. Giving it a floor
-         *  means the OTHER clusters wrap to a second row instead once
-         *  the team names hit their minimum, which is the trade-off
-         *  coaches actually want (always show who's playing). */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 sm:min-w-[200px] md:min-w-[260px] lg:min-w-[340px] flex-1">
+        {/* `flex-1` (grow) is deliberately MOBILE-ONLY here (`sm:grow-0`
+         *  cancels it from `sm` up). Below `sm`, this cluster still needs
+         *  to grow so the phone-only GameTimer's `ml-auto` has room to
+         *  push itself to the right edge of row 1 (see that div below).
+         *  At `sm`+ growing is exactly what caused the "condense this"
+         *  complaint: this was the only participant that grew, so it
+         *  soaked up ALL leftover header width, shoving the inning chip
+         *  out to the far right with a big dead gap in between instead
+         *  of everything reading as one packed left-to-right bar.
+         *  `sm:shrink sm:basis-auto` keeps it content-sized (full name
+         *  when there's room) while still letting it compress under
+         *  pressure — the `min-w-[...]` floor below is what stops that
+         *  compression from ever reaching 0 visible characters (see the
+         *  header's own comment for that history). */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 sm:min-w-[200px] md:min-w-[260px] lg:min-w-[340px] flex-1 sm:grow-0 sm:shrink sm:basis-auto">
           {/* Mobile Exit (back chevron). The earlier iteration removed
            *  this on the theory that the right-side End Game button
            *  was the single source of truth — but on phones the
