@@ -15,6 +15,7 @@ import {
   purgePersistedQueryCache,
 } from "@/lib/query-persister";
 import { registerMutationDefaults } from "@/lib/mutation-defaults";
+import { resetToDefaultTeam } from "@/hooks/use-team-context";
 import {
   ClerkProvider,
   SignIn,
@@ -358,19 +359,46 @@ function ClerkQueryClientCacheInvalidator() {
   useEffect(() => {
     const unsubscribe = addListener(({ user }) => {
       const userId = user?.id ?? null;
-      if (
-        prevUserIdRef.current !== undefined &&
-        prevUserIdRef.current !== userId
-      ) {
-        qc.clear();
-        // Also wipe the IndexedDB-persisted cache directly. qc.clear()
-        // alone isn't enough: the persister has a 1s write throttle,
-        // so a dehydrate scheduled before the user change can still
-        // overwrite IDB *after* the clear, leaking data into the next
-        // sign-in on a shared iPad. See purgePersistedQueryCache().
-        void purgePersistedQueryCache();
-      }
+      const prevUserId = prevUserIdRef.current;
+      const changed = prevUserId !== undefined && prevUserId !== userId;
+      // A genuine sign-in — as opposed to the SPA simply booting while
+      // an existing session cookie is still valid — is the ONE moment
+      // we can reliably distinguish "just authenticated" from "app
+      // reloaded, still logged in": this listener's first invocation
+      // always fires with whatever user is already active (setting
+      // prevUserId from `undefined`, which `changed` treats as a no-op),
+      // so `changed` only trips on a REAL transition later in the same
+      // mounted session — sign-out→null, or null→a real user completing
+      // the sign-in flow.
+      const isFreshSignIn = prevUserId !== undefined && prevUserId === null && userId !== null;
       prevUserIdRef.current = userId;
+
+      if (!changed) return;
+
+      if (isFreshSignIn) {
+        // Land on the coach's default team (or their personal team if
+        // none is set) BEFORE wiping the cache, so the first refetch
+        // after sign-in already reflects the right team instead of
+        // whatever happened to be active on a previous device/session.
+        // Best-effort: if this fails, the existing active-team pointer
+        // (or the personal-team fallback in resolveTeamContext) still
+        // gives a working, if not necessarily default, team.
+        void resetToDefaultTeam()
+          .catch(() => {})
+          .finally(() => {
+            qc.clear();
+            void purgePersistedQueryCache();
+          });
+        return;
+      }
+
+      qc.clear();
+      // Also wipe the IndexedDB-persisted cache directly. qc.clear()
+      // alone isn't enough: the persister has a 1s write throttle,
+      // so a dehydrate scheduled before the user change can still
+      // overwrite IDB *after* the clear, leaking data into the next
+      // sign-in on a shared iPad. See purgePersistedQueryCache().
+      void purgePersistedQueryCache();
     });
     return unsubscribe;
   }, [addListener, qc]);

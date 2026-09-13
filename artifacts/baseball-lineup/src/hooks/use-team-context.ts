@@ -52,11 +52,15 @@ export interface CurrentUserContext {
 export interface TeamContext {
   userId: string;
   activeOwnerUserId: string;
+  /** Which team to land on at sign-in. Null = no default set, falls back to the personal team. */
+  defaultOwnerUserId: string | null;
   isOwner: boolean;
   /** The user's personal (first) team — kept for the admin "return to my team" flow. */
   ownedTeam: TeamSummary;
-  /** ALL teams the user is head coach of: personal team first, then extra teams. */
+  /** Owned teams that are NOT archived: personal team first, then extra teams. */
   ownedTeams: TeamSummary[];
+  /** Owned teams the coach archived — hidden from the main grid, data untouched. */
+  archivedTeams: TeamSummary[];
   memberOf: TeamSummary[];
   currentUser: CurrentUserContext;
 }
@@ -112,6 +116,106 @@ export function useSwitchTeam() {
       }),
     onSuccess: async () => {
       await resetTeamScopedCache(qc);
+    },
+  });
+}
+
+/**
+ * Mark a team as the one to land on at sign-in, independent of whatever
+ * team is currently active. Does NOT switch the active team or touch the
+ * query cache — the coach can default a team without leaving the one
+ * they're currently on.
+ */
+export function useSetDefaultTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ownerUserId: string) =>
+      fetchJson<{ defaultOwnerUserId: string }>(`${BASE}/api/team/default`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerUserId }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamContextQueryKey });
+    },
+  });
+}
+
+/**
+ * Not a hook — called once, imperatively, from `ClerkQueryClientCacheInvalidator`
+ * in App.tsx right when it detects a genuine sign-in (not just the SPA
+ * reloading while already authenticated). Switches the active team to
+ * the coach's saved default (or their personal team if none is set)
+ * BEFORE the query cache is cleared, so the very first refetch after
+ * sign-in already lands on the right team instead of flashing whatever
+ * was last active on a previous device/session.
+ */
+export function resetToDefaultTeam(): Promise<{ activeOwnerUserId: string }> {
+  return fetchJson<{ activeOwnerUserId: string }>(`${BASE}/api/team/reset-to-default`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Hide an owned team from the "My Teams" grid without deleting its data.
+ * The team's own data queries aren't affected — this only changes what
+ * `team/context` returns, so refresh that query on success.
+ */
+export function useArchiveTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ownerUserId: string) =>
+      fetchJson<{ archived: true }>(`${BASE}/api/teams/${encodeURIComponent(ownerUserId)}/archive`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamContextQueryKey });
+    },
+  });
+}
+
+export function useUnarchiveTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ownerUserId: string) =>
+      fetchJson<{ archived: false }>(`${BASE}/api/teams/${encodeURIComponent(ownerUserId)}/unarchive`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamContextQueryKey });
+    },
+  });
+}
+
+/**
+ * PERMANENTLY erase a team and everything scoped to it — roster, games,
+ * lineups, stats, practices, tournaments, invites, coach memberships.
+ * There is no undo. The server refuses to delete a coach's personal
+ * team, but doesn't otherwise care whether it's currently active — the
+ * UI should still avoid offering this for the team you're on right now.
+ */
+export function useDeleteTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ownerUserId: string) =>
+      fetch(`${BASE}/api/teams/${encodeURIComponent(ownerUserId)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE" }),
+      }).then(async (r) => {
+        if (!r.ok) {
+          let msg = `Request failed (${r.status})`;
+          try {
+            const body = (await r.json()) as { error?: string };
+            if (body.error) msg = body.error;
+          } catch {
+            // ignore
+          }
+          throw new Error(msg);
+        }
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: teamContextQueryKey });
     },
   });
 }

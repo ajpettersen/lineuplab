@@ -16,13 +16,20 @@ import {
   teamSettingsTable,
   userActiveTeamTable,
   playersTable,
+  gamesTable,
+  lineupConstraintsTable,
+  practicesTable,
+  tournamentsTable,
+  aiAssistantQuestionsTable,
+  aiUsageLogTable,
+  pushSubscriptionsTable,
   ensureOwnerMembership,
   isPermissionTier,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
   type PermissionTier,
 } from "@workspace/db";
-import { assertPermission, isMasterAdmin, isTeamOwnerUser } from "../lib/permissions";
+import { assertPermission, getUserPermission, isMasterAdmin, isTeamOwnerUser } from "../lib/permissions";
 
 const router: IRouter = Router();
 
@@ -35,18 +42,19 @@ function generateToken(): string {
 
 /**
  * Look up team_settings rows for a list of owner ids and return a
- * `{ ownerUserId → { teamName, teamShortName } }` map. Owners with no
- * row yet (haven't customized branding) appear with the default labels
- * so the UI never shows blanks.
+ * `{ ownerUserId → { teamName, teamShortName, archivedAt } }` map.
+ * Owners with no row yet (haven't customized branding) appear with the
+ * default labels and `archivedAt: null` so the UI never shows blanks.
  */
 async function fetchTeamLabels(
   ownerUserIds: string[],
-): Promise<Record<string, { teamName: string; teamShortName: string }>> {
-  const map: Record<string, { teamName: string; teamShortName: string }> = {};
+): Promise<Record<string, { teamName: string; teamShortName: string; archivedAt: Date | null }>> {
+  const map: Record<string, { teamName: string; teamShortName: string; archivedAt: Date | null }> = {};
   for (const id of ownerUserIds) {
     map[id] = {
       teamName: DEFAULT_TEAM_NAME,
       teamShortName: DEFAULT_TEAM_SHORT_NAME,
+      archivedAt: null,
     };
   }
   if (ownerUserIds.length === 0) return map;
@@ -55,11 +63,12 @@ async function fetchTeamLabels(
       userId: teamSettingsTable.userId,
       teamName: teamSettingsTable.teamName,
       teamShortName: teamSettingsTable.teamShortName,
+      archivedAt: teamSettingsTable.archivedAt,
     })
     .from(teamSettingsTable)
     .where(inArray(teamSettingsTable.userId, ownerUserIds));
   for (const r of rows) {
-    map[r.userId] = { teamName: r.teamName, teamShortName: r.teamShortName };
+    map[r.userId] = { teamName: r.teamName, teamShortName: r.teamShortName, archivedAt: r.archivedAt };
   }
   return map;
 }
@@ -150,14 +159,33 @@ router.get("/team/context", async (req, res): Promise<void> => {
     teamShortName: labels[oid]!.teamShortName,
   });
 
+  // Sticky "land here on sign-in" pointer — separate from the ephemeral
+  // active team above. Read alongside the active-team row rather than
+  // as its own request since both live on the same user_active_team row.
+  const [activeRow] = await db
+    .select({ defaultOwnerUserId: userActiveTeamTable.defaultOwnerUserId })
+    .from(userActiveTeamTable)
+    .where(eq(userActiveTeamTable.userId, userId));
+  const defaultOwnerUserId = activeRow?.defaultOwnerUserId ?? null;
+
+  // Archived teams are hidden from the main switcher grid but still
+  // listed separately so the coach can find + unarchive them. Personal
+  // teams are never archived (enforced at the archive endpoint), so this
+  // split only ever pulls extra owned teams out of the main list.
+  const ownedIdsInOrder = [userId, ...extraOwnedIds];
+  const archivedOwnedIds = ownedIdsInOrder.filter((oid) => labels[oid]!.archivedAt != null);
+  const activeOwnedIds = ownedIdsInOrder.filter((oid) => labels[oid]!.archivedAt == null);
+
   res.json({
     userId,
     activeOwnerUserId: ownerUserId,
+    defaultOwnerUserId,
     isOwner: userId === ownerUserId || profileRow?.isOwner === true,
     ownedTeam: toSummary(userId),
     // Personal team first, then additional owned teams by creation
     // order (membership id ascending is close enough — ids are serial).
-    ownedTeams: [userId, ...extraOwnedIds].map(toSummary),
+    ownedTeams: activeOwnedIds.map(toSummary),
+    archivedTeams: archivedOwnedIds.map(toSummary),
     memberOf: otherOwnerIds.map(toSummary),
     currentUser: {
       displayName,
@@ -383,12 +411,16 @@ router.post("/teams", async (req, res): Promise<void> => {
       isOwner: true,
       permission: "full",
     });
+    // A freshly created team becomes both the active AND default team —
+    // for a coach setting up a new season this is exactly the team they
+    // want to land on going forward, not whatever they were on before.
+    // They can still explicitly re-default to another team afterward.
     await tx
       .insert(userActiveTeamTable)
-      .values({ userId, activeOwnerUserId: teamKey })
+      .values({ userId, activeOwnerUserId: teamKey, defaultOwnerUserId: teamKey })
       .onConflictDoUpdate({
         target: userActiveTeamTable.userId,
-        set: { activeOwnerUserId: teamKey, updatedAt: new Date() },
+        set: { activeOwnerUserId: teamKey, defaultOwnerUserId: teamKey, updatedAt: new Date() },
       });
   });
 
@@ -443,6 +475,225 @@ router.post("/team/active", async (req, res): Promise<void> => {
     });
 
   res.json({ activeOwnerUserId: target });
+});
+
+const DefaultTeamBody = z.object({ ownerUserId: z.string().min(1) });
+
+/**
+ * POST /api/team/default — mark a team as the one to land on when the
+ * coach signs back in, independent of whatever team they're currently
+ * viewing. Any team they belong to (owned or assisting) is a valid
+ * target — an assistant coach might reasonably want their default to be
+ * the head coach's team, not their own empty personal one.
+ */
+router.post("/team/default", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const parsed = DefaultTeamBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "ownerUserId required" });
+    return;
+  }
+  const target = parsed.data.ownerUserId;
+
+  if (target !== userId && !isMasterAdmin(userId)) {
+    const tier = await getUserPermission(userId, target);
+    if (!tier) {
+      res.status(403).json({ error: "Not a member of that team" });
+      return;
+    }
+  }
+
+  await db
+    .insert(userActiveTeamTable)
+    .values({ userId, activeOwnerUserId: userId, defaultOwnerUserId: target })
+    .onConflictDoUpdate({
+      target: userActiveTeamTable.userId,
+      set: { defaultOwnerUserId: target, updatedAt: new Date() },
+    });
+
+  res.json({ defaultOwnerUserId: target });
+});
+
+/**
+ * POST /api/team/reset-to-default — switch the active team to whatever
+ * the coach has marked as default, falling back to their personal team
+ * if no default is set OR the saved default no longer resolves (team
+ * deleted, membership revoked). Called by the client exactly once, right
+ * after it detects a genuine sign-in (not just an app reload while
+ * already signed in) — see `ClerkQueryClientCacheInvalidator` in App.tsx.
+ */
+router.post("/team/reset-to-default", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const [row] = await db
+    .select({ defaultOwnerUserId: userActiveTeamTable.defaultOwnerUserId })
+    .from(userActiveTeamTable)
+    .where(eq(userActiveTeamTable.userId, userId));
+
+  let target = row?.defaultOwnerUserId ?? userId;
+  if (target !== userId && !isMasterAdmin(userId)) {
+    const tier = await getUserPermission(userId, target);
+    if (!tier) target = userId; // stale default — fall back to personal team
+  }
+
+  await db
+    .insert(userActiveTeamTable)
+    .values({ userId, activeOwnerUserId: target })
+    .onConflictDoUpdate({
+      target: userActiveTeamTable.userId,
+      set: { activeOwnerUserId: target, updatedAt: new Date() },
+    });
+
+  res.json({ activeOwnerUserId: target });
+});
+
+/**
+ * POST /api/teams/:ownerUserId/archive — hide an owned team from the
+ * "My Teams" grid without deleting anything. Only the owner can archive;
+ * a coach's own personal team never can (it's the permanent fallback
+ * scope). If the caller's OWN active or default pointer is this team,
+ * bump them back to their personal team so they don't land on a hidden
+ * team next time — other coaches on the team are left alone (they can
+ * still use it if they're actively on it; it's just hidden from the
+ * browse grid).
+ */
+router.post("/teams/:ownerUserId/archive", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const target = req.params.ownerUserId;
+
+  if (target === userId) {
+    res.status(400).json({ error: "Your personal team can't be archived" });
+    return;
+  }
+  if (!(await isTeamOwnerUser(userId, target))) {
+    res.status(403).json({ error: "Not an owner of that team" });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(teamSettingsTable)
+      .set({ archivedAt: new Date() })
+      .where(eq(teamSettingsTable.userId, target));
+
+    const [row] = await tx
+      .select()
+      .from(userActiveTeamTable)
+      .where(eq(userActiveTeamTable.userId, userId));
+    if (row && (row.activeOwnerUserId === target || row.defaultOwnerUserId === target)) {
+      await tx
+        .update(userActiveTeamTable)
+        .set({
+          activeOwnerUserId: row.activeOwnerUserId === target ? userId : row.activeOwnerUserId,
+          defaultOwnerUserId: row.defaultOwnerUserId === target ? null : row.defaultOwnerUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(userActiveTeamTable.userId, userId));
+    }
+  });
+
+  res.json({ archived: true });
+});
+
+/**
+ * POST /api/teams/:ownerUserId/unarchive — bring an archived team back
+ * into the "My Teams" grid. Data was never touched, so this is a pure
+ * flag flip.
+ */
+router.post("/teams/:ownerUserId/unarchive", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const target = req.params.ownerUserId;
+
+  if (!(await isTeamOwnerUser(userId, target))) {
+    res.status(403).json({ error: "Not an owner of that team" });
+    return;
+  }
+
+  await db
+    .update(teamSettingsTable)
+    .set({ archivedAt: null })
+    .where(eq(teamSettingsTable.userId, target));
+
+  res.json({ archived: false });
+});
+
+const DeleteTeamBody = z.object({ confirm: z.literal("DELETE") });
+
+/**
+ * DELETE /api/teams/:ownerUserId — PERMANENTLY erase a team: roster,
+ * games, lineups, stats, practices, tournaments, invites, coach
+ * memberships — everything scoped to this team's owner key. Gated
+ * behind `{ confirm: "DELETE" }` in the body (mirrors the "delete all
+ * manual batting stats" confirmation pattern) since there is no undo.
+ *
+ * Deliberately NOT touched: `user_preferences` and `idempotency_keys`
+ * are keyed by the PERSON (raw Clerk userId), not the team scope, so
+ * they're unrelated to this team's data. `tournament_networks` rows are
+ * shared across coaches and outlive any single team's participation in
+ * them — only this team's `tournament_network_members` rows go, via the
+ * cascade off `tournaments`.
+ *
+ * Every table that has a hard FK to `games` or `players` with
+ * `onDelete: cascade` (lineup entries/locks, pitch counts, batting
+ * lines, batted-ball events, AI pinned assignments, historical
+ * fielding, task dismissals, practice attendance) is cleaned up
+ * automatically by deleting those two parent tables first — see the
+ * schema audit in the PR description for the full dependency map.
+ * `lineup_constraints.playerId` is nullable (team-wide constraints
+ * aren't tied to one player), so it needs its own explicit delete.
+ */
+router.delete("/teams/:ownerUserId", async (req, res): Promise<void> => {
+  const userId = req.userId!;
+  const target = req.params.ownerUserId;
+
+  if (target === userId) {
+    res.status(400).json({ error: "Your personal team can't be deleted" });
+    return;
+  }
+  if (!(await isTeamOwnerUser(userId, target))) {
+    res.status(403).json({ error: "Not an owner of that team" });
+    return;
+  }
+  const parsed = DeleteTeamBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Confirmation required: send { confirm: "DELETE" }' });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(gamesTable).where(eq(gamesTable.userId, target));
+    await tx.delete(playersTable).where(eq(playersTable.userId, target));
+    await tx.delete(lineupConstraintsTable).where(eq(lineupConstraintsTable.userId, target));
+    await tx.delete(practicesTable).where(eq(practicesTable.userId, target));
+    await tx.delete(tournamentsTable).where(eq(tournamentsTable.userId, target));
+    await tx.delete(aiAssistantQuestionsTable).where(eq(aiAssistantQuestionsTable.ownerUserId, target));
+    await tx.delete(aiUsageLogTable).where(eq(aiUsageLogTable.ownerUserId, target));
+    await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.teamOwnerUserId, target));
+    await tx.delete(teamInvitesTable).where(eq(teamInvitesTable.ownerUserId, target));
+    await tx.delete(teamMembershipsTable).where(eq(teamMembershipsTable.ownerUserId, target));
+    await tx.delete(teamSettingsTable).where(eq(teamSettingsTable.userId, target));
+
+    // Courtesy cleanup for the caller's own pointer so their very next
+    // request doesn't need to lazily self-heal through resolveTeamContext.
+    // Other members pointing at the now-gone team self-heal on their next
+    // request (stale-membership fallback) or next reset-to-default call.
+    const [row] = await tx
+      .select()
+      .from(userActiveTeamTable)
+      .where(eq(userActiveTeamTable.userId, userId));
+    if (row && (row.activeOwnerUserId === target || row.defaultOwnerUserId === target)) {
+      await tx
+        .update(userActiveTeamTable)
+        .set({
+          activeOwnerUserId: row.activeOwnerUserId === target ? userId : row.activeOwnerUserId,
+          defaultOwnerUserId: row.defaultOwnerUserId === target ? null : row.defaultOwnerUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(userActiveTeamTable.userId, userId));
+    }
+  });
+
+  req.log.info({ target }, "Deleted team");
+  res.status(204).send();
 });
 
 /**

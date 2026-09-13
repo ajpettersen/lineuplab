@@ -151,6 +151,15 @@ export const teamSettingsTable = pgTable("team_settings", {
   icalLastSyncError: text("ical_last_sync_error"),
   /** Count of games upserted on the last successful sync. Null if never run or last run errored. */
   icalLastSyncCount: integer("ical_last_sync_count"),
+  /**
+   * When set, this team is hidden from the "My Teams" grid (e.g. last
+   * season's roster once a new one is cloned from it) but its data is
+   * untouched and can be restored any time via unarchive. Only an owner
+   * can archive/unarchive, and a coach's own personal team (ownerUserId
+   * === their Clerk userId) can never be archived — it's the permanent
+   * fallback scope every other piece of team logic assumes exists.
+   */
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

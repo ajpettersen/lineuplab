@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Check, Plus, Shield, Users } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  MoreVertical,
+  Plus,
+  Shield,
+  Star,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -22,10 +32,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   useTeamContext,
   useSwitchTeam,
   useCreateTeam,
   useTeamRosterForClone,
+  useSetDefaultTeam,
+  useArchiveTeam,
+  useUnarchiveTeam,
+  useDeleteTeam,
+  type TeamSummary,
 } from "@/hooks/use-team-context";
 import { useToast } from "@/hooks/use-toast";
 
@@ -42,9 +63,18 @@ export default function Teams() {
   const { data: ctx, isLoading } = useTeamContext();
   const switchTeam = useSwitchTeam();
   const createTeam = useCreateTeam();
+  const setDefaultTeam = useSetDefaultTeam();
+  const archiveTeam = useArchiveTeam();
+  const unarchiveTeam = useUnarchiveTeam();
+  const deleteTeam = useDeleteTeam();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const search = useSearch();
+
+  // Team pending permanent deletion, awaiting typed confirmation. Null
+  // when the dialog is closed.
+  const [deleteTarget, setDeleteTarget] = useState<TeamSummary | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [teamName, setTeamName] = useState("");
@@ -163,6 +193,59 @@ export default function Teams() {
     );
   };
 
+  const handleSetDefault = (t: TeamSummary) => {
+    setDefaultTeam.mutate(t.ownerUserId, {
+      onSuccess: () => toast({ title: `${t.teamName} is now your default team` }),
+      onError: (err) =>
+        toast({
+          title: "Couldn't set default",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    });
+  };
+
+  const handleArchive = (t: TeamSummary) => {
+    archiveTeam.mutate(t.ownerUserId, {
+      onSuccess: () => toast({ title: `${t.teamName} archived`, description: "Its data is untouched — unarchive it anytime." }),
+      onError: (err) =>
+        toast({
+          title: "Couldn't archive team",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    });
+  };
+
+  const handleUnarchive = (t: TeamSummary) => {
+    unarchiveTeam.mutate(t.ownerUserId, {
+      onSuccess: () => toast({ title: `${t.teamName} restored to My Teams` }),
+      onError: (err) =>
+        toast({
+          title: "Couldn't unarchive team",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    });
+  };
+
+  const handleDeleteConfirmed = () => {
+    if (!deleteTarget) return;
+    deleteTeam.mutate(deleteTarget.ownerUserId, {
+      onSuccess: () => {
+        toast({ title: `${deleteTarget.teamName} deleted permanently` });
+        setDeleteTarget(null);
+        setDeleteConfirmText("");
+      },
+      onError: (err) =>
+        toast({
+          title: "Couldn't delete team",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    });
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
@@ -182,6 +265,8 @@ export default function Teams() {
         {allTeams.map((t) => {
           const isActive = t.ownerUserId === ctx.activeOwnerUserId;
           const isOwn = ownedIds.has(t.ownerUserId);
+          const isPersonal = t.ownerUserId === ctx.userId;
+          const isDefault = t.ownerUserId === ctx.defaultOwnerUserId;
           const isSwitchingThis =
             switchTeam.isPending && pendingSwitchId === t.ownerUserId;
           return (
@@ -206,7 +291,15 @@ export default function Teams() {
                   <Shield className="h-6 w-6 text-primary-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold truncate">{t.teamName}</div>
+                  <div className="font-semibold truncate flex items-center gap-1.5">
+                    {t.teamName}
+                    {isDefault && (
+                      <Star
+                        className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400"
+                        aria-label="Default team"
+                      />
+                    )}
+                  </div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1 mt-0.5">
                     {isOwn ? (
                       "Head coach"
@@ -219,14 +312,55 @@ export default function Teams() {
                 </div>
                 {isSwitchingThis ? (
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                ) : isActive ? (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs font-medium px-2 py-1"
-                    data-testid={`badge-current-team-${t.ownerUserId}`}
-                  >
-                    <Check className="h-3 w-3" /> Current
-                  </span>
-                ) : null}
+                ) : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isActive && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs font-medium px-2 py-1"
+                        data-testid={`badge-current-team-${t.ownerUserId}`}
+                      >
+                        <Check className="h-3 w-3" /> Current
+                      </span>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          aria-label={`Manage ${t.teamName}`}
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`button-team-menu-${t.ownerUserId}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        {!isDefault && (
+                          <DropdownMenuItem onClick={() => handleSetDefault(t)}>
+                            <Star className="h-4 w-4 mr-2" /> Set as default
+                          </DropdownMenuItem>
+                        )}
+                        {isOwn && !isPersonal && (
+                          <DropdownMenuItem onClick={() => handleArchive(t)}>
+                            <Archive className="h-4 w-4 mr-2" /> Archive
+                          </DropdownMenuItem>
+                        )}
+                        {isOwn && !isPersonal && !isActive && (
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => {
+                              setDeleteConfirmText("");
+                              setDeleteTarget(t);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" /> Delete permanently
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -259,6 +393,38 @@ export default function Teams() {
           </CardContent>
         </Card>
       </div>
+
+      {ctx.archivedTeams.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+            Archived teams
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {ctx.archivedTeams.map((t) => (
+              <Card key={t.ownerUserId} className="opacity-70" data-testid={`card-archived-team-${t.ownerUserId}`}>
+                <CardContent className="p-5 flex items-center gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <Archive className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">{t.teamName}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Archived — data untouched</div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => handleUnarchive(t)}
+                    disabled={unarchiveTeam.isPending}
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5 mr-1" /> Unarchive
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Dialog
         open={createOpen}
@@ -384,6 +550,66 @@ export default function Teams() {
               data-testid="button-confirm-create-team"
             >
               {createTeam.isPending ? "Creating…" : "Create team"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Permanent-delete confirmation. No archive-instead offer here —
+          that's a separate, already-visible menu item; this dialog is
+          only reached once the coach has specifically chosen "Delete
+          permanently". */}
+      <Dialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteConfirmText("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">
+              Delete {deleteTarget?.teamName}?
+            </DialogTitle>
+            <DialogDescription>
+              This permanently erases the roster, schedule, lineups, and every
+              stat for this team. There is no undo — if you might want this
+              data back later, Archive it instead.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="delete-confirm" className="text-xs">
+              Type <span className="font-mono font-semibold">DELETE</span> to confirm
+            </Label>
+            <Input
+              id="delete-confirm"
+              autoFocus
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="DELETE"
+              data-testid="input-delete-team-confirm"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteTarget(null);
+                setDeleteConfirmText("");
+              }}
+              disabled={deleteTeam.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteConfirmText !== "DELETE" || deleteTeam.isPending}
+              onClick={handleDeleteConfirmed}
+              data-testid="button-confirm-delete-team"
+            >
+              {deleteTeam.isPending ? "Deleting…" : "Delete permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>
