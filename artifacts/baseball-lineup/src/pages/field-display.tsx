@@ -2066,8 +2066,18 @@ export default function FieldDisplay() {
        *  - Desktop (sm+) is unchanged: left cluster is flex-1 and all
        *    three clusters fit on a single row with the inning chip in
        *    the middle. */}
+      {/* `justify-start` (the default — no `justify-between`/`justify-end`
+       *  anywhere in this header) is deliberate: with 4 flex children
+       *  (team title, inning chip, status/timer/score/actions, the
+       *  "Show rotation" trigger) and `flex-wrap`, `justify-between`
+       *  spread whichever pair landed on a wrapped line out to the two
+       *  edges — coaches saw big, uneven gaps between clusters instead
+       *  of a coherent left-to-right reading order. Packing everything
+       *  from the left (with `gap-x` for breathing room, and only the
+       *  team-title cluster allowed to grow into leftover space) reads
+       *  as one coherent broadcast bar instead of scattered pieces. */}
       <header
-        className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-accent"} bg-[var(--fd-panel)] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
+        className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-3 sm:px-6 pb-2 ${isTournament ? "border-b-0" : "border-b-4 border-accent"} bg-[var(--fd-panel)] shadow-[0_4px_20px_rgba(0,0,0,0.5)] shrink-0 relative z-10`}
         style={{
           // iPad status bar (clock / WiFi / battery) sits on top of the
           // page in installed-PWA / fullscreen mode (we set
@@ -2283,8 +2293,11 @@ export default function FieldDisplay() {
           )}
         </div>
 
-        {/* Right cluster: live status, score, fullscreen */}
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0 sm:flex-1 sm:justify-end">
+        {/* Right cluster: live status, score, fullscreen.
+         *  No `flex-1`/`justify-end` here — this cluster packs left,
+         *  immediately after the inning chip, same as everything else
+         *  in the header. See the header's own comment for why. */}
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
           {/* Connection status badge.
             * Three visual states (priority order):
             *   OFFLINE — amber WifiOff icon + "Offline" or "Offline · will

@@ -512,7 +512,7 @@ router.post("/players/:id/restore", async (req, res): Promise<void> => {
 // game the player has either a batting line or a pitch count for, in
 // reverse-chronological order. Hand-rolled (not in OpenAPI) — clients
 // call with plain fetch, matching the `/api/batting` + `/api/pitching`
-// pattern documented in replit.md.
+// pattern.
 // ---------------------------------------------------------------------------
 router.get("/players/:id/game-log", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;

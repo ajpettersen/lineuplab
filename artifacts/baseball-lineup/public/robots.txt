@@ -5,4 +5,4 @@ Disallow: /sign-up
 Disallow: /admin
 Disallow: /join/
 
-Sitemap: https://lineup-lab.replit.app/sitemap.xml
+Sitemap: https://lineup-lab-production-7c33.up.railway.app/sitemap.xml
