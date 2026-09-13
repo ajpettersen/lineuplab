@@ -86,6 +86,12 @@ export default function Teams() {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<number>>(new Set());
   const { data: cloneRoster = [], isLoading: cloneRosterLoading } =
     useTeamRosterForClone(cloneFromId || null);
+  // `cloneRoster` falls back to a fresh `[]` on every render while the
+  // query is disabled/unloaded (the `= []` default has no memoization),
+  // so using it directly as an effect dependency below would never
+  // settle — a stable, primitive key derived from its actual content
+  // is what the effect should react to instead.
+  const cloneRosterKey = cloneRoster.map((p) => p.id).join(",");
 
   // Default every player to "included" each time a new source team's
   // roster loads, so the common case (keep almost everyone) needs zero
@@ -93,7 +99,8 @@ export default function Teams() {
   // playing this season.
   useEffect(() => {
     setSelectedPlayerIds(new Set(cloneRoster.map((p) => p.id)));
-  }, [cloneRoster]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloneRosterKey]);
 
   const resetCreateForm = () => {
     setTeamName("");
