@@ -56,6 +56,7 @@ export function EditGameDialog({
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
+  const [gameDatePart, gameTimePart] = gameDate.split("T");
   const [location, setLocation] = useState(game.location ?? "");
   const [innings, setInnings] = useState(String(game.innings));
   const [notes, setNotes] = useState(game.notes ?? "");
@@ -131,7 +132,20 @@ export function EditGameDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>Date & Time</Label>
-              <Input type="datetime-local" value={gameDate} onChange={(e) => setGameDate(e.target.value)} />
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  className="flex-1"
+                  value={gameDatePart}
+                  onChange={(e) => setGameDate(`${e.target.value}T${gameTimePart}`)}
+                />
+                <Input
+                  type="time"
+                  className="w-28"
+                  value={gameTimePart}
+                  onChange={(e) => setGameDate(`${gameDatePart}T${e.target.value}`)}
+                />
+              </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Innings</Label>

@@ -66,6 +66,11 @@ export default function NewGame() {
 
   const [opponent, setOpponent] = useState("");
   const [gameDate, setGameDate] = useState("");
+  // Derived, not separate state — gameDate ("YYYY-MM-DDTHH:mm") stays the
+  // single source of truth; these just feed the two split date/time inputs.
+  const [gameDatePart, gameTimePart] = gameDate.includes("T")
+    ? gameDate.split("T")
+    : ["", ""];
   const [location, setLocation] = useState("");
   const [innings, setInnings] = useState("6");
   const [inningsTouched, setInningsTouched] = useState(false);
@@ -328,16 +333,37 @@ export default function NewGame() {
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="gameDate">Date & Time</Label>
-                <Input
-                  id="gameDate"
-                  type="datetime-local"
-                  value={gameDate}
-                  onChange={(e) => setGameDate(e.target.value)}
-                  required
-                />
+                {/* Split into separate date/time inputs instead of a single
+                    type="datetime-local" — that control renders as an ugly,
+                    inconsistent multi-segment widget (e.g. Chrome shows a
+                    literal "--:-- --" placeholder for the empty time part)
+                    and varies a lot across browsers. Two plain fields look
+                    clean everywhere and combine into the same gameDate
+                    string ("YYYY-MM-DDTHH:mm") every other bit of this page
+                    already expects, so nothing downstream changes. */}
+                <div className="flex gap-2">
+                  <Input
+                    id="gameDate"
+                    type="date"
+                    className="flex-1"
+                    value={gameDatePart}
+                    onChange={(e) =>
+                      setGameDate(e.target.value ? `${e.target.value}T${gameTimePart || "12:00"}` : "")
+                    }
+                    required
+                  />
+                  <Input
+                    id="gameTime"
+                    type="time"
+                    className="w-32"
+                    value={gameTimePart}
+                    onChange={(e) => setGameDate(`${gameDatePart || todayISO()}T${e.target.value}`)}
+                    required
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="innings">Innings</Label>
