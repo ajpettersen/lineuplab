@@ -134,7 +134,15 @@ function defaultSeason(seasons: MblSeason[]): MblSeason | undefined {
  * Picking a team hands its iCal feed URL back to the dialog, which
  * previews and connects it like any pasted link.
  */
-function MblTeamFinder({ onPick, pickedId }: { onPick: (team: MblTeam) => void; pickedId: number | null }) {
+function MblTeamFinder({
+  onPick,
+  onClear,
+  picked,
+}: {
+  onPick: (team: MblTeam) => void;
+  onClear: () => void;
+  picked: MblTeam | null;
+}) {
   const seasons = useQuery({
     queryKey: ["mbl", "seasons"],
     queryFn: () => getJson<MblSeason[]>("/api/calendar/mbl/seasons"),
@@ -168,6 +176,23 @@ function MblTeamFinder({ onPick, pickedId }: { onPick: (team: MblTeam) => void; 
     );
   }
   if (!season) return <FinderLoading label="Loading MBL seasons…" />;
+
+  // Collapse to the chosen team so its game preview sits right below.
+  if (picked) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-md border border-primary/40 bg-primary/5 px-3 py-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{picked.name}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {[picked.division, association?.name, season.name].filter(Boolean).join(" · ")}
+          </div>
+        </div>
+        <button type="button" className="text-xs text-primary hover:underline shrink-0" onClick={onClear}>
+          Change
+        </button>
+      </div>
+    );
+  }
 
   const matches = (associations.data ?? []).filter((a) => a.name.toLowerCase().includes(filter.trim().toLowerCase()));
 
@@ -245,9 +270,7 @@ function MblTeamFinder({ onPick, pickedId }: { onPick: (team: MblTeam) => void; 
                 <li key={t.id}>
                   <button
                     type="button"
-                    className={`w-full px-3 py-2 text-left text-sm flex items-baseline justify-between gap-3 ${
-                      pickedId === t.id ? "bg-primary/10 font-medium" : "hover:bg-muted/60"
-                    }`}
+                    className="w-full px-3 py-2 text-left text-sm flex items-baseline justify-between gap-3 hover:bg-muted/60"
                     onClick={() => onPick(t)}
                   >
                     <span className="truncate">{t.name}</span>
@@ -388,7 +411,8 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
           {mode === "mbl" && (
             <>
               <MblTeamFinder
-                pickedId={mblTeam?.id ?? null}
+                picked={mblTeam}
+                onClear={reset}
                 onPick={(t) => {
                   setMblTeam(t);
                   setUrl(t.feedUrl);
