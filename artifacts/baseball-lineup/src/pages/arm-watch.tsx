@@ -342,17 +342,17 @@ export default function ArmWatch() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <ScrollArea className="w-full">
-            <div className="min-w-[900px]">
+          <ScrollArea className="w-full" type="always">
+            <div className="min-w-[900px] [--aw-name:9.5rem] sm:[--aw-name:220px]">
               {/* COLUMN HEADERS — two rows: day banner + per-game */}
               <div
                 className="grid bg-muted/30 border-b"
                 style={{
-                  gridTemplateColumns: `220px repeat(${upcomingGames.length}, minmax(150px, 1fr))`,
+                  gridTemplateColumns: `var(--aw-name) repeat(${upcomingGames.length}, minmax(150px, 1fr))`,
                 }}
               >
                 {/* Day banner row */}
-                <div className="border-r" />
+                <div className="border-r sticky left-0 z-10 bg-muted" />
                 {dayGroups.map((dg) => {
                   const tournamentId = dg.games[0]?.tournamentId ?? null;
                   const tournamentName = dg.games[0]?.tournamentName ?? null;
@@ -391,7 +391,7 @@ export default function ArmWatch() {
                 })}
 
                 {/* Per-game header row — pitcher column blank, then each game */}
-                <div className="border-r p-3 flex items-end">
+                <div className="border-r p-3 flex items-end sticky left-0 z-10 bg-muted">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Pitcher
                   </span>
@@ -439,11 +439,11 @@ export default function ArmWatch() {
                   key={p.playerId}
                   className={`grid border-b ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}
                   style={{
-                    gridTemplateColumns: `220px repeat(${upcomingGames.length}, minmax(150px, 1fr))`,
+                    gridTemplateColumns: `var(--aw-name) repeat(${upcomingGames.length}, minmax(150px, 1fr))`,
                   }}
                 >
                   {/* Pitcher header */}
-                  <div className="border-r p-3 flex items-center gap-3">
+                  <div className="border-r p-3 flex items-center gap-3 sticky left-0 z-10 bg-card">
                     <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-xs font-mono font-bold border shrink-0">
                       {p.playerNumber ?? "—"}
                     </div>
@@ -568,10 +568,10 @@ export default function ArmWatch() {
               <div
                 className="grid bg-muted/40 border-t-2 border-muted-foreground/10"
                 style={{
-                  gridTemplateColumns: `220px repeat(${upcomingGames.length}, minmax(150px, 1fr))`,
+                  gridTemplateColumns: `var(--aw-name) repeat(${upcomingGames.length}, minmax(150px, 1fr))`,
                 }}
               >
-                <div className="border-r p-3 flex items-center">
+                <div className="border-r p-3 flex items-center sticky left-0 z-10 bg-muted">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Team Pitches Logged
                   </span>

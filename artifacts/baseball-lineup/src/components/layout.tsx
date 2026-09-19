@@ -705,31 +705,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="shrink-0">
             <TeamSwitcher />
           </div>
-          {displayIdentity && (
-            <div
-              className="shrink-0 flex flex-col leading-tight max-w-[180px]"
-              data-testid="text-user-identity"
-            >
-              <span className="text-sm font-medium text-primary-foreground truncate">
-                {displayIdentity}
-              </span>
-              {ctx?.currentUser.role && (
-                <span className="text-[11px] text-primary-foreground/60 truncate uppercase tracking-wide">
-                  {ctx.currentUser.role}
-                </span>
+          {/* Account menu. The email + Sign out button used to sit in the
+              bar and ate ~350px, which pushed the nav into the horizontal
+              scroller on laptops; they now live behind one round button. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full border border-white/25 bg-white/10 text-sm font-semibold uppercase text-primary-foreground hover:bg-white/20"
+                aria-label="Account"
+                title={displayIdentity ?? "Account"}
+                data-testid="button-account-menu"
+              >
+                {(displayIdentity ?? "?").trim().charAt(0)}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              {displayIdentity && (
+                <div className="px-2 py-1.5" data-testid="text-user-identity">
+                  <div className="text-sm font-medium truncate">{displayIdentity}</div>
+                  {ctx?.currentUser.role && (
+                    <div className="text-xs text-muted-foreground truncate">{ctx.currentUser.role}</div>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSignOut}
-            className="shrink-0 gap-2 border-white/20 bg-white/5 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-            data-testid="button-sign-out"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </Button>
+              <DropdownMenuItem onSelect={handleSignOut} data-testid="button-sign-out">
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         </div>
         {/* Chevron arrow overlays — auto-scroll the cluster while
