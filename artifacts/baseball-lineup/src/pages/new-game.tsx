@@ -346,39 +346,37 @@ export default function NewGame() {
                 required
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="gameDate">Date & Time</Label>
-                {/* Split into separate date/time inputs instead of a single
-                    type="datetime-local" — that control renders as an ugly,
-                    inconsistent multi-segment widget (e.g. Chrome shows a
-                    literal "--:-- --" placeholder for the empty time part)
-                    and varies a lot across browsers. Two plain fields look
-                    clean everywhere and combine into the same gameDate
-                    string ("YYYY-MM-DDTHH:mm") every other bit of this page
-                    already expects, so nothing downstream changes. */}
-                <div className="flex gap-2">
-                  <Input
-                    id="gameDate"
-                    type="date"
-                    className="flex-1"
-                    value={gameDatePart}
-                    onChange={(e) =>
-                      setGameDate(e.target.value ? `${e.target.value}T${gameTimePart || "12:00"}` : "")
-                    }
-                    required
-                  />
-                  <Input
-                    id="gameTime"
-                    type="time"
-                    className="w-32"
-                    value={gameTimePart}
-                    onChange={(e) => setGameDate(`${gameDatePart || todayISO()}T${e.target.value}`)}
-                    required
-                  />
-                </div>
+            {/* Date | Time | Innings as three separately-labeled fields.
+                Split date/time instead of one type="datetime-local" (that
+                control renders as an inconsistent "mm/dd/yyyy, --:-- --"
+                widget); both halves write the same "YYYY-MM-DDTHH:mm"
+                gameDate string the rest of this page expects. Own columns
+                (not date+time crammed into half a row) so the time field
+                can't overflow into Innings. Phone: date gets a full row. */}
+            <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_9rem_6rem] gap-3">
+              <div className="col-span-2 sm:col-span-1 flex flex-col gap-1.5 min-w-0">
+                <Label htmlFor="gameDate">Date</Label>
+                <Input
+                  id="gameDate"
+                  type="date"
+                  value={gameDatePart}
+                  onChange={(e) =>
+                    setGameDate(e.target.value ? `${e.target.value}T${gameTimePart || "12:00"}` : "")
+                  }
+                  required
+                />
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <Label htmlFor="gameTime">Time</Label>
+                <Input
+                  id="gameTime"
+                  type="time"
+                  value={gameTimePart}
+                  onChange={(e) => setGameDate(`${gameDatePart || todayISO()}T${e.target.value}`)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5 min-w-0">
                 <Label htmlFor="innings">Innings</Label>
                 <Input
                   id="innings"

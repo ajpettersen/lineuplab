@@ -129,25 +129,24 @@ export function EditGameDialog({
             <Label>Opponent</Label>
             <Input value={opponent} onChange={(e) => setOpponent(e.target.value)} placeholder="Team name" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>Date & Time</Label>
-              <div className="flex gap-2">
-                <Input
-                  type="date"
-                  className="flex-1"
-                  value={gameDatePart}
-                  onChange={(e) => setGameDate(`${e.target.value}T${gameTimePart}`)}
-                />
-                <Input
-                  type="time"
-                  className="w-28"
-                  value={gameTimePart}
-                  onChange={(e) => setGameDate(`${gameDatePart}T${e.target.value}`)}
-                />
-              </div>
+          <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_8rem_5rem] gap-3">
+            <div className="col-span-2 sm:col-span-1 flex flex-col gap-1.5 min-w-0">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={gameDatePart}
+                onChange={(e) => setGameDate(`${e.target.value}T${gameTimePart}`)}
+              />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <Label>Time</Label>
+              <Input
+                type="time"
+                value={gameTimePart}
+                onChange={(e) => setGameDate(`${gameDatePart}T${e.target.value}`)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 min-w-0">
               <Label>Innings</Label>
               <Input type="number" min="1" max="9" value={innings} onChange={(e) => setInnings(e.target.value)} />
             </div>
