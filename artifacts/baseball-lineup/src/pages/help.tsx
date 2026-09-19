@@ -52,8 +52,9 @@ const FAQ: FaqEntry[] = [
         <Link href="/games" className="text-primary underline underline-offset-2">
           Schedule
         </Link>{" "}
-        and tap Connect calendar. Paste the calendar link from GameChanger,
-        TeamSnap, or your league site and the whole season fills in — and
+        and tap Connect calendar. MBL teams just pick their association and
+        team; everyone else pastes the calendar link from GameChanger,
+        TeamSnap, or their league site. The whole season fills in — and
         stays up to date when games move. You can still add a game by hand
         with Add Game.
       </>

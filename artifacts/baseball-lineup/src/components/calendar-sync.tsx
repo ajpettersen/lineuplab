@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getGetTeamSettingsQueryKey, getListGamesQueryKey } from "@workspace/api-client-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { AlertTriangle, CalendarSync, Loader2, MoreVertical, RefreshCw, Unlink } from "lucide-react";
@@ -106,12 +106,175 @@ export function useCalendarSync() {
   };
 }
 
+type MblSeason = { id: number; name: string; fall: boolean };
+type MblAssociation = { id: number; name: string };
+type MblTeam = { id: number; name: string; division: string | null; feedUrl: string };
+
+async function getJson<T>(path: string): Promise<T> {
+  const r = await fetch(`${BASE}${path}`);
+  if (!r.ok) {
+    const b = (await r.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(b?.error ?? `Request failed (${r.status})`);
+  }
+  return (await r.json()) as T;
+}
+
+// Aug–Dec → the fall league; otherwise the main spring MBL season.
+function defaultSeason(seasons: MblSeason[]): MblSeason | undefined {
+  const fallish = new Date().getMonth() >= 7;
+  return (
+    seasons.find((s) => s.fall === fallish && /\bMBL\b/.test(s.name)) ??
+    seasons.find((s) => /\bMBL\b/.test(s.name)) ??
+    seasons[0]
+  );
+}
+
+/**
+ * Season → association → team picker for Metro Baseball League teams.
+ * Picking a team hands its iCal feed URL back to the dialog, which
+ * previews and connects it like any pasted link.
+ */
+function MblTeamFinder({ onPick, pickedId }: { onPick: (team: MblTeam) => void; pickedId: number | null }) {
+  const seasons = useQuery({
+    queryKey: ["mbl", "seasons"],
+    queryFn: () => getJson<MblSeason[]>("/api/calendar/mbl/seasons"),
+    staleTime: Infinity,
+  });
+  const [seasonId, setSeasonId] = useState<number | null>(null);
+  const season = seasons.data?.find((s) => s.id === seasonId) ?? (seasons.data ? defaultSeason(seasons.data) : undefined);
+  const associations = useQuery({
+    queryKey: ["mbl", "associations", season?.id],
+    queryFn: () => getJson<MblAssociation[]>(`/api/calendar/mbl/seasons/${season!.id}/associations`),
+    enabled: !!season,
+    staleTime: Infinity,
+  });
+  const [association, setAssociation] = useState<MblAssociation | null>(null);
+  const [filter, setFilter] = useState("");
+  const teams = useQuery({
+    queryKey: ["mbl", "teams", season?.id, association?.id],
+    queryFn: () =>
+      getJson<MblTeam[]>(`/api/calendar/mbl/seasons/${season!.id}/teams?associationId=${association!.id}`),
+    enabled: !!season && !!association,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const failed = seasons.error ?? associations.error ?? teams.error;
+  if (failed) {
+    return (
+      <p className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        {(failed as Error).message}
+      </p>
+    );
+  }
+  if (!season) return <FinderLoading label="Loading MBL seasons…" />;
+
+  const matches = (associations.data ?? []).filter((a) => a.name.toLowerCase().includes(filter.trim().toLowerCase()));
+
+  return (
+    <div className="flex flex-col gap-3">
+      {(seasons.data?.length ?? 0) > 1 && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="mbl-season">Season</Label>
+          <select
+            id="mbl-season"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            value={season.id}
+            onChange={(e) => {
+              setSeasonId(Number(e.target.value));
+              setAssociation(null);
+            }}
+          >
+            {seasons.data!.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {!association ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="mbl-assoc">Your association</Label>
+          <Input
+            id="mbl-assoc"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Start typing your town…"
+            autoFocus
+          />
+          {associations.isLoading ? (
+            <FinderLoading label="Loading associations…" />
+          ) : (
+            <ul className="max-h-48 overflow-y-auto rounded-md border divide-y">
+              {matches.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted/60"
+                    onClick={() => setAssociation(a)}
+                  >
+                    {a.name}
+                  </button>
+                </li>
+              ))}
+              {matches.length === 0 && (
+                <li className="px-3 py-2 text-sm text-muted-foreground">No association matches “{filter}”.</li>
+              )}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <Label>Your team in {association.name}</Label>
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline shrink-0"
+              onClick={() => setAssociation(null)}
+            >
+              Change
+            </button>
+          </div>
+          {teams.isLoading ? (
+            <FinderLoading label="Loading teams…" />
+          ) : (
+            <ul className="max-h-56 overflow-y-auto rounded-md border divide-y">
+              {(teams.data ?? []).map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    className={`w-full px-3 py-2 text-left text-sm flex items-baseline justify-between gap-3 ${
+                      pickedId === t.id ? "bg-primary/10 font-medium" : "hover:bg-muted/60"
+                    }`}
+                    onClick={() => onPick(t)}
+                  >
+                    <span className="truncate">{t.name}</span>
+                    {t.division && <span className="text-xs text-muted-foreground shrink-0">{t.division}</span>}
+                  </button>
+                </li>
+              ))}
+              {teams.data?.length === 0 && (
+                <li className="px-3 py-2 text-sm text-muted-foreground">No teams listed for this season yet.</li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FinderLoading({ label }: { label: string }) {
+  return (
+    <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" /> {label}
+    </p>
+  );
+}
+
 const SOURCES: Array<{ name: string; steps: string }> = [
-  {
-    name: "MBL / Fall League (mbl.bz)",
-    steps:
-      "Open your team's page on mbl.bz (Schedules → pick your team) and paste that page's address.",
-  },
   {
     name: "GameChanger",
     steps:
@@ -132,7 +295,9 @@ const SOURCES: Array<{ name: string; steps: string }> = [
 export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { refresh } = useCalendarSync();
   const { toast } = useToast();
+  const [mode, setMode] = useState<"mbl" | "link">("mbl");
   const [url, setUrl] = useState("");
+  const [mblTeam, setMblTeam] = useState<MblTeam | null>(null);
   const [preview, setPreview] = useState<PreviewGame[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -140,25 +305,34 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
 
   const reset = () => {
     setUrl("");
+    setMblTeam(null);
     setPreview(null);
     setError(null);
   };
   const close = () => {
     reset();
+    setMode("mbl");
     onClose();
   };
+  const switchMode = (m: "mbl" | "link") => {
+    reset();
+    setMode(m);
+  };
 
-  const check = async () => {
+  // Tapping a second team before the first preview returns must not show the first team's games.
+  const checkSeq = useRef(0);
+  const check = async (target = url) => {
+    const seq = ++checkSeq.current;
     setChecking(true);
     setError(null);
     setPreview(null);
     try {
-      const r = await postJson<{ games: PreviewGame[] }>("/api/calendar/preview", { icalUrl: url.trim() });
-      setPreview(r.games);
+      const r = await postJson<{ games: PreviewGame[] }>("/api/calendar/preview", { icalUrl: target.trim() });
+      if (seq === checkSeq.current) setPreview(r.games);
     } catch (err) {
-      setError((err as Error).message);
+      if (seq === checkSeq.current) setError((err as Error).message);
     } finally {
-      setChecking(false);
+      if (seq === checkSeq.current) setChecking(false);
     }
   };
 
@@ -185,12 +359,54 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
         <DialogHeader>
           <DialogTitle>Connect your team calendar</DialogTitle>
           <DialogDescription>
-            Paste your team's schedule page or calendar link. Games are added automatically and
-            kept up to date when times or opponents change — no more entering them by hand.
+            Games are added automatically and kept up to date when times or opponents change — no
+            more entering them by hand.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-1">
+          <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm" role="tablist">
+            {([
+              { m: "mbl" as const, label: "Find my MBL team" },
+              { m: "link" as const, label: "Paste a link" },
+            ]).map(({ m, label }) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => switchMode(m)}
+                className={`rounded px-3 py-1.5 transition-colors ${
+                  mode === m ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {mode === "mbl" && (
+            <>
+              <MblTeamFinder
+                pickedId={mblTeam?.id ?? null}
+                onPick={(t) => {
+                  setMblTeam(t);
+                  setUrl(t.feedUrl);
+                  void check(t.feedUrl);
+                }}
+              />
+              {checking && <FinderLoading label={`Reading ${mblTeam?.name ?? "the"} schedule…`} />}
+              <p className="text-xs text-muted-foreground">
+                Metro Baseball League / Fall League teams (mbl.bz). Playing somewhere else? Use{" "}
+                <button type="button" className="text-primary hover:underline" onClick={() => switchMode("link")}>
+                  Paste a link
+                </button>
+                .
+              </p>
+            </>
+          )}
+
+          {mode === "link" && (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ical-url">Team page or calendar link</Label>
             <div className="flex gap-2">
@@ -211,11 +427,12 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
                 placeholder="e.g. mbl.bz/teams/12345  or  webcal://…"
                 autoFocus
               />
-              <Button variant="outline" onClick={check} disabled={!url.trim() || checking}>
+              <Button variant="outline" onClick={() => void check()} disabled={!url.trim() || checking}>
                 {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Check"}
               </Button>
             </div>
           </div>
+          )}
 
           {error && (
             <div className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -252,7 +469,7 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
             </div>
           )}
 
-          {!preview && (
+          {!preview && mode === "link" && (
             <details className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
               <summary className="cursor-pointer font-medium">Where do I find my calendar link?</summary>
               <ul className="mt-2 flex flex-col gap-2">

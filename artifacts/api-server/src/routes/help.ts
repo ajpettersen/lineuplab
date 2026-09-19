@@ -38,7 +38,7 @@ ROSTER & PLAYERS — at /roster
 - Each player has a name, jersey number (optional), and preferred positions used by the lineup generator.
 
 GAMES — at /games (list) and /games/new (create)
-- Schedule games manually, or tap "Connect calendar" on the Games page and paste a calendar (iCal/webcal) link from GameChanger, TeamSnap, or a league site. Connected calendars sync automatically every hour (plus a "Sync now" button); games added by hand are matched instead of duplicated, and scores/lineups are never overwritten.
+- Schedule games manually, or tap "Connect calendar" on the Games page and either pick their Metro Baseball League (mbl.bz) team from the "Find my MBL team" tab (choose association, then team) or paste a calendar (iCal/webcal) link or team schedule page from GameChanger, TeamSnap, or a league site. Connected calendars sync automatically every hour (plus a "Sync now" button); games added by hand are matched instead of duplicated, and scores/lineups are never overwritten.
 - Each game has a date, opponent, location, innings count, and game type (league or tournament).
 - Edit a game inline by clicking the pencil icon on its card.
 

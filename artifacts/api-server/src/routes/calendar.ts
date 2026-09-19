@@ -4,6 +4,8 @@ import { z } from "zod";
 import { db, teamSettingsTable } from "@workspace/db";
 import { assertPermission } from "../lib/permissions";
 import { fetchAndParseIcal, syncTeamCalendar } from "../lib/ical-sync";
+import { listMblAssociations, listMblSeasons, listMblTeams, mblTeamFeedUrl } from "../lib/mbl";
+import { logger } from "../lib/logger";
 import { getOrCreateForUser } from "./team-settings";
 
 /**
@@ -81,6 +83,37 @@ router.post("/calendar/sync", assertPermission("partial"), async (req, res): Pro
     return;
   }
   res.json(result);
+});
+
+// MBL team finder (see lib/mbl.ts). Read-only lookups against mbl.bz.
+const idParam = z.coerce.number().int().positive();
+
+async function mblLookup<T>(res: import("express").Response, load: () => Promise<T>): Promise<void> {
+  try {
+    res.json(await load());
+  } catch (err) {
+    logger.warn({ err }, "mbl lookup failed");
+    res.status(502).json({ error: "Couldn't reach mbl.bz right now. Try again in a minute." });
+  }
+}
+
+router.get("/calendar/mbl/seasons", assertPermission("partial"), (_req, res) =>
+  mblLookup(res, listMblSeasons),
+);
+
+router.get("/calendar/mbl/seasons/:seasonId/associations", assertPermission("partial"), (req, res) => {
+  const seasonId = idParam.safeParse(req.params.seasonId);
+  if (!seasonId.success) return void res.status(400).json({ error: "Bad season" });
+  return mblLookup(res, () => listMblAssociations(seasonId.data));
+});
+
+router.get("/calendar/mbl/seasons/:seasonId/teams", assertPermission("partial"), (req, res) => {
+  const seasonId = idParam.safeParse(req.params.seasonId);
+  const associationId = idParam.safeParse(req.query.associationId);
+  if (!seasonId.success || !associationId.success) return void res.status(400).json({ error: "Pick an association" });
+  return mblLookup(res, async () =>
+    (await listMblTeams(seasonId.data, associationId.data)).map((t) => ({ ...t, feedUrl: mblTeamFeedUrl(t.id) })),
+  );
 });
 
 // Games already pulled in stay on the schedule; they just stop updating.
