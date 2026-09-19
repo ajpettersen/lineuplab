@@ -30,12 +30,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Loader2, Plus, Trophy } from "lucide-react";
+import { ArrowLeft, CalendarSync, Loader2, Plus, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 import { useTeamSettings } from "@/hooks/use-team-settings";
+import { useCalendarSync } from "@/components/calendar-sync";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -49,6 +50,7 @@ export default function NewGame() {
   const { toast } = useToast();
   const prefsQuery = useGetPreferences();
   const { usesTournaments, sportProfile } = useTeamSettings();
+  const calendar = useCalendarSync();
   const tournamentsEnabled = usesTournaments && sportProfile.features.tournaments;
 
   // When the coach lands on this page from a tournament's "Create new
@@ -319,9 +321,20 @@ export default function NewGame() {
         <p className="text-sm text-muted-foreground mt-2">
           Enter your opponent, date, and location to put a game on the schedule.
         </p>
+        {calendar.canManage && !calendar.connected && tournamentIdFromQuery == null && (
+          <Link
+            href="/games?connect=1"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+          >
+            <CalendarSync className="h-4 w-4" />
+            Tired of typing games in? Connect your team calendar instead
+          </Link>
+        )}
       </div>
       <Card className="relative overflow-hidden broadcast-stripe">
-        <CardContent>
+        {/* pt-7: no CardHeader here, and CardContent's default is pt-0 —
+            without this the first label sits flush against the stripe. */}
+        <CardContent className="pt-7">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="opponent">Opponent</Label>

@@ -334,7 +334,7 @@ export default function Landing() {
                 },
                 {
                   q: "Can I import my schedule from my league?",
-                  a: "Most leagues publish an iCal/webcal feed. Paste the URL in Lineup Lab and the season's games import in one click — opponent names and start times included.",
+                  a: "Yes. GameChanger, TeamSnap, and most league sites publish a calendar link. Connect it once and Lineup Lab fills in the season — opponents and start times included — and keeps it updated when games move.",
                 },
                 {
                   q: "Can I import GameChanger box scores?",

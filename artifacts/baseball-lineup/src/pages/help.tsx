@@ -52,9 +52,10 @@ const FAQ: FaqEntry[] = [
         <Link href="/games" className="text-primary underline underline-offset-2">
           Schedule
         </Link>{" "}
-        and add a game with the opponent, date, and location. To import a whole
-        season at once, paste an iCal / webcal link from your league and the
-        games will be pulled in automatically.
+        and tap Connect calendar. Paste the calendar link from GameChanger,
+        TeamSnap, or your league site and the whole season fills in — and
+        stays up to date when games move. You can still add a game by hand
+        with Add Game.
       </>
     ),
   },

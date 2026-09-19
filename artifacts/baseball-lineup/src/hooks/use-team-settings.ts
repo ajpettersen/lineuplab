@@ -27,7 +27,24 @@ export function useTeamSettings() {
   // which baseball-only features show across the app.
   const sport: SportId = query.data?.sport === "basketball" ? "basketball" : "baseball";
   const sportProfile: SportProfile = getSportProfile(sport);
+  // Calendar-sync fields are returned by GET /team-settings but aren't in
+  // the generated OpenAPI type (they're managed by the hand-rolled
+  // /api/calendar routes, not the settings PATCH).
+  const cal = query.data as
+    | {
+        icalUrl?: string | null;
+        icalLastSyncAt?: string | null;
+        icalLastSyncError?: string | null;
+        icalLastSyncCount?: number | null;
+      }
+    | undefined;
   return {
+    calendar: {
+      url: cal?.icalUrl ?? null,
+      lastSyncAt: cal?.icalLastSyncAt ?? null,
+      lastSyncError: cal?.icalLastSyncError ?? null,
+      gameCount: cal?.icalLastSyncCount ?? null,
+    },
     teamName: query.data?.teamName ?? "",
     teamShortName: query.data?.teamShortName ?? "",
     sport,

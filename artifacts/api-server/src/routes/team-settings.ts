@@ -119,7 +119,7 @@ const UpdateBody = z
  * up at the same time is fine: ON CONFLICT DO NOTHING means whichever
  * INSERT loses just falls back to a SELECT.
  */
-async function getOrCreateForUser(userId: string): Promise<TeamSettings> {
+export async function getOrCreateForUser(userId: string): Promise<TeamSettings> {
   await db
     .insert(teamSettingsTable)
     .values({

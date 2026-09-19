@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import {
   useListGames,
   useDeleteGame,
@@ -12,9 +12,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,28 +23,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   CalendarDays,
   ChevronRight,
   MapPin,
   Trash2,
   Pencil,
   Link2,
-  Check,
-  AlertCircle,
   Tv,
   FileText,
   MoreVertical,
@@ -68,6 +49,7 @@ import { useTeamSettings } from "@/hooks/use-team-settings";
 import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { NextGameHero, pickHeroGame } from "@/components/next-game-hero";
+import { CalendarSyncBar, ConnectCalendarDialog, useCalendarSync } from "@/components/calendar-sync";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -99,17 +81,8 @@ function GameTypeBadge({ gameType }: { gameType?: "league" | "tournament" | null
   return null;
 }
 
-// ── iCal import dialog ──────────────────────────────────────────
+// ── Event type badge ─────────────────────────────────────────
 type EventKind = "game" | "practice" | "other";
-type ICalEvent = {
-  uid: string;
-  summary: string;
-  opponent: string;
-  gameDate: string;
-  location: string | null;
-  type: EventKind;
-};
-
 function TypeBadge({ type }: { type: EventKind | string }) {
   if (type === "practice") {
     return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200">Practice</Badge>;
@@ -118,268 +91,6 @@ function TypeBadge({ type }: { type: EventKind | string }) {
     return <Badge variant="outline" className="text-muted-foreground">Event</Badge>;
   }
   return null;
-}
-
-const KIND_LABEL: Record<EventKind, string> = {
-  game: "Games",
-  practice: "Practices",
-  other: "Team Events",
-};
-
-function ICalImportDialog({
-  open,
-  onClose,
-  onImported,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onImported: () => void;
-}) {
-  const { toast } = useToast();
-  const [url, setUrl] = useState("");
-  const [innings, setInnings] = useState("6");
-  const [loading, setLoading] = useState(false);
-  const [events, setEvents] = useState<ICalEvent[]>([]);
-  const [skippedCount, setSkippedCount] = useState(0);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Reset state whenever the dialog closes so a re-open starts fresh.
-  useEffect(() => {
-    if (!open) {
-      setUrl("");
-      setEvents([]);
-      setSkippedCount(0);
-      setSelected(new Set());
-      setError(null);
-      setLoading(false);
-      setSaving(false);
-    }
-  }, [open]);
-
-  const handlePreview = async () => {
-    setError(null);
-    setEvents([]);
-    setSkippedCount(0);
-    setSelected(new Set());
-    setLoading(true);
-    try {
-      const r = await fetch(`${BASE}/api/games/import-ical/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ icalUrl: url.trim() }),
-      });
-      const data = await r.json();
-      if (!r.ok) { setError(data.error ?? "Failed to load calendar"); return; }
-      // Server now returns { games, skipped }. Stay backward-compatible with the
-      // older shape (a bare array) just in case an old client/server combo is hit.
-      const games: ICalEvent[] = Array.isArray(data) ? data : Array.isArray(data?.games) ? data.games : [];
-      const skipped: number = Array.isArray(data) ? 0 : typeof data?.skipped === "number" ? data.skipped : 0;
-      if (games.length === 0) {
-        setError(
-          skipped > 0
-            ? `No games found — ${skipped} non-game event${skipped === 1 ? "" : "s"} (practices, meetings, etc.) were skipped.`
-            : "No events found in this calendar.",
-        );
-        return;
-      }
-      setEvents(games);
-      setSkippedCount(skipped);
-      // All returned events are games — pre-select them all.
-      setSelected(new Set(games.map((e) => e.uid)));
-    } catch {
-      setError("Could not reach the calendar URL. Make sure it is publicly accessible.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleAll = (checked: boolean) => {
-    setSelected(checked ? new Set(events.map((e) => e.uid)) : new Set());
-  };
-
-  const handleImport = async () => {
-    const toImport = events.filter((e) => selected.has(e.uid));
-    if (toImport.length === 0) return;
-    setSaving(true);
-    try {
-      const r = await fetch(`${BASE}/api/games/import-ical/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ games: toImport, innings: parseInt(innings) }),
-      });
-      if (!r.ok) throw new Error();
-      toast({ title: `${toImport.length} game${toImport.length !== 1 ? "s" : ""} imported` });
-      onImported();
-      onClose();
-      setUrl("");
-      setEvents([]);
-      setSelected(new Set());
-    } catch {
-      toast({ title: "Import failed", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-xl max-h-[85dvh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Link2 className="h-4 w-4" />
-            Import from Calendar Link
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4 flex-1 overflow-hidden">
-          <p className="text-sm text-muted-foreground">
-            Paste a public iCal (.ics) URL from your league scheduling system, Google Calendar, or any calendar app. Only games will be imported — practices, meetings, and other team events are skipped.
-          </p>
-
-          <div className="flex gap-2">
-            <Input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://… .ics  or  webcal://…"
-              className="flex-1"
-              onKeyDown={(e) => e.key === "Enter" && handlePreview()}
-            />
-            <Button onClick={handlePreview} disabled={loading || !url.trim()}>
-              {loading ? "Loading..." : "Load"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground -mt-2">
-            Tip: the URL must be the calendar's <span className="font-mono">.ics</span> export link (or a <span className="font-mono">webcal://</span> link), not the calendar's web page.
-          </p>
-
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-destructive/10 text-destructive rounded-lg text-sm border border-destructive/20">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {events.length > 0 && (
-            <div className="flex flex-col gap-3 flex-1 overflow-hidden">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={selected.size === events.length}
-                    onCheckedChange={(v) => toggleAll(!!v)}
-                  />
-                  <span className="text-sm font-medium">
-                    {events.length} game{events.length === 1 ? "" : "s"} found — {selected.size} selected
-                    {skippedCount > 0 && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        ({skippedCount} non-game event{skippedCount === 1 ? "" : "s"} skipped)
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground">Default innings:</Label>
-                  <Select value={innings} onValueChange={setInnings}>
-                    <SelectTrigger className="w-16 h-7 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[4, 5, 6, 7].map((n) => (
-                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 overflow-y-auto pr-1">
-                {(["game", "practice", "other"] as EventKind[]).map((kind) => {
-                  const inGroup = events.filter((e) => e.type === kind);
-                  if (inGroup.length === 0) return null;
-                  const selectedInGroup = inGroup.filter((e) => selected.has(e.uid)).length;
-                  const allInGroupSelected = selectedInGroup === inGroup.length;
-                  return (
-                    <div key={kind} className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between sticky top-0 bg-background py-1 z-10">
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            checked={allInGroupSelected}
-                            onCheckedChange={(v) => {
-                              const next = new Set(selected);
-                              if (v) inGroup.forEach((e) => next.add(e.uid));
-                              else inGroup.forEach((e) => next.delete(e.uid));
-                              setSelected(next);
-                            }}
-                          />
-                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            {KIND_LABEL[kind]} ({inGroup.length})
-                          </span>
-                        </div>
-                        <span className="text-xs text-muted-foreground">{selectedInGroup} selected</span>
-                      </div>
-                      {inGroup.map((ev) => {
-                        const titleText =
-                          ev.type === "game"
-                            ? `vs. ${ev.opponent}`
-                            : ev.summary;
-                        return (
-                          <label
-                            key={ev.uid}
-                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                              selected.has(ev.uid) ? "border-primary/40 bg-primary/5" : "border-border bg-background opacity-60"
-                            }`}
-                          >
-                            <Checkbox
-                              checked={selected.has(ev.uid)}
-                              onCheckedChange={(v) => {
-                                const next = new Set(selected);
-                                v ? next.add(ev.uid) : next.delete(ev.uid);
-                                setSelected(next);
-                              }}
-                              className="mt-0.5"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium truncate">{titleText}</p>
-                                <TypeBadge type={ev.type} />
-                              </div>
-                              <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
-                                <span className="flex items-center gap-1">
-                                  <CalendarDays className="h-3 w-3" />
-                                  {format(new Date(ev.gameDate), "EEE, MMM d, yyyy · h:mm a")}
-                                </span>
-                                {ev.location && (
-                                  <span className="flex items-center gap-1">
-                                    <MapPin className="h-3 w-3" />
-                                    {ev.location}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {events.length > 0 && (
-          <DialogFooter className="pt-2 border-t">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleImport} disabled={saving || selected.size === 0}>
-              <Check className="h-4 w-4 mr-1" />
-              {saving ? "Importing..." : `Import ${selected.size} Item${selected.size !== 1 ? "s" : ""}`}
-            </Button>
-          </DialogFooter>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 // ── Edit game dialog: see EditGameDialog imported from @/components/edit-game-dialog ─
@@ -396,6 +107,15 @@ export default function Games() {
   const [editGame, setEditGame] = useState<Game | null>(null);
   const [boxScoreGameId, setBoxScoreGameId] = useState<number | null>(null);
   const [showIcal, setShowIcal] = useState(false);
+  const calendar = useCalendarSync();
+  const search = useSearch();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(search).get("connect")) {
+      setShowIcal(true);
+      navigate("/games", { replace: true });
+    }
+  }, [search, navigate]);
   const [filter, setFilter] = useState<"all" | "game" | "practice" | "other">("all");
 
   const counts = games.reduce(
@@ -667,10 +387,6 @@ export default function Games() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setShowIcal(true)}>
-            <Link2 className="h-4 w-4 mr-2" />
-            Import Calendar
-          </Button>
           <Link href="/games/new">
             <Button>
               <CalendarDays className="h-4 w-4 mr-2" />
@@ -679,6 +395,8 @@ export default function Games() {
           </Link>
         </div>
       </div>
+
+      {!isLoading && <CalendarSyncBar onConnect={() => setShowIcal(true)} />}
 
       {games.length > 0 && !isLoading && (
         <div className="flex flex-wrap gap-1.5 p-1 rounded-lg bg-muted w-fit">
@@ -723,9 +441,11 @@ export default function Games() {
             <CalendarDays className="h-12 w-12 text-muted-foreground/50" />
             <p className="text-muted-foreground">No games scheduled yet.</p>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowIcal(true)}>
-                <Link2 className="h-4 w-4 mr-2" /> Import Calendar
-              </Button>
+              {calendar.canManage && !calendar.connected && (
+                <Button variant="outline" onClick={() => setShowIcal(true)}>
+                  <Link2 className="h-4 w-4 mr-2" /> Connect Calendar
+                </Button>
+              )}
               <Link href="/games/new">
                 <Button><CalendarDays className="h-4 w-4 mr-2" /> Add First Game</Button>
               </Link>
@@ -764,12 +484,7 @@ export default function Games() {
         </>
       )}
 
-      {/* iCal import dialog */}
-      <ICalImportDialog
-        open={showIcal}
-        onClose={() => setShowIcal(false)}
-        onImported={refresh}
-      />
+      <ConnectCalendarDialog open={showIcal} onClose={() => setShowIcal(false)} />
 
       {/* Edit dialog */}
       {editGame && (

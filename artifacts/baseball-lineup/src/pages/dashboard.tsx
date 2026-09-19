@@ -214,8 +214,8 @@ export default function Dashboard() {
           {
             done: hasGames,
             label: "Schedule your first game",
-            hint: "Add one manually, or paste your league's iCal/webcal URL to import the whole season.",
-            cta: { href: "/games/new", label: "Add a game" },
+            hint: "Connect your GameChanger, TeamSnap, or league calendar and your schedule fills in (and stays updated) automatically — or add a game by hand.",
+            cta: { href: "/games?connect=1", label: "Connect calendar" },
           },
           {
             done: hasCompleted,

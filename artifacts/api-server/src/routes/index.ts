@@ -4,6 +4,7 @@ import { resolveTeamContext } from "../middlewares/resolveTeamContext";
 import healthRouter from "./health";
 import playersRouter from "./players";
 import gamesRouter from "./games";
+import calendarRouter from "./calendar";
 import tournamentsRouter from "./tournaments";
 import poolPlayRouter from "./pool-play";
 import tournamentNetworkRouter from "./tournament-network";
@@ -47,6 +48,7 @@ router.use(resolveTeamContext);
 
 router.use(playersRouter);
 router.use(gamesRouter);
+router.use(calendarRouter);
 router.use(tournamentsRouter);
 router.use(poolPlayRouter);
 router.use(tournamentNetworkRouter);

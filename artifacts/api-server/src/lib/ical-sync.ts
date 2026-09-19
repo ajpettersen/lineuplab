@@ -1,16 +1,15 @@
 import ical from "node-ical";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   db,
   gamesTable,
   teamSettingsTable,
 } from "@workspace/db";
-import { extractOpponentFromSummary } from "../routes/games";
 import { logger } from "./logger";
 
 /**
- * Shared iCal fetcher used by both the manual preview route (in
- * games.ts) and the recurring sync scheduler. Fetches the URL with a
+ * Shared iCal fetcher used by the calendar routes (routes/calendar.ts)
+ * and the recurring sync scheduler. Fetches the URL with a
  * browser-like User-Agent (many calendar hosts 403 on default
  * `node-fetch`), validates the body looks like an iCalendar payload,
  * and returns parsed VEVENTs as normalized game candidates.
@@ -62,6 +61,78 @@ function classify(text: string): "game" | "practice" | "other" {
   return "other";
 }
 
+// Tokens that should never count as a team-name match (separators, articles).
+const STOPWORDS = new Set(["the", "a", "an", "of", "vs", "v", "at"]);
+
+function tokenize(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 0 && !STOPWORDS.has(t));
+}
+
+// Splits an iCal SUMMARY on the common "vs"/"v"/"@"/"at" separators
+// leagues use to express matchups. Returns the parts in order.
+const MATCHUP_SEPARATOR_RE = /\s+(?:vs\.?|v\.?|@|at)\s+/i;
+
+/**
+ * Extract the opponent's name from an iCal event SUMMARY by figuring out
+ * which side of the matchup is the user's OWN team.
+ *
+ * Real-world summaries we have to handle:
+ *   "Minnetonka Blue vs Plymouth Pilots"        → "Plymouth Pilots"
+ *   "Plymouth @ Minnetonka Blue"                → "Plymouth"
+ *   "Plymouth Pilots vs Blue"                   → "Plymouth Pilots"
+ *       (league shortened user's team to color)
+ *   "Edina vs Minnetonka Blue at Field 5"       → "Edina"
+ *       (location after a SECOND separator)
+ *   "Orono Spartans (Orono) at Northwood Park"  → "Orono Spartans (Orono)"
+ *       (no own-team in summary at all)
+ *
+ * Strategy: split the summary on vs/v/@/at, then return the FIRST part
+ * whose meaningful tokens don't overlap the user's team-name tokens.
+ * Token-level overlap matches "Blue" against "Minnetonka Blue 10AA" —
+ * which is exactly the symptom the user reported.
+ */
+export function extractOpponentFromSummary(
+  summary: string,
+  teamName: string | null | undefined,
+): string {
+  const cleanSummary = summary.trim();
+  if (!cleanSummary) return cleanSummary;
+  const parts = cleanSummary
+    .split(MATCHUP_SEPARATOR_RE)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length < 2) return cleanSummary;
+
+  const ownTokens = new Set(tokenize(teamName ?? ""));
+  if (ownTokens.size === 0) {
+    // No team name to match against — fall back to the legacy behavior of
+    // taking whatever follows the first separator.
+    return parts[1] ?? cleanSummary;
+  }
+
+  const isOwnTeam = (part: string): boolean => {
+    const tks = tokenize(part);
+    if (tks.length === 0) return false;
+    return tks.some((t) => ownTokens.has(t));
+  };
+
+  // First part that doesn't look like our own team. Naturally drops any
+  // trailing " at <Field>" location cruft because location parts also
+  // won't match our team-name tokens — but the FIRST non-own part wins,
+  // so the real opponent is preferred over the location string.
+  for (const part of parts) {
+    if (!isOwnTeam(part)) return part;
+  }
+
+  // Both sides matched our team (rare — both are color-only?). Fall back
+  // to the second part so we don't return our own team verbatim.
+  return parts[1] ?? cleanSummary;
+}
+
 /** node-ical occasionally returns { val, params } objects instead of strings. */
 function toStr(v: unknown): string {
   if (v == null) return "";
@@ -95,7 +166,10 @@ export async function fetchAndParseIcal(
   try {
     const r = await fetch(url, { headers: FETCH_HEADERS, redirect: "follow" });
     if (!r.ok) {
-      return { ok: false, error: `Calendar host returned HTTP ${r.status}` };
+      return {
+        ok: false,
+        error: `The calendar site refused the request (HTTP ${r.status}). Make sure you copied the calendar's public "subscribe" or "sync" link.`,
+      };
     }
     body = await r.text();
   } catch (err) {
@@ -105,7 +179,10 @@ export async function fetchAndParseIcal(
     };
   }
   if (!body.includes("BEGIN:VCALENDAR")) {
-    return { ok: false, error: "URL did not return a valid iCalendar file" };
+    return {
+      ok: false,
+      error: "That link opened a web page, not a calendar. Use the calendar's subscribe/sync link (it usually starts with webcal:// or ends in .ics).",
+    };
   }
   let parsedObj: ical.CalendarResponse;
   try {
@@ -143,69 +220,146 @@ export async function fetchAndParseIcal(
   };
 }
 
+export type IcalSyncResult = {
+  /** Games in the feed (after filtering out practices/meetings). */
+  found: number;
+  /** New games created from the feed. */
+  added: number;
+  /** Already-linked games whose date/opponent/location were refreshed. */
+  updated: number;
+  /** Hand-entered games matched to a feed event and linked to it. */
+  linked: number;
+  error: string | null;
+};
+
+// How far apart a hand-entered game and a feed event can be and still be
+// treated as the same game. Wide enough to absorb a coach typing "1:00"
+// for a 12:30 start; narrow enough that a doubleheader's second game
+// (typically 2+ hours later) isn't mistaken for the first.
+const LINK_WINDOW_MS = 90 * 60 * 1000;
+
 /**
- * Run one sync cycle for a single team. Fetches the saved icalUrl,
- * upserts each event into `games` keyed on `(userId, sourceUid)`. New
- * events are created with status="upcoming"; existing ones get their
- * date/opponent/location refreshed in place. We never touch games
- * with `sourceUid IS NULL` (manual entries) and never override
- * `ourScore`/`opponentScore`/`status` so a completed game doesn't
- * regress when the league cleans up old SUMMARY text.
+ * Run one sync cycle for a single team: fetch the feed, then for each
+ * game event either
+ *   1. refresh the game already linked to it (by `sourceUid`),
+ *   2. link it to a matching hand-entered game (no `sourceUid`, within
+ *      LINK_WINDOW_MS of the same start time) so connecting a calendar
+ *      after entering a few games by hand doesn't duplicate them, or
+ *   3. create a new upcoming game.
+ * Only schedule fields (opponent/date/location) are ever written to an
+ * existing game — scores, status, lineups are never touched. A linked
+ * game the coach deleted stays deleted (we find it by `sourceUid`
+ * regardless of `deletedAt` and skip it rather than re-creating it).
  *
- * Returns `{ upserted, error }` so the caller can record the result.
- * Throws are caught and converted to `error`.
+ * Deliberately select-then-write rather than INSERT … ON CONFLICT: the
+ * (userId, sourceUid) unique index is PARTIAL (`WHERE source_uid IS NOT
+ * NULL`), and Postgres rejects ON CONFLICT against a partial index
+ * unless the predicate is repeated — the original upsert here never ran
+ * in production because no team had ever enabled sync. The unique index
+ * still guards the one real race (scheduler + "Sync now" at once): a
+ * duplicate insert is skipped via onConflictDoNothing.
  */
 export async function syncIcalForUser(
   userId: string,
   icalUrl: string,
   ownTeamName: string,
-): Promise<{ upserted: number; error: string | null }> {
+): Promise<IcalSyncResult> {
+  const empty = { found: 0, added: 0, updated: 0, linked: 0 };
   let result: IcalFetchResult;
   try {
     result = await fetchAndParseIcal(icalUrl, ownTeamName);
   } catch (err) {
-    return {
-      upserted: 0,
-      error: err instanceof Error ? err.message : "Unknown fetch error",
-    };
+    return { ...empty, error: err instanceof Error ? err.message : "Unknown fetch error" };
   }
-  if (!result.ok) return { upserted: 0, error: result.error };
+  if (!result.ok) return { ...empty, error: result.error };
 
-  let count = 0;
+  const counts = { ...empty, found: result.events.length };
   for (const ev of result.events) {
-    // Upsert on (userId, sourceUid) — partial-unique index on the
-    // games table. We don't touch scores or status on conflict so a
-    // game that was already played stays played.
-    await db
+    const gameDate = new Date(ev.gameDate);
+    const schedule = {
+      opponent: ev.opponent || "TBD",
+      gameDate,
+      location: ev.location,
+    };
+
+    const [linked] = await db
+      .select({ id: gamesTable.id, deletedAt: gamesTable.deletedAt })
+      .from(gamesTable)
+      .where(and(eq(gamesTable.userId, userId), eq(gamesTable.sourceUid, ev.uid)));
+    if (linked) {
+      if (linked.deletedAt) continue;
+      await db
+        .update(gamesTable)
+        .set({ ...schedule, rowVersion: sql`${gamesTable.rowVersion} + 1` })
+        .where(eq(gamesTable.id, linked.id));
+      counts.updated++;
+      continue;
+    }
+
+    const [manual] = await db
+      .select({ id: gamesTable.id })
+      .from(gamesTable)
+      .where(
+        and(
+          eq(gamesTable.userId, userId),
+          eq(gamesTable.type, "game"),
+          isNull(gamesTable.sourceUid),
+          isNull(gamesTable.deletedAt),
+          sql`abs(extract(epoch from (${gamesTable.gameDate} - ${gameDate.toISOString()}::timestamptz))) * 1000 <= ${LINK_WINDOW_MS}`,
+        ),
+      )
+      .orderBy(sql`abs(extract(epoch from (${gamesTable.gameDate} - ${gameDate.toISOString()}::timestamptz)))`)
+      .limit(1);
+    if (manual) {
+      await db
+        .update(gamesTable)
+        .set({ ...schedule, sourceUid: ev.uid, rowVersion: sql`${gamesTable.rowVersion} + 1` })
+        .where(eq(gamesTable.id, manual.id));
+      counts.linked++;
+      continue;
+    }
+
+    const inserted = await db
       .insert(gamesTable)
       .values({
         userId,
-        opponent: ev.opponent || "TBD",
-        gameDate: new Date(ev.gameDate),
-        location: ev.location,
+        ...schedule,
         innings: 6,
         status: "upcoming",
         type: "game",
         sourceUid: ev.uid,
       })
-      .onConflictDoUpdate({
-        target: [gamesTable.userId, gamesTable.sourceUid],
-        // Only refresh schedule fields — opponent + date + location can
-        // legitimately move; scores and status must NOT regress.
-        set: {
-          opponent: ev.opponent || "TBD",
-          gameDate: new Date(ev.gameDate),
-          location: ev.location,
-          rowVersion: sql`${gamesTable.rowVersion} + 1`,
-        },
-        // Don't resurrect soft-deleted games — if the coach trashed an
-        // event we should not re-create it on the next sync just because
-        // it's still in the league feed.
-        setWhere: isNull(gamesTable.deletedAt),
-      });
-    count++;
+      .onConflictDoNothing()
+      .returning({ id: gamesTable.id });
+    if (inserted.length > 0) counts.added++;
   }
-  return { upserted: count, error: null };
+  return { ...counts, error: null };
+}
+
+/**
+ * Sync the team's saved calendar (if any) and record the outcome on
+ * team_settings so the Schedule page can show "last synced / N games /
+ * error". Shared by the hourly scheduler and the "Sync now" / "Connect"
+ * routes so every path reports status the same way.
+ */
+export async function syncTeamCalendar(userId: string): Promise<IcalSyncResult | null> {
+  const [settings] = await db
+    .select({ teamName: teamSettingsTable.teamName, icalUrl: teamSettingsTable.icalUrl })
+    .from(teamSettingsTable)
+    .where(eq(teamSettingsTable.userId, userId));
+  if (!settings?.icalUrl) return null;
+
+  const result = await syncIcalForUser(userId, settings.icalUrl, settings.teamName);
+  await db
+    .update(teamSettingsTable)
+    .set({
+      icalLastSyncAt: new Date(),
+      icalLastSyncError: result.error,
+      icalLastSyncCount: result.error ? null : result.found,
+      rowVersion: sql`${teamSettingsTable.rowVersion} + 1`,
+    })
+    .where(eq(teamSettingsTable.userId, userId));
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,43 +377,20 @@ export async function runIcalSyncTickOnce(): Promise<void> {
   running = true;
   try {
     const rows = await db
-      .select({
-        userId: teamSettingsTable.userId,
-        teamName: teamSettingsTable.teamName,
-        icalUrl: teamSettingsTable.icalUrl,
-      })
+      .select({ userId: teamSettingsTable.userId })
       .from(teamSettingsTable)
       .where(
         and(
           eq(teamSettingsTable.icalAutoSync, true),
-          // SQL-level null check via the column ref → reuses index when added.
+          isNotNull(teamSettingsTable.icalUrl),
+          isNull(teamSettingsTable.archivedAt),
         ),
       );
-    const candidates = rows.filter(
-      (r): r is typeof r & { icalUrl: string } =>
-        typeof r.icalUrl === "string" && r.icalUrl.length > 0,
-    );
-    if (candidates.length === 0) return;
-    logger.info({ count: candidates.length }, "ical-sync: candidates");
-    for (const c of candidates) {
-      const { upserted, error } = await syncIcalForUser(
-        c.userId,
-        c.icalUrl,
-        c.teamName,
-      );
-      await db
-        .update(teamSettingsTable)
-        .set({
-          icalLastSyncAt: new Date(),
-          icalLastSyncError: error,
-          icalLastSyncCount: error ? null : upserted,
-          rowVersion: sql`${teamSettingsTable.rowVersion} + 1`,
-        })
-        .where(eq(teamSettingsTable.userId, c.userId));
-      logger.info(
-        { userId: c.userId, upserted, error },
-        "ical-sync: team result",
-      );
+    if (rows.length === 0) return;
+    logger.info({ count: rows.length }, "ical-sync: candidates");
+    for (const { userId } of rows) {
+      const result = await syncTeamCalendar(userId);
+      logger.info({ userId, ...result }, "ical-sync: team result");
     }
   } catch (err) {
     logger.error({ err }, "ical-sync tick failed");
