@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, gamesTable, playersTable, lineupEntriesTable, historicalFieldingTable } from "@workspace/db";
+import { isPlayedGame } from "../lib/played-games";
 
 const router: IRouter = Router();
 
@@ -44,21 +45,24 @@ router.get("/stats/season", async (req, res): Promise<void> => {
   // Only actual games count toward "Total Games" — practices and other events are excluded.
   const games = allRows.filter((g) => g.type === "game");
   const totalGames = games.length;
-  const completedGames = games.filter((g) => g.status === "completed").length;
 
-  // Stats only reflect completed games — a draft lineup on an upcoming game
-  // shouldn't move the position distribution / fairness needles until the
-  // coach actually plays the game and marks it complete. Practices and other
-  // event rows are likewise excluded by the type filter above.
-  const completedGameIds = games
-    .filter((g) => g.status === "completed")
-    .map((g) => g.id);
-  const entries = completedGameIds.length > 0
+  // Stats reflect played games only (see isPlayedGame) — a draft lineup on
+  // an upcoming game shouldn't move the position distribution / fairness
+  // needles. Practices and other event rows are excluded by the type filter.
+  const playedGames = games.filter((g) => isPlayedGame(g));
+  const playedGameIds = playedGames.map((g) => g.id);
+  const entries = playedGameIds.length > 0
     ? await db
         .select()
         .from(lineupEntriesTable)
-        .where(inArray(lineupEntriesTable.gameId, completedGameIds))
+        .where(inArray(lineupEntriesTable.gameId, playedGameIds))
     : [];
+  // A past game nobody entered a lineup for (and didn't mark complete)
+  // isn't really "played" as far as the report is concerned.
+  const gamesWithLineups = new Set(entries.map((e) => e.gameId));
+  const completedGames = playedGames.filter(
+    (g) => g.status === "completed" || gamesWithLineups.has(g.id),
+  ).length;
   const fieldEntries = entries.filter((e) => e.position !== "Bench");
   const totalInnings = fieldEntries.length;
 
@@ -110,27 +114,31 @@ router.get("/stats/players", async (req, res): Promise<void> => {
     return;
   }
   const playerIds = players.map((p) => p.id);
-  // Pull this coach's games so we can (a) restrict live entries to COMPLETED
-  // games only — a draft lineup on an upcoming game shouldn't move season
-  // tallies — and (b) compute "unavailable innings" against each game's
-  // total inning count. Practices and other non-game events have lineup
-  // entries too (e.g. drill rotations) but should never count toward season
-  // playing time, so we filter to type === "game" here as well.
+  // Pull this coach's games so we can (a) restrict live entries to PLAYED
+  // games only (isPlayedGame) — a draft lineup on an upcoming game shouldn't
+  // move season tallies — and (b) compute "unavailable innings" against each
+  // game's total inning count. Practices and other non-game events have
+  // lineup entries too (e.g. drill rotations) but never count toward season
+  // playing time; isPlayedGame excludes them.
   const userGames = await db
-    .select({ id: gamesTable.id, innings: gamesTable.innings, status: gamesTable.status, type: gamesTable.type })
+    .select({
+      id: gamesTable.id,
+      innings: gamesTable.innings,
+      status: gamesTable.status,
+      type: gamesTable.type,
+      gameDate: gamesTable.gameDate,
+    })
     .from(gamesTable)
     .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)));
-  const completedGameIds = userGames
-    .filter((g) => g.type === "game" && g.status === "completed")
-    .map((g) => g.id);
-  const completedGameIdSet = new Set<number>(completedGameIds);
+  const playedGameIds = userGames.filter((g) => isPlayedGame(g)).map((g) => g.id);
+  const playedGameIdSet = new Set<number>(playedGameIds);
   // Bound entries + historical to this coach's player ids, then drop entries
-  // whose parent game isn't a completed game.
+  // whose parent game hasn't been played.
   const allEntriesRaw = await db
     .select()
     .from(lineupEntriesTable)
     .where(inArray(lineupEntriesTable.playerId, playerIds));
-  const allEntries = allEntriesRaw.filter((e) => completedGameIdSet.has(e.gameId));
+  const allEntries = allEntriesRaw.filter((e) => playedGameIdSet.has(e.gameId));
   const allHistorical = await db
     .select()
     .from(historicalFieldingTable)

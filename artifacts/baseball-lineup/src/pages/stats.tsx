@@ -132,15 +132,15 @@ function FairnessBar({ score }: { score: number }) {
               <p className="font-semibold mb-1">How this is calculated</p>
               <p>
                 For every active player we compute their bench rate
-                (innings sat ÷ innings played) across all completed
+                (innings sat ÷ innings played) across all played
                 games. The score is{" "}
                 <span className="font-mono">100 − stddev × 400</span>,
                 where stddev is the standard deviation of those bench
                 rates (how much they vary). 100 means every player sits
                 the same share of innings; the score drops quickly as
                 bench time gets lopsided — a stddev of 20 percentage
-                points lands near 20. Practices and uncompleted games
-                don't count.
+                points lands near 20. Practices and games that
+                haven't been played yet don't count.
               </p>
             </TooltipContent>
           </Tooltip>
@@ -237,7 +237,7 @@ function RotationAssistantCard() {
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
           One-off questions about playing time and position history — e.g. who's
-          started the most innings on the bench. Reads your completed games (plus
+          started the most innings on the bench. Reads your played games (plus
           imported history for season totals).
         </p>
       </CardHeader>
@@ -579,7 +579,7 @@ export default function Stats() {
         <BroadcastStatCard
           label="Total Games"
           value={seasonStats?.totalGames ?? 0}
-          subtext={`${seasonStats?.completedGames ?? 0} completed`}
+          subtext={`${seasonStats?.completedGames ?? 0} played`}
         />
         <BroadcastStatCard
           label="Live Field Innings"

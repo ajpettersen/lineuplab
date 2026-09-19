@@ -8,6 +8,7 @@ import {
   pitchCountsTable,
 } from "@workspace/db";
 import { getBattingTotals } from "./batting-totals";
+import { isPlayedGame } from "./played-games";
 
 /**
  * Read-only, team-scoped data accessors shared by the season-wide "Ask"
@@ -186,12 +187,16 @@ export async function getRotationReport(userId: string): Promise<RotationRow[]> 
   const playerIds = players.map((p) => p.id);
 
   const userGames = await db
-    .select({ id: gamesTable.id, innings: gamesTable.innings, status: gamesTable.status, type: gamesTable.type })
+    .select({
+      id: gamesTable.id,
+      innings: gamesTable.innings,
+      status: gamesTable.status,
+      type: gamesTable.type,
+      gameDate: gamesTable.gameDate,
+    })
     .from(gamesTable)
     .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)));
-  const completedGameIdSet = new Set(
-    userGames.filter((g) => g.type === "game" && g.status === "completed").map((g) => g.id),
-  );
+  const completedGameIdSet = new Set(userGames.filter((g) => isPlayedGame(g)).map((g) => g.id));
   const inningsByGameId = new Map<number, number>(userGames.map((g) => [g.id, g.innings]));
 
   const entriesRaw = await db
@@ -280,12 +285,10 @@ export async function getPositionByInning(userId: string, playerName?: string) {
   const matchedIds = matched.map((p) => p.id);
 
   const userGames = await db
-    .select({ id: gamesTable.id, status: gamesTable.status, type: gamesTable.type })
+    .select({ id: gamesTable.id, status: gamesTable.status, type: gamesTable.type, gameDate: gamesTable.gameDate })
     .from(gamesTable)
     .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)));
-  const completedGameIdSet = new Set(
-    userGames.filter((g) => g.type === "game" && g.status === "completed").map((g) => g.id),
-  );
+  const completedGameIdSet = new Set(userGames.filter((g) => isPlayedGame(g)).map((g) => g.id));
 
   const entriesRaw = await db
     .select()
