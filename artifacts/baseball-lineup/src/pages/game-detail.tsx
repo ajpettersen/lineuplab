@@ -84,7 +84,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, MapPin, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil, Settings2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, GripVertical, Wand2, Save, Trophy, CalendarDays, ClipboardCopy, X, Sparkles, Copy as CopyIcon, History, Image as ImageIcon, Upload, Lock as LockIcon, Plus, Printer, Camera, Eye, Trash2, Users, Tv, AlertCircle, MousePointerClick, Pencil, Settings2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
@@ -110,6 +110,7 @@ import { PitchCountsCard } from "@/components/pitch-counts-card";
 import { SelectPositionsDialog } from "@/components/select-positions-dialog";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
 import { EditGameDialog } from "@/components/edit-game-dialog";
+import { extras, FieldLink, ScheduleChangeNotice, UmpireInfo } from "@/components/game-schedule-info";
 import { DepthChartReference, DepthChartIcon } from "@/pages/depth-chart";
 import { BoxScoreDisplayCard } from "@/components/box-score-display-card";
 import { FileText } from "lucide-react";
@@ -2510,14 +2511,11 @@ export default function GameDetail() {
                   <CalendarDays className="h-3.5 w-3.5" />
                   {safeFormatDate(game.gameDate, "EEEE, MMMM d, yyyy · h:mm a")}
                 </span>
-                {game.location && (
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {game.location}
-                  </span>
-                )}
+                {game.location && <FieldLink location={game.location} />}
+                {game.status !== "completed" && <UmpireInfo game={extras(game)} />}
                 <span>{game.innings} innings</span>
               </div>
+              <ScheduleChangeNotice game={extras(game)} className="mt-2" />
               {game.status === "completed" && game.ourScore != null && game.opponentScore != null && (() => {
                 // Same-score completed games are ties (T). See games.tsx for
                 // matching logic — keep these in sync.

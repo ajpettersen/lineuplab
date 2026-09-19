@@ -1,11 +1,14 @@
 import ical from "node-ical";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   db,
   gamesTable,
+  lineupEntriesTable,
   teamSettingsTable,
 } from "@workspace/db";
 import { logger } from "./logger";
+import { notifyTeam } from "./push";
+import { refreshUmpires } from "./umpires";
 
 /**
  * Shared iCal fetcher used by the calendar routes (routes/calendar.ts)
@@ -359,6 +362,10 @@ export type IcalSyncResult = {
   updated: number;
   /** Hand-entered games matched to a feed event and linked to it. */
   linked: number;
+  /** Upcoming synced games cancelled because the league removed them. */
+  removed: number;
+  /** Changes to upcoming games worth telling the coach about. */
+  changes: ScheduleChange[];
   /** Feed URL actually read (see IcalFetchResult); null when the fetch failed. */
   resolvedUrl: string | null;
   error: string | null;
@@ -396,7 +403,7 @@ export async function syncIcalForUser(
   icalUrl: string,
   ownTeamName: string,
 ): Promise<IcalSyncResult> {
-  const empty = { found: 0, added: 0, updated: 0, linked: 0, resolvedUrl: null };
+  const empty = { found: 0, added: 0, updated: 0, linked: 0, removed: 0, changes: [], resolvedUrl: null };
   let result: IcalFetchResult;
   try {
     result = await fetchAndParseIcal(icalUrl, ownTeamName);
@@ -405,7 +412,12 @@ export async function syncIcalForUser(
   }
   if (!result.ok) return { ...empty, error: result.error };
 
-  const counts = { ...empty, found: result.events.length };
+  const now = new Date();
+  const counts = { ...empty, found: result.events.length, removed: 0 };
+  const changes: ScheduleChange[] = [];
+  // Whether this feed still contains games we synced before — i.e. it's
+  // the same calendar, so games missing from it were really removed.
+  let sameCalendar = false;
   for (const ev of result.events) {
     const gameDate = new Date(ev.gameDate);
     const schedule = {
@@ -415,25 +427,50 @@ export async function syncIcalForUser(
     };
 
     const [linked] = await db
-      .select({ id: gamesTable.id, deletedAt: gamesTable.deletedAt, opponent: gamesTable.opponent })
+      .select({
+        id: gamesTable.id,
+        deletedAt: gamesTable.deletedAt,
+        opponent: gamesTable.opponent,
+        gameDate: gamesTable.gameDate,
+        location: gamesTable.location,
+        status: gamesTable.status,
+        sourceRemovedAt: gamesTable.sourceRemovedAt,
+      })
       .from(gamesTable)
       .where(and(eq(gamesTable.userId, userId), eq(gamesTable.sourceUid, ev.uid)));
     if (linked) {
+      sameCalendar = true;
       if (linked.deletedAt) continue;
+      const opponent = keepCoachOpponent(linked.opponent, schedule.opponent);
+      const note = describeScheduleChange(linked, schedule);
+      // Back on the league schedule after the sync cancelled it. A game the
+      // coach cancelled by hand has no sourceRemovedAt and stays cancelled.
+      const restore = linked.sourceRemovedAt != null && linked.status === "cancelled";
+      if (!note && !restore && opponent === linked.opponent) continue;
       await db
         .update(gamesTable)
         .set({
           ...schedule,
-          opponent: keepCoachOpponent(linked.opponent, schedule.opponent),
+          opponent,
+          ...(note ? { scheduleChangeNote: note, scheduleChangedAt: now } : {}),
+          ...(restore
+            ? { status: "upcoming", sourceRemovedAt: null, scheduleChangeNote: "Back on the league schedule", scheduleChangedAt: now }
+            : {}),
           rowVersion: sql`${gamesTable.rowVersion} + 1`,
         })
         .where(eq(gamesTable.id, linked.id));
       counts.updated++;
+      if (note && gameDate > now) changes.push({ gameId: linked.id, opponent, note });
       continue;
     }
 
     const [manual] = await db
-      .select({ id: gamesTable.id, opponent: gamesTable.opponent })
+      .select({
+        id: gamesTable.id,
+        opponent: gamesTable.opponent,
+        gameDate: gamesTable.gameDate,
+        location: gamesTable.location,
+      })
       .from(gamesTable)
       .where(
         and(
@@ -447,16 +484,20 @@ export async function syncIcalForUser(
       .orderBy(sql`abs(extract(epoch from (${gamesTable.gameDate} - ${gameDate.toISOString()}::timestamptz)))`)
       .limit(1);
     if (manual) {
+      const opponent = keepCoachOpponent(manual.opponent, schedule.opponent);
+      const note = describeScheduleChange(manual, schedule);
       await db
         .update(gamesTable)
         .set({
           ...schedule,
-          opponent: keepCoachOpponent(manual.opponent, schedule.opponent),
+          opponent,
           sourceUid: ev.uid,
+          ...(note ? { scheduleChangeNote: note, scheduleChangedAt: now } : {}),
           rowVersion: sql`${gamesTable.rowVersion} + 1`,
         })
         .where(eq(gamesTable.id, manual.id));
       counts.linked++;
+      if (note && gameDate > now) changes.push({ gameId: manual.id, opponent, note });
       continue;
     }
 
@@ -474,7 +515,115 @@ export async function syncIcalForUser(
       .returning({ id: gamesTable.id });
     if (inserted.length > 0) counts.added++;
   }
-  return { ...counts, resolvedUrl: result.resolvedUrl, error: null };
+
+  if (sameCalendar) {
+    counts.removed = await handleRemovedGames(userId, new Set(result.events.map((e) => e.uid)), now, changes);
+  }
+  return { ...counts, changes, resolvedUrl: result.resolvedUrl, error: null };
+}
+
+/**
+ * Upcoming synced games that are no longer in the feed were dropped by
+ * the league. Cancel them if nobody has built a lineup yet (so they stop
+ * cluttering the schedule and the dashboard's "next game"); if a lineup
+ * exists, leave the game alone and just flag it. Past games are never
+ * touched — many feeds drop events once they've happened.
+ *
+ * Only called when the feed still contains games synced before (see
+ * `sameCalendar`): if a coach switches to a different calendar, the old
+ * calendar's games aren't "removed" — their UIDs just don't exist here.
+ */
+async function handleRemovedGames(
+  userId: string,
+  feedUids: Set<string>,
+  now: Date,
+  changes: ScheduleChange[],
+): Promise<number> {
+  if (feedUids.size === 0) return 0;
+  const upcoming = await db
+    .select({
+      id: gamesTable.id,
+      sourceUid: gamesTable.sourceUid,
+      opponent: gamesTable.opponent,
+      scheduleChangeNote: gamesTable.scheduleChangeNote,
+    })
+    .from(gamesTable)
+    .where(
+      and(
+        eq(gamesTable.userId, userId),
+        isNotNull(gamesTable.sourceUid),
+        isNull(gamesTable.deletedAt),
+        eq(gamesTable.status, "upcoming"),
+        gt(gamesTable.gameDate, now),
+      ),
+    );
+  const missing = upcoming.filter((g) => !feedUids.has(g.sourceUid!));
+  if (missing.length === 0) return 0;
+
+  const withLineups = new Set(
+    (
+      await db
+        .selectDistinct({ gameId: lineupEntriesTable.gameId })
+        .from(lineupEntriesTable)
+        .where(inArray(lineupEntriesTable.gameId, missing.map((g) => g.id)))
+    ).map((r) => r.gameId),
+  );
+  let removed = 0;
+  for (const g of missing) {
+    if (withLineups.has(g.id)) {
+      const note = "No longer on the league schedule — check with your league";
+      if (g.scheduleChangeNote === note) continue;
+      await db
+        .update(gamesTable)
+        .set({ scheduleChangeNote: note, scheduleChangedAt: now, rowVersion: sql`${gamesTable.rowVersion} + 1` })
+        .where(eq(gamesTable.id, g.id));
+      changes.push({ gameId: g.id, opponent: g.opponent, note });
+      continue;
+    }
+    await db
+      .update(gamesTable)
+      .set({
+        status: "cancelled",
+        sourceRemovedAt: now,
+        scheduleChangeNote: "Removed from the league schedule",
+        scheduleChangedAt: now,
+        rowVersion: sql`${gamesTable.rowVersion} + 1`,
+      })
+      .where(eq(gamesTable.id, g.id));
+    changes.push({ gameId: g.id, opponent: g.opponent, note: "Removed from the league schedule" });
+    removed++;
+  }
+  return removed;
+}
+
+export type ScheduleChange = { gameId: number; opponent: string; note: string };
+
+function formatLocal(d: Date, withDay: boolean): string {
+  return d.toLocaleString("en-US", {
+    timeZone: FALLBACK_TZ,
+    ...(withDay ? { weekday: "short", month: "short", day: "numeric" } : {}),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** "Moved from 12:00 PM to 1:00 PM" / "Field changed to Bennett Park, Field #4", or null. */
+export function describeScheduleChange(
+  before: { gameDate: Date; location: string | null },
+  after: { gameDate: Date; location: string | null },
+): string | null {
+  const parts: string[] = [];
+  if (Math.abs(before.gameDate.getTime() - after.gameDate.getTime()) >= 60_000) {
+    const sameDay =
+      before.gameDate.toLocaleDateString("en-US", { timeZone: FALLBACK_TZ }) ===
+      after.gameDate.toLocaleDateString("en-US", { timeZone: FALLBACK_TZ });
+    parts.push(`Moved from ${formatLocal(before.gameDate, !sameDay)} to ${formatLocal(after.gameDate, !sameDay)}`);
+  }
+  const norm = (s: string | null) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (before.location && after.location && norm(before.location) !== norm(after.location)) {
+    parts.push(`Field changed to ${after.location}`);
+  }
+  return parts.length > 0 ? parts.join(". ") : null;
 }
 
 /**
@@ -515,7 +664,40 @@ export async function syncTeamCalendar(userId: string): Promise<IcalSyncResult |
       rowVersion: sql`${teamSettingsTable.rowVersion} + 1`,
     })
     .where(eq(teamSettingsTable.userId, userId));
+
+  if (!result.error) {
+    await notifyScheduleChanges(userId, result.changes);
+    // Umpire pages are big and slow; don't make "Sync now" wait on them.
+    const feedUrl = result.resolvedUrl ?? normalizeIcalUrl(settings.icalUrl);
+    void refreshUmpires(userId, feedUrl).catch((err) => logger.warn({ err, userId }, "umpire refresh failed"));
+  }
   return result;
+}
+
+// Only games in the next two weeks are worth an interruption; changes
+// further out still show as a badge on the schedule.
+const NOTIFY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+async function notifyScheduleChanges(userId: string, changes: ScheduleChange[]): Promise<void> {
+  if (changes.length === 0) return;
+  const soon = await db
+    .select({ id: gamesTable.id })
+    .from(gamesTable)
+    .where(
+      and(
+        inArray(gamesTable.id, changes.map((c) => c.gameId)),
+        sql`${gamesTable.gameDate} <= now() + ${`${NOTIFY_WINDOW_MS / 1000} seconds`}::interval`,
+      ),
+    );
+  const soonIds = new Set(soon.map((g) => g.id));
+  for (const c of changes.filter((c) => soonIds.has(c.gameId))) {
+    await notifyTeam(userId, {
+      title: `Schedule change: vs. ${c.opponent}`,
+      body: c.note,
+      url: `/games/${c.gameId}`,
+      tag: `schedule-change-${c.gameId}`,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

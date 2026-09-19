@@ -25,7 +25,6 @@ import {
 import {
   CalendarDays,
   ChevronRight,
-  MapPin,
   Trash2,
   Pencil,
   Link2,
@@ -50,6 +49,7 @@ import { effectiveStatus, type EffectiveStatus } from "@/lib/game-status";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
 import { NextGameHero, pickHeroGame } from "@/components/next-game-hero";
 import { CalendarSyncBar, ConnectCalendarDialog, useCalendarSync } from "@/components/calendar-sync";
+import { extras, FieldLink, ScheduleChangeNotice, UmpireInfo } from "@/components/game-schedule-info";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -238,19 +238,16 @@ export default function Games() {
                   );
                 })()}
               </div>
-              <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <CalendarDays className="h-3.5 w-3.5" />
                   {format(new Date(g.gameDate), "EEE, MMM d, yyyy · h:mm a")}
                 </span>
-                {g.location && (
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {g.location}
-                  </span>
-                )}
+                {g.location && <FieldLink location={g.location} />}
+                {effectiveStatus(g) === "upcoming" && <UmpireInfo game={extras(g)} />}
                 <span className="text-xs">{g.innings} innings</span>
               </div>
+              <ScheduleChangeNotice game={extras(g)} className="mt-1.5" />
             </div>
           </Link>
           {/*

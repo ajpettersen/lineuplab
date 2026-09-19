@@ -1,6 +1,6 @@
 import webpush from "web-push";
-import { eq, sql } from "drizzle-orm";
-import { db, pushSubscriptionsTable, type PushSubscriptionRow } from "@workspace/db";
+import { and, eq, sql } from "drizzle-orm";
+import { db, pushSubscriptionsTable, teamMembershipsTable, type PushSubscriptionRow } from "@workspace/db";
 import { logger } from "./logger";
 
 /**
@@ -57,6 +57,31 @@ export type PushPayload = {
   /** Tag used to coalesce duplicate notifications on the OS layer. */
   tag?: string;
 };
+
+/**
+ * Push a notification to every device registered against a team, limited
+ * to coaches who are still members of it (same rule as the box-score
+ * reminders). Never throws.
+ */
+export async function notifyTeam(ownerUserId: string, payload: PushPayload): Promise<void> {
+  if (!pushEnabled) return;
+  try {
+    const rows = await db
+      .select({ sub: pushSubscriptionsTable })
+      .from(pushSubscriptionsTable)
+      .innerJoin(
+        teamMembershipsTable,
+        and(
+          eq(teamMembershipsTable.memberUserId, pushSubscriptionsTable.userId),
+          eq(teamMembershipsTable.ownerUserId, pushSubscriptionsTable.teamOwnerUserId),
+        ),
+      )
+      .where(eq(pushSubscriptionsTable.teamOwnerUserId, ownerUserId));
+    for (const { sub } of rows) await sendPushToSubscription(sub, payload);
+  } catch (err) {
+    logger.warn({ err, ownerUserId }, "notifyTeam failed");
+  }
+}
 
 /**
  * Send a payload to a single subscription row. Removes the row if

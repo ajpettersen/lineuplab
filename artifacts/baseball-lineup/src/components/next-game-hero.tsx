@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { format, isToday, isTomorrow } from "date-fns";
-import { CalendarDays, ChevronRight, MapPin, Tv } from "lucide-react";
+import { CalendarDays, ChevronRight, MapPin, Tv, UserRound } from "lucide-react";
+import { extras, mapsUrl, ScheduleChangeNotice, umpireLabel } from "@/components/game-schedule-info";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { isPastUnrecorded, isTrulyUpcoming } from "@/lib/game-status";
@@ -123,9 +124,21 @@ export function NextGameHero({
                 </span>
               </span>
               {game.location && (
-                <span className="flex items-center gap-2 text-white/85">
+                <a
+                  href={mapsUrl(game.location)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-white/85 hover:text-white hover:underline underline-offset-4"
+                  title="Directions"
+                >
                   <MapPin className="h-4 w-4 text-broadcast-gold/80" />
                   <span className="text-sm sm:text-base">{game.location}</span>
+                </a>
+              )}
+              {!isPast && umpireLabel(extras(game)) && (
+                <span className="flex items-center gap-2 text-white/85" title={extras(game).umpireOrg ?? undefined}>
+                  <UserRound className="h-4 w-4 text-broadcast-gold/80" />
+                  <span className="text-sm sm:text-base">Ump: {umpireLabel(extras(game))}</span>
                 </span>
               )}
               <span className="flex items-center gap-2 px-2.5 py-0.5 rounded-sm bg-white/10 border border-white/20">
@@ -135,6 +148,7 @@ export function NextGameHero({
                 <span className="eyebrow text-white/60">innings</span>
               </span>
             </div>
+            <ScheduleChangeNotice game={extras(game)} className="mt-3" />
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
             {!isPast && (

@@ -27,7 +27,14 @@ import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type SyncResult = { found: number; added: number; updated: number; linked: number; error: string | null };
+type SyncResult = {
+  found: number;
+  added: number;
+  updated: number;
+  linked: number;
+  removed?: number;
+  error: string | null;
+};
 type PreviewGame = { uid: string; opponent: string; gameDate: string; location: string | null };
 
 async function postJson<T>(path: string, body?: unknown, method = "POST"): Promise<T> {
@@ -48,6 +55,7 @@ function describeSync(r: SyncResult): string {
   if (r.added) parts.push(`${r.added} new game${r.added === 1 ? "" : "s"} added`);
   if (r.linked) parts.push(`${r.linked} existing game${r.linked === 1 ? "" : "s"} matched`);
   if (r.updated) parts.push(`${r.updated} updated`);
+  if (r.removed) parts.push(`${r.removed} cancelled (removed by the league)`);
   return parts.length ? parts.join(", ") : "Schedule already up to date";
 }
 
@@ -488,7 +496,8 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
               )}
               <p className="px-3 py-2 text-xs text-muted-foreground border-t">
                 Practices and team events in the calendar are skipped. Games you've already added by hand
-                are matched up instead of duplicated.
+                are matched up instead of duplicated. Time and field changes show up automatically, and
+                umpire assignments appear when your league publishes them.
               </p>
             </div>
           )}

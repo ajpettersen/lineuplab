@@ -125,6 +125,29 @@ export const gamesTable = pgTable(
      * same league calendar without colliding.
      */
     sourceUid: text("source_uid"),
+    /**
+     * Set by the calendar sync when a synced upcoming game disappears from
+     * the league feed and the sync cancels it (only games with no lineup).
+     * Lets the sync un-cancel it if the league puts it back, without ever
+     * overriding a coach who cancelled a game by hand.
+     */
+    sourceRemovedAt: timestamp("source_removed_at", { withTimezone: true }),
+    /**
+     * Last schedule change the calendar sync applied ("Moved from 12:00 PM
+     * to 1:00 PM"). Shown as a badge on upcoming games so a coach notices a
+     * league-side time/field change instead of showing up an hour early.
+     */
+    scheduleChangeNote: text("schedule_change_note"),
+    scheduleChangedAt: timestamp("schedule_changed_at", { withTimezone: true }),
+    /**
+     * Umpire info from the league / umpire association (lib/umpires.ts).
+     * `umpireOrg` = association assigned to the game (from MBL);
+     * `umpireName` = assigned umpire(s) when the association publishes it
+     * (North Metro / nmua.net), or "Not assigned yet". Names only — we
+     * deliberately don't copy umpires' phone numbers (many are minors).
+     */
+    umpireOrg: text("umpire_org"),
+    umpireName: text("umpire_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // Soft-delete timestamp. Null = visible. Set by the trash action
     // so the coach can hit Undo on the toast. All read queries scope
