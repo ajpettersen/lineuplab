@@ -108,6 +108,11 @@ export function useCalendarSync() {
 
 const SOURCES: Array<{ name: string; steps: string }> = [
   {
+    name: "MBL / Fall League (mbl.bz)",
+    steps:
+      "Open your team's page on mbl.bz (Schedules → pick your team) and paste that page's address.",
+  },
+  {
     name: "GameChanger",
     steps:
       "In the GameChanger app, open your team's Schedule and look for the option to sync or subscribe to the schedule in your calendar. Copy the link it gives you.",
@@ -180,14 +185,14 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
         <DialogHeader>
           <DialogTitle>Connect your team calendar</DialogTitle>
           <DialogDescription>
-            Paste the calendar link from wherever your schedule lives. Games are added automatically and
+            Paste your team's schedule page or calendar link. Games are added automatically and
             kept up to date when times or opponents change — no more entering them by hand.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-1">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ical-url">Calendar link</Label>
+            <Label htmlFor="ical-url">Team page or calendar link</Label>
             <div className="flex gap-2">
               <Input
                 id="ical-url"
@@ -203,7 +208,7 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
                     void check();
                   }
                 }}
-                placeholder="webcal://…  or  https://….ics"
+                placeholder="e.g. mbl.bz/teams/12345  or  webcal://…"
                 autoFocus
               />
               <Button variant="outline" onClick={check} disabled={!url.trim() || checking}>
@@ -259,8 +264,9 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
                 ))}
               </ul>
               <p className="mt-2 text-xs text-muted-foreground">
-                The link usually starts with <span className="font-mono">webcal://</span> or ends in{" "}
-                <span className="font-mono">.ics</span> — the calendar's web page address won't work.
+                Calendar links usually start with <span className="font-mono">webcal://</span> or end in{" "}
+                <span className="font-mono">.ics</span>. A team schedule page works too if it has an
+                iCal or Subscribe link on it — we'll find it.
               </p>
             </details>
           )}

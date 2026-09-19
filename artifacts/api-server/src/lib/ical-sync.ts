@@ -27,7 +27,13 @@ export type IcalEventCandidate = {
 };
 
 export type IcalFetchResult =
-  | { ok: true; events: IcalEventCandidate[]; skippedNonGames: number }
+  | {
+      ok: true;
+      /** The calendar feed actually read — differs from the pasted URL when it was a web page. */
+      resolvedUrl: string;
+      events: IcalEventCandidate[];
+      skippedNonGames: number;
+    }
   | { ok: false; error: string };
 
 const FETCH_HEADERS = {
@@ -98,14 +104,19 @@ const MATCHUP_SEPARATOR_RE = /\s+(?:vs\.?|v\.?|@|at)\s+/i;
 export function extractOpponentFromSummary(
   summary: string,
   teamName: string | null | undefined,
+  feedOwnName?: string | null,
 ): string {
-  const cleanSummary = summary.trim();
+  const cleanSummary = stripGameNumber(summary);
   if (!cleanSummary) return cleanSummary;
-  const parts = cleanSummary
-    .split(MATCHUP_SEPARATOR_RE)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
+  const parts = splitMatchup(cleanSummary);
   if (parts.length < 2) return cleanSummary;
+
+  // The feed's own spelling of our team (see detectFeedOwnName) is exact,
+  // so it beats token matching — and still works when two teams from the
+  // same club meet ("MTKA-Keene @ MTKA-Pettersen").
+  if (feedOwnName && parts.includes(feedOwnName)) {
+    return parts.find((p) => p !== feedOwnName) ?? cleanSummary;
+  }
 
   const ownTokens = new Set(tokenize(teamName ?? ""));
   if (ownTokens.size === 0) {
@@ -133,6 +144,112 @@ export function extractOpponentFromSummary(
   return parts[1] ?? cleanSummary;
 }
 
+// League feeds often prefix a game number: "#177557 Tonka @ Victoria".
+function stripGameNumber(summary: string): string {
+  return summary.trim().replace(/^#\d+\s+/, "");
+}
+
+function splitMatchup(summary: string): string[] {
+  return summary
+    .split(MATCHUP_SEPARATOR_RE)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}
+
+/**
+ * League feeds name our team their way ("MTKA-11AA/AAA-Pettersen"),
+ * which rarely shares a word with the name the coach typed into the app
+ * ("Tonka Fall"). But a team feed is by definition that team's games, so
+ * the side that shows up in (nearly) every matchup is us.
+ */
+export function detectFeedOwnName(summaries: string[]): string | null {
+  const counts = new Map<string, number>();
+  let matchups = 0;
+  for (const s of summaries) {
+    const parts = splitMatchup(stripGameNumber(s));
+    if (parts.length < 2) continue;
+    matchups++;
+    for (const p of new Set(parts)) counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  if (matchups < 2) return null;
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [name, n] of counts) {
+    if (n > bestCount) {
+      best = name;
+      bestCount = n;
+    }
+  }
+  return bestCount >= Math.ceil(matchups * 0.75) ? best : null;
+}
+
+/**
+ * Drop age/level codes from a league team name so it fits on the Field
+ * Display: "Wayzata-11AA/AAA-Caris" → "Wayzata - Caris",
+ * "Orono 11AA/AAA Red - Cole" → "Orono Red - Cole", "Plymouth 10U" →
+ * "Plymouth". Leaves the coach suffix — it's what tells two teams from
+ * the same town apart.
+ */
+export function tidyTeamName(name: string): string {
+  const tidied = name
+    .replace(/\b\d{1,2}U?\s?(?:AAA|AA|A|Rec)(?:\s?\/\s?(?:AAA|AA|A|Rec))*\b/gi, " ")
+    .replace(/\b\d{1,2}U\b/gi, " ")
+    .replace(/\s*-[\s-]*/g, " - ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s-]+|[\s-]+$/g, "");
+  return tidied.length > 0 ? tidied : name.trim();
+}
+
+/**
+ * Feeds that write "floating" times (no Z, no TZID — e.g. MBL's
+ * `DTSTART:20260913T130000`) mean local time at the field. node-ical
+ * reads those in the server's zone, which is UTC on Railway, so a 1:00 PM
+ * game came in as 8:00 AM Central. Pin them to the zone the feed names
+ * (a per-event TZID line, then X-WR-TIMEZONE), else Central — every team
+ * on the app today plays in Minnesota.
+ */
+const FALLBACK_TZ = "America/Chicago";
+
+function isValidTz(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function pinFloatingTimes(body: string): string {
+  const calTz = /^X-WR-TIMEZONE:(.+?)\r?$/m.exec(body)?.[1]?.trim();
+  return body.replace(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g, (block) => {
+    const eventTz = /^TZID:(.+?)\r?$/m.exec(block)?.[1]?.trim();
+    const tz = [eventTz, calTz].find((z): z is string => !!z && isValidTz(z)) ?? FALLBACK_TZ;
+    return block.replace(
+      /^(DTSTART|DTEND):(\d{8}T\d{6})(\r?)$/gm,
+      (_m, prop: string, stamp: string, cr: string) => `${prop};TZID=${tz}:${stamp}${cr}`,
+    );
+  });
+}
+
+/**
+ * When a coach pastes their team's web page instead of the calendar link
+ * (e.g. mbl.bz/teams/30133), look for a calendar link on that page —
+ * most league sites have an "iCal" / "Subscribe" link somewhere.
+ */
+function findCalendarLink(html: string, pageUrl: string): string | null {
+  const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]!.replace(/&amp;/g, "&"));
+  const pick =
+    hrefs.find((h) => /^webcals?:\/\//i.test(h)) ??
+    hrefs.find((h) => /\.ics(?:[?#]|$)/i.test(h)) ??
+    hrefs.find((h) => /[/=]i?cal(?:endar)?[-_.]?(?:feed|export|subscribe)\b/i.test(h));
+  if (!pick) return null;
+  try {
+    return normalizeIcalUrl(new URL(pick, pageUrl).toString());
+  } catch {
+    return null;
+  }
+}
+
 /** node-ical occasionally returns { val, params } objects instead of strings. */
 function toStr(v: unknown): string {
   if (v == null) return "";
@@ -151,6 +268,8 @@ export function normalizeIcalUrl(input: string): string {
   let url = input.trim();
   if (url.startsWith("webcal://")) url = "https://" + url.slice("webcal://".length);
   if (url.startsWith("webcals://")) url = "https://" + url.slice("webcals://".length);
+  // Coaches often paste a bare "mbl.bz/teams/123".
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && /^[\w-]+(\.[\w-]+)+(\/|$)/.test(url)) url = "https://" + url;
   return url;
 }
 
@@ -162,42 +281,37 @@ export async function fetchAndParseIcal(
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     return { ok: false, error: "URL must start with http://, https://, or webcal://" };
   }
-  let body: string;
-  try {
-    const r = await fetch(url, { headers: FETCH_HEADERS, redirect: "follow" });
-    if (!r.ok) {
+  const first = await fetchText(url);
+  if (!first.ok) return first;
+  let body = first.body;
+  let resolvedUrl = url;
+  if (!body.includes("BEGIN:VCALENDAR")) {
+    const linked = findCalendarLink(body, url);
+    const second = linked ? await fetchText(linked) : null;
+    if (!linked || !second?.ok || !second.body.includes("BEGIN:VCALENDAR")) {
       return {
         ok: false,
-        error: `The calendar site refused the request (HTTP ${r.status}). Make sure you copied the calendar's public "subscribe" or "sync" link.`,
+        error: "That link opened a web page, and we couldn't find a calendar link on it. Look for a \"Subscribe\", \"Sync\", or \"iCal\" link on your team's schedule and paste that instead.",
       };
     }
-    body = await r.text();
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to fetch calendar",
-    };
-  }
-  if (!body.includes("BEGIN:VCALENDAR")) {
-    return {
-      ok: false,
-      error: "That link opened a web page, not a calendar. Use the calendar's subscribe/sync link (it usually starts with webcal:// or ends in .ics).",
-    };
+    body = second.body;
+    resolvedUrl = linked;
   }
   let parsedObj: ical.CalendarResponse;
   try {
-    parsedObj = ical.sync.parseICS(body);
+    parsedObj = ical.sync.parseICS(pinFloatingTimes(body));
   } catch (err) {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to parse calendar",
     };
   }
+  const vevents = Object.entries(parsedObj).filter(
+    (entry): entry is [string, ical.VEvent] => entry[1]?.type === "VEVENT" && !!(entry[1] as ical.VEvent).start,
+  );
+  const feedOwnName = detectFeedOwnName(vevents.map(([, e]) => toStr(e.summary)));
   const all: IcalEventCandidate[] = [];
-  for (const [uid, event] of Object.entries(parsedObj)) {
-    if (!event || event.type !== "VEVENT") continue;
-    const e = event as ical.VEvent;
-    if (!e.start) continue;
+  for (const [uid, e] of vevents) {
     const summary = toStr(e.summary) || "vs. TBD";
     const description = toStr(e.description);
     const locationStr = toStr(e.location);
@@ -205,7 +319,7 @@ export async function fetchAndParseIcal(
     all.push({
       uid,
       summary,
-      opponent: extractOpponentFromSummary(summary, ownTeamName),
+      opponent: tidyTeamName(extractOpponentFromSummary(summary, ownTeamName, feedOwnName)),
       gameDate: new Date(e.start).toISOString(),
       location: locationStr.length > 0 ? locationStr : null,
       type,
@@ -215,9 +329,25 @@ export async function fetchAndParseIcal(
   const onlyGames = all.filter((g) => g.type === "game");
   return {
     ok: true,
+    resolvedUrl,
     events: onlyGames,
     skippedNonGames: all.length - onlyGames.length,
   };
+}
+
+async function fetchText(url: string): Promise<{ ok: true; body: string } | { ok: false; error: string }> {
+  try {
+    const r = await fetch(url, { headers: FETCH_HEADERS, redirect: "follow" });
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: `The calendar site refused the request (HTTP ${r.status}). Make sure you copied the calendar's public "subscribe" or "sync" link.`,
+      };
+    }
+    return { ok: true, body: await r.text() };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to fetch calendar" };
+  }
 }
 
 export type IcalSyncResult = {
@@ -229,6 +359,8 @@ export type IcalSyncResult = {
   updated: number;
   /** Hand-entered games matched to a feed event and linked to it. */
   linked: number;
+  /** Feed URL actually read (see IcalFetchResult); null when the fetch failed. */
+  resolvedUrl: string | null;
   error: string | null;
 };
 
@@ -264,7 +396,7 @@ export async function syncIcalForUser(
   icalUrl: string,
   ownTeamName: string,
 ): Promise<IcalSyncResult> {
-  const empty = { found: 0, added: 0, updated: 0, linked: 0 };
+  const empty = { found: 0, added: 0, updated: 0, linked: 0, resolvedUrl: null };
   let result: IcalFetchResult;
   try {
     result = await fetchAndParseIcal(icalUrl, ownTeamName);
@@ -283,21 +415,25 @@ export async function syncIcalForUser(
     };
 
     const [linked] = await db
-      .select({ id: gamesTable.id, deletedAt: gamesTable.deletedAt })
+      .select({ id: gamesTable.id, deletedAt: gamesTable.deletedAt, opponent: gamesTable.opponent })
       .from(gamesTable)
       .where(and(eq(gamesTable.userId, userId), eq(gamesTable.sourceUid, ev.uid)));
     if (linked) {
       if (linked.deletedAt) continue;
       await db
         .update(gamesTable)
-        .set({ ...schedule, rowVersion: sql`${gamesTable.rowVersion} + 1` })
+        .set({
+          ...schedule,
+          opponent: keepCoachOpponent(linked.opponent, schedule.opponent),
+          rowVersion: sql`${gamesTable.rowVersion} + 1`,
+        })
         .where(eq(gamesTable.id, linked.id));
       counts.updated++;
       continue;
     }
 
     const [manual] = await db
-      .select({ id: gamesTable.id })
+      .select({ id: gamesTable.id, opponent: gamesTable.opponent })
       .from(gamesTable)
       .where(
         and(
@@ -313,7 +449,12 @@ export async function syncIcalForUser(
     if (manual) {
       await db
         .update(gamesTable)
-        .set({ ...schedule, sourceUid: ev.uid, rowVersion: sql`${gamesTable.rowVersion} + 1` })
+        .set({
+          ...schedule,
+          opponent: keepCoachOpponent(manual.opponent, schedule.opponent),
+          sourceUid: ev.uid,
+          rowVersion: sql`${gamesTable.rowVersion} + 1`,
+        })
         .where(eq(gamesTable.id, manual.id));
       counts.linked++;
       continue;
@@ -333,7 +474,17 @@ export async function syncIcalForUser(
       .returning({ id: gamesTable.id });
     if (inserted.length > 0) counts.added++;
   }
-  return { ...counts, error: null };
+  return { ...counts, resolvedUrl: result.resolvedUrl, error: null };
+}
+
+/**
+ * A coach who typed "Victoria" shouldn't have it replaced by the league's
+ * "Victoria Hornets" every hour. Keep their name while it still shares a
+ * word with the feed's; take the feed's when the opponent really changed.
+ */
+function keepCoachOpponent(current: string, fromFeed: string): string {
+  const feedTokens = new Set(tokenize(fromFeed));
+  return tokenize(current).some((t) => feedTokens.has(t)) ? current : fromFeed;
 }
 
 /**
@@ -353,6 +504,11 @@ export async function syncTeamCalendar(userId: string): Promise<IcalSyncResult |
   await db
     .update(teamSettingsTable)
     .set({
+      // Save the feed we found on a pasted web page so later syncs read
+      // the calendar directly instead of re-scraping the page.
+      ...(result.resolvedUrl && result.resolvedUrl !== normalizeIcalUrl(settings.icalUrl)
+        ? { icalUrl: result.resolvedUrl }
+        : {}),
       icalLastSyncAt: new Date(),
       icalLastSyncError: result.error,
       icalLastSyncCount: result.error ? null : result.found,
