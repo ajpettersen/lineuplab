@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { Sparkles, Send, User } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -12,6 +13,27 @@ const SUGGESTIONS = [
   "What's our win-loss record so far?",
   "Who has the highest OPS on the team?",
 ];
+
+// In-app paths the assistant hands back (e.g. a lineup-copy preview link
+// from its prepare_lineup_copy tool), optionally wrapped as a markdown link.
+const APP_LINK_RE = /\[([^\]]+)\]\((\/games\/\d+[^\s)]*)\)|(\/games\/\d+(?:\?[^\s)]*)?)/g;
+
+function WithAppLinks({ text }: { text: string }) {
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(APP_LINK_RE)) {
+    out.push(text.slice(last, m.index));
+    const href = m[2] ?? m[3]!;
+    out.push(
+      <Link key={m.index} href={href} className="font-medium text-primary underline underline-offset-2">
+        {m[1] ?? "Open it"}
+      </Link>,
+    );
+    last = m.index! + m[0].length;
+  }
+  out.push(text.slice(last));
+  return <>{out}</>;
+}
 
 export default function Ask() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -121,7 +143,7 @@ export default function Ask() {
                   : "bg-muted text-foreground rounded-bl-sm"
               }`}
             >
-              {m.content}
+              {m.role === "assistant" ? <WithAppLinks text={m.content} /> : m.content}
             </div>
             {m.role === "user" && (
               <div className="shrink-0 rounded-full bg-muted p-1.5 h-fit">

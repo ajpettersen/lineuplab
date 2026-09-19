@@ -14,8 +14,9 @@ import { isPlayedGame } from "./played-games";
  * Read-only, team-scoped data accessors shared by the season-wide "Ask"
  * assistant (tool-calling loop) and the in-game assistant (inline season
  * context). Every function takes the resolved `ownerUserId` so all data
- * stays inside the calling coach's team — there are NO writes here and no
- * function ever takes a userId from the model. The model only supplies the
+ * stays inside the calling coach's team — there are NO writes here (the
+ * lineup-copy tool only returns a preview link) and no function ever
+ * takes a userId from the model. The model only supplies the
  * declared JSON arguments; the executor injects userId server-side.
  */
 
@@ -88,7 +89,9 @@ export async function getGames(
     }
     return {
       id: g.id,
-      date: g.gameDate.toISOString().slice(0, 10),
+      // Local (Central) date/time — a 7 PM game is not "tomorrow" in UTC terms.
+      date: g.gameDate.toLocaleDateString("en-CA", { timeZone: "America/Chicago" }),
+      time: g.gameDate.toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" }),
       opponent: g.opponent,
       status: g.status,
       innings: g.innings,
@@ -310,6 +313,44 @@ export async function getPositionByInning(userId: string, playerName?: string) {
   };
 }
 
+type CopyParts = "both" | "batting" | "positions";
+
+/**
+ * Build a link that opens the target game with the source game's lineup
+ * loaded as an UNSAVED preview (game-detail reads ?copyFrom/&copyParts).
+ * The coach reviews and taps Save — the assistant itself still writes
+ * nothing.
+ */
+export async function prepareLineupCopy(
+  userId: string,
+  args: { sourceGameId?: number; targetGameId?: number; parts?: CopyParts },
+) {
+  const games = await db
+    .select({ id: gamesTable.id, opponent: gamesTable.opponent, gameDate: gamesTable.gameDate, type: gamesTable.type })
+    .from(gamesTable)
+    .where(and(eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)));
+  const byId = new Map(games.map((g) => [g.id, g]));
+  const source = args.sourceGameId != null ? byId.get(args.sourceGameId) : undefined;
+  const target = args.targetGameId != null ? byId.get(args.targetGameId) : undefined;
+  if (!source || !target) return { error: "Couldn't find one of those games. Call get_games for the right ids." };
+  if (source.id === target.id) return { error: "Source and target are the same game." };
+  const [hasLineup] = await db
+    .select({ id: lineupEntriesTable.id })
+    .from(lineupEntriesTable)
+    .where(eq(lineupEntriesTable.gameId, source.id))
+    .limit(1);
+  if (!hasLineup) return { error: `The ${source.opponent} game has no saved lineup to copy.` };
+  const parts: CopyParts = args.parts ?? "both";
+  const label = (g: typeof source) => `vs ${g.opponent} (${g.gameDate.toISOString().slice(0, 10)})`;
+  return {
+    link: `/games/${target.id}?copyFrom=${source.id}&copyParts=${parts}`,
+    source: label(source),
+    target: label(target),
+    parts,
+    note: "Opening the link loads the lineup as a preview on the target game; the coach reviews it and taps Save.",
+  };
+}
+
 /** OpenAI tool (function) definitions exposed to the season-wide assistant. */
 export const ASSISTANT_TOOL_DEFS = [
   {
@@ -386,6 +427,29 @@ export const ASSISTANT_TOOL_DEFS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "prepare_lineup_copy",
+      description:
+        "Prepare copying one game's saved lineup onto another game. Returns a link that opens the target game with the copied lineup loaded as a preview for the coach to review and save. Use when the coach asks to reuse / copy / repeat a lineup or batting order from another game. Get game ids from get_games first.",
+      parameters: {
+        type: "object",
+        properties: {
+          sourceGameId: { type: "number", description: "Game to copy the lineup FROM." },
+          targetGameId: { type: "number", description: "Game to copy the lineup ONTO." },
+          parts: {
+            type: "string",
+            enum: ["both", "batting", "positions"],
+            description:
+              "'batting' = batting order only (keeps the target's defense), 'positions' = defensive positions only, 'both' = the whole lineup. Default both.",
+          },
+        },
+        required: ["sourceGameId", "targetGameId"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 /** Execute a tool by name with model-supplied args, injecting userId server-side. */
@@ -413,6 +477,12 @@ export async function executeAssistantTool(
         userId,
         typeof args.playerName === "string" ? args.playerName : undefined,
       );
+    case "prepare_lineup_copy":
+      return prepareLineupCopy(userId, {
+        sourceGameId: typeof args.sourceGameId === "number" ? args.sourceGameId : undefined,
+        targetGameId: typeof args.targetGameId === "number" ? args.targetGameId : undefined,
+        parts: args.parts === "batting" || args.parts === "positions" ? args.parts : "both",
+      });
     default:
       return { error: `Unknown tool: ${name}` };
   }

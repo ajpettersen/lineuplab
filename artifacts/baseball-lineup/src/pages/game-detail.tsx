@@ -116,6 +116,7 @@ import { BoxScoreDisplayCard } from "@/components/box-score-display-card";
 import { FileText } from "lucide-react";
 import { formatPlayerNameShort } from "@/lib/player-name";
 import { shortenTeamName, formatOpponentForMatchup } from "@/lib/team-name";
+import { mergeCopiedLineup, type CopyParts } from "@/lib/copy-lineup";
 import { sportPositionCodes, type SportId } from "@workspace/sport-profiles";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -298,6 +299,7 @@ export default function GameDetail() {
   }> | null>(null);
   const [copyLoading, setCopyLoading] = useState(false);
   const [copyApplyingId, setCopyApplyingId] = useState<number | null>(null);
+  const [copyParts, setCopyParts] = useState<CopyParts>("both");
   // "From Screenshot" upload-and-extract state.
   const [imageOpen, setImageOpen] = useState(false);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
@@ -863,7 +865,7 @@ export default function GameDetail() {
     }
   };
 
-  const applyCopyFrom = async (sourceGameId: number) => {
+  const applyCopyFrom = async (sourceGameId: number, parts: CopyParts = copyParts) => {
     if (!game) return;
     setCopyApplyingId(sourceGameId);
     try {
@@ -885,7 +887,8 @@ export default function GameDetail() {
       // Truncate or stretch innings to match the current game.
       const trimmed = kept.filter((e) => e.inning <= game.innings);
       const sourceInnings = sourceEntries.reduce((m, e) => Math.max(m, e.inning), 0);
-      const stretched: typeof lineup = trimmed.map((e, idx) => ({
+      const merged = mergeCopiedLineup(lineup, trimmed, parts, game.innings);
+      const stretched: typeof lineup = merged.entries.map((e, idx) => ({
         ...e,
         id: -(idx + 1), // negative ids mark this as an unsaved preview
         gameId: id,
@@ -904,8 +907,14 @@ export default function GameDetail() {
       } else if (sourceInnings < game.innings) {
         warnings.push(`source had ${sourceInnings} innings — innings ${sourceInnings + 1}–${game.innings} are empty`);
       }
+      if (merged.copiedBoth) warnings.unshift("this game had no lineup yet, so positions and batting order were both copied");
       toast({
-        title: "Lineup loaded — review and save",
+        title:
+          parts === "batting" && !merged.copiedBoth
+            ? "Batting order loaded — review and save"
+            : parts === "positions" && !merged.copiedBoth
+              ? "Positions loaded — review and save"
+              : "Lineup loaded — review and save",
         description: warnings.join(". ") || undefined,
       });
     } catch (err) {
@@ -914,6 +923,22 @@ export default function GameDetail() {
       setCopyApplyingId(null);
     }
   };
+
+  // Deep link from the Ask assistant: /games/:id?copyFrom=<gameId>&copyParts=batting
+  // loads that copy as an unsaved preview once the page's data is ready.
+  const deepLinkCopyDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkCopyDone.current || !game || lineupLoading || players.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const from = Number(params.get("copyFrom"));
+    if (!from) return;
+    deepLinkCopyDone.current = true;
+    const p = params.get("copyParts");
+    const parts: CopyParts = p === "batting" || p === "positions" ? p : "both";
+    window.history.replaceState(null, "", window.location.pathname);
+    void applyCopyFrom(from, parts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, lineupLoading, players.length]);
 
   const resetImageState = () => {
     setImageDataUrl(null);
@@ -4256,9 +4281,34 @@ export default function GameDetail() {
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1 text-xs" role="radiogroup" aria-label="What to copy">
+              {([
+                { v: "both" as const, label: "Whole lineup" },
+                { v: "batting" as const, label: "Batting order" },
+                { v: "positions" as const, label: "Positions" },
+              ]).map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  role="radio"
+                  aria-checked={copyParts === o.v}
+                  onClick={() => setCopyParts(o.v)}
+                  className={`rounded px-2 py-1.5 transition-colors ${
+                    copyParts === o.v ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  data-testid={`button-copy-parts-${o.v}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
             <p className="text-sm text-muted-foreground">
-              Pick a past game and we'll preview its lineup here as a starting point.
-              Players who aren't on your current active roster will be dropped — you can review and save before anything is committed.
+              {copyParts === "batting"
+                ? "Copies just the batting order — this game's positions stay as they are."
+                : copyParts === "positions"
+                  ? "Copies just the positions — this game's batting order stays as it is."
+                  : "Copies positions and batting order as a starting point."}{" "}
+              Players not on your active roster are dropped, and nothing is saved until you review it.
             </p>
             {copyLoading ? (
               <div className="space-y-2">
@@ -4666,7 +4716,7 @@ export default function GameDetail() {
                   Copy from a previous game
                 </div>
                 <div className="text-xs text-muted-foreground leading-snug">
-                  Reuse positions from any saved game on your schedule.
+                  Reuse the batting order, positions, or both from another game.
                 </div>
               </div>
             </button>

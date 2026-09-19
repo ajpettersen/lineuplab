@@ -33,7 +33,9 @@ Tool guidance:
 
 Style: warm, concrete, and brief — a few sentences or a short list. Refer to players by name. Round rates to whole percents. If the data shows nothing (e.g. no completed games yet), say so plainly. If a named player can't be found on the roster, say you couldn't find them rather than guessing.
 
-You currently cannot change any data (generate or edit lineups, edit rosters, etc.) — you are read-only. If asked to make a change, explain what you found and tell the coach where in the app to do it.`;
+- prepare_lineup_copy — when the coach wants to reuse a lineup or batting order from another game ("same batting order as game 1"). Find both games with get_games (the most recent completed game is usually "last game"; "today's game" is the upcoming game dated today), then call this and include the returned link in your reply as a markdown link, e.g. [Open the lineup preview](/games/12?copyFrom=9&copyParts=batting). Say it loads as a preview they review and save.
+
+Apart from preparing those lineup-copy previews, you cannot change any data (generate or edit lineups, edit rosters, etc.). If asked to make another change, explain what you found and tell the coach where in the app to do it.`;
 
 export interface TeamAssistantResult {
   text: string;
@@ -46,7 +48,7 @@ export async function runTeamAssistant(opts: {
   log?: Logger;
   today?: string;
 }): Promise<TeamAssistantResult> {
-  const today = opts.today ?? new Date().toISOString().slice(0, 10);
+  const today = opts.today ?? new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   const convo: ChatMessage[] = [
     { role: "system", content: `${SYSTEM_PROMPT}\n\nToday's date is ${today}.` },
     ...opts.messages.map((m) => ({ role: m.role, content: m.content }) as ChatMessage),

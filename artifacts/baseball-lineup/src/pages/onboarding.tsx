@@ -15,6 +15,7 @@ import {
   Trophy,
   ArrowRight,
   ArrowLeft,
+  CalendarSync,
   Check,
   Loader2,
   Sparkles,
@@ -28,6 +29,7 @@ import {
   Palette,
   ClipboardList,
 } from "lucide-react";
+import { ConnectCalendarDialog, useCalendarSync } from "@/components/calendar-sync";
 import {
   useTeamContext,
   useUpdateCoachProfile,
@@ -83,6 +85,7 @@ type StepId =
   | "sport"
   | "colors"
   | "roster"
+  | "schedule"
   | "invites"
   | "tour";
 
@@ -93,6 +96,7 @@ const STEPS: { id: StepId; label: string; optional?: boolean }[] = [
   { id: "sport", label: "Sport", optional: true },
   { id: "colors", label: "Team colors", optional: true },
   { id: "roster", label: "Roster", optional: true },
+  { id: "schedule", label: "Schedule", optional: true },
   { id: "invites", label: "Invite coaches", optional: true },
   { id: "tour", label: "Quick tour" },
 ];
@@ -450,6 +454,7 @@ export default function Onboarding() {
               }
             />
           )}
+          {step.id === "schedule" && <ScheduleStep />}
           {step.id === "invites" && (
             <InvitesStep
               pendingEmail={pendingEmail}
@@ -537,6 +542,38 @@ function StepHeader({
   );
 }
 
+function ScheduleStep() {
+  const cal = useCalendarSync();
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <StepHeader
+        icon={CalendarSync}
+        title="Pull in your schedule"
+        body="Metro Baseball League teams just pick their team. Anyone else can paste a GameChanger, TeamSnap, or league calendar link. Games fill in and stay up to date — no typing them in."
+      />
+      <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
+        {cal.connected ? (
+          <p className="flex items-center gap-2 rounded-md bg-primary/10 px-4 py-3 text-sm font-medium text-primary">
+            <Check className="h-4 w-4" />
+            Schedule connected
+            {cal.gameCount != null && ` — ${cal.gameCount} game${cal.gameCount === 1 ? "" : "s"}`}
+          </p>
+        ) : (
+          <Button size="lg" onClick={() => setOpen(true)} data-testid="button-onboarding-connect-calendar">
+            <CalendarSync className="mr-2 h-4 w-4" />
+            Find my team's schedule
+          </Button>
+        )}
+        <p className="text-center text-xs text-muted-foreground">
+          No online schedule? Skip this — you can add games by hand anytime.
+        </p>
+      </div>
+      <ConnectCalendarDialog open={open} onClose={() => setOpen(false)} />
+    </div>
+  );
+}
+
 function WelcomeStep({ displayName }: { displayName: string | null }) {
   return (
     <div>
@@ -551,6 +588,7 @@ function WelcomeStep({ displayName }: { displayName: string | null }) {
           "Name your team",
           "Pick your colors",
           "Add your roster (or skip)",
+          "Pull in your game schedule",
           "Invite assistant coaches",
           "Quick tour of the app",
         ].map((line) => (
