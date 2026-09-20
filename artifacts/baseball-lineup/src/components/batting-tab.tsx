@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { battingStatsQuery } from "@/lib/extra-queries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,18 +52,7 @@ interface BattingRow {
 type ExtractedRow = { playerId: number; playerName: string; ab: number; hits: number; doubles: number; triples: number; hr: number; rbi: number; bb: number; k: number; hbp: number; sac: number; sf: number; sb: number };
 
 function useBattingStats() {
-  return useQuery({
-    queryKey: ["batting-stats"],
-    queryFn: async (): Promise<BattingRow[]> => {
-      const r = await fetch(`${BASE}/api/batting`);
-      // Surface HTTP errors as react-query errors instead of returning an
-      // error envelope that the table render would then choke on with
-      // "battingStats.map is not a function" → white screen.
-      if (!r.ok) throw new Error(`GET /api/batting failed (${r.status})`);
-      const data = await r.json();
-      return Array.isArray(data) ? (data as BattingRow[]) : [];
-    },
-  });
+  return useQuery(battingStatsQuery<BattingRow[]>());
 }
 
 export function BattingTab({ players }: { players: { id: number; name: string; number: number | null }[] }) {

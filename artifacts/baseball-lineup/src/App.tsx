@@ -14,6 +14,13 @@ import {
   PERSIST_MAX_AGE,
   purgePersistedQueryCache,
 } from "@/lib/query-persister";
+import {
+  forgetSignedIn,
+  hadSessionOnThisDevice,
+  OfflineFallbackContext,
+  rememberSignedIn,
+  useIsOffline,
+} from "@/lib/offline-session";
 import { registerMutationDefaults } from "@/lib/mutation-defaults";
 import { resetToDefaultTeam } from "@/hooks/use-team-context";
 import {
@@ -373,6 +380,13 @@ function ClerkQueryClientCacheInvalidator() {
       const isFreshSignIn = prevUserId !== undefined && prevUserId === null && userId !== null;
       prevUserIdRef.current = userId;
 
+      // Note whether this device has a signed-in session, so a later boot
+      // with no connection can fall back to the cached team (read-only)
+      // instead of a sign-in screen it can't complete. A real sign-out /
+      // session change clears the hint — the cache is purged below too.
+      if (userId !== null) rememberSignedIn();
+      else if (changed) forgetSignedIn();
+
       if (!changed) return;
 
       if (isFreshSignIn) {
@@ -522,26 +536,17 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function ProtectedApp() {
+/**
+ * Every in-app page. Shared by the signed-in tree and the offline
+ * read-only fallback so both render exactly the same routes.
+ */
+function AppRoutes() {
   // We key the per-route ErrorBoundary on `location` so a render error
   // on one page (e.g. /stats) doesn't leave the fallback UI sticky when
   // the user navigates somewhere else — the new pathname rebuilds the
   // boundary, which clears its internal `error` state.
   const [location] = useLocation();
   return (
-    <>
-      <Show when="signed-in">
-        {/* Inject the active team's primary/secondary colors as CSS vars on
-            <html> for EVERY signed-in surface. This lives here (not inside
-            Layout) so the Field Display and Onboarding — which render OUTSIDE
-            the app shell — also pick up the team's brand colors. Mounted once
-            above the route Switch so navigation never re-flickers the theme. */}
-        <TeamThemeApplier />
-        <PendingInviteRedirect />
-        <OnboardingGate>
-        {/* Single Suspense around the whole authed route tree so a
-            chunk fetch shows the spinner once, not nested fallbacks. */}
-        <Suspense fallback={<RouteFallback />}>
         <Switch>
           {/*
            * Dugout / fence-iPad display renders OUTSIDE the app shell so the
@@ -594,19 +599,69 @@ function ProtectedApp() {
             </Layout>
           </Route>
         </Switch>
+  );
+}
+
+/**
+ * Signed-out tree. Normally: marketing landing or a redirect to sign-in.
+ * But a coach standing at a field with no signal, whose session expired
+ * (or whose browser evicted it), can't complete a sign-in — so when we're
+ * offline and this device HAS been signed in before, we render the app
+ * from its cached data in read-only mode instead. See lib/offline-session.
+ */
+function OfflineCacheOrSignIn() {
+  const offline = useIsOffline();
+  const [location] = useLocation();
+  const canUseCache = offline && hadSessionOnThisDevice();
+  const isAuthRoute =
+    location.startsWith("/sign-in") ||
+    location.startsWith("/sign-up") ||
+    location.startsWith("/join/");
+
+  if (canUseCache && !isAuthRoute) {
+    return (
+      <OfflineFallbackContext.Provider value={true}>
+        <TeamThemeApplier />
+        <Suspense fallback={<RouteFallback />}>
+          <AppRoutes />
+        </Suspense>
+      </OfflineFallbackContext.Provider>
+    );
+  }
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <Switch>
+        {/* Public marketing landing — only for the bare home route. Any
+            other path stashes its destination and redirects to /sign-in
+            so we can return there after auth (esp. /join/:token). */}
+        <Route path="/" component={Landing} />
+        <Route component={StashAndRedirectToSignIn} />
+      </Switch>
+    </Suspense>
+  );
+}
+
+function ProtectedApp() {
+  return (
+    <>
+      <Show when="signed-in">
+        {/* Inject the active team's primary/secondary colors as CSS vars on
+            <html> for EVERY signed-in surface. This lives here (not inside
+            Layout) so the Field Display and Onboarding — which render OUTSIDE
+            the app shell — also pick up the team's brand colors. Mounted once
+            above the route Switch so navigation never re-flickers the theme. */}
+        <TeamThemeApplier />
+        <PendingInviteRedirect />
+        <OnboardingGate>
+        {/* Single Suspense around the whole authed route tree so a
+            chunk fetch shows the spinner once, not nested fallbacks. */}
+        <Suspense fallback={<RouteFallback />}>
+        <AppRoutes />
         </Suspense>
         </OnboardingGate>
       </Show>
       <Show when="signed-out">
-        <Suspense fallback={<RouteFallback />}>
-        <Switch>
-          {/* Public marketing landing — only for the bare home route. Any
-              other path stashes its destination and redirects to /sign-in
-              so we can return there after auth (esp. /join/:token). */}
-          <Route path="/" component={Landing} />
-          <Route component={StashAndRedirectToSignIn} />
-        </Switch>
-        </Suspense>
+        <OfflineCacheOrSignIn />
       </Show>
     </>
   );

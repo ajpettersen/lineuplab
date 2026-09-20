@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { armWatchQuery } from "@/lib/extra-queries";
 import { Link } from "wouter";
 import {
   Shield,
@@ -78,14 +79,7 @@ interface ArmWatchResponse {
 }
 
 function useArmWatch() {
-  return useQuery({
-    queryKey: ["arm-watch"],
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/arm-watch`);
-      if (!r.ok) throw new Error("Failed to load Arm Watch");
-      return r.json() as Promise<ArmWatchResponse>;
-    },
-  });
+  return useQuery(armWatchQuery<ArmWatchResponse>());
 }
 
 function dayKey(iso: string): string {

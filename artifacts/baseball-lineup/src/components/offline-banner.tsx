@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CloudOff } from "lucide-react";
 import { useNetworkStatus } from "@/hooks/use-network-status";
+import { useOfflineFallback } from "@/lib/offline-session";
 
 /**
  * Thin banner under the header shown ONLY while offline: tells the
@@ -16,6 +17,9 @@ import { useNetworkStatus } from "@/hooks/use-network-status";
  */
 export function OfflineBanner() {
   const { online } = useNetworkStatus();
+  // Offline AND signed out: the cached team is readable but nothing can
+  // be written, so say so rather than promising the edits will sync.
+  const signedOut = useOfflineFallback();
   const qc = useQueryClient();
   const [label, setLabel] = useState<string | null>(null);
 
@@ -57,7 +61,12 @@ export function OfflineBanner() {
       className="bg-amber-400/15 text-amber-900 dark:text-amber-100 border-b border-amber-300/40 text-xs font-medium px-4 py-1.5 flex items-center justify-center gap-1.5"
     >
       <CloudOff className="h-3.5 w-3.5 shrink-0" />
-      <span>{label}. Your changes are saved on this device and sync when wifi returns.</span>
+      <span>
+        {label}.{" "}
+        {signedOut
+          ? "Your sign-in expired, so this is view-only — sign in again once you're back online."
+          : "Your changes are saved on this device and sync when wifi returns."}
+      </span>
     </div>
   );
 }

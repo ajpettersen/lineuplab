@@ -84,6 +84,23 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // clerk-js is fetched from Clerk's CDN at runtime. Uncached,
+            // reopening the app with no signal left ClerkProvider stuck
+            // loading — a blank screen at a field even though the team's
+            // data was sitting in IndexedDB. StaleWhileRevalidate keeps a
+            // usable copy on the device and still updates when online.
+            // (Auth ITSELF still needs the network; with the script cached
+            // Clerk resolves to signed-out and the offline read-only
+            // fallback in App.tsx takes over.)
+            urlPattern: /^https:\/\/[^/]*clerk\.(?:accounts\.dev|com|services)\/.*\.js$/,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "clerk-js",
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
       manifest: {

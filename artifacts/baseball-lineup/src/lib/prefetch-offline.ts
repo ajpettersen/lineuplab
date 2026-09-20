@@ -11,10 +11,17 @@ import {
   getGetTeamSettingsQueryOptions,
   getGetPreferencesQueryOptions,
   getGetSeasonStatsQueryOptions,
+  getGetPlayerStatsQueryOptions,
   getListTournamentsQueryOptions,
   type Game,
 } from "@workspace/api-client-react";
 import { getPendingWriteGameIds } from "./offline-queue";
+import {
+  armWatchQuery,
+  battingStatsQuery,
+  historicalFieldingQuery,
+  pitchingStatsQuery,
+} from "./extra-queries";
 
 /**
  * Warm the offline cache so a coach can walk from the schedule straight
@@ -141,6 +148,14 @@ export function prefetchOfflineData(qc: QueryClient): Promise<void> {
     void qc.prefetchQuery({ ...getGetPreferencesQueryOptions(), staleTime: PREFETCH_STALE_MS });
     void qc.prefetchQuery({ ...getGetSeasonStatsQueryOptions(), staleTime: PREFETCH_STALE_MS });
     void qc.prefetchQuery({ ...getListTournamentsQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    // Season-long report pages. Small payloads, and without them a coach
+    // who never opened Arm Watch / Rotation Report while online finds
+    // them empty at a field.
+    void qc.prefetchQuery({ ...getGetPlayerStatsQueryOptions(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...armWatchQuery(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...battingStatsQuery(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...pitchingStatsQuery(), staleTime: PREFETCH_STALE_MS });
+    void qc.prefetchQuery({ ...historicalFieldingQuery(), staleTime: PREFETCH_STALE_MS });
 
     let games: Game[];
     try {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { pitchingStatsQuery } from "@/lib/extra-queries";
 import { useListPlayers } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,17 +23,7 @@ interface PitchingRow {
 }
 
 function usePitchingStats() {
-  return useQuery({
-    queryKey: ["pitching-stats"],
-    queryFn: async (): Promise<PitchingRow[]> => {
-      const r = await fetch(`${BASE}/api/pitching`);
-      // Surface HTTP errors as react-query errors instead of returning a
-      // non-array body that the table render would then choke on.
-      if (!r.ok) throw new Error(`GET /api/pitching failed (${r.status})`);
-      const data = await r.json();
-      return Array.isArray(data) ? (data as PitchingRow[]) : [];
-    },
-  });
+  return useQuery(pitchingStatsQuery<PitchingRow>());
 }
 
 function PitchingTab() {

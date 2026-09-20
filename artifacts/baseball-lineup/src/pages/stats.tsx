@@ -19,6 +19,7 @@ interface ExtendedPlayerStats {
   groupPct: Record<string, number>;
 }
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { historicalFieldingQuery } from "@/lib/extra-queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { Button } from "@/components/ui/button";
@@ -73,13 +74,7 @@ const GROUP_COLORS: Record<string, string> = {
 
 // ---- API helpers ----
 function useHistoricalFielding() {
-  return useQuery({
-    queryKey: ["history-fielding"],
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/history/fielding`);
-      return r.json() as Promise<HistoricalRow[]>;
-    },
-  });
+  return useQuery(historicalFieldingQuery<HistoricalRow>());
 }
 
 interface HistoricalRow {

@@ -1,4 +1,5 @@
 import { useTeamContext, type PermissionTier } from "./use-team-context";
+import { useOfflineFallback } from "@/lib/offline-session";
 
 const RANK: Record<PermissionTier, number> = {
   view: 0,
@@ -31,12 +32,16 @@ export interface PermissionState {
  */
 export function usePermission(): PermissionState {
   const { data: ctx, isLoading } = useTeamContext();
-  const tier: PermissionTier = ctx?.currentUser?.permission ?? "view";
+  const offlineFallback = useOfflineFallback();
+  // Offline with an expired session: show the cached team, but read-only.
+  // Queued writes would need an auth token we can't get, so we hide the
+  // write controls entirely rather than lose a coach's edits later.
+  const tier: PermissionTier = offlineFallback ? "view" : ctx?.currentUser?.permission ?? "view";
   const required = RANK[tier];
   return {
     tier,
-    isOwner: !!ctx?.isOwner,
-    isMasterAdmin: !!ctx?.currentUser?.isMasterAdmin,
+    isOwner: !offlineFallback && !!ctx?.isOwner,
+    isMasterAdmin: !offlineFallback && !!ctx?.currentUser?.isMasterAdmin,
     isLoading,
     can: (level) => required >= RANK[level],
   };
