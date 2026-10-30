@@ -1,5 +1,4 @@
 import type { NextFunction, Request, Response } from "express";
-import { getAuth } from "@clerk/express";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -12,8 +11,8 @@ declare global {
 
 /**
  * Express middleware that rejects unauthenticated requests with 401 and
- * attaches the resolved Clerk userId onto `req.userId` for downstream
- * handlers.
+ * attaches the signed-in account id onto `req.userId` for downstream
+ * handlers. The session itself is read by loadSignedInUser (lib/userSessions).
  *
  * Routes that need a logged-in coach should chain through this middleware,
  * then read `req.userId` (which is guaranteed to be a non-empty string) when
@@ -24,10 +23,7 @@ export function requireAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const auth = getAuth(req);
-  // Clerk's `auth.userId` is the canonical user identifier on the session.
-  // It is `string | null` from @clerk/express; bail with 401 when missing.
-  const userId = auth?.userId;
+  const userId = req.signedInUserId;
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;

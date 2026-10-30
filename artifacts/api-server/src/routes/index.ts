@@ -1,3 +1,4 @@
+import authRouter from "./auth";
 import { Router, type IRouter } from "express";
 import { requireAuth } from "../middlewares/requireAuth";
 import { resolveTeamContext } from "../middlewares/resolveTeamContext";
@@ -38,6 +39,7 @@ const router: IRouter = Router();
 
 // Public routes — no auth required.
 router.use(healthRouter);
+router.use(authRouter);
 
 // All routes mounted below this line require an authenticated coach.
 // resolveTeamContext sets req.ownerUserId (the data scope) based on the

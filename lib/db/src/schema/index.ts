@@ -26,3 +26,4 @@ export * from "./coach_activity_pings";
 export * from "./push_subscriptions";
 export * from "./idempotency_keys";
 export * from "./row-version";
+export * from "./user_accounts";

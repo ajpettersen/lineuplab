@@ -58,7 +58,7 @@ export function InstallPwaPrompt() {
     }
     if (Date.now() - lastDismiss < RESHOW_AFTER_MS) return;
     // Defer the actual mount so we don't flash for the split second
-    // between page load and Clerk redirecting us to /sign-in.
+    // between page load and the redirect to /sign-in.
     const t = window.setTimeout(() => setShow(true), 1500);
     return () => window.clearTimeout(t);
   }, []);

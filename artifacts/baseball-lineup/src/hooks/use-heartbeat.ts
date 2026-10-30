@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useUser } from "@clerk/react";
+import { useAuth } from "@/lib/auth";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const HEARTBEAT_INTERVAL_MS = 60_000;
@@ -16,7 +16,7 @@ const HEARTBEAT_INTERVAL_MS = 60_000;
  * never user-visible.
  */
 export function useHeartbeat(): void {
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useAuth();
 
   useEffect(() => {
     if (!isSignedIn) return;

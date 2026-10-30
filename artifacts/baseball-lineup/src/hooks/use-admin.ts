@@ -104,6 +104,7 @@ export interface AdminUserRow {
   userId: string;
   email: string | null;
   name: string | null;
+  hasPassword?: boolean;
   teams: Array<{
     ownerUserId: string;
     isOwner: boolean;

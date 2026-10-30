@@ -7,7 +7,7 @@ import {
   versionedUpdate,
 } from "../lib/concurrency";
 import { z } from "zod";
-import { clerkClient } from "@clerk/express";
+import { getAccount } from "../lib/accounts";
 import {
   db,
   teamMembershipsTable,
@@ -54,13 +54,9 @@ router.put("/coach-profile", async (req, res): Promise<void> => {
   if (userId === ownerUserId) {
     let email: string | null = null;
     try {
-      const u = await clerkClient.users.getUser(userId);
-      email =
-        u.primaryEmailAddress?.emailAddress ??
-        u.emailAddresses[0]?.emailAddress ??
-        null;
+      email = (await getAccount(userId))?.email ?? null;
     } catch (err) {
-      req.log.warn({ err }, "Failed to fetch owner email from Clerk");
+      req.log.warn({ err }, "Failed to look up owner email");
     }
     await ensureOwnerMembership(userId, email);
   }

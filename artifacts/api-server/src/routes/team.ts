@@ -8,7 +8,7 @@ import {
 } from "../lib/concurrency";
 import { z } from "zod";
 import crypto from "node:crypto";
-import { clerkClient } from "@clerk/express";
+import { getAccount, getAccountsLite } from "../lib/accounts";
 import {
   db,
   teamMembershipsTable,
@@ -92,13 +92,9 @@ router.get("/team/context", async (req, res): Promise<void> => {
   // free of the extra SELECT/INSERT round trip.
   let ownerEmail: string | null = null;
   try {
-    const u = await clerkClient.users.getUser(userId);
-    ownerEmail =
-      u.primaryEmailAddress?.emailAddress ??
-      u.emailAddresses[0]?.emailAddress ??
-      null;
+    ownerEmail = (await getAccount(userId))?.email ?? null;
   } catch (err) {
-    req.log.warn({ err }, "Failed to fetch owner email from Clerk");
+    req.log.warn({ err }, "Failed to look up owner email");
   }
   await ensureOwnerMembership(userId, ownerEmail);
 
@@ -524,7 +520,7 @@ router.post("/team/default", async (req, res): Promise<void> => {
  * if no default is set OR the saved default no longer resolves (team
  * deleted, membership revoked). Called by the client exactly once, right
  * after it detects a genuine sign-in (not just an app reload while
- * already signed in) — see `ClerkQueryClientCacheInvalidator` in App.tsx.
+ * already signed in) — see `AuthQueryClientCacheInvalidator` in App.tsx.
  */
 router.post("/team/reset-to-default", async (req, res): Promise<void> => {
   const userId = req.userId!;
@@ -797,7 +793,7 @@ router.delete("/team/invites/:id", assertPermission("full"), async (req, res): P
 /**
  * GET /api/team/members — list ALL coaches on the current team
  * including the head coach (whose row is `isOwner = true`). Each row is
- * augmented with the member's email/name from Clerk for fallback
+ * augmented with the member's email/name from their account for fallback
  * display when they haven't set their own `displayName`.
  *
  * Owner-row first (sorted by `isOwner desc`), then assistants by
@@ -811,39 +807,21 @@ router.get("/team/members", async (req, res): Promise<void> => {
     .where(eq(teamMembershipsTable.ownerUserId, ownerUserId))
     .orderBy(desc(teamMembershipsTable.isOwner), desc(teamMembershipsTable.joinedAt));
 
-  const enriched = await Promise.all(
-    rows.map(async (r) => {
-      let email = r.memberEmail;
-      let name: string | null = null;
-      try {
-        const u = await clerkClient.users.getUser(r.memberUserId);
-        email =
-          u.primaryEmailAddress?.emailAddress ??
-          u.emailAddresses[0]?.emailAddress ??
-          email;
-        name =
-          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
-          u.username ||
-          null;
-      } catch (err) {
-        req.log.warn(
-          { err, memberUserId: r.memberUserId },
-          "Failed to fetch member from Clerk",
-        );
-      }
-      return {
-        id: r.id,
-        memberUserId: r.memberUserId,
-        memberEmail: email,
-        memberName: name,
-        displayName: r.displayName,
-        role: r.role,
-        permission: isPermissionTier(r.permission) ? r.permission : "view",
-        isOwner: r.isOwner,
-        joinedAt: r.joinedAt,
-      };
-    }),
-  );
+  const accounts = await getAccountsLite(rows.map((r) => r.memberUserId));
+  const enriched = rows.map((r) => {
+    const account = accounts.get(r.memberUserId);
+    return {
+      id: r.id,
+      memberUserId: r.memberUserId,
+      memberEmail: account?.email ?? r.memberEmail,
+      memberName: account?.name ?? null,
+      displayName: r.displayName,
+      role: r.role,
+      permission: isPermissionTier(r.permission) ? r.permission : "view",
+      isOwner: r.isOwner,
+      joinedAt: r.joinedAt,
+    };
+  });
 
   res.json(enriched);
 });
@@ -1088,15 +1066,11 @@ router.post("/invites/:token/accept", async (req, res): Promise<void> => {
   const userId = req.userId!;
   const token = req.params.token ?? "";
 
-  // Fetch the inviter's email opportunistically so we can show a label
-  // in the Coaches list even if Clerk lookups fail later.
+  // Fetch the invitee's email opportunistically so we can show a label
+  // in the Coaches list.
   let memberEmail: string | null = null;
   try {
-    const u = await clerkClient.users.getUser(userId);
-    memberEmail =
-      u.primaryEmailAddress?.emailAddress ??
-      u.emailAddresses[0]?.emailAddress ??
-      null;
+    memberEmail = (await getAccount(userId))?.email ?? null;
   } catch {
     // Non-fatal — we'll fall back to userId for display.
   }

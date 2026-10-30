@@ -23,7 +23,7 @@ import {
   LifeBuoy,
   Sparkles,
 } from "lucide-react";
-import { useClerk, useUser } from "@clerk/react";
+import { signOut, useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -256,8 +256,7 @@ function NavGroupDropdown({
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { teamName, usesTournaments, sportProfile } = useTeamSettings();
-  const { signOut } = useClerk();
-  const { user } = useUser();
+  const { email: accountEmail, refresh: refreshAuth } = useAuth();
   const { data: ctx } = useTeamContext();
   const { tier, isLoading: permissionLoading } = usePermission();
   const { data: adminMe } = useAdminMe();
@@ -273,10 +272,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const isMasterAdmin = !!adminMe?.isMasterAdmin;
   // Prefer the per-team displayName so other coaches see the name the
   // user picked for THIS team (which may differ from team to team).
-  // Falls back to Clerk's email so we always show *something*.
+  // Falls back to the account email so we always show *something*.
   const displayIdentity =
     ctx?.currentUser.displayName ??
-    user?.primaryEmailAddress?.emailAddress ??
+    accountEmail ??
     null;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -440,7 +439,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     location === href || (location.startsWith(href) && href !== "/");
 
   const handleSignOut = () => {
-    void signOut();
+    void signOut(refreshAuth);
   };
 
   return (
