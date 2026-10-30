@@ -18,7 +18,7 @@ The web app uses Clerk. To avoid driving Clerk's hosted UI in tests we use
   whitelists the test browser with Clerk in dev mode.
 - The spec calls `clerk.signIn(...)` to sign a user in programmatically.
 
-Required env (already present in this Replit project for development):
+Required env (put these in a `.env` at the repo root for local runs):
 
 - `CLERK_PUBLISHABLE_KEY` (or `VITE_CLERK_PUBLISHABLE_KEY`)
 - `CLERK_SECRET_KEY` — the **dev/test** secret key (NOT a production key).
@@ -34,8 +34,9 @@ vars are missing, so it works against a clean dev tenant.
 
 ## Running
 
-The dev workflows must already be running (`API Server` and `Lineup Lab web`
-in the workspace; the shared proxy on `localhost:80` routes both).
+The API server and the Lineup Lab web dev server must already be running,
+with the web app reachable at `E2E_BASE_URL` (or the default in
+`playwright.config.ts`).
 
 ```bash
 pnpm --filter @workspace/e2e exec playwright install --with-deps chromium
@@ -45,18 +46,12 @@ pnpm --filter @workspace/e2e run test:select-positions
 To point at a different host (e.g. a published preview URL):
 
 ```bash
-E2E_BASE_URL=https://your-preview.replit.app pnpm --filter @workspace/e2e run test
+E2E_BASE_URL=https://your-preview.example.com pnpm --filter @workspace/e2e run test
 ```
 
-## A note on the Replit shell
+## Linux system libraries
 
-Running this spec from the Replit workspace shell currently fails at
-browser launch because the bundled headless Chromium needs a few
-desktop-Linux shared libs (`libglib-2.0.so.0`, `libnss3`, etc.) that
-aren't part of the workspace's Nix profile. The same flow has been
-verified end-to-end via the platform's `runTest` testing harness, which
-runs Playwright in an environment that already has those system
-libraries (see Task #3 history). When running locally or in CI you can
-either provide a Nix shell with the GTK/NSS deps, or use Playwright's
-official Docker image (`mcr.microsoft.com/playwright`) which ships
-everything pre-installed.
+Playwright's headless Chromium needs a few desktop-Linux shared libraries
+(`libglib-2.0.so.0`, `libnss3`, etc.). `playwright install --with-deps`
+installs them on Debian/Ubuntu; otherwise use Playwright's official Docker
+image (`mcr.microsoft.com/playwright`), which ships everything pre-installed.

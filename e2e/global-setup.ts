@@ -5,7 +5,7 @@ import type { FullConfig } from "@playwright/test";
  * Playwright global setup: bootstraps Clerk testing tokens so the spec
  * can sign in programmatically without driving the Clerk hosted UI.
  *
- * Required env (read from the Replit project secrets):
+ * Required env:
  *   - CLERK_PUBLISHABLE_KEY (or VITE_CLERK_PUBLISHABLE_KEY)
  *   - CLERK_SECRET_KEY
  *
