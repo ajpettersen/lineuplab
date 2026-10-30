@@ -35,6 +35,7 @@ import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
 import { CoachesCard } from "@/components/coaches-card";
+import { PasswordCard } from "@/components/password-card";
 import { SyncIssuesCard } from "@/components/sync-issues-card";
 import { TeamColorsCard } from "@/components/team-colors-card";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
@@ -360,6 +361,7 @@ export default function Settings() {
 
       <TabsContent value="coaches" className="space-y-6 mt-4">
       <CoachesCard />
+      <PasswordCard />
       </TabsContent>
 
       <TabsContent value="team" className="space-y-6 mt-4">

@@ -142,7 +142,7 @@ export function useSetDefaultTeam() {
 }
 
 /**
- * Not a hook — called once, imperatively, from `ClerkQueryClientCacheInvalidator`
+ * Not a hook — called once, imperatively, from `AuthQueryClientCacheInvalidator`
  * in App.tsx right when it detects a genuine sign-in (not just the SPA
  * reloading while already authenticated). Switches the active team to
  * the coach's saved default (or their personal team if none is set)

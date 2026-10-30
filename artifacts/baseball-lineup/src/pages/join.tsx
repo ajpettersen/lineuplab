@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { Show, useUser } from "@clerk/react";
+import { Show, useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -89,7 +89,7 @@ function SignInRedirect({ token }: { token: string }) {
 
 function AcceptFlow({ token }: { token: string }) {
   const [, setLocation] = useLocation();
-  const { user } = useUser();
+  const { email: accountEmail } = useAuth();
   const { toast } = useToast();
   const preview = useInvitePreview(token);
   const accept = useAcceptInvite();
@@ -315,11 +315,11 @@ function AcceptFlow({ token }: { token: string }) {
           You've been invited to be an assistant coach for{" "}
           <strong>{p.teamName}</strong>. You'll start with read-only access —
           the head coach can grant edit permission once you're on the team.
-          {user?.primaryEmailAddress?.emailAddress && (
+          {accountEmail && (
             <>
               {" "}
               You're signing in as{" "}
-              <strong>{user.primaryEmailAddress.emailAddress}</strong>.
+              <strong>{accountEmail}</strong>.
             </>
           )}
         </CardDescription>

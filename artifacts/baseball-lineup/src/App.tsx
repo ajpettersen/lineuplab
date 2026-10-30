@@ -23,15 +23,8 @@ import {
 } from "@/lib/offline-session";
 import { registerMutationDefaults } from "@/lib/mutation-defaults";
 import { resetToDefaultTeam } from "@/hooks/use-team-context";
-import {
-  ClerkProvider,
-  SignIn,
-  SignUp,
-  Show,
-  useClerk,
-} from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
-import { shadcn } from "@clerk/themes";
+import { AuthProvider, Show, useAuth } from "@/lib/auth";
+import { SetPasswordForm, SignInForm, SignUpForm } from "@/components/auth-forms";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/lib/confirm";
@@ -187,87 +180,12 @@ const queryClient = new QueryClient({
 // See `lib/mutation-defaults.ts` for the allowlist + rationale.
 registerMutationDefaults(queryClient);
 
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
-
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
-
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-function stripBase(path: string): string {
-  return basePath && path.startsWith(basePath)
-    ? path.slice(basePath.length) || "/"
-    : path;
-}
-
-if (!clerkPubKey) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY in env");
-}
-
-const clerkAppearance = {
-  theme: shadcn,
-  cssLayerName: "clerk",
-  options: {
-    logoPlacement: "inside" as const,
-    logoLinkUrl: basePath || "/",
-    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
-  },
-  variables: {
-    colorPrimary: "hsl(220, 85%, 22%)",
-    colorForeground: "hsl(220, 30%, 12%)",
-    colorMutedForeground: "hsl(220, 14%, 40%)",
-    colorDanger: "hsl(0, 72%, 51%)",
-    colorBackground: "hsl(0, 0%, 100%)",
-    colorInput: "hsl(215, 30%, 98%)",
-    colorInputForeground: "hsl(220, 30%, 12%)",
-    colorNeutral: "hsl(220, 14%, 80%)",
-    fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
-    borderRadius: "0.6rem",
-  },
-  elements: {
-    rootBox: "w-full flex justify-center",
-    cardBox:
-      "bg-white rounded-2xl w-[440px] max-w-full overflow-hidden shadow-xl border border-[hsl(220,14%,88%)]",
-    card: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    headerTitle: "text-[hsl(220,30%,12%)] font-bold",
-    headerSubtitle: "text-[hsl(220,14%,40%)]",
-    socialButtonsBlockButtonText: "text-[hsl(220,30%,12%)] font-medium",
-    formFieldLabel: "text-[hsl(220,30%,12%)] font-medium",
-    footerActionLink: "text-[hsl(220,85%,22%)] font-semibold hover:underline",
-    footerActionText: "text-[hsl(220,14%,40%)]",
-    dividerText: "text-[hsl(220,14%,40%)]",
-    identityPreviewEditButton: "text-[hsl(220,85%,22%)]",
-    formFieldSuccessText: "text-[hsl(145,63%,40%)]",
-    alertText: "text-[hsl(0,72%,51%)]",
-    logoBox: "flex justify-center mb-2",
-    logoImage: "h-12 w-12",
-    socialButtonsBlockButton:
-      "border border-[hsl(220,14%,80%)] hover:bg-[hsl(215,30%,96%)]",
-    formButtonPrimary:
-      "bg-[hsl(220,85%,22%)] hover:bg-[hsl(220,85%,18%)] text-white font-semibold",
-    formFieldInput:
-      "border border-[hsl(220,14%,80%)] bg-white text-[hsl(220,30%,12%)]",
-    footerAction: "text-center",
-    dividerLine: "bg-[hsl(220,14%,88%)]",
-    alert: "bg-[hsl(0,72%,97%)] border border-[hsl(0,72%,90%)]",
-    otpCodeFieldInput:
-      "border border-[hsl(220,14%,80%)] bg-white text-[hsl(220,30%,12%)]",
-    formFieldRow: "gap-2",
-    main: "gap-4",
-  },
-};
 
 function SignInPage() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 py-8">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-      />
+      <SignInForm />
     </div>
   );
 }
@@ -345,11 +263,7 @@ function SignUpPage() {
             Lineup Lab
           </span>
         </a>
-        <SignUp
-          routing="path"
-          path={`${basePath}/sign-up`}
-          signInUrl={`${basePath}/sign-in`}
-        />
+        <SignUpForm />
         <p className="mt-6 text-center text-xs text-muted-foreground">
           By creating an account you agree to our terms.
         </p>
@@ -358,72 +272,78 @@ function SignUpPage() {
   );
 }
 
-function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
+function SetPasswordPage() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 py-8">
+      <SetPasswordForm />
+    </div>
+  );
+}
+
+function AuthQueryClientCacheInvalidator() {
+  const { isLoaded, userId: sessionUserId } = useAuth();
   const qc = useQueryClient();
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    const unsubscribe = addListener(({ user }) => {
-      const userId = user?.id ?? null;
-      const prevUserId = prevUserIdRef.current;
-      const changed = prevUserId !== undefined && prevUserId !== userId;
-      // A genuine sign-in — as opposed to the SPA simply booting while
-      // an existing session cookie is still valid — is the ONE moment
-      // we can reliably distinguish "just authenticated" from "app
-      // reloaded, still logged in": this listener's first invocation
-      // always fires with whatever user is already active (setting
-      // prevUserId from `undefined`, which `changed` treats as a no-op),
-      // so `changed` only trips on a REAL transition later in the same
-      // mounted session — sign-out→null, or null→a real user completing
-      // the sign-in flow.
-      const isFreshSignIn = prevUserId !== undefined && prevUserId === null && userId !== null;
-      prevUserIdRef.current = userId;
+    if (!isLoaded) return;
+    const userId = sessionUserId;
+    const prevUserId = prevUserIdRef.current;
+    const changed = prevUserId !== undefined && prevUserId !== userId;
+    // A genuine sign-in — as opposed to the SPA simply booting while
+    // an existing session cookie is still valid — is the ONE moment
+    // we can reliably distinguish "just authenticated" from "app
+    // reloaded, still logged in": this effect's first run always
+    // sees whatever user is already active (setting
+    // prevUserId from `undefined`, which `changed` treats as a no-op),
+    // so `changed` only trips on a REAL transition later in the same
+    // mounted session — sign-out→null, or null→a real user completing
+    // the sign-in flow.
+    const isFreshSignIn = prevUserId !== undefined && prevUserId === null && userId !== null;
+    prevUserIdRef.current = userId;
 
-      // Note whether this device has a signed-in session, so a later boot
-      // with no connection can fall back to the cached team (read-only)
-      // instead of a sign-in screen it can't complete. A real sign-out /
-      // session change clears the hint — the cache is purged below too.
-      if (userId !== null) rememberSignedIn();
-      else if (changed) forgetSignedIn();
+    // Note whether this device has a signed-in session, so a later boot
+    // with no connection can fall back to the cached team (read-only)
+    // instead of a sign-in screen it can't complete. A real sign-out /
+    // session change clears the hint — the cache is purged below too.
+    if (userId !== null) rememberSignedIn();
+    else if (changed) forgetSignedIn();
 
-      if (!changed) return;
+    if (!changed) return;
 
-      if (isFreshSignIn) {
-        // Land on the coach's default team (or their personal team if
-        // none is set) BEFORE wiping the cache, so the first refetch
-        // after sign-in already reflects the right team instead of
-        // whatever happened to be active on a previous device/session.
-        // Best-effort: if this fails, the existing active-team pointer
-        // (or the personal-team fallback in resolveTeamContext) still
-        // gives a working, if not necessarily default, team.
-        void resetToDefaultTeam()
-          .catch(() => {})
-          .finally(() => {
-            qc.clear();
-            void purgePersistedQueryCache();
-          });
-        return;
-      }
+    if (isFreshSignIn) {
+      // Land on the coach's default team (or their personal team if
+      // none is set) BEFORE wiping the cache, so the first refetch
+      // after sign-in already reflects the right team instead of
+      // whatever happened to be active on a previous device/session.
+      // Best-effort: if this fails, the existing active-team pointer
+      // (or the personal-team fallback in resolveTeamContext) still
+      // gives a working, if not necessarily default, team.
+      void resetToDefaultTeam()
+        .catch(() => {})
+        .finally(() => {
+          qc.clear();
+          void purgePersistedQueryCache();
+        });
+      return;
+    }
 
-      qc.clear();
-      // Also wipe the IndexedDB-persisted cache directly. qc.clear()
-      // alone isn't enough: the persister has a 1s write throttle,
-      // so a dehydrate scheduled before the user change can still
-      // overwrite IDB *after* the clear, leaking data into the next
-      // sign-in on a shared iPad. See purgePersistedQueryCache().
-      void purgePersistedQueryCache();
-    });
-    return unsubscribe;
-  }, [addListener, qc]);
+    qc.clear();
+    // Also wipe the IndexedDB-persisted cache directly. qc.clear()
+    // alone isn't enough: the persister has a 1s write throttle,
+    // so a dehydrate scheduled before the user change can still
+    // overwrite IDB *after* the clear, leaking data into the next
+    // sign-in on a shared iPad. See purgePersistedQueryCache().
+    void purgePersistedQueryCache();
+  }, [isLoaded, sessionUserId, qc]);
 
   return null;
 }
 
 /**
  * After a user finishes the sign-in flow that started from a /join/:token
- * link, they land on "/" because that's Clerk's default post-sign-in
- * destination. We stashed the token in sessionStorage before redirecting
+ * link, they land on "/" because that's where sign-in always lands.
+ * We stashed the token in sessionStorage before redirecting
  * to /sign-in — read it here and bounce them back to the join page so
  * they can finish accepting the invite.
  */
@@ -468,7 +388,7 @@ function PendingInviteRedirect() {
 /**
  * Wraps `<Redirect to="/sign-in" />` for signed-out users so we remember the
  * URL they were trying to reach. Critical for the dugout / fence-iPad flow:
- * if the iPad's Clerk session expires mid-game, signing back in must drop the
+ * if the iPad's session expires mid-game, signing back in must drop the
  * coach right back on `/games/:id/display`, not on the home dashboard.
  */
 function StashAndRedirectToSignIn() {
@@ -667,33 +587,9 @@ function ProtectedApp() {
   );
 }
 
-function ClerkProviderWithRoutes() {
-  const [, setLocation] = useLocation();
-
+function AuthProviderWithRoutes() {
   return (
-    <ClerkProvider
-      publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
-      appearance={clerkAppearance}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
-      localization={{
-        signIn: {
-          start: {
-            title: "Welcome back, Coach",
-            subtitle: "Sign in to manage your team and lineups",
-          },
-        },
-        signUp: {
-          start: {
-            title: "Create your coach account",
-            subtitle: "Set up your roster, schedule, and lineups",
-          },
-        },
-      }}
-      routerPush={(to) => setLocation(stripBase(to))}
-      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
-    >
+    <AuthProvider>
       <PersistQueryClientProvider
         client={queryClient}
         // Fires once after the persister has finished asynchronously
@@ -731,7 +627,7 @@ function ClerkProviderWithRoutes() {
           },
         }}
       >
-        <ClerkQueryClientCacheInvalidator />
+        <AuthQueryClientCacheInvalidator />
         <OnlineResumer />
         <OfflinePrefetcher />
         <ConflictListener />
@@ -751,6 +647,7 @@ function ClerkProviderWithRoutes() {
             <Switch>
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
+              <Route path="/set-password" component={SetPasswordPage} />
               <Route path="/join/:token" component={Join} />
               <Route component={ProtectedApp} />
             </Switch>
@@ -759,14 +656,14 @@ function ClerkProviderWithRoutes() {
           </ConfirmProvider>
         </TooltipProvider>
       </PersistQueryClientProvider>
-    </ClerkProvider>
+    </AuthProvider>
   );
 }
 
 function App() {
   return (
     <WouterRouter base={basePath}>
-      <ClerkProviderWithRoutes />
+      <AuthProviderWithRoutes />
     </WouterRouter>
   );
 }

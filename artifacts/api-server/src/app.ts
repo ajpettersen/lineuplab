@@ -3,15 +3,9 @@ import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
-import { publishableKeyFromHost } from "@clerk/shared/keys";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import {
-  CLERK_PROXY_PATH,
-  clerkProxyMiddleware,
-  getClerkProxyHost,
-} from "./middlewares/clerkProxyMiddleware";
+import { loadSignedInUser } from "./lib/userSessions";
 
 const app: Express = express();
 
@@ -35,10 +29,6 @@ app.use(
   }),
 );
 
-// Clerk proxy must be mounted BEFORE body parsers — it streams raw bytes
-// through to the Clerk frontend API.
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
-
 app.use(cors({ credentials: true, origin: true }));
 
 // Default JSON body parser for all routes except those that handle image
@@ -52,23 +42,14 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: true }));
 
-// Resolve the publishable key from the incoming request host so the same
-// server can serve multiple Clerk custom domains. Falls back to
-// CLERK_PUBLISHABLE_KEY when the host doesn't map to a custom domain.
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// Works out who is signed in (Lineup Lab's own session cookie) for every route.
+app.use(loadSignedInUser);
 
 app.use("/api", router);
 
-// Serve the built frontend from the same origin/process so Clerk's session
-// cookie stays first-party (see clerkProxyMiddleware) and the frontend's
-// relative /api fetches keep working without CORS or a separate domain.
+// Serve the built frontend from the same origin/process so the session
+// cookie stays first-party and the frontend's relative /api fetches keep
+// working without CORS or a separate domain.
 if (process.env.NODE_ENV === "production") {
   const artifactsDir = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),

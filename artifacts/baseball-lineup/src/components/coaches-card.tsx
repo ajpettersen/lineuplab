@@ -392,7 +392,7 @@ export function CoachesCard() {
               {members.map((m) => {
                 const isSelf = m.memberUserId === ctx?.userId;
                 // Best display name: per-team displayName (their choice
-                // for this team) → Clerk full name → email → generic.
+                // for this team) → account name → email → generic.
                 const primaryLabel =
                   m.displayName ?? m.memberName ?? m.memberEmail ?? "Coach";
                 // Role title — pure display, NOT coupled to permission

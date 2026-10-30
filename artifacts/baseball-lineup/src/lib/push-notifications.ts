@@ -141,10 +141,8 @@ export type UsePushNotifications = {
 /**
  * React hook wrapping the push subscribe/unsubscribe lifecycle.
  *
- * Pass an `authedFetch` (the same `fetch` Clerk's wrapper produces in
- * the rest of the app) so the /api/push routes get the auth header.
- * If the caller passes plain `fetch`, the routes still work because
- * Clerk middleware reads cookies via `credentials: "include"`.
+ * Pass an `authedFetch` if the caller has one. Plain `fetch` works too:
+ * the server reads the session cookie, which same-origin requests send.
  */
 export function usePushNotifications(
   authedFetch: typeof fetch = fetch,

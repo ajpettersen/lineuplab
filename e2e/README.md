@@ -11,26 +11,17 @@ tally**'s rule that LCF/RCF count as Outfield.
 
 ## Auth strategy
 
-The web app uses Clerk. To avoid driving Clerk's hosted UI in tests we use
-[`@clerk/testing`](https://clerk.com/docs/testing/playwright/overview):
+The spec signs in through the app's own API instead of driving the sign-in
+page: it POSTs to `/api/auth/sign-up` with a disposable `@example.com`
+coach, which sets the session cookie on the browser context.
 
-- `global-setup.ts` calls `clerkSetup()` to fetch a testing token that
-  whitelists the test browser with Clerk in dev mode.
-- The spec calls `clerk.signIn(...)` to sign a user in programmatically.
+Optional — sign in as a specific existing account instead:
 
-Required env (put these in a `.env` at the repo root for local runs):
+- `E2E_USER_EMAIL`
+- `E2E_USER_PASSWORD`
 
-- `CLERK_PUBLISHABLE_KEY` (or `VITE_CLERK_PUBLISHABLE_KEY`)
-- `CLERK_SECRET_KEY` — the **dev/test** secret key (NOT a production key).
-
-Optional — pin to a specific seeded test user instead of having the spec
-create a disposable one for each run:
-
-- `E2E_CLERK_USER_EMAIL`
-- `E2E_CLERK_USER_PASSWORD`
-
-The spec is wired to create a fresh user on each run when the optional
-vars are missing, so it works against a clean dev tenant.
+Each run without them leaves one new test account behind, so point it at a
+development database, not production.
 
 ## Running
 

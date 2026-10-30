@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 /**
- * "Offline fallback" mode: the device has no connection AND Clerk reports
- * signed-out (its session couldn't be refreshed, or Safari evicted the
+ * "Offline fallback" mode: the device has no connection AND the app thinks
+ * it's signed out (the session couldn't be checked, or Safari evicted the
  * site's storage). Without this, a coach at a field with no signal gets
  * bounced to a sign-in screen they can't complete — with a full local
  * cache of their team sitting unused on the device.

@@ -40,6 +40,7 @@ import {
   useAdminOnboardingFunnel,
 } from "@/hooks/use-admin";
 import { formatDistanceToNow } from "date-fns";
+import { AdminPasswordLink } from "@/components/admin-password-link";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -357,7 +358,7 @@ export default function Admin() {
           </CardTitle>
           <CardDescription>
             People who haven&apos;t made it into a team row yet — pending
-            invites and accounts that finished Clerk sign-up but never
+            invites and accounts that finished sign-up but never
             opened the app deeply enough to seed a membership.
           </CardDescription>
         </CardHeader>
@@ -395,15 +396,15 @@ export default function Admin() {
                 </div>
                 <div className="rounded-md border p-3" data-testid="stat-clerk-only">
                   <div className="text-[11px] uppercase text-muted-foreground tracking-wide">
-                    In Clerk, not in DB
+                    Account, no team
                   </div>
                   <div className="text-2xl font-mono tabular-nums mt-1">
                     {funnelQuery.data.clerkOnly.rows.length}
                     {funnelQuery.data.clerkOnly.truncated ? "+" : ""}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    of {funnelQuery.data.clerkOnly.totalKnown} total Clerk
-                    users
+                    of {funnelQuery.data.clerkOnly.totalKnown} total
+                    accounts
                   </div>
                 </div>
               </div>
@@ -474,7 +475,7 @@ export default function Admin() {
                         <TableRow>
                           <TableHead>Name</TableHead>
                           <TableHead>Email</TableHead>
-                          <TableHead className="text-right">Joined Clerk</TableHead>
+                          <TableHead className="text-right">Joined</TableHead>
                           <TableHead className="text-right">Last sign-in</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -839,7 +840,7 @@ export default function Admin() {
               )}
             </CardTitle>
             <CardDescription>
-              Every distinct Clerk user that has either created or joined
+              Every distinct account that has either created or joined
               a team. The "teams" column is the team name plus the user's
               permission tier on that team. "Last seen" + active-minute
               rollups come from a 60-second client heartbeat — only fires
@@ -981,6 +982,13 @@ export default function Admin() {
                         <div className="text-xs text-muted-foreground">
                           {u.email}
                         </div>
+                      )}
+                      {!u.userId.startsWith("team_") && (
+                        <AdminPasswordLink
+                          userId={u.userId}
+                          hasEmail={!!u.email}
+                          hasPassword={!!u.hasPassword}
+                        />
                       )}
                     </TableCell>
                     <TableCell>

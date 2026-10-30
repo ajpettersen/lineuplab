@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/react";
+import { useAuth } from "@/lib/auth";
 import {
   prefetchOfflineData,
   OFFLINE_RESUME_COMPLETE_EVENT,
@@ -27,8 +27,8 @@ import {
  * Gated on `isSignedIn` because the games/roster endpoints require auth;
  * running while signed out would just 401.
  *
- * Mounted once inside PersistQueryClientProvider + ClerkProvider so it
- * shares the same QueryClient and sees Clerk auth state.
+ * Mounted once inside PersistQueryClientProvider + AuthProvider so it
+ * shares the same QueryClient and sees the sign-in state.
  */
 export function OfflinePrefetcher() {
   const qc = useQueryClient();

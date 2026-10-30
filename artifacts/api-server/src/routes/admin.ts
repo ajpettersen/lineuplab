@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
 import { and, count, countDistinct, desc, eq, gte, inArray, isNull, max } from "drizzle-orm";
-import { clerkClient } from "@clerk/express";
 import {
   db,
   teamMembershipsTable,
@@ -11,12 +10,16 @@ import {
   aiAssistantQuestionsTable,
   coachActivityPingsTable,
   teamInvitesTable,
+  userAccountsTable,
+  userSessionsTable,
   DEFAULT_TEAM_NAME,
   DEFAULT_TEAM_SHORT_NAME,
 } from "@workspace/db";
 import { requireMasterAdmin } from "../middlewares/requireMasterAdmin";
 import { isMasterAdmin } from "../lib/permissions";
 import { AI_DAILY_TEAM_BUDGET } from "../lib/ai-usage";
+import { getAccount, getAccountByEmail, getAccountsLite, normalizeEmail, type AccountLite } from "../lib/accounts";
+import { createPasswordSetupToken } from "../lib/passwordSetup";
 
 const router: IRouter = Router();
 
@@ -29,75 +32,15 @@ router.get("/admin/me", (req, res): void => {
   res.json({ isMasterAdmin: isMasterAdmin(req.userId) });
 });
 
-interface ClerkLite {
-  email: string | null;
-  name: string | null;
-}
-
-async function fetchClerkLite(userId: string): Promise<ClerkLite> {
-  // Synthetic team keys are not Clerk user ids — skip the doomed call.
-  if (userId.startsWith("team_")) return { email: null, name: null };
-  try {
-    const u = await clerkClient.users.getUser(userId);
-    const email =
-      u.primaryEmailAddress?.emailAddress ??
-      u.emailAddresses[0]?.emailAddress ??
-      null;
-    const name =
-      [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || null;
-    return { email, name };
-  } catch {
-    return { email: null, name: null };
-  }
-}
-
 /**
- * Batched Clerk profile lookup. Returns a Map keyed by userId so the
- * caller can do `map.get(id) ?? { email:null, name:null }` instead of
- * issuing one HTTP request per row. Clerk's `getUserList` accepts up
- * to 500 ids per call but we chunk at 100 to stay well under any
- * future tightening and keep individual responses small. Unknown ids
- * (deleted Clerk accounts) silently fall through — the caller's
- * default kicks in.
+ * Batched account lookup (email + name). Returns a Map keyed by userId so
+ * the caller can do `map.get(id) ?? { email:null, name:null }`. Synthetic
+ * `team_…` owners and unknown ids simply aren't in the map.
  */
-async function fetchClerkLiteMany(
+async function fetchAccountLiteMany(
   userIds: readonly string[],
-): Promise<Map<string, ClerkLite>> {
-  const out = new Map<string, ClerkLite>();
-  // Synthetic team keys (`team_<uuid>` — additional teams created via
-  // POST /api/teams) are NOT Clerk user ids. Filter them out up front
-  // so a bad id can't fail an entire getUserList chunk and blank out
-  // identity data for the real users sharing that chunk.
-  const unique = Array.from(new Set(userIds)).filter(
-    (id) => !id.startsWith("team_"),
-  );
-  if (unique.length === 0) return out;
-  const CHUNK = 100;
-  for (let i = 0; i < unique.length; i += CHUNK) {
-    const chunk = unique.slice(i, i + CHUNK);
-    try {
-      const resp = await clerkClient.users.getUserList({
-        userId: chunk,
-        limit: chunk.length,
-      });
-      const data = Array.isArray(resp) ? resp : resp.data;
-      for (const u of data) {
-        const email =
-          u.primaryEmailAddress?.emailAddress ??
-          u.emailAddresses[0]?.emailAddress ??
-          null;
-        const name =
-          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
-          u.username ||
-          null;
-        out.set(u.id, { email, name });
-      }
-    } catch {
-      // Whole chunk failed (rate limit, network) — leave entries
-      // unset and let callers fall back to {email:null,name:null}.
-    }
-  }
-  return out;
+): Promise<Map<string, AccountLite>> {
+  return getAccountsLite(userIds);
 }
 
 // Everything below requires master admin.
@@ -105,7 +48,7 @@ router.use("/admin", requireMasterAdmin);
 
 /**
  * GET /api/admin/teams — list every team (one per distinct owner). For
- * each team include team name + member/game/player counts + a Clerk
+ * each team include team name + member/game/player counts + an account
  * profile snippet for the owner.
  */
 router.get("/admin/teams", async (_req, res): Promise<void> => {
@@ -227,7 +170,7 @@ router.get("/admin/teams", async (_req, res): Promise<void> => {
     playerCountRows.map((r) => [r.userId, Number(r.playerCount)] as const),
   );
 
-  const clerkMap = await fetchClerkLiteMany(owners);
+  const clerkMap = await fetchAccountLiteMany(owners);
   const enriched = owners.map((oid) => {
     const settings = settingsMap.get(oid);
     const lite = clerkMap.get(oid) ?? { email: null, name: null };
@@ -277,9 +220,9 @@ router.get("/admin/teams/:ownerUserId", async (req, res): Promise<void> => {
     .where(eq(teamMembershipsTable.ownerUserId, ownerUserId))
     .orderBy(desc(teamMembershipsTable.isOwner), desc(teamMembershipsTable.joinedAt));
 
-  // Single batched Clerk lookup for everyone we'll render: owner +
-  // all members. Falls back to {null,null} per id if Clerk is down.
-  const memberClerkMap = await fetchClerkLiteMany([
+  // Single batched account lookup for everyone we'll render: owner +
+  // all members. Falls back to {null,null} per unknown id.
+  const memberClerkMap = await fetchAccountLiteMany([
     ownerUserId,
     ...memberRows.map((m) => m.memberUserId),
   ]);
@@ -324,7 +267,7 @@ router.get("/admin/teams/:ownerUserId", async (req, res): Promise<void> => {
 });
 
 /**
- * GET /api/admin/users — every distinct Clerk user that appears as
+ * GET /api/admin/users — every distinct account that appears as
  * either an owner or a member, with the teams they belong to. Also
  * decorated with activity rollups from coach_activity_pings (1-min
  * heartbeat granularity, written by the web client while a tab is
@@ -429,7 +372,7 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
     }
   }
 
-  const usersClerkMap = await fetchClerkLiteMany(
+  const usersClerkMap = await fetchAccountLiteMany(
     Array.from(byUser.keys()),
   );
   const users = Array.from(byUser.values()).map((u) => {
@@ -439,6 +382,7 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
         userId: u.userId,
         email: lite.email,
         name: lite.name,
+        hasPassword: lite.hasPassword ?? false,
         teams: u.teams,
         lastSeenAt: lastSeen
           ? lastSeen instanceof Date
@@ -467,6 +411,41 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
 });
 
 /**
+ * POST /api/admin/users/:userId/password-link — makes a single-use, 7-day
+ * "set your password" link for any account (Lineup Lab sends no email, so
+ * this is how coaches get in after the move off Clerk, or reset a
+ * forgotten password). `email` is only needed for an account Lineup Lab has
+ * no email for yet. The token goes back to the admin's browser, which
+ * builds the /set-password#<token> link.
+ */
+router.post("/admin/users/:userId/password-link", async (req, res): Promise<void> => {
+  const targetUserId = String(req.params.userId);
+  if (targetUserId.startsWith("team_")) {
+    res.status(400).json({ error: "That's a team, not a person." });
+    return;
+  }
+  try {
+    if (!(await getAccount(targetUserId))) {
+      const email = normalizeEmail(req.body?.email);
+      if (!email) {
+        res.status(409).json({ error: "Lineup Lab doesn't have an email for this coach yet. Enter one.", needsEmail: true });
+        return;
+      }
+      if (await getAccountByEmail(email)) {
+        res.status(409).json({ error: "Another account already uses that email." });
+        return;
+      }
+      await db.insert(userAccountsTable).values({ userId: targetUserId, email });
+    }
+    const { token, expiresAt } = await createPasswordSetupToken(targetUserId, req.userId ?? null);
+    res.json({ token, expiresAt: expiresAt.toISOString() });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create password link");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
  * GET /api/admin/onboarding-funnel — visibility into who's stuck
  * before they ever show up in the regular Users / Teams lists.
  *
@@ -475,14 +454,14 @@ router.get("/admin/users", async (_req, res): Promise<void> => {
  *     (acceptedAt + revokedAt both null, expiresAt in the future)
  *   - expiredInvites: same shape but past expiry — useful to nudge
  *     people who never got to it before the link rotted
- *   - clerkOnly: Clerk users with NO team_membership row anywhere
- *     in our DB (i.e. they finished Clerk sign-up but never opened
+ *   - clerkOnly: accounts with NO team_membership row anywhere
+ *     in our DB (i.e. they finished sign-up but never opened
  *     the app deeply enough to seed an owner row, or they accepted
  *     an invite, or anything). These are the "ghost" users the
  *     master admin's been losing — they completed sign-up but
  *     bounced before the dashboard call hydrated their row.
  *
- * Capped at 500 Clerk users to keep the response bounded; the page
+ * Capped at 500 accounts to keep the response bounded; the page
  * surfaces the totals so the admin knows if the list was truncated.
  */
 router.get("/admin/onboarding-funnel", async (_req, res): Promise<void> => {
@@ -508,7 +487,7 @@ router.get("/admin/onboarding-funnel", async (_req, res): Promise<void> => {
     )
     .orderBy(desc(teamInvitesTable.createdAt));
 
-  // Decorate with the owner's team name + Clerk profile so the admin
+  // Decorate with the owner's team name + account profile so the admin
   // sees "Sarah invited dad@x.com to Lightning" instead of an opaque
   // owner_user_id.
   const ownerIds = Array.from(new Set(inviteRows.map((r) => r.ownerUserId)));
@@ -522,7 +501,7 @@ router.get("/admin/onboarding-funnel", async (_req, res): Promise<void> => {
           .from(teamSettingsTable)
           .where(inArray(teamSettingsTable.userId, ownerIds))
       : Promise.resolve([]),
-    fetchClerkLiteMany(ownerIds),
+    fetchAccountLiteMany(ownerIds),
   ]);
   const teamNameByOwner = new Map(
     settingsRows.map((r) => [r.userId, r.teamName ?? DEFAULT_TEAM_NAME] as const),
@@ -568,11 +547,10 @@ router.get("/admin/onboarding-funnel", async (_req, res): Promise<void> => {
     .filter((r) => new Date(r.expiresAt).getTime() <= now.getTime())
     .map((r) => decorate(r, true));
 
-  // ── Clerk users with no membership row ─────────────────────────
+  // ── Accounts with no membership row ───────────────────────────
   // Pull every user_id we know about (owner + member sides of every
   // membership row, plus owners-from-players and owners-from-settings
-  // so legacy accounts without a membership row aren't false-flagged
-  // as "Clerk-only").
+  // so legacy accounts without a membership row aren't false-flagged).
   const [memberRows, ownerFromPlayersRows, ownerFromSettingsRows] =
     await Promise.all([
       db
@@ -590,73 +568,36 @@ router.get("/admin/onboarding-funnel", async (_req, res): Promise<void> => {
     ...ownerFromSettingsRows.map((r) => r.userId),
   ]);
 
-  // Page through Clerk's user list. 500 is a generous cap — past that
+  // Accounts with no membership row. 500 is a generous cap — past that
   // an admin should be looking at the funnel chart, not a per-user
   // table. We surface `truncated: true` on the response so the UI can
-  // say "showing 500 of N+".
-  const CLERK_PAGE = 100;
-  const CLERK_CAP = 500;
-  const clerkOnly: Array<{
-    userId: string;
-    email: string | null;
-    name: string | null;
-    createdAt: string | null;
-    lastSignInAt: string | null;
-  }> = [];
-  let clerkTotal = 0;
-  let truncated = false;
-  try {
-    let offset = 0;
-    while (offset < CLERK_CAP + CLERK_PAGE) {
-      const resp = await clerkClient.users.getUserList({
-        limit: CLERK_PAGE,
-        offset,
-        orderBy: "-created_at",
-      });
-      const data = Array.isArray(resp) ? resp : resp.data;
-      const total =
-        Array.isArray(resp) ? data.length : (resp.totalCount ?? data.length);
-      if (offset === 0) clerkTotal = total;
-      if (data.length === 0) break;
-      for (const u of data) {
-        if (knownUserIds.has(u.id)) continue;
-        if (clerkOnly.length >= CLERK_CAP) {
-          truncated = true;
-          break;
-        }
-        const email =
-          u.primaryEmailAddress?.emailAddress ??
-          u.emailAddresses[0]?.emailAddress ??
-          null;
-        const name =
-          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
-          u.username ||
-          null;
-        clerkOnly.push({
-          userId: u.id,
-          email,
-          name,
-          createdAt: u.createdAt
-            ? new Date(u.createdAt).toISOString()
-            : null,
-          lastSignInAt: u.lastSignInAt
-            ? new Date(u.lastSignInAt).toISOString()
-            : null,
-        });
-      }
-      if (truncated) break;
-      offset += data.length;
-      if (data.length < CLERK_PAGE) break;
-    }
-  } catch (err) {
-    // Don't fail the whole funnel response if Clerk's listing API
-    // hiccups — just return what we have so the invite buckets are
-    // still useful.
-    (_req as unknown as { log?: { warn: (o: unknown, m?: string) => void } })
-      .log?.warn?.({ err }, "admin: clerk getUserList failed in onboarding-funnel");
-  }
+  // say "showing 500 of N+". (The response key stays `clerkOnly` from
+  // when Clerk held the accounts, so existing clients keep working.)
+  const ACCOUNT_CAP = 500;
+  const accounts = await db
+    .select({
+      userId: userAccountsTable.userId,
+      email: userAccountsTable.email,
+      name: userAccountsTable.displayName,
+      createdAt: userAccountsTable.createdAt,
+      lastSignInAt: max(userSessionsTable.createdAt),
+    })
+    .from(userAccountsTable)
+    .leftJoin(userSessionsTable, eq(userSessionsTable.userId, userAccountsTable.userId))
+    .groupBy(userAccountsTable.userId)
+    .orderBy(desc(userAccountsTable.createdAt));
+  const unknownAccounts = accounts.filter((a) => !knownUserIds.has(a.userId));
+  const truncated = unknownAccounts.length > ACCOUNT_CAP;
+  const clerkOnly = unknownAccounts.slice(0, ACCOUNT_CAP).map((a) => ({
+    userId: a.userId,
+    email: a.email,
+    name: a.name,
+    createdAt: a.createdAt.toISOString(),
+    lastSignInAt: a.lastSignInAt ? new Date(a.lastSignInAt).toISOString() : null,
+  }));
+  const clerkTotal = accounts.length;
 
-  // Most-recently-created Clerk users surface first so the admin's
+  // Most-recently-created accounts surface first so the admin's
   // attention lands on people who literally just signed up.
   clerkOnly.sort((a, b) => {
     const aT = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -760,7 +701,7 @@ router.get("/admin/ai-usage", async (_req, res): Promise<void> => {
     }
   }
 
-  const aiClerkMap = await fetchClerkLiteMany(ownerIds);
+  const aiClerkMap = await fetchAccountLiteMany(ownerIds);
   const perTeam = Array.from(byTeam.values()).map((b) => {
     const lite = aiClerkMap.get(b.ownerUserId) ?? { email: null, name: null };
     const settings = settingsMap.get(b.ownerUserId);
@@ -795,7 +736,7 @@ router.get("/admin/ai-usage", async (_req, res): Promise<void> => {
  * GET /api/admin/ai-questions — recent AI Assistant prompts across all
  * teams. Newest first, capped at `limit` rows (default 100, max 500)
  * so the admin page can render a single feed without paging logic.
- * Joined with team_settings for the team name and Clerk for the
+ * Joined with team_settings for the team name and accounts for the
  * asking-coach's name + email; both joins are best-effort (defaults if
  * a row is missing). Master-admin-only via the router-wide gate below.
  */
@@ -819,7 +760,7 @@ router.get("/admin/ai-questions", async (req, res): Promise<void> => {
     .limit(limit);
 
   // Enrich with team name + asker profile. We dedupe ids before issuing
-  // the lookups so a busy team's 50 rows still cost one Clerk batch +
+  // the lookups so a busy team's 50 rows still cost one account batch +
   // one settings query.
   const ownerIds = Array.from(new Set(rows.map((r) => r.ownerUserId)));
   const askerIds = Array.from(new Set(rows.map((r) => r.askedByUserId)));
@@ -836,7 +777,7 @@ router.get("/admin/ai-questions", async (req, res): Promise<void> => {
     }
   }
 
-  const clerkMap = await fetchClerkLiteMany(allUserIds);
+  const clerkMap = await fetchAccountLiteMany(allUserIds);
 
   res.json({
     questions: rows.map((r) => {

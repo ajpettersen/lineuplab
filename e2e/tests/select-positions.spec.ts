@@ -1,5 +1,4 @@
 import { test, expect, request, type APIRequestContext, type Page } from "@playwright/test";
-import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 
 /**
  * End-to-end coverage for the Select Positions feature + name helper changes
@@ -33,42 +32,33 @@ type GeneratedEntry = {
   battingOrder: number | null;
 };
 
-async function ensureTestUser(): Promise<{ email: string; password: string }> {
-  const fixedEmail = process.env.E2E_CLERK_USER_EMAIL;
-  const fixedPassword = process.env.E2E_CLERK_USER_PASSWORD;
-  if (fixedEmail && fixedPassword) {
-    return { email: fixedEmail, password: fixedPassword };
+/**
+ * Signs the browser in. Uses E2E_USER_EMAIL / E2E_USER_PASSWORD when set;
+ * otherwise creates a disposable coach account through the app's own
+ * sign-up endpoint. Either call sets the session cookie on the page's
+ * browser context.
+ */
+async function signInTestUser(page: Page): Promise<void> {
+  const fixedEmail = process.env.E2E_USER_EMAIL;
+  const fixedPassword = process.env.E2E_USER_PASSWORD;
+  const res = fixedEmail && fixedPassword
+    ? await page.request.post("/api/auth/sign-in", {
+      data: { email: fixedEmail, password: fixedPassword },
+    })
+    : await page.request.post("/api/auth/sign-up", {
+      data: {
+        name: "E2E Coach",
+        email: `e2e+${Date.now()}@example.com`,
+        password: `Pw_${Date.now()}_AaBbCc!`,
+      },
+    });
+  if (!res.ok()) {
+    throw new Error(`Failed to sign in the test user: ${res.status()} ${await res.text()}`);
   }
-  // Create a disposable Clerk user for this run via the Backend API. The
-  // `+clerk_test` local-part forces Clerk's test-mode (no real email sent).
-  // See https://clerk.com/docs/testing/test-emails-and-phones
-  const stamp = Date.now();
-  const email = `e2e+clerk_test+${stamp}@example.com`;
-  const password = `Pw_${stamp}_AaBbCc!`;
-  const res = await fetch("https://api.clerk.com/v1/users", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      email_address: [email],
-      password,
-      first_name: "E2E",
-      last_name: "Coach",
-      skip_password_checks: true,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to create disposable Clerk test user: ${res.status} ${await res.text()}`,
-    );
-  }
-  return { email, password };
 }
 
 async function getApiContextWithSession(page: Page, baseURL: string) {
-  // Re-use the browser cookies (set by Clerk after sign-in) for API requests
+  // Re-use the browser cookies (set at sign-in) for API requests
   // so we hit the API as the signed-in coach.
   const storageState = await page.context().storageState();
   return await request.newContext({ baseURL, storageState });
@@ -124,15 +114,8 @@ test.describe("Select Positions + name helper", () => {
     test.setTimeout(240_000);
     expect(baseURL, "baseURL must be set in playwright.config.ts").toBeTruthy();
 
-    const { email, password } = await ensureTestUser();
-    await setupClerkTestingToken({ page });
-
-    // 1. Sign in via Clerk's testing helper (no UI driving).
-    await page.goto("/");
-    await clerk.signIn({
-      page,
-      signInParams: { strategy: "password", identifier: email, password },
-    });
+    // 1. Sign in through the API (no UI driving).
+    await signInTestUser(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
