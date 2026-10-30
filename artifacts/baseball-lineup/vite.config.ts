@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { VitePWA } from "vite-plugin-pwa";
 
 const rawPort = process.env.PORT;
@@ -32,7 +31,6 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
-    runtimeErrorOverlay(),
     // Phase 1 offline support: registers a service worker so the app
     // shell loads with no network (essential for an iPad opened at a
     // field). We deliberately do NOT runtime-cache /api responses
@@ -129,22 +127,9 @@ export default defineConfig({
         ],
       },
       // Lets us hit the SW in `pnpm dev` previews so we can verify
-      // offline behavior in Replit before publishing.
+      // offline behavior before publishing.
       devOptions: { enabled: true, type: "module" },
     }),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
-          ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
   ],
   resolve: {
     alias: {
