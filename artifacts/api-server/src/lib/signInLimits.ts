@@ -46,9 +46,37 @@ export function signUpAllowed(now = Date.now()): boolean {
   return true;
 }
 
+/**
+ * Password-reset emails: at most a few per address per hour, and a ceiling
+ * across everyone, so the endpoint can't be used to spam an inbox or burn
+ * the mail provider's quota.
+ */
+const RESET_WINDOW_MS = 60 * 60_000;
+const MAX_RESETS_PER_EMAIL = 3;
+const MAX_RESETS_OVERALL = 50;
+let resetsByEmail = new Map<string, number[]>();
+let resets: number[] = [];
+
+export function passwordResetAllowed(email: string, now = Date.now()): boolean {
+  resets = resets.filter(at => now - at < RESET_WINDOW_MS);
+  const next = new Map<string, number[]>();
+  for (const [key, times] of resetsByEmail) {
+    const recent = times.filter(at => now - at < RESET_WINDOW_MS);
+    if (recent.length) next.set(key, recent);
+  }
+  resetsByEmail = next;
+  if (resets.length >= MAX_RESETS_OVERALL) return false;
+  if ((resetsByEmail.get(email)?.length ?? 0) >= MAX_RESETS_PER_EMAIL) return false;
+  resets.push(now);
+  resetsByEmail.set(email, [...(resetsByEmail.get(email) ?? []), now]);
+  return true;
+}
+
 /** Test hook. */
 export function resetSignInLimits(): void {
   failuresByEmail = new Map();
   failures = [];
   signUps = [];
+  resetsByEmail = new Map();
+  resets = [];
 }

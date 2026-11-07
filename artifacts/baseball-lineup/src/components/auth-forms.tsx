@@ -88,10 +88,77 @@ export function SignInForm() {
         </Button>
       </form>
       <p className="mt-6 text-center text-sm text-[hsl(220,14%,40%)]">
-        Forgot your password? Ask the Lineup Lab admin for a reset link.
+        <Link href="/forgot-password" className="font-semibold text-[hsl(220,85%,22%)] hover:underline" data-testid="link-forgot-password">
+          Forgot your password?
+        </Link>
       </p>
       <p className="mt-2 text-center text-sm text-[hsl(220,14%,40%)]">
         New coach? <Link href="/sign-up" className="font-semibold text-[hsl(220,85%,22%)] hover:underline">Create an account</Link>
+      </p>
+    </AuthCard>
+  );
+}
+
+/**
+ * Asks for an email and triggers POST /auth/forgot-password. The server
+ * always answers the same way, so this always shows the "check your inbox"
+ * panel — saying "no account with that email" would let anyone test which
+ * coaches are registered.
+ */
+export function ForgotPasswordForm() {
+  useRedirectIfSignedIn();
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await postAuth("forgot-password", { email });
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the reset email.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <AuthCard title="Check your email" subtitle={`If ${email.trim()} has a Lineup Lab account, a reset link is on its way.`}>
+        <p className="text-center text-sm text-[hsl(220,14%,40%)]">
+          The link works once and expires in an hour. Nothing in your inbox after a few minutes? Check spam, or
+          {" "}
+          <button type="button" className="font-semibold text-[hsl(220,85%,22%)] hover:underline" onClick={() => setSent(false)}>
+            try another email address
+          </button>
+          .
+        </p>
+        <p className="mt-6 text-center text-sm text-[hsl(220,14%,40%)]">
+          <Link href="/sign-in" className="font-semibold text-[hsl(220,85%,22%)] hover:underline">Back to sign in</Link>
+        </p>
+      </AuthCard>
+    );
+  }
+
+  return (
+    <AuthCard title="Reset your password" subtitle="We'll email you a link to set a new one.">
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="forgot-email">Email</Label>
+          <Input id="forgot-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} data-testid="input-forgot-email" />
+        </div>
+        <ErrorText message={error} />
+        <Button type="submit" className="w-full" disabled={busy} data-testid="button-send-reset">
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Email me a reset link
+        </Button>
+      </form>
+      <p className="mt-6 text-center text-sm text-[hsl(220,14%,40%)]">
+        Remembered it? <Link href="/sign-in" className="font-semibold text-[hsl(220,85%,22%)] hover:underline">Sign in</Link>
       </p>
     </AuthCard>
   );

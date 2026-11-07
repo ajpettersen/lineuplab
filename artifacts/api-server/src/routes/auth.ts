@@ -11,12 +11,14 @@ import {
 import { hashPassword, passwordProblem, spendPasswordCheckTime, verifyPassword } from "../lib/passwords";
 import {
   clearSignInFailures,
+  passwordResetAllowed,
   recordSignInFailure,
   signInLocked,
   signUpAllowed,
 } from "../lib/signInLimits";
+import { appUrl, sendEmail } from "../lib/email";
 import { currentSessionHash, endOtherSessions, endSession, startSession } from "../lib/userSessions";
-import { createPasswordSetupToken, hashSetupToken } from "../lib/passwordSetup";
+import { createPasswordSetupToken, hashSetupToken, PASSWORD_RESET_TTL_MS } from "../lib/passwordSetup";
 
 // Lineup Lab's own sign-in: email + password, a session cookie, and
 // single-use "set your password" links that a master admin hands out (or
@@ -149,6 +151,47 @@ router.post("/auth/sign-out", async (req, res): Promise<void> => {
   } catch (err) {
     req.log.error({ err }, "Failed to sign out");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/auth/forgot-password — { email }: emails a single-use link to
+ * set a new password (the same /set-password flow an admin link uses).
+ *
+ * Always answers `{ sent: true }`, whatever happened: unknown address,
+ * rate-limited, or mail provider down. Anything else would let a stranger
+ * test which coaches have accounts here. Real failures go to the log.
+ */
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  const email = normalizeEmail(req.body?.email);
+  res.json({ sent: true });
+  if (!email) return;
+  try {
+    if (!passwordResetAllowed(email)) {
+      req.log.warn({ email }, "password reset throttled");
+      return;
+    }
+    const account = await getAccountByEmail(email);
+    if (!account) return;
+    const { token } = await createPasswordSetupToken(account.userId, null, PASSWORD_RESET_TTL_MS);
+    // Token travels in the URL fragment so it never reaches server logs.
+    const link = `${appUrl()}/set-password#${token}`;
+    const name = account.displayName?.split(/\s+/)[0];
+    const result = await sendEmail({
+      to: account.email,
+      subject: "Reset your Lineup Lab password",
+      text: [
+        `${name ? `Hi ${name},` : "Hi,"}`,
+        "",
+        "Use this link to set a new Lineup Lab password. It works once and expires in an hour:",
+        link,
+        "",
+        "If you didn't ask for this, you can ignore this email — your current password still works.",
+      ].join("\n"),
+    });
+    req.log.info({ userId: account.userId, result }, "password reset email");
+  } catch (err) {
+    req.log.error({ err }, "Failed to send password reset");
   }
 });
 

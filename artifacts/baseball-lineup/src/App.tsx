@@ -24,7 +24,7 @@ import {
 import { registerMutationDefaults } from "@/lib/mutation-defaults";
 import { resetToDefaultTeam } from "@/hooks/use-team-context";
 import { AuthProvider, Show, useAuth } from "@/lib/auth";
-import { SetPasswordForm, SignInForm, SignUpForm } from "@/components/auth-forms";
+import { ForgotPasswordForm, SetPasswordForm, SignInForm, SignUpForm } from "@/components/auth-forms";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/lib/confirm";
@@ -268,6 +268,14 @@ function SignUpPage() {
           By creating an account you agree to our terms.
         </p>
       </div>
+    </div>
+  );
+}
+
+function ForgotPasswordPage() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 py-8">
+      <ForgotPasswordForm />
     </div>
   );
 }
@@ -536,6 +544,8 @@ function OfflineCacheOrSignIn() {
   const isAuthRoute =
     location.startsWith("/sign-in") ||
     location.startsWith("/sign-up") ||
+    location.startsWith("/forgot-password") ||
+    location.startsWith("/set-password") ||
     location.startsWith("/join/");
 
   if (canUseCache && !isAuthRoute) {
@@ -648,6 +658,7 @@ function AuthProviderWithRoutes() {
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
               <Route path="/set-password" component={SetPasswordPage} />
+              <Route path="/forgot-password" component={ForgotPasswordPage} />
               <Route path="/join/:token" component={Join} />
               <Route component={ProtectedApp} />
             </Switch>
