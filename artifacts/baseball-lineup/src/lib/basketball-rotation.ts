@@ -243,21 +243,38 @@ export function buildRotation(input: RotationInput): RotationResult {
   const frontHere = frontQueue.length;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+  const nameList = (ps: BasketballPlayer[]) =>
+    ps.length <= 2 ? ps.map(p => p.name).join(" and ") : `${ps.slice(0, -1).map(p => p.name).join(", ")} and ${ps[ps.length - 1].name}`;
+
   // Not enough guards: a front-court player (not a Big, if possible) plays guard.
+  const toGuard: BasketballPlayer[] = [];
   while (guardQueue.length < settings.guardSpots && frontQueue.length > settings.frontSpots) {
     const pick = [...frontQueue].reverse().find(p => !p.big) ?? frontQueue[frontQueue.length - 1];
     frontQueue = frontQueue.filter(p => p !== pick);
     guardQueue = [...guardQueue, pick];
     playingAs.set(pick.id, "guard");
-    warnings.push(`Only ${plural(guardsHere, "guard")} here, so ${pick.name} (Front) fills in at guard.`);
+    toGuard.push(pick);
+  }
+  if (toGuard.length > 0) {
+    const verb = toGuard.length === 1 ? "fills" : "fill";
+    warnings.push(guardsHere === 0
+      ? `Nobody here is set as a Guard, so ${nameList(toGuard)} (Front) ${verb} in at guard. Set each player's role to Guard or Front to fix this.`
+      : `Only ${plural(guardsHere, "guard")} here, so ${nameList(toGuard)} (Front) ${verb} in at guard.`);
   }
   // Not enough front-court players but extra guards: last resort, a guard plays up front.
+  const toFront: BasketballPlayer[] = [];
   while (frontQueue.length < settings.frontSpots && guardQueue.length > settings.guardSpots) {
     const pick = guardQueue[guardQueue.length - 1];
     guardQueue = guardQueue.slice(0, -1);
     frontQueue = [...frontQueue, pick];
     playingAs.set(pick.id, "front");
-    warnings.push(`Only ${plural(frontHere, "front-court player")} here, so ${pick.name} (Guard) fills in up front.`);
+    toFront.push(pick);
+  }
+  if (toFront.length > 0) {
+    const verb = toFront.length === 1 ? "fills" : "fill";
+    warnings.push(frontHere === 0
+      ? `Nobody here is set as Front, so ${nameList(toFront)} (Guard) ${verb} in up front. Set each player's role to Guard or Front to fix this.`
+      : `Only ${plural(frontHere, "front-court player")} here, so ${nameList(toFront)} (Guard) ${verb} in up front.`);
   }
   const guardSpots = Math.min(settings.guardSpots, guardQueue.length);
   const frontSpots = Math.min(settings.frontSpots, frontQueue.length);

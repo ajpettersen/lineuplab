@@ -21,9 +21,12 @@ import { toastError } from "@/lib/toast-error";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 import { SprayChart, useSprayChart } from "@/components/spray-chart";
+import { useSportProfile } from "@/hooks/use-sport-profile";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Sent as eligiblePositions on save only to satisfy the generated schema; the
+// server always recomputes it from canPitch.
 const ALL_POSITIONS = ["P", "C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
 
 interface BattingRow {
@@ -76,6 +79,12 @@ export default function PlayerDetail() {
   const { data: sprayEvents = [] } = useSprayChart(id, !!id);
   const qc = useQueryClient();
   const { toast } = useToast();
+  // Positions and pitching follow the team's sport (PG/SG/SF/PF/C for basketball).
+  const { profile } = useSportProfile();
+  const sportPositions = profile.positions.map((p) => p.code);
+  const positionLabel = (code: string) =>
+    profile.positions.find((p) => p.code === code)?.label ?? POSITION_LABELS[code] ?? code;
+  const showPitching = profile.features.pitching;
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -160,7 +169,8 @@ export default function PlayerDetail() {
             // current full list (server overwrites it) just to satisfy the
             // generated zod schema, which still requires the field.
             eligiblePositions: ALL_POSITIONS,
-            preferredPositions: preferred,
+            // Drop positions from another sport the coach can't see here.
+            preferredPositions: preferred.filter((p) => sportPositions.includes(p)),
             canPitch,
             active,
           },
@@ -297,7 +307,7 @@ export default function PlayerDetail() {
                   play any position.
                 </p>
                 <div className="grid grid-cols-3 gap-2">
-                  {ALL_POSITIONS.map((pos) => (
+                  {sportPositions.map((pos) => (
                     <label
                       key={pos}
                       className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer text-sm transition-colors ${
@@ -316,10 +326,12 @@ export default function PlayerDetail() {
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={canPitch} onCheckedChange={(v) => setCanPitch(!!v)} />
-                  <span className="text-sm">Can pitch</span>
-                </label>
+                {showPitching && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox checked={canPitch} onCheckedChange={(v) => setCanPitch(!!v)} />
+                    <span className="text-sm">Can pitch</span>
+                  </label>
+                )}
                 <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox checked={active} onCheckedChange={(v) => setActive(!!v)} />
                   <span className="text-sm">Active on roster</span>
@@ -344,7 +356,7 @@ export default function PlayerDetail() {
                   </p>
                 )}
               </div>
-              {player.canPitch && (
+              {showPitching && player.canPitch && (
                 <Badge variant="outline" className="w-fit text-primary border-primary/40">
                   Can Pitch
                 </Badge>
@@ -426,7 +438,7 @@ export default function PlayerDetail() {
             </div>
             {Object.keys(stats.positionInnings).length > 0 && (
               <div>
-                <Label className="text-xs text-muted-foreground mb-2 block">Innings by Position</Label>
+                <Label className="text-xs text-muted-foreground mb-2 block">{profile.terms.timeByPositionLabel}</Label>
                 <div className="grid grid-cols-3 gap-2">
                   {Object.entries(stats.positionInnings)
                     .sort((a, b) => b[1] - a[1])
@@ -435,7 +447,7 @@ export default function PlayerDetail() {
                         key={pos}
                         className="flex items-center justify-between px-3 py-2 rounded-md bg-muted/50 text-sm"
                       >
-                        <span className="font-medium">{POSITION_LABELS[pos] ?? pos}</span>
+                        <span className="font-medium">{positionLabel(pos)}</span>
                         <span className="text-muted-foreground font-mono">{count}</span>
                       </div>
                     ))}
