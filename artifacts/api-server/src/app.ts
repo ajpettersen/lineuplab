@@ -65,6 +65,12 @@ if (process.env.NODE_ENV === "production") {
 
   const staticDir = path.join(artifactsDir, "baseball-lineup/dist/public");
   app.use(express.static(staticDir));
+  // A code file from an older deploy that no longer exists: answer 404 rather
+  // than the app's HTML, so the browser reports a failed load (which the app
+  // recovers from by reloading) instead of a confusing script error.
+  app.get(/^\/(assets\/|sw\.js$|workbox-).*/, (_req, res) => {
+    res.status(404).type("text/plain").send("Not found");
+  });
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(staticDir, "index.html"));
   });

@@ -19,6 +19,24 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    // After a new deploy, a page still running the old version can fail to
+    // load a code file that no longer exists (Chrome: "Failed to fetch
+    // dynamically imported module", Safari: "Importing a module script
+    // failed"). Reload once to pick up the new version instead of showing
+    // an error; the guard stops a reload loop if something is truly broken.
+    if (/dynamically imported module|Importing a module script failed|error loading dynamically imported|Unable to preload CSS|Loading chunk|ChunkLoadError/i.test(error.message)) {
+      try {
+        const key = "lineupLab.chunkReloadedAt";
+        const last = Number(sessionStorage.getItem(key) ?? "0");
+        if (Date.now() - last > 60_000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // storage blocked: fall through to the error screen
+      }
+    }
     // Surface in dev console at minimum so QA / coaches in the field
     // can read off the error if asked. We intentionally don't ship a
     // remote-logging dependency just for this boundary.
