@@ -165,6 +165,13 @@ function seeded(seed: number) {
   assert.ok(filler && !filler.big, "a non-Big is borrowed first");
   assert.ok(oneGuard.halves[0].rows.every(r => r.guards.length === 2));
 
+  // Nobody tagged Guard (e.g. a fresh import with no positions): one clear warning, still 2 at guard.
+  const noGuards = buildRotation({ players: players.map(p => ({ ...p, role: "front" as const })), settings: DEFAULT_BASKETBALL_SETTINGS });
+  const guardWarnings = noGuards.warnings.filter(w => w.includes("in at guard"));
+  assert.equal(guardWarnings.length, 1, "one combined warning, not one per player");
+  assert.match(guardWarnings[0], /^Nobody here is set as a Guard, so .+ and .+ \(Front\) fill in at guard\./);
+  assert.ok(noGuards.halves[0].rows.every(r => r.guards.length === 2));
+
   // Too few players overall: plays short, warns, doesn't throw.
   const short = buildRotation({ players: [guard("A"), front("B", true), front("C")], settings: DEFAULT_BASKETBALL_SETTINGS });
   assert.ok(short.warnings.some(w => w.includes("short-handed")));

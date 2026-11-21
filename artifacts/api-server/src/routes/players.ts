@@ -16,7 +16,9 @@ import {
   gamesTable,
   gameBattingLinesTable,
   pitchCountsTable,
+  teamSettingsTable,
 } from "@workspace/db";
+import { getSportProfile, sportPositionCodes, type SportId } from "@workspace/sport-profiles";
 import { desc } from "drizzle-orm";
 import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
@@ -93,7 +95,41 @@ const BulkPlayerSchema = z
     message: "Each player needs a first name",
   });
 const BulkBodySchema = z.object({ players: z.array(BulkPlayerSchema).min(1).max(100) });
-const KNOWN_POSITIONS = new Set<string>(ALL_POSITIONS);
+
+/** The team's sport. Roster import keeps only that sport's position codes. */
+async function teamSport(userId: string): Promise<SportId> {
+  const [row] = await db
+    .select({ sport: teamSettingsTable.sport })
+    .from(teamSettingsTable)
+    .where(eq(teamSettingsTable.userId, userId));
+  return getSportProfile(row?.sport).id;
+}
+
+function knownPositions(sport: SportId): Set<string> {
+  return new Set<string>(sport === "baseball" ? ALL_POSITIONS : sportPositionCodes(sport));
+}
+
+const BASKETBALL_EXTRACT_INSTRUCTIONS = `You are extracting a youth basketball roster.
+Return a JSON array ONLY (no markdown, no explanation). For each player return:
+{
+  "firstName": string,            // given name, trimmed (REQUIRED, never empty)
+  "lastName": string,             // family name, trimmed ("" only if the source truly has no last name)
+  "number": number | null,        // jersey number if visible, else null
+  "preferredPositions": string[], // positions the roster lists for them, from ${sportPositionCodes("basketball").join(", ")}
+  "canPitch": false,              // always false (basketball)
+  "notes": string | null          // anything notable (captain, left-handed, etc.) or null
+}
+Name handling:
+- If the source shows "Parker Handahl", emit firstName="Parker", lastName="Handahl".
+- If the source shows "P. Handahl" (initial + surname), emit firstName="P", lastName="Handahl".
+- If the source shows only "Brody" with no surname, emit firstName="Brody", lastName="".
+- For multi-word first names like "Mary Beth Smith", treat the LAST token as the lastName.
+Position normalization rules:
+- "Point guard"/"PG"/"1" -> "PG", "Shooting guard"/"SG"/"2" -> "SG"
+- "Small forward"/"SF"/"3" -> "SF", "Power forward"/"PF"/"4" -> "PF", "Center"/"C"/"5" -> "C"
+- "Guard"/"G" -> ["PG","SG"], "Forward"/"F" -> ["SF","PF"], "Wing" -> ["SG","SF"], "Post"/"Big" -> ["PF","C"]
+- If no positions listed, return empty array [] for preferredPositions.
+Output only the raw JSON array.`;
 
 const EXTRACT_INSTRUCTIONS = `You are extracting a youth baseball roster.
 Return a JSON array ONLY (no markdown, no explanation). For each player return:
@@ -144,12 +180,14 @@ router.post("/players/extract", upload.single("file"), async (req, res): Promise
   // Per-team daily AI budget — single call regardless of mode.
   const charge = await chargeAiCall(req, "roster-import");
   if (!charge.ok) { res.status(charge.status).json({ error: charge.error }); return; }
+  const instructions =
+    (await teamSport(req.ownerUserId!)) === "basketball" ? BASKETBALL_EXTRACT_INSTRUCTIONS : EXTRACT_INSTRUCTIONS;
   // Two modes: file upload (multipart) OR { text } JSON
   if (req.file) {
     const base64 = req.file.buffer.toString("base64");
     const mimeType = req.file.mimetype || "image/png";
     const result = await callExtractor([
-      { type: "text", text: EXTRACT_INSTRUCTIONS },
+      { type: "text", text: instructions },
       { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
     ]);
     if ("error" in result) { res.status(422).json(result); return; }
@@ -162,7 +200,7 @@ router.post("/players/extract", upload.single("file"), async (req, res): Promise
     return;
   }
   const result = await callExtractor([
-    { type: "text", text: `${EXTRACT_INSTRUCTIONS}\n\nRoster text to parse:\n${parsed.data.text}` },
+    { type: "text", text: `${instructions}\n\nRoster text to parse:\n${parsed.data.text}` },
   ]);
   if ("error" in result) { res.status(422).json(result); return; }
   res.json({ extracted: result.players });
@@ -183,6 +221,7 @@ router.post("/players/bulk", idempotent("bulkImportPlayers"), async (req, res): 
   // roster picks up new preferred positions instead of silently dropping
   // them. New players are inserted as before. The whole batch runs in one
   // transaction so a partial failure doesn't leave the roster half-updated.
+  const KNOWN_POSITIONS = knownPositions(await teamSport(userId));
   const { created, updated } = await db.transaction(async (tx) => {
     const existing = await tx
       .select()
@@ -221,7 +260,7 @@ router.post("/players/bulk", idempotent("bulkImportPlayers"), async (req, res): 
         ...(p.eligiblePositions ?? []),
       ];
       const incomingPositions = Array.from(
-        new Set(incomingPositionsRaw.filter((pp) => KNOWN_POSITIONS.has(pp))),
+        new Set(incomingPositionsRaw.map((pp) => pp.trim().toUpperCase()).filter((pp) => KNOWN_POSITIONS.has(pp))),
       );
 
       const existingPlayer = existingByKey.get(key);
