@@ -12,6 +12,7 @@ import { toastError } from "@/lib/toast-error";
 import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { BenchSheetTable } from "@/components/basketball/bench-sheet-table";
+import { GameSheetPrint } from "@/components/basketball/game-sheet-print";
 import { QueueList } from "@/components/basketball/queue-list";
 import {
   BASKETBALL_SETUP_KEY,
@@ -28,6 +29,8 @@ import {
   reorderGroup,
   reshuffleStartingOrder,
   roleIn,
+  spotsByShift,
+  withLayoutRoles,
   type BasketballPlayer,
   type BasketballSettings,
   type GroupLayoutId,
@@ -387,8 +390,17 @@ export default function BenchSheetPage() {
               </div>
             </div>
             {createPortal(
-              <div id="bench-sheet-print">
-                <BenchSheetTable teamName={teamName} result={rotation} hasFlex={hasFlex} />
+              <div id="game-sheet-print">
+                <GameSheetPrint
+                  title={`${teamName || "Our team"} Bench Sheet`}
+                  result={rotation}
+                  players={withLayoutRoles(players, { groupLayout: layout })}
+                  spotsByShift={spotsByShift(rotation, withLayoutRoles(players, { groupLayout: layout }))}
+                  halfMinutes={draft.settings.halfMinutes}
+                  shiftMinutes={draft.settings.shiftMinutes}
+                  subSize={data.defaultSubSize ?? 2}
+                  absentNames={data.players.filter((p) => absent.has(p.id)).map((p) => p.name)}
+                />
               </div>,
               document.body,
             )}

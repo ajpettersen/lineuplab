@@ -740,3 +740,20 @@ export function reorderGroup(
   // Keep anyone not listed (absent players) after, in their old order.
   return [...next, ...allOrder.filter(id => !next.includes(id))];
 }
+
+/**
+ * Each non-flex shift's spot → player id, carried forward so players who stay
+ * on keep their spot (used by the game grid and the printed sheets).
+ */
+export function spotsByShift(result: RotationResult, players: BasketballPlayer[]): Map<number, Map<CourtSpot, string>> {
+  const map = new Map<number, Map<CourtSpot, string>>();
+  let previous: Map<string, CourtSpot> | null = null;
+  for (const row of result.halves.flatMap(h => h.rows)) {
+    if (row.flex) continue;
+    const spots = stickySpots(result.groups.map((g, i) => ({ ids: row.groups[i]?.ids ?? [], spots: g.spots })), players, previous);
+    const placed = spots.filter((x): x is { spot: CourtSpot; id: string } => x.spot !== null);
+    previous = new Map(placed.map(x => [x.id, x.spot]));
+    map.set(row.shift, new Map(placed.map(x => [x.spot, x.id])));
+  }
+  return map;
+}
