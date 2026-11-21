@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/confirm";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import { formatClock, stickySpots } from "@/lib/basketball-rotation";
+import { formatClock } from "@/lib/basketball-rotation";
 import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
@@ -44,6 +44,8 @@ import {
 import {
   bench,
   courtSpots,
+  groupOf,
+  onCourtIds,
   currentShift,
   isFlexShift,
   makeSub,
@@ -54,7 +56,6 @@ import {
   secondsToNextSub,
   nudgeClock,
   setClock,
-  setSubSize,
   settle,
   skipSub,
   startClock,
@@ -117,7 +118,8 @@ function loadState(gameId: number): LiveState | null {
   try {
     const raw = localStorage.getItem(storageKey(gameId));
     const parsed = raw ? (JSON.parse(raw) as LiveState) : null;
-    return parsed?.version === 1 ? parsed : null;
+    // Games saved before position groups (version 1) can't be resumed.
+    return parsed?.version === 2 ? parsed : null;
   } catch {
     return null;
   }
@@ -314,9 +316,7 @@ export default function BasketballCourtDisplay() {
     queryFn: () => fetchGameLineup(gameId),
   });
   const isLoading = setupLoading || lineupLoading;
-  // Before tip-off the coach can change subs at a time; it must be picked when
-  // the team asks each game and this game has no lineup yet.
-  const [pregameSubSize, setPregameSubSize] = useState<number | null>(null);
+
 
   const [state, setStateRaw] = useState<LiveState | null>(() => (gameId ? loadState(gameId) : null));
   const [now, setNow] = useState(() => Date.now());
@@ -346,13 +346,14 @@ export default function BasketballCourtDisplay() {
 
   // Until the game starts, the plan follows this game's lineup (game page →
   // Set Lineup), or the Bench Sheet if it doesn't have one.
-  const needsSubSize = !!setup && !gameLineup && setup.defaultSubSize === null && pregameSubSize === null;
+  // Subs at a time comes from the game's lineup (or the team default). When
+  // the team asks each game and this game has no lineup yet, send the coach
+  // to Set Lineup first.
+  const needsLineup = !!setup && gameLineup === null && setup.defaultSubSize === null;
   const pregame = useMemo(() => {
     if (!setup || gameLineup === undefined) return null;
-    const input = gameRotationInput(setup, gameLineup);
-    if (pregameSubSize !== null) input.settings = { ...input.settings, subSize: pregameSubSize };
-    return startState(input);
-  }, [setup, gameLineup, pregameSubSize]);
+    return startState(gameRotationInput(setup, gameLineup));
+  }, [setup, gameLineup]);
   const base = state ?? pregame;
   const view = base ? settle(base, now) : null;
 
@@ -375,11 +376,10 @@ export default function BasketballCourtDisplay() {
 
   // Players who stay on keep their spot on the court drawing.
   const previousSpots = useRef<Map<string, CourtSpot> | null>(null);
-  const onCourtKey = view ? [...onCourt(view).guards, ...onCourt(view).front].join(",") : "";
+  const onCourtKey = view ? onCourt(view).map((g) => g.join(",")).join("|") : "";
   const spots = useMemo(() => {
     if (!view) return [];
-    const { guards, front } = onCourt(view);
-    const next = stickySpots(guards, front, view.players, previousSpots.current);
+    const next = courtSpots(view, previousSpots.current);
     previousSpots.current = new Map(next.filter((x) => x.spot !== null).map((x) => [x.id, x.spot as CourtSpot]));
     return next;
     // Only when who's on court changes.
@@ -509,8 +509,8 @@ export default function BasketballCourtDisplay() {
   }
 
   const benchIds = bench(view);
-  const onIds = new Set([...onCourt(view).guards, ...onCourt(view).front]);
-  const roleOf = (id: string) => (view.guardQueue.includes(id) ? "G" : "F");
+  const onIds = new Set(onCourtIds(view));
+  const roleOf = (id: string) => groupOf(view, id)?.short ?? "";
   const minutes = [...view.players]
     .filter((p) => view.playedSec[p.id] !== undefined)
     .sort((a, b) => (view.playedSec[b.id] ?? 0) - (view.playedSec[a.id] ?? 0) || a.name.localeCompare(b.name));
@@ -529,7 +529,15 @@ export default function BasketballCourtDisplay() {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background text-foreground">
       {/* Header: exit, matchup, half, clock and clock controls */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2 md:px-5">
+      <header
+        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 pb-2 md:px-5"
+        style={{
+          // The app runs full-screen on iPad/iPhone with a see-through status bar.
+          paddingTop: "max(0.5rem, env(safe-area-inset-top))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+        }}
+      >
         <div className="flex items-center gap-2">
           <Link href={`/games/${gameId}`}>
             <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Exit</Button>
@@ -603,8 +611,8 @@ export default function BasketballCourtDisplay() {
             <Button
               size="lg"
               onClick={() => { void enableAlerts(); act(startClock); }}
-              disabled={view.phase === "pregame" && needsSubSize}
-              title={view.phase === "pregame" && needsSubSize ? "Pick subs at a time first" : undefined}
+              disabled={view.phase === "pregame" && needsLineup}
+              title={view.phase === "pregame" && needsLineup ? "Set this game's lineup first" : undefined}
               className="gap-2"
             >
               <Play className="h-5 w-5" /> {view.phase === "pregame" ? "Start game" : view.phase === "halftime" ? "Start 2nd half" : "Resume"}
@@ -620,6 +628,13 @@ export default function BasketballCourtDisplay() {
           </Button>
         </div>
       </header>
+
+      {view.phase === "pregame" && needsLineup && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-100 px-3 py-3 text-amber-950 md:px-5 dark:bg-amber-900/40 dark:text-amber-100">
+          <span className="font-semibold">Set this game's lineup first: who's here and how many sub at a time.</span>
+          <Link href={`/games/${gameId}`}><Button size="sm">Set Lineup</Button></Link>
+        </div>
+      )}
 
       {/* Sub banner */}
       {view.phase !== "final" && (
@@ -702,7 +717,7 @@ export default function BasketballCourtDisplay() {
             {benchIds.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nobody on the bench.</p>
             ) : (
-              <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-1.5 xl:grid-cols-2">
                 {benchIds.map((id) => (
                   <BenchRow
                     key={id}
@@ -746,7 +761,7 @@ export default function BasketballCourtDisplay() {
                     <td className="py-1.5 pr-2">
                       <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${onIds.has(p.id) ? "bg-green-500" : "bg-muted-foreground/30"}`} aria-hidden="true" />
                       <span className="font-semibold">{p.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{p.role === "guard" ? "Guard" : p.big ? "Front · Big" : "Front"}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{(groupOf(view, p.id) ?? view.groups.find((g) => g.key === p.role))?.one ?? ""}{p.big ? " · Big" : ""}</span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">{fmt(view.playedSec[p.id] ?? 0)}</td>
                   </tr>
@@ -755,35 +770,6 @@ export default function BasketballCourtDisplay() {
             </table>
             <p className="mt-2 text-xs text-muted-foreground">
               Counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
-            </p>
-          </div>
-
-          <div>
-            <h2 className="mb-2 font-display text-xl font-bold uppercase">Subs at a time</h2>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Subs at a time">
-              {[1, 2, 3, 4, 5].map((n) => {
-                const current = needsSubSize ? null : view.settings.subSize ?? 2;
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    role="radio"
-                    aria-checked={current === n}
-                    disabled={view.phase === "final"}
-                    onClick={() => (view.phase === "pregame" ? setPregameSubSize(n) : act((s) => setSubSize(s, n)))}
-                    className={`h-11 w-11 rounded-md border-2 text-lg font-bold transition-colors ${current === n ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted"}`}
-                  >
-                    {n}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {needsSubSize
-                ? "Pick how many players change each sub before you start."
-                : view.phase === "pregame"
-                  ? gameLineup ? "From this game's lineup. Change it here for today." : "Change it here for today."
-                  : "Changes take effect on the next sub."}
             </p>
           </div>
 

@@ -10,6 +10,7 @@ import {
   onCourt,
   putBack,
   setSubSize,
+  spotsOf,
   secondsToNextSub,
   setClock,
   nudgeClock,
@@ -45,7 +46,7 @@ const SHIFT = 150; // 2.5 min
   let s = startState(input);
   let now = 1_000_000;
   assert.equal(s.phase, "pregame");
-  assert.deepEqual(sorted(onCourt(s).guards), ["Brody", "Vinnie J"]);
+  assert.deepEqual(sorted(onCourt(s)[0]), ["Brody", "Vinnie J"]);
   assert.equal(subDue(s), false);
   assert.equal(secondsToNextSub(s), SHIFT);
 
@@ -57,20 +58,20 @@ const SHIFT = 150; // 2.5 min
     if (s.phase === "halftime") s = startClock(s, now);
     if (subDue(s)) s = makeSub(s, now);
     const shift = currentShift(s);
-    if (!seen.some((x) => x.shift === shift)) seen.push({ shift, guards: sorted(onCourt(s).guards), front: sorted(onCourt(s).front) });
+    if (!seen.some((x) => x.shift === shift)) seen.push({ shift, guards: sorted(onCourt(s)[0]), front: sorted(onCourt(s)[1]) });
   }
   assert.equal(s.phase, "final");
   for (const row of plan.filter((r) => !r.flex)) {
     const got = seen.find((x) => x.shift === row.shift);
     if (row.shift === 0) continue;
     assert.ok(got, `shift ${row.shift} seen`);
-    assert.deepEqual(got!.guards, row.guards, `shift ${row.shift} guards`);
-    assert.deepEqual(got!.front, row.front, `shift ${row.shift} front`);
+    assert.deepEqual(got!.guards, row.groups[0].names, `shift ${row.shift} guards`);
+    assert.deepEqual(got!.front, row.groups[1].names, `shift ${row.shift} front`);
   }
   assert.equal(s.subsMade, 14, "14 planned subs; none during the flex shift");
   // Minutes before flex match the sheet; the flex shift adds 2.5 for whoever stayed on.
   const sheet = Object.fromEntries(buildRotation(input).minutes.map((m) => [m.id, m.minutes * 60]));
-  const onInFlex = new Set([...onCourt(s).guards, ...onCourt(s).front]);
+  const onInFlex = new Set([...onCourt(s)[0], ...onCourt(s)[1]]);
   for (const p of input.players) {
     assert.equal(Math.round(s.playedSec[p.id]), sheet[p.id] + (onInFlex.has(p.id) ? SHIFT : 0), `${p.name} seconds`);
   }
@@ -124,14 +125,14 @@ const SHIFT = 150; // 2.5 min
   assert.deepEqual(sorted(planned.in), ["Bash", "Luke"]);
   assert.deepEqual(sorted(planned.out), ["Anders", "Vinnie J"]);
   s = makeSub(s, 60_000); // a minute in, before the 17:30 sub time
-  assert.deepEqual(sorted(onCourt(s).guards), ["Brody", "Luke"]);
+  assert.deepEqual(sorted(onCourt(s)[0]), ["Brody", "Luke"]);
   s = settle(s, 151_000);
   assert.equal(currentShift(s), 1);
   assert.equal(subDue(s), false, "the early sub counts for the 17:30 sub time");
   s = settle(s, 301_000);
   assert.equal(subDue(s), true, "the next one is due at 15:00");
   s = undoLast(s, 301_000);
-  assert.deepEqual(sorted(onCourt(s).guards), ["Brody", "Vinnie J"]);
+  assert.deepEqual(sorted(onCourt(s)[0]), ["Brody", "Vinnie J"]);
   assert.equal(s.subsMade, 0);
   assert.equal(Math.round(s.playedSec["Luke"]), 241, "undo doesn't take back time already played");
   s = skipSub(s, 301_000);
@@ -143,13 +144,13 @@ const SHIFT = 150; // 2.5 min
   let s = startClock(startState(input), 0);
   // Swap a guard on court for one on the bench: they trade places in the rotation.
   s = swapPlayers(s, 0, "Brody", "Vinnie V");
-  assert.deepEqual(sorted(onCourt(s).guards), ["Vinnie J", "Vinnie V"]);
+  assert.deepEqual(sorted(onCourt(s)[0]), ["Vinnie J", "Vinnie V"]);
   assert.ok(bench(s).includes("Brody"));
   // Take out a front player who is on court: the next in line fills the spot.
   s = takeOut(s, 0, "Henry");
-  assert.deepEqual(sorted(onCourt(s).front), ["Anders", "Bash", "Rory"]);
+  assert.deepEqual(sorted(onCourt(s)[1]), ["Anders", "Bash", "Rory"]);
   assert.ok(s.outIds.includes("Henry"));
-  assert.equal(s.frontQueue.length, 4);
+  assert.equal(s.queues[1].length, 4);
   // Put him back: he's next to go in.
   s = putBack(s, 0, fronts[1]);
   assert.deepEqual(nextSub(s).in.includes("Henry"), true);
@@ -162,8 +163,8 @@ const SHIFT = 150; // 2.5 min
   // Taking out until a queue is short shrinks the spots instead of breaking.
   let t = startClock(startState(input), 0);
   for (const id of ["Henry", "Rory", "Bash"]) t = takeOut(t, 0, id);
-  assert.equal(t.frontSpots, 2);
-  assert.equal(onCourt(t).front.length, 2);
+  assert.equal(spotsOf(t)[1], 2);
+  assert.equal(onCourt(t)[1].length, 2);
   assert.deepEqual(nextSub(t).in.filter((id) => fronts.some((f) => f.id === id)), [], "no front sub with nobody on the bench");
 }
 
@@ -198,8 +199,8 @@ for (const subSize of [1, 3, 4]) {
     if (subDue(s)) s = makeSub(s, now);
     const row = plan.find((r) => r.shift === currentShift(s));
     if (row && !row.flex && s.phase === "live") {
-      assert.deepEqual(sorted(onCourt(s).guards), row.guards, `${subSize} at a time, shift ${row.shift}`);
-      assert.deepEqual(sorted(onCourt(s).front), row.front, `${subSize} at a time, shift ${row.shift}`);
+      assert.deepEqual(sorted(onCourt(s)[0]), row.groups[0].names, `${subSize} at a time, shift ${row.shift}`);
+      assert.deepEqual(sorted(onCourt(s)[1]), row.groups[1].names, `${subSize} at a time, shift ${row.shift}`);
     }
   }
 }

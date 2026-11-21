@@ -8,7 +8,8 @@ export const BASKETBALL_SETUP_KEY = ["basketball-rotation"] as const;
 
 export interface SetupTags { role: BasketballRole; big: boolean; position: GuardPosition | null }
 export interface SetupPlayer extends SetupTags { id: number; name: string; number: number | null; tagged: boolean }
-export interface SetupGameDay { absentIds: number[]; guardOrder: number[]; frontOrder: number[] }
+/** The Bench Sheet's default game day: who's out and the starting order across all groups. */
+export interface SetupGameDay { absentIds: number[]; order: number[] }
 export interface BasketballSetup {
   settings: BasketballSettings;
   players: SetupPlayer[];
@@ -19,7 +20,16 @@ export interface BasketballSetup {
 }
 
 /** A game's own lineup (game page → Set Lineup). */
-export interface GameLineup { absentIds: number[]; guardOrder: number[]; frontOrder: number[]; subSize: number }
+export interface GameLineup {
+  absentIds: number[];
+  /** Starting order across all position groups. */
+  order: number[];
+  subSize: number;
+  /** This game only; null = the team's Bench Sheet setting. */
+  shiftMinutes?: number | null;
+  /** Shifts at the end left to the coach (0 = none); null = the team's setting. */
+  flexShifts?: number | null;
+}
 
 export const gameLineupKey = (gameId: number) => ["basketball-game-lineup", gameId] as const;
 
@@ -50,9 +60,13 @@ export function gameRotationInput(setup: BasketballSetup, lineup: GameLineup | n
   const day = lineup ?? setup.gameDay;
   return {
     players: rotationPlayers(setup),
-    settings: { ...setup.settings, subSize: lineup?.subSize ?? setup.defaultSubSize ?? 2 },
-    guardOrder: day.guardOrder.map(String),
-    frontOrder: day.frontOrder.map(String),
+    settings: {
+      ...setup.settings,
+      subSize: lineup?.subSize ?? setup.defaultSubSize ?? 2,
+      shiftMinutes: lineup?.shiftMinutes ?? setup.settings.shiftMinutes,
+      flexShifts: lineup?.flexShifts ?? setup.settings.flexShifts,
+    },
+    order: day.order.map(String),
     absentIds: day.absentIds.map(String),
   };
 }

@@ -35,3 +35,9 @@ CREATE TABLE IF NOT EXISTS "basketball_game_lineups" (
   "updated_at" timestamp with time zone NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "basketball_game_lineups_user_id_idx" ON "basketball_game_lineups" ("user_id");
+
+-- Position groups per team, and one starting order across all groups.
+ALTER TABLE "basketball_rotation_settings" ADD COLUMN IF NOT EXISTS "group_layout" text NOT NULL DEFAULT 'guards-front';
+ALTER TABLE "basketball_game_lineups" ADD COLUMN IF NOT EXISTS "start_order" integer[] NOT NULL DEFAULT '{}';
+ALTER TABLE "basketball_game_lineups" ADD COLUMN IF NOT EXISTS "shift_minutes" double precision;
+ALTER TABLE "basketball_game_lineups" ADD COLUMN IF NOT EXISTS "flex_shifts" integer;

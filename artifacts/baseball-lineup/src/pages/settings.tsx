@@ -35,6 +35,7 @@ import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
 import { SubSizeSetting } from "@/components/basketball/sub-size-setting";
+import { GroupLayoutSetting } from "@/components/basketball/group-layout-setting";
 import { CoachesCard } from "@/components/coaches-card";
 import { PasswordCard } from "@/components/password-card";
 import { SyncIssuesCard } from "@/components/sync-issues-card";
@@ -569,7 +570,8 @@ export default function Settings() {
               its game page, and its court display runs the clock and sub alerts from it.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
+            <GroupLayoutSetting disabled={!canEditTeam} />
             <SubSizeSetting disabled={!canEditTeam} />
           </CardContent>
         </Card>

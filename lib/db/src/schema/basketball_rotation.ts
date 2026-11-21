@@ -11,7 +11,8 @@ import { doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from
  * Created lazily on the first save. Hand-applied SQL: lib/db/sql/basketball-rotation.sql.
  */
 export interface BasketballPlayerTags {
-  role: "guard" | "front";
+  /** Position group key: guard, front, forward, center, perimeter, big or all. */
+  role: string;
   /** Front only: a 4/5. */
   big: boolean;
   /** Guard only, optional: plays the 1 or the 2. */
@@ -21,6 +22,8 @@ export interface BasketballPlayerTags {
 export interface BasketballGameDay {
   /** Player ids marked out for the game. */
   absentIds: number[];
+  /** Starting order across all position groups (newer saves). */
+  order?: number[];
   /** Player ids, starting order of each queue. */
   guardOrder: number[];
   frontOrder: number[];
@@ -35,6 +38,8 @@ export const basketballRotationSettingsTable = pgTable("basketball_rotation_sett
   flexShifts: integer("flex_shifts").notNull().default(1),
   /** Players subbed at a time (1–5) for new game lineups; null = ask each time. */
   defaultSubSize: integer("default_sub_size").default(2),
+  /** How the five spots are grouped: guards-front, guards-forwards-center, perimeter-bigs or five-out. */
+  groupLayout: text("group_layout").notNull().default("guards-front"),
   /** Player id (as a string key) → tags. Players missing here get defaults from their eligible positions. */
   playerTags: jsonb("player_tags").$type<Record<string, BasketballPlayerTags>>().notNull().default({}),
   gameDay: jsonb("game_day").$type<BasketballGameDay>().notNull().default({ absentIds: [], guardOrder: [], frontOrder: [] }),
@@ -72,7 +77,13 @@ export const basketballGameLineupsTable = pgTable("basketball_game_lineups", {
   absentIds: integer("absent_ids").array().notNull().default([]),
   guardOrder: integer("guard_order").array().notNull().default([]),
   frontOrder: integer("front_order").array().notNull().default([]),
+  /** Starting order across all position groups; when empty, guard_order + front_order (older saves). */
+  startOrder: integer("start_order").array().notNull().default([]),
   subSize: integer("sub_size").notNull().default(2),
+  /** This game's shift length in minutes; null = the team's Bench Sheet setting. */
+  shiftMinutes: doublePrecision("shift_minutes"),
+  /** Shifts at the end left to the coach (0 = none); null = the team's setting. */
+  flexShifts: integer("flex_shifts"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("basketball_game_lineups_user_id_idx").on(table.userId)]);
 

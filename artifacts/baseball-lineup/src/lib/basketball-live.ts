@@ -1,28 +1,31 @@
 // Live basketball game state for the court display (pages/basketball-court-display.tsx).
 //
-// Same rotation as the Bench Sheet (lib/basketball-rotation.ts): two circular
-// queues, and the on-court players are a window over each that moves forward
-// one place per sub. Following every sub reproduces the printed sheet exactly.
-// Changes made on the fly stay inside that model, so the rotation keeps going
-// from wherever the game actually is:
+// Same rotation as the Bench Sheet (lib/basketball-rotation.ts): one circular
+// queue per position group, and the on-court players are a window over each
+// that moves forward on each sub. Following every sub reproduces the printed
+// sheet exactly. Changes made on the fly stay inside that model, so the
+// rotation keeps going from wherever the game actually is:
 //   - swap two players  → they trade places in the queues
 //   - take a player out → they leave the queue; the next in line fills in
 //   - put them back     → they rejoin as the next player to go in
 //   - jump ahead        → make the next sub now (it counts for the coming sub time)
 //   - undo              → put the lineup back as it was before the last change
-// Playing time is counted from the game clock while a player is on court.
+// Playing time is counted from the game clock while a player is on court,
+// including when the clock is set by hand.
 //
 // Pure functions over plain JSON, so the state can live in localStorage and be
 // tested with plain Node (test/basketball-live.test.ts).
 
 import {
-  assignSpots,
-  buildRotation,
+  startingQueues,
+  stickySpots,
   subSplit,
   type CourtSpot,
   type BasketballPlayer,
   type BasketballRole,
   type BasketballSettings,
+  type PositionGroup,
+  type RotationInput,
 } from "./basketball-rotation.ts";
 
 export type { CourtSpot } from "./basketball-rotation.ts";
@@ -30,21 +33,20 @@ export type { CourtSpot } from "./basketball-rotation.ts";
 export type LivePhase = "pregame" | "live" | "halftime" | "final";
 
 interface Lineup {
-  guardQueue: string[];
-  frontQueue: string[];
-  guardStart: number;
-  frontStart: number;
+  /** One queue per group (same order as `groups`), player ids. */
+  queues: string[][];
+  /** Where each queue's on-court window starts. */
+  starts: number[];
   /** Subs made so far (planned or jumped ahead). */
   subsMade: number;
 }
 
 export interface LiveState extends Lineup {
-  version: 1;
+  version: 2;
   settings: BasketballSettings;
+  groups: PositionGroup[];
   /** Roster snapshot taken at the start of the game (everyone who was here). */
   players: BasketballPlayer[];
-  guardSpots: number;
-  frontSpots: number;
   /** Players taken out of the game (injured, fouled out, left). */
   outIds: string[];
   phase: LivePhase;
@@ -71,28 +73,19 @@ export function shiftLengths(settings: BasketballSettings): number[] {
   return lengths;
 }
 
-/** Start a game from the Bench Sheet setup (same inputs as buildRotation). */
-export function startState(input: {
-  players: BasketballPlayer[];
-  settings: BasketballSettings;
-  guardOrder?: string[];
-  frontOrder?: string[];
-  absentIds?: string[];
-}): LiveState {
-  const plan = buildRotation(input);
+/** Start a game from the Bench Sheet / game lineup (same inputs as buildRotation). */
+export function startState(input: RotationInput): LiveState {
+  const { groups, queues, present } = startingQueues(input);
   const absent = new Set(input.absentIds ?? []);
   const players = input.players.filter((p) => !absent.has(p.id));
   return {
-    version: 1,
+    version: 2,
     settings: { ...input.settings },
-    players,
-    guardQueue: plan.guardQueue,
-    frontQueue: plan.frontQueue,
-    guardStart: 0,
-    frontStart: 0,
+    groups,
+    players: players.map((p) => present.find((x) => x.id === p.id) ?? p),
+    queues: queues.map((q) => q.map((p) => p.id)),
+    starts: queues.map(() => 0),
     subsMade: 0,
-    guardSpots: Math.min(Math.floor(input.settings.guardSpots), plan.guardQueue.length),
-    frontSpots: Math.min(Math.floor(input.settings.frontSpots), plan.frontQueue.length),
     outIds: [],
     phase: "pregame",
     half: 1,
@@ -103,30 +96,44 @@ export function startState(input: {
   };
 }
 
-function windowOf(queue: string[], start: number, spots: number): string[] {
-  if (queue.length <= spots) return [...queue];
-  return Array.from({ length: spots }, (_, j) => queue[(start + j) % queue.length]);
+/** How many of each group are on court (fewer if the group is short). */
+export function spotsOf(s: Pick<LiveState, "groups" | "queues">): number[] {
+  return s.groups.map((g, i) => Math.min(g.spots.length, s.queues[i]?.length ?? 0));
 }
 
-export function onCourt(s: LiveState): { guards: string[]; front: string[] } {
-  return {
-    guards: windowOf(s.guardQueue, s.guardStart, s.guardSpots),
-    front: windowOf(s.frontQueue, s.frontStart, s.frontSpots),
-  };
+function windowOf(queue: string[], start: number, spots: number): string[] {
+  if (queue.length <= spots) return [...queue];
+  return Array.from({ length: spots }, (_, j) => queue[(((start + j) % queue.length) + queue.length) % queue.length]);
+}
+
+/** On court, by group (same order as `s.groups`). */
+export function onCourt(s: LiveState): string[][] {
+  const spots = spotsOf(s);
+  return s.queues.map((q, i) => windowOf(q, s.starts[i], spots[i]));
+}
+
+/** Everyone on court. */
+export function onCourtIds(s: LiveState): string[] {
+  return onCourt(s).flat();
 }
 
 export function bench(s: LiveState): string[] {
-  const on = new Set([...onCourt(s).guards, ...onCourt(s).front]);
-  return [...s.guardQueue, ...s.frontQueue].filter((id) => !on.has(id));
+  const on = new Set(onCourtIds(s));
+  return s.queues.flat().filter((id) => !on.has(id));
+}
+
+/** The group a player is in for this game (after any fill-ins), or null if they're out. */
+export function groupOf(s: LiveState, id: string): PositionGroup | null {
+  const i = s.queues.findIndex((q) => q.includes(id));
+  return i >= 0 ? s.groups[i] : null;
 }
 
 /** Count clock time up to `now`: run the clock down and credit on-court players. */
 export function settle(s: LiveState, now: number): LiveState {
   if (s.runningSince === null || s.phase !== "live") return s;
   const elapsed = Math.max(0, Math.min((now - s.runningSince) / 1000, s.clockSec));
-  const { guards, front } = onCourt(s);
   const playedSec = { ...s.playedSec };
-  for (const id of [...guards, ...front]) playedSec[id] = (playedSec[id] ?? 0) + elapsed;
+  for (const id of onCourtIds(s)) playedSec[id] = (playedSec[id] ?? 0) + elapsed;
   const clockSec = s.clockSec - elapsed;
   if (clockSec <= EPS) {
     return {
@@ -145,7 +152,7 @@ export function startClock(s: LiveState, now: number): LiveState {
   if (s.phase === "halftime") {
     return { ...s, phase: "live", half: 2, clockSec: s.settings.halfMinutes * 60, runningSince: now };
   }
-  const starterIds = s.phase === "pregame" ? [...onCourt(s).guards, ...onCourt(s).front] : s.starterIds;
+  const starterIds = s.phase === "pregame" ? onCourtIds(s) : s.starterIds;
   return { ...s, phase: "live", runningSince: s.runningSince ?? now, starterIds };
 }
 
@@ -165,9 +172,8 @@ export function setClock(s: LiveState, now: number, clockSec: number): LiveState
   const max = s.settings.halfMinutes * 60;
   const value = Math.max(0, Math.min(max, clockSec));
   const passed = settled.clockSec - value;
-  const { guards, front } = onCourt(settled);
   const playedSec = { ...settled.playedSec };
-  for (const id of [...guards, ...front]) playedSec[id] = Math.max(0, (playedSec[id] ?? 0) + passed);
+  for (const id of onCourtIds(settled)) playedSec[id] = Math.max(0, (playedSec[id] ?? 0) + passed);
   return { ...settled, clockSec: value, playedSec, runningSince: settled.runningSince === null ? null : now };
 }
 
@@ -200,35 +206,33 @@ export function isFlexShift(s: LiveState, shift: number): boolean {
 }
 
 /** Window starts after the next planned sub (`subSize` players, split as on the Bench Sheet). */
-function advanced(s: LiveState): { guardStart: number; frontStart: number } {
+function advanced(s: LiveState): number[] {
+  const spots = spotsOf(s);
   const split = subSplit(
     s.subsMade + 1,
     s.settings.subSize ?? 2,
-    { queue: s.guardQueue.length, spots: s.guardSpots },
-    { queue: s.frontQueue.length, spots: s.frontSpots },
+    s.queues.map((q, i) => ({ queue: q.length, spots: spots[i] })),
   );
-  return { guardStart: s.guardStart + split.guards, frontStart: s.frontStart + split.front };
+  return s.starts.map((start, i) => start + split[i]);
 }
 
 /**
  * The next planned sub as pairs: who goes in for whom. Pairs stay inside a
- * group (a guard for a guard, a front player for a front player); within a
- * group, the one who has been on longest is replaced by the one who has sat
- * longest.
+ * group (a guard for a guard, a center for a center); within a group, the one
+ * who has been on longest is replaced by the one who has sat longest.
  */
 export function nextSubPairs(s: LiveState): { in: string; out: string }[] {
-  const { guardStart, frontStart } = advanced(s);
+  const to = advanced(s);
+  const spots = spotsOf(s);
   const pairs: { in: string; out: string }[] = [];
-  const pair = (queue: string[], spots: number, from: number, to: number) => {
-    if (queue.length <= spots) return;
-    const before = windowOf(queue, from, spots);
-    const after = windowOf(queue, to, spots);
+  s.queues.forEach((queue, i) => {
+    if (queue.length <= spots[i]) return;
+    const before = windowOf(queue, s.starts[i], spots[i]);
+    const after = windowOf(queue, to[i], spots[i]);
     const out = before.filter((id) => !after.includes(id));
     const inn = after.filter((id) => !before.includes(id));
-    out.forEach((id, i) => inn[i] && pairs.push({ in: inn[i], out: id }));
-  };
-  pair(s.guardQueue, s.guardSpots, s.guardStart, guardStart);
-  pair(s.frontQueue, s.frontSpots, s.frontStart, frontStart);
+    out.forEach((id, j) => inn[j] && pairs.push({ in: inn[j], out: id }));
+  });
   return pairs;
 }
 
@@ -239,13 +243,8 @@ export function setSubSize(s: LiveState, subSize: number): LiveState {
 
 /** Who the next planned sub brings in and takes out. */
 export function nextSub(s: LiveState): { in: string[]; out: string[] } {
-  const now = onCourt(s);
-  const next = onCourt({
-    ...s,
-    ...advanced(s),
-  });
-  const before = new Set([...now.guards, ...now.front]);
-  const after = new Set([...next.guards, ...next.front]);
+  const before = new Set(onCourtIds(s));
+  const after = new Set(onCourtIds({ ...s, starts: advanced(s) }));
   return { in: [...after].filter((id) => !before.has(id)), out: [...before].filter((id) => !after.has(id)) };
 }
 
@@ -276,13 +275,7 @@ export function secondsToNextSub(s: LiveState): number | null {
 }
 
 function lineup(s: LiveState): Lineup {
-  return {
-    guardQueue: s.guardQueue,
-    frontQueue: s.frontQueue,
-    guardStart: s.guardStart,
-    frontStart: s.frontStart,
-    subsMade: s.subsMade,
-  };
+  return { queues: s.queues, starts: s.starts, subsMade: s.subsMade };
 }
 
 function withUndo(s: LiveState, now: number, change: (s: LiveState) => LiveState): LiveState {
@@ -292,11 +285,7 @@ function withUndo(s: LiveState, now: number, change: (s: LiveState) => LiveState
 
 /** Make the next planned sub (when it's due, or early to jump ahead). */
 export function makeSub(s: LiveState, now: number): LiveState {
-  return withUndo(s, now, (x) => ({
-    ...x,
-    ...advanced(x),
-    subsMade: x.subsMade + 1,
-  }));
+  return withUndo(s, now, (x) => ({ ...x, starts: advanced(x), subsMade: x.subsMade + 1 }));
 }
 
 /** Skip a due sub without changing anyone (e.g. it's flex time or the coach wants to wait). */
@@ -304,24 +293,24 @@ export function skipSub(s: LiveState, now: number): LiveState {
   return withUndo(s, now, (x) => ({ ...x, subsMade: Math.max(x.subsMade + 1, currentShift(x)) }));
 }
 
-/** Trade two players' places (on court ↔ bench, or across the two queues). */
+/** Trade two players' places (on court ↔ bench, or across groups). */
 export function swapPlayers(s: LiveState, now: number, a: string, b: string): LiveState {
   if (a === b) return s;
   return withUndo(s, now, (x) => {
-    const guardQueue = [...x.guardQueue];
-    const frontQueue = [...x.frontQueue];
-    const find = (id: string): [string[], number] | null => {
-      const g = guardQueue.indexOf(id);
-      if (g >= 0) return [guardQueue, g];
-      const f = frontQueue.indexOf(id);
-      return f >= 0 ? [frontQueue, f] : null;
+    const queues = x.queues.map((q) => [...q]);
+    const find = (id: string): [number, number] | null => {
+      for (let i = 0; i < queues.length; i++) {
+        const j = queues[i].indexOf(id);
+        if (j >= 0) return [i, j];
+      }
+      return null;
     };
     const pa = find(a);
     const pb = find(b);
     if (!pa || !pb) return x;
-    pa[0][pa[1]] = b;
-    pb[0][pb[1]] = a;
-    return { ...x, guardQueue, frontQueue };
+    queues[pa[0]][pa[1]] = b;
+    queues[pb[0]][pb[1]] = a;
+    return { ...x, queues };
   });
 }
 
@@ -330,7 +319,7 @@ function removeFrom(queue: string[], start: number, id: string): { queue: string
   if (index < 0) return { queue, start };
   const next = queue.filter((x) => x !== id);
   // Players before the window move down one place; keep the window on the same people.
-  let newStart = start % queue.length;
+  let newStart = ((start % queue.length) + queue.length) % queue.length;
   if (index < newStart) newStart -= 1;
   return { queue: next, start: next.length ? newStart % next.length : 0 };
 }
@@ -338,48 +327,42 @@ function removeFrom(queue: string[], start: number, id: string): { queue: string
 /** Take a player out of the game; the next player in line fills their spot. */
 export function takeOut(s: LiveState, now: number, id: string): LiveState {
   return withUndo(s, now, (x) => {
-    const g = removeFrom(x.guardQueue, x.guardStart, id);
-    const f = removeFrom(x.frontQueue, x.frontStart, id);
-    const guardSpots = Math.min(Math.floor(x.settings.guardSpots), g.queue.length);
-    const frontSpots = Math.min(Math.floor(x.settings.frontSpots), f.queue.length);
+    const moved = x.queues.map((q, i) => removeFrom(q, x.starts[i], id));
     return {
       ...x,
-      guardQueue: g.queue,
-      guardStart: g.start,
-      frontQueue: f.queue,
-      frontStart: f.start,
-      guardSpots,
-      frontSpots,
+      queues: moved.map((m) => m.queue),
+      starts: moved.map((m) => m.start),
       outIds: [...new Set([...x.outIds, id])],
     };
   });
 }
 
-/** Bring a player back (or add a late arrival); they're next to go in. */
+/** Bring a player back (or add a late arrival) into their group; they're next to go in. */
 export function putBack(s: LiveState, now: number, player: BasketballPlayer, role?: BasketballRole): LiveState {
   return withUndo(s, now, (x) => {
     const asRole = role ?? player.role;
     const players = x.players.some((p) => p.id === player.id) ? x.players : [...x.players, player];
-    const insert = (queue: string[], start: number, spots: number) => {
-      if (queue.includes(player.id)) return { queue, start };
-      if (queue.length < spots || queue.length === 0) return { queue: [...queue, player.id], start };
-      // Right after the on-court window = the next one in.
-      const at = (start % queue.length) + Math.min(spots, queue.length);
-      const next = [...queue];
-      next.splice(at, 0, player.id);
-      return { queue: next, start: start % queue.length };
-    };
-    const g = asRole === "guard" ? insert(x.guardQueue, x.guardStart, x.guardSpots) : { queue: x.guardQueue, start: x.guardStart };
-    const f = asRole === "front" ? insert(x.frontQueue, x.frontStart, x.frontSpots) : { queue: x.frontQueue, start: x.frontStart };
+    let gi = x.groups.findIndex((g) => g.key === asRole);
+    if (gi < 0) gi = 0;
+    const spots = spotsOf(x);
+    const queues = x.queues.map((q) => [...q]);
+    const starts = [...x.starts];
+    const queue = queues[gi];
+    if (!queue.includes(player.id)) {
+      if (queue.length < x.groups[gi].spots.length || queue.length === 0) {
+        queue.push(player.id);
+      } else {
+        // Right after the on-court window = the next one in.
+        const start = ((starts[gi] % queue.length) + queue.length) % queue.length;
+        queue.splice(start + Math.min(spots[gi], queue.length), 0, player.id);
+        starts[gi] = start;
+      }
+    }
     return {
       ...x,
       players,
-      guardQueue: g.queue,
-      guardStart: g.start,
-      frontQueue: f.queue,
-      frontStart: f.start,
-      guardSpots: Math.min(Math.floor(x.settings.guardSpots), g.queue.length),
-      frontSpots: Math.min(Math.floor(x.settings.frontSpots), f.queue.length),
+      queues,
+      starts,
       outIds: x.outIds.filter((o) => o !== player.id),
       playedSec: { ...x.playedSec, [player.id]: x.playedSec[player.id] ?? 0 },
     };
@@ -390,19 +373,17 @@ export function undoLast(s: LiveState, now: number): LiveState {
   if (s.undo.length === 0) return s;
   const settled = settle(s, now);
   const previous = settled.undo[settled.undo.length - 1];
-  const inQueues = new Set([...previous.guardQueue, ...previous.frontQueue]);
+  const inQueues = new Set(previous.queues.flat());
   return {
     ...settled,
     ...previous,
-    guardSpots: Math.min(Math.floor(s.settings.guardSpots), previous.guardQueue.length),
-    frontSpots: Math.min(Math.floor(s.settings.frontSpots), previous.frontQueue.length),
     outIds: settled.outIds.filter((id) => !inQueues.has(id)),
     undo: settled.undo.slice(0, -1),
   };
 }
 
-/** The on-court players at the 1–5 spots (see assignSpots in basketball-rotation.ts). */
-export function courtSpots(s: LiveState): { spot: CourtSpot | null; id: string }[] {
-  const { guards, front } = onCourt(s);
-  return assignSpots(guards, front, s.players);
+/** The on-court players at the 1–5 spots, keeping spots from `previous` where they can. */
+export function courtSpots(s: LiveState, previous: Map<string, CourtSpot> | null = null): { spot: CourtSpot | null; id: string }[] {
+  const on = onCourt(s);
+  return stickySpots(s.groups.map((g, i) => ({ ids: on[i], spots: g.spots })), s.players, previous);
 }
