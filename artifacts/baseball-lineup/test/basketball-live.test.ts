@@ -6,8 +6,10 @@ import {
   currentShift,
   makeSub,
   nextSub,
+  nextSubPairs,
   onCourt,
   putBack,
+  setSubSize,
   secondsToNextSub,
   setClock,
   settle,
@@ -180,6 +182,43 @@ const SHIFT = 150; // 2.5 min
   assert.equal(t[1], "Ben", "the guard tagged 1 plays the 1");
   assert.equal(t[2], "Ava");
   assert.equal(Object.keys(t).length, 5, "everyone gets a spot even with no Bigs");
+}
+
+// ── Subs at a time in the live game match the sheet ───────────────────────
+for (const subSize of [1, 3, 4]) {
+  const inp = { ...input, settings: { ...DEFAULT_BASKETBALL_SETTINGS, subSize } };
+  const plan = buildRotation(inp).halves.flatMap((h) => h.rows);
+  let s = startClock(startState(inp), 0);
+  let now = 0;
+  for (let step = 0; step < 16 * SHIFT; step += 30) {
+    now += 30_000;
+    s = settle(s, now);
+    if (s.phase === "halftime") s = startClock(s, now);
+    if (subDue(s)) s = makeSub(s, now);
+    const row = plan.find((r) => r.shift === currentShift(s));
+    if (row && !row.flex && s.phase === "live") {
+      assert.deepEqual(sorted(onCourt(s).guards), row.guards, `${subSize} at a time, shift ${row.shift}`);
+      assert.deepEqual(sorted(onCourt(s).front), row.front, `${subSize} at a time, shift ${row.shift}`);
+    }
+  }
+}
+{
+  // Changing it mid-game takes effect on the next sub.
+  let s = startClock(startState(input), 0);
+  s = setSubSize(s, 4);
+  assert.equal(nextSub(s).in.length, 4);
+  s = setSubSize(s, 9);
+  assert.equal(s.settings.subSize, 5);
+}
+
+// ── Who goes in for whom ──────────────────────────────────────────────────
+{
+  let s = startClock(startState(input), 0);
+  assert.deepEqual(nextSubPairs(s), [{ in: "Luke", out: "Vinnie J" }, { in: "Bash", out: "Anders" }], "guard for guard, front for front");
+  s = makeSub(s, 1000);
+  assert.deepEqual(nextSubPairs(s), [{ in: "Vinnie V", out: "Brody" }, { in: "Miles", out: "Henry" }]);
+  const one = startClock(startState({ ...input, settings: { ...DEFAULT_BASKETBALL_SETTINGS, subSize: 1 } }), 0);
+  assert.deepEqual(nextSubPairs(one), [{ in: "Bash", out: "Anders" }], "1 at a time starts with the front court");
 }
 
 console.log("basketball-live: all checks passed");

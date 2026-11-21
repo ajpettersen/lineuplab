@@ -33,6 +33,8 @@ export const basketballRotationSettingsTable = pgTable("basketball_rotation_sett
   guardSpots: integer("guard_spots").notNull().default(2),
   frontSpots: integer("front_spots").notNull().default(3),
   flexShifts: integer("flex_shifts").notNull().default(1),
+  /** Players subbed at a time (1–5) for new game lineups; null = ask each time. */
+  defaultSubSize: integer("default_sub_size").default(2),
   /** Player id (as a string key) → tags. Players missing here get defaults from their eligible positions. */
   playerTags: jsonb("player_tags").$type<Record<string, BasketballPlayerTags>>().notNull().default({}),
   gameDay: jsonb("game_day").$type<BasketballGameDay>().notNull().default({ absentIds: [], guardOrder: [], frontOrder: [] }),
@@ -57,3 +59,21 @@ export const basketballGameStatsTable = pgTable("basketball_game_stats", {
 }, (table) => [index("basketball_game_stats_user_id_idx").on(table.userId)]);
 
 export type BasketballGameStats = typeof basketballGameStatsTable.$inferSelect;
+
+/**
+ * One game's basketball lineup, set on the game page (Set Lineup): who's here,
+ * the starting order of each queue, and how many players sub at a time. The
+ * shift-by-shift rotation is computed from this plus the team's Bench Sheet
+ * roles and game settings, so it's never stored itself.
+ */
+export const basketballGameLineupsTable = pgTable("basketball_game_lineups", {
+  gameId: integer("game_id").primaryKey(),
+  userId: text("user_id").notNull(),
+  absentIds: integer("absent_ids").array().notNull().default([]),
+  guardOrder: integer("guard_order").array().notNull().default([]),
+  frontOrder: integer("front_order").array().notNull().default([]),
+  subSize: integer("sub_size").notNull().default(2),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("basketball_game_lineups_user_id_idx").on(table.userId)]);
+
+export type BasketballGameLineup = typeof basketballGameLineupsTable.$inferSelect;

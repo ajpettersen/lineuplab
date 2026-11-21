@@ -22,3 +22,16 @@ CREATE TABLE IF NOT EXISTS "basketball_game_stats" (
   "updated_at" timestamp with time zone NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "basketball_game_stats_user_id_idx" ON "basketball_game_stats" ("user_id");
+
+-- Default subs at a time (null = ask for each game) and per-game lineups.
+ALTER TABLE "basketball_rotation_settings" ADD COLUMN IF NOT EXISTS "default_sub_size" integer DEFAULT 2;
+CREATE TABLE IF NOT EXISTS "basketball_game_lineups" (
+  "game_id" integer PRIMARY KEY,
+  "user_id" text NOT NULL,
+  "absent_ids" integer[] NOT NULL DEFAULT '{}',
+  "guard_order" integer[] NOT NULL DEFAULT '{}',
+  "front_order" integer[] NOT NULL DEFAULT '{}',
+  "sub_size" integer NOT NULL DEFAULT 2,
+  "updated_at" timestamp with time zone NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "basketball_game_lineups_user_id_idx" ON "basketball_game_lineups" ("user_id");

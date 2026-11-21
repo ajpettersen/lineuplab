@@ -29,6 +29,8 @@ export interface BasketballSettings {
   frontSpots: number;
   /** Shifts at the end of the game left to the coach. */
   flexShifts: number;
+  /** Players subbed in (and out) each shift, 1–5. Default 2: one guard and one front. */
+  subSize?: number;
 }
 
 export const DEFAULT_BASKETBALL_SETTINGS: BasketballSettings = {
@@ -37,7 +39,38 @@ export const DEFAULT_BASKETBALL_SETTINGS: BasketballSettings = {
   guardSpots: 2,
   frontSpots: 3,
   flexShifts: 1,
+  subSize: 2,
 };
+
+export const MIN_SUB_SIZE = 1;
+export const MAX_SUB_SIZE = 5;
+
+/**
+ * How many guards and front-court players change on the `subNumber`-th sub
+ * (1-based) when subbing `subSize` players at a time. The sub is split evenly
+ * between guards and front (2 at a time = one of each, 4 = two of each); an
+ * odd extra player alternates, starting with the front court (1 at a time =
+ * front, guard, front, …). A group can't change more players than it has on
+ * the court or on the bench, so any it can't take go to the other group.
+ */
+export function subSplit(
+  subNumber: number,
+  subSize: number,
+  guards: { queue: number; spots: number },
+  front: { queue: number; spots: number },
+): { guards: number; front: number } {
+  const gCap = Math.min(guards.spots, Math.max(0, guards.queue - guards.spots));
+  const fCap = Math.min(front.spots, Math.max(0, front.queue - front.spots));
+  const k = Math.max(0, Math.min(Math.floor(subSize), gCap + fCap));
+  const half = Math.floor(k / 2);
+  const extraToFront = subNumber % 2 === 1;
+  let g = half + (k % 2 === 1 && !extraToFront ? 1 : 0);
+  let f = k - g;
+  // Move what a group can't take over to the other one.
+  if (g > gCap) { f += g - gCap; g = gCap; }
+  if (f > fCap) { g = Math.min(gCap, g + f - fCap); f = fCap; }
+  return { guards: g, front: f };
+}
 
 export interface RotationInput {
   players: BasketballPlayer[];
@@ -61,6 +94,9 @@ export interface RotationRow {
   bench: string[];
   in: string[];
   out: string[];
+  /** Player ids on court (empty on flex rows), for placing them at the 1–5. */
+  guardIds: string[];
+  frontIds: string[];
 }
 
 export interface MinutesLine {
@@ -310,8 +346,26 @@ export function buildRotation(input: RotationInput): RotationResult {
 
   const name = new Map(present.map(p => [p.id, p.name]));
   const names = (ids: string[]) => sortNames(ids.map(id => name.get(id) ?? id));
-  const windowAt = (queue: BasketballPlayer[], spots: number, shift: number) =>
-    queue.length <= spots ? queue.map(p => p.id) : Array.from({ length: spots }, (_, j) => queue[(shift + j) % queue.length].id);
+  const windowAt = (queue: BasketballPlayer[], spots: number, start: number) =>
+    queue.length <= spots ? queue.map(p => p.id) : Array.from({ length: spots }, (_, j) => queue[(start + j) % queue.length].id);
+
+  // How far each queue's on-court window has moved by each shift.
+  const subSize = Math.floor(settings.subSize ?? 2);
+  const groups = () => [{ queue: guardQueue.length, spots: guardSpots }, { queue: frontQueue.length, spots: frontSpots }] as const;
+  const maxSub = subSplit(1, MAX_SUB_SIZE, ...groups());
+  const most = maxSub.guards + maxSub.front;
+  if (subSize < MIN_SUB_SIZE || subSize > MAX_SUB_SIZE) {
+    warnings.push(`Subs at a time must be ${MIN_SUB_SIZE} to ${MAX_SUB_SIZE}.`);
+  } else if (subSize > most && most > 0) {
+    warnings.push(`Only ${plural(most, "player")} can sub at once with this group, so subs are ${most} at a time.`);
+  }
+  const guardStarts = [0];
+  const frontStarts = [0];
+  for (let shift = 1; shift < totalShifts; shift++) {
+    const split = subSplit(shift, subSize, ...groups());
+    guardStarts.push(guardStarts[shift - 1] + split.guards);
+    frontStarts.push(frontStarts[shift - 1] + split.front);
+  }
 
   const halves: RotationResult["halves"] = [{ half: 1, rows: [] }, { half: 2, rows: [] }];
   const onCourtByShift: Set<string>[] = [];
@@ -321,8 +375,8 @@ export function buildRotation(input: RotationInput): RotationResult {
     const index = shift % shiftLengths.length;
     const elapsed = shiftLengths.slice(0, index).reduce((sum, m) => sum + m, 0);
     const flex = shift >= firstFlex;
-    const guards = windowAt(guardQueue, guardSpots, shift);
-    const front = windowAt(frontQueue, frontSpots, shift);
+    const guards = windowAt(guardQueue, guardSpots, guardStarts[shift]);
+    const front = windowAt(frontQueue, frontSpots, frontStarts[shift]);
     const on = new Set([...guards, ...front]);
     onCourtByShift.push(on);
     const bench = present.filter(p => !on.has(p.id)).map(p => p.id);
@@ -337,6 +391,8 @@ export function buildRotation(input: RotationInput): RotationResult {
       bench: flex ? [] : names(bench),
       in: flex || !previous ? [] : names([...on].filter(id => !previous!.has(id))),
       out: flex || !previous ? [] : names([...previous].filter(id => !on.has(id))),
+      guardIds: flex ? [] : guards,
+      frontIds: flex ? [] : front,
     });
     previous = on;
   }
@@ -378,6 +434,11 @@ export function buildRotation(input: RotationInput): RotationResult {
     };
   }).sort((a, b) => b.minutes - a.minutes || byName(a.name, b.name));
 
+  const longestSit = Math.max(0, ...minutes.map(m => m.longestSit));
+  if (longestSit > 3 * settings.shiftMinutes + 1e-9) {
+    warnings.push(`Some players sit ${formatClock(longestSit)} in a row. Shorter shifts or more subs at a time spread the minutes more evenly.`);
+  }
+
   let flexSuggestion: string[] = [];
   if (flexShifts > 0 && firstFlex > 0 && minutes.length > 0) {
     const fewest = Math.min(...minutes.map(m => m.minutes));
@@ -403,4 +464,93 @@ export function buildRotation(input: RotationInput): RotationResult {
 /** Player ids in starting order for one queue: saved order first, then anyone new in roster order. */
 export function startingOrder(players: BasketballPlayer[], order: string[] | undefined): string[] {
   return ordered(players, order).map(p => p.id);
+}
+
+export type CourtSpot = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * Put on-court players on the 1–5 spots. Guards take the 1 and 2 (by
+ * their 1/2 tag when set); front players take the 3, 4 and 5, with Bigs at
+ * the 5 and 4 and a non-Big at the 3. With other spot counts, extra players
+ * are listed without a number.
+ */
+export function assignSpots(
+  guards: string[],
+  front: string[],
+  players: BasketballPlayer[],
+): { spot: CourtSpot | null; id: string }[] {
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const name = (id: string) => byId.get(id)?.name ?? id;
+  const g = [...guards].sort((a, b) => {
+    const pa = byId.get(a)?.position ?? "9";
+    const pb = byId.get(b)?.position ?? "9";
+    return pa.localeCompare(pb) || name(a).localeCompare(name(b));
+  });
+  // Guard tagged "2" alone should take the 2, not the 1.
+  if (g.length === 2 && byId.get(g[0])?.position === "2" && !byId.get(g[1])?.position) g.reverse();
+  const bigs = front.filter((id) => byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
+  const others = front.filter((id) => !byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
+  // 3 = a non-Big if there is one; 5 then 4 = Bigs first.
+  const three = others.length ? others.shift()! : bigs.pop();
+  const five = bigs.length ? bigs.shift()! : others.shift();
+  const four = bigs.length ? bigs.shift()! : others.shift();
+  const spots: { spot: CourtSpot | null; id: string }[] = [];
+  if (g[0]) spots.push({ spot: 1, id: g[0] });
+  if (g[1]) spots.push({ spot: 2, id: g[1] });
+  for (const id of g.slice(2)) spots.push({ spot: null, id });
+  if (three) spots.push({ spot: 3, id: three });
+  if (four) spots.push({ spot: 4, id: four });
+  if (five) spots.push({ spot: 5, id: five });
+  for (const id of [...bigs, ...others]) spots.push({ spot: null, id });
+  return spots;
+}
+
+/**
+ * Like assignSpots, but players who were already on court keep the spot they
+ * had (`previous`: player id → spot). Players coming in take the open spots:
+ * guards the 1/2 (their tagged spot if it's open), Bigs the 5 then 4, a
+ * non-Big the 3. With no previous spots this is the same as assignSpots.
+ */
+export function stickySpots(
+  guards: string[],
+  front: string[],
+  players: BasketballPlayer[],
+  previous: Map<string, CourtSpot> | null,
+): { spot: CourtSpot | null; id: string }[] {
+  if (!previous || previous.size === 0) return assignSpots(guards, front, players);
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const taken = new Map<CourtSpot, string>();
+  const placed = new Set<string>();
+  const keep = (ids: string[], allowed: CourtSpot[]) => {
+    for (const id of ids) {
+      const spot = previous.get(id);
+      if (spot && allowed.includes(spot) && !taken.has(spot)) {
+        taken.set(spot, id);
+        placed.add(id);
+      }
+    }
+  };
+  keep(guards, [1, 2]);
+  keep(front, [3, 4, 5]);
+  const fill = (id: string, preferences: CourtSpot[]) => {
+    const spot = preferences.find((s) => !taken.has(s));
+    if (spot) {
+      taken.set(spot, id);
+      placed.add(id);
+    }
+  };
+  for (const id of guards.filter((g) => !placed.has(g))) {
+    const tag = byId.get(id)?.position;
+    fill(id, tag === "2" ? [2, 1] : [1, 2]);
+  }
+  const newFront = front.filter((f) => !placed.has(f));
+  // Bigs first so they get the post spots before a non-Big lands there.
+  for (const id of [...newFront.filter((f) => byId.get(f)?.big), ...newFront.filter((f) => !byId.get(f)?.big)]) {
+    fill(id, byId.get(id)?.big ? [5, 4, 3] : [3, 4, 5]);
+  }
+  const spots: { spot: CourtSpot | null; id: string }[] = ([1, 2, 3, 4, 5] as CourtSpot[])
+    .filter((s) => taken.has(s))
+    .map((s) => ({ spot: s, id: taken.get(s)! }));
+  for (const id of [...guards, ...front]) if (!placed.has(id)) spots.push({ spot: null, id });
+  return spots;
 }

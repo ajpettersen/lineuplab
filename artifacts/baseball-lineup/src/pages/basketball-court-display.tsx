@@ -20,8 +20,14 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/confirm";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import { formatClock } from "@/lib/basketball-rotation";
-import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, rotationPlayers } from "@/lib/basketball-setup";
+import { formatClock, stickySpots } from "@/lib/basketball-rotation";
+import {
+  BASKETBALL_SETUP_KEY,
+  fetchBasketballSetup,
+  fetchGameLineup,
+  gameLineupKey,
+  gameRotationInput,
+} from "@/lib/basketball-setup";
 import {
   bench,
   courtSpots,
@@ -29,10 +35,12 @@ import {
   isFlexShift,
   makeSub,
   nextSub,
+  nextSubPairs,
   onCourt,
   putBack,
   secondsToNextSub,
   setClock,
+  setSubSize,
   settle,
   skipSub,
   startClock,
@@ -186,7 +194,16 @@ export default function BasketballCourtDisplay() {
   const confirm = useConfirm();
   const { teamShortName, teamName } = useTeamSettings();
   const { data: game } = useGetGame(gameId, { query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) } });
-  const { data: setup, isLoading } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data: setup, isLoading: setupLoading } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data: gameLineup, isLoading: lineupLoading } = useQuery({
+    queryKey: gameLineupKey(gameId),
+    enabled: !!gameId,
+    queryFn: () => fetchGameLineup(gameId),
+  });
+  const isLoading = setupLoading || lineupLoading;
+  // Before tip-off the coach can change subs at a time; it must be picked when
+  // the team asks each game and this game has no lineup yet.
+  const [pregameSubSize, setPregameSubSize] = useState<number | null>(null);
 
   const [state, setStateRaw] = useState<LiveState | null>(() => (gameId ? loadState(gameId) : null));
   const [now, setNow] = useState(() => Date.now());
@@ -205,17 +222,15 @@ export default function BasketballCourtDisplay() {
     [gameId],
   );
 
-  // The pregame plan follows the Bench Sheet until the game starts.
+  // Until the game starts, the plan follows this game's lineup (game page →
+  // Set Lineup), or the Bench Sheet if it doesn't have one.
+  const needsSubSize = !!setup && !gameLineup && setup.defaultSubSize === null && pregameSubSize === null;
   const pregame = useMemo(() => {
-    if (!setup) return null;
-    return startState({
-      players: rotationPlayers(setup),
-      settings: setup.settings,
-      guardOrder: setup.gameDay.guardOrder.map(String),
-      frontOrder: setup.gameDay.frontOrder.map(String),
-      absentIds: setup.gameDay.absentIds.map(String),
-    });
-  }, [setup]);
+    if (!setup || gameLineup === undefined) return null;
+    const input = gameRotationInput(setup, gameLineup);
+    if (pregameSubSize !== null) input.settings = { ...input.settings, subSize: pregameSubSize };
+    return startState(input);
+  }, [setup, gameLineup, pregameSubSize]);
   const base = state ?? pregame;
   const view = base ? settle(base, now) : null;
 
@@ -236,11 +251,43 @@ export default function BasketballCourtDisplay() {
     if (state && view && view.phase !== state.phase) setState(view);
   }, [state, view, setState]);
 
+  // Players who stay on keep their spot on the court drawing.
+  const previousSpots = useRef<Map<string, CourtSpot> | null>(null);
+  const onCourtKey = view ? [...onCourt(view).guards, ...onCourt(view).front].join(",") : "";
+  const spots = useMemo(() => {
+    if (!view) return [];
+    const { guards, front } = onCourt(view);
+    const next = stickySpots(guards, front, view.players, previousSpots.current);
+    previousSpots.current = new Map(next.filter((x) => x.spot !== null).map((x) => [x.id, x.spot as CourtSpot]));
+    return next;
+    // Only when who's on court changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCourtKey]);
+
   const nameOf = useCallback((id: string) => view?.players.find((p) => p.id === id)?.name ?? id, [view]);
   const sortNames = (ids: string[]) => ids.map(nameOf).sort((a, b) => a.localeCompare(b));
 
   const due = view ? subDue(view) : false;
   const upcoming = view ? nextSub(view) : { in: [], out: [] };
+  // 1–2 at a time: say who goes in for whom. 3–5: lead with who comes out.
+  const pairs = view ? nextSubPairs(view) : [];
+  const paired = upcoming.in.length > 0 && upcoming.in.length <= 2;
+  const subWhat = () =>
+    paired ? (
+      <span className="font-semibold">
+        {pairs.map((p, i) => (
+          <span key={p.in}>
+            {i > 0 && <span className="mx-2 font-normal">·</span>}
+            {nameOf(p.in)} <span className="font-normal">in for</span> {nameOf(p.out)}
+          </span>
+        ))}
+      </span>
+    ) : (
+      <>
+        <span className="font-semibold">Out: {joinNames(sortNames(upcoming.out))}</span>
+        <span className="ml-2 text-sm opacity-80">(in: {joinNames(sortNames(upcoming.in))})</span>
+      </>
+    );
   const toNext = view ? secondsToNextSub(view) : null;
   const shift = view ? currentShift(view) : 0;
   const flex = view ? view.phase === "live" && isFlexShift(view, shift) : false;
@@ -262,7 +309,11 @@ export default function BasketballCourtDisplay() {
     }
     if (due && typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
       try {
-        new Notification("Sub now", { body: `In: ${sortNames(upcoming.in).join(", ")}\nOut: ${sortNames(upcoming.out).join(", ")}` });
+        new Notification("Sub now", {
+          body: paired
+            ? pairs.map((p) => `${nameOf(p.in)} in for ${nameOf(p.out)}`).join("\n")
+            : `Out: ${sortNames(upcoming.out).join(", ")}\nIn: ${sortNames(upcoming.in).join(", ")}`,
+        });
       } catch {
         // some browsers only allow notifications from a service worker
       }
@@ -324,7 +375,6 @@ export default function BasketballCourtDisplay() {
     );
   }
 
-  const spots = courtSpots(view);
   const benchIds = bench(view);
   const onIds = new Set([...onCourt(view).guards, ...onCourt(view).front]);
   const roleOf = (id: string) => (view.guardQueue.includes(id) ? "G" : "F");
@@ -392,6 +442,8 @@ export default function BasketballCourtDisplay() {
             <Button
               size="lg"
               onClick={() => { void enableAlerts(); act(startClock); }}
+              disabled={view.phase === "pregame" && needsSubSize}
+              title={view.phase === "pregame" && needsSubSize ? "Pick subs at a time first" : undefined}
               className="gap-2"
             >
               <Play className="h-5 w-5" /> {view.phase === "pregame" ? "Start game" : view.phase === "halftime" ? "Start 2nd half" : "Resume"}
@@ -421,9 +473,7 @@ export default function BasketballCourtDisplay() {
             {due ? (
               <>
                 <span className="mr-2 font-display text-2xl font-bold uppercase">Sub now</span>
-                <span className="font-semibold">In: {joinNames(sortNames(upcoming.in))}</span>
-                <span className="mx-2">·</span>
-                <span>Out: {joinNames(sortNames(upcoming.out))}</span>
+                {subWhat()}
               </>
             ) : flex ? (
               <>
@@ -435,7 +485,7 @@ export default function BasketballCourtDisplay() {
                 <span className="font-semibold">Next sub in {fmt(toNext)}</span>
                 <span className="text-muted-foreground"> (at {fmt(view.clockSec - toNext)})</span>
                 <span className="mx-2">·</span>
-                In: {joinNames(sortNames(upcoming.in))} · Out: {joinNames(sortNames(upcoming.out))}
+                {subWhat()}
               </>
             ) : view.phase === "halftime" ? (
               <span className="font-semibold">Halftime. Subs carry on in the 2nd half.</span>
@@ -537,6 +587,35 @@ export default function BasketballCourtDisplay() {
             </table>
             <p className="mt-2 text-xs text-muted-foreground">
               Counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
+            </p>
+          </div>
+
+          <div>
+            <h2 className="mb-2 font-display text-xl font-bold uppercase">Subs at a time</h2>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Subs at a time">
+              {[1, 2, 3, 4, 5].map((n) => {
+                const current = needsSubSize ? null : view.settings.subSize ?? 2;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    role="radio"
+                    aria-checked={current === n}
+                    disabled={view.phase === "final"}
+                    onClick={() => (view.phase === "pregame" ? setPregameSubSize(n) : act((s) => setSubSize(s, n)))}
+                    className={`h-11 w-11 rounded-md border-2 text-lg font-bold transition-colors ${current === n ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted"}`}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {needsSubSize
+                ? "Pick how many players change each sub before you start."
+                : view.phase === "pregame"
+                  ? gameLineup ? "From this game's lineup. Change it here for today." : "Change it here for today."
+                  : "Changes take effect on the next sub."}
             </p>
           </div>
 
