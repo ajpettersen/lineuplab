@@ -3,18 +3,21 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
+  basketballGameStatsTable,
   basketballRotationSettingsTable,
   playersTable,
   type BasketballGameDay,
   type BasketballPlayerTags,
 } from "@workspace/db";
 import { gateWrites } from "../lib/permissions";
+import { filterOwnedPlayerIds, getOwnedGame } from "../lib/ownership";
 
 // Basketball bench sheet: per-team rotation setup on top of the team's roster.
 // Building the rotation for a game is lineup work, so assistant coaches with
 // "partial" access can save it (same tier as game lineups).
 const router: IRouter = Router();
 router.use("/basketball-rotation", gateWrites("partial"));
+router.use("/basketball-games", gateWrites("partial"));
 
 const DEFAULTS = { halfMinutes: 20, shiftMinutes: 2.5, guardSpots: 2, frontSpots: 3, flexShifts: 1 };
 
@@ -140,6 +143,83 @@ router.put("/basketball-rotation", async (req, res): Promise<void> => {
     .values({ userId, ...values })
     .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set: values });
   res.json({ ok: true });
+});
+
+// ── Per-game starters and playing time (court display) ───────────────────
+
+const GameStatsZ = z.object({
+  starterIds: z.array(z.number().int().positive()).max(15),
+  playedSec: z.record(z.string().regex(/^\d+$/), z.number().min(0).max(4 * 60 * 60)),
+});
+
+function gameIdParam(raw: string | string[] | undefined): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+router.put("/basketball-games/:gameId/stats", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const parsed = GameStatsZ.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid game stats" });
+    return;
+  }
+  const mentioned = [...new Set([...parsed.data.starterIds, ...Object.keys(parsed.data.playedSec).map(Number)])];
+  const owned = new Set(await filterOwnedPlayerIds(userId, mentioned));
+  const values = {
+    userId,
+    starterIds: parsed.data.starterIds.filter((id) => owned.has(id)),
+    playedSec: Object.fromEntries(
+      Object.entries(parsed.data.playedSec)
+        .filter(([id]) => owned.has(Number(id)))
+        .map(([id, sec]) => [id, Math.round(sec)]),
+    ),
+    updatedAt: new Date(),
+  };
+  await db
+    .insert(basketballGameStatsTable)
+    .values({ gameId, ...values })
+    .onConflictDoUpdate({ target: basketballGameStatsTable.gameId, set: values });
+  res.json({ ok: true });
+});
+
+router.delete("/basketball-games/:gameId/stats", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (gameId) {
+    await db
+      .delete(basketballGameStatsTable)
+      .where(and(eq(basketballGameStatsTable.gameId, gameId), eq(basketballGameStatsTable.userId, userId)));
+  }
+  res.status(204).send();
+});
+
+/** Season totals per player: games played, starts, and seconds on court. */
+router.get("/basketball-season", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const [roster, games] = await Promise.all([
+    rosterFor(userId),
+    db.select().from(basketballGameStatsTable).where(eq(basketballGameStatsTable.userId, userId)),
+  ]);
+  const players = roster.map((p) => {
+    let gamesPlayed = 0;
+    let starts = 0;
+    let seconds = 0;
+    for (const g of games) {
+      const sec = g.playedSec[String(p.id)] ?? 0;
+      const started = g.starterIds.includes(p.id);
+      if (started) starts++;
+      if (started || sec > 0) gamesPlayed++;
+      seconds += sec;
+    }
+    return { playerId: p.id, name: p.name, number: p.number, games: gamesPlayed, starts, seconds };
+  });
+  res.json({ gamesTracked: games.length, players });
 });
 
 export default router;

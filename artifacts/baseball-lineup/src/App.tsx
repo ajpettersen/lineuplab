@@ -59,7 +59,7 @@ const Tournaments = lazy(() => import("@/pages/tournaments"));
 const TournamentDetail = lazy(() => import("@/pages/tournament-detail"));
 const Practices = lazy(() => import("@/pages/practices"));
 const PracticeDetail = lazy(() => import("@/pages/practice-detail"));
-const FieldDisplay = lazy(() => import("@/pages/field-display"));
+const FieldDisplay = lazy(() => import("@/pages/game-display"));
 const Stats = lazy(() => import("@/pages/stats"));
 const SeasonStats = lazy(() => import("@/pages/season-stats"));
 const ArmWatch = lazy(() => import("@/pages/arm-watch"));

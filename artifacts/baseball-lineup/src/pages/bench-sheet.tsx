@@ -13,29 +13,29 @@ import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { BenchSheetTable } from "@/components/basketball/bench-sheet-table";
 import {
+  BASKETBALL_SETUP_KEY,
+  fetchBasketballSetup,
+  type BasketballSetup,
+  type SetupGameDay,
+  type SetupTags,
+} from "@/lib/basketball-setup";
+import {
   buildRotation,
   reshuffleStartingOrder,
   startingOrder,
   type BasketballPlayer,
   type BasketballRole,
   type BasketballSettings,
-  type GuardPosition,
 } from "@/lib/basketball-rotation";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const QUERY_KEY = ["basketball-rotation"] as const;
+const QUERY_KEY = BASKETBALL_SETUP_KEY;
 
-interface Tags { role: BasketballRole; big: boolean; position: GuardPosition | null }
-interface RosterPlayer extends Tags { id: number; name: string; number: number | null; tagged: boolean }
-interface GameDay { absentIds: number[]; guardOrder: number[]; frontOrder: number[] }
-interface RotationSetup { settings: BasketballSettings; players: RosterPlayer[]; gameDay: GameDay; saved: boolean }
+type Tags = SetupTags;
+type GameDay = SetupGameDay;
+type RotationSetup = BasketballSetup;
 interface Draft { settings: BasketballSettings; tags: Record<number, Tags>; gameDay: GameDay }
-
-async function fetchSetup(): Promise<RotationSetup> {
-  const r = await fetch(`${BASE}/api/basketball-rotation`);
-  if (!r.ok) throw new Error(`GET /api/basketball-rotation failed (${r.status})`);
-  return (await r.json()) as RotationSetup;
-}
+const fetchSetup = fetchBasketballSetup;
 
 function toDraft(setup: RotationSetup): Draft {
   return {

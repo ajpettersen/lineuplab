@@ -12,3 +12,13 @@ CREATE TABLE IF NOT EXISTS "basketball_rotation_settings" (
   "game_day" jsonb NOT NULL DEFAULT '{"absentIds":[],"guardOrder":[],"frontOrder":[]}'::jsonb,
   "updated_at" timestamp with time zone NOT NULL DEFAULT now()
 );
+
+-- Per-game starters and playing time from the basketball court display.
+CREATE TABLE IF NOT EXISTS "basketball_game_stats" (
+  "game_id" integer PRIMARY KEY,
+  "user_id" text NOT NULL,
+  "starter_ids" integer[] NOT NULL DEFAULT '{}',
+  "played_sec" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "updated_at" timestamp with time zone NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "basketball_game_stats_user_id_idx" ON "basketball_game_stats" ("user_id");
