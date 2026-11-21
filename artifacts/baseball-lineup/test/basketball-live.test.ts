@@ -244,4 +244,56 @@ for (const subSize of [1, 3, 4]) {
   assert.equal(Math.round(r.clockSec), 1200 - 90);
 }
 
+// A coach's own plan (the Game 2 sheet): the court follows it shift by shift.
+{
+  const plan = [
+    ["196", "204", "198", "203", "205"], ["196", "204", "197", "203", "201"], ["200", "204", "202", "197", "201"], ["200", "202", "198", "201", "205"],
+    ["196", "202", "198", "203", "205"], ["196", "204", "198", "197", "203"], ["200", "204", "197", "203", "201"], ["200", "204", "202", "201", "205"],
+    ["196", "200", "202", "198", "205"], ["196", "202", "198", "197", "203"], ["196", "204", "197", "203", "201"], ["200", "204", "197", "201", "205"],
+    ["200", "202", "198", "201", "205"], ["196", "200", "202", "198", "203"], ["200", "204", "202", "197", "203"],
+  ];
+  const ids = ["196", "197", "198", "200", "201", "202", "203", "204", "205"];
+  const roster = [...ids, "199"].map((id) => guard(id));
+  const planned = {
+    players: roster,
+    settings: { ...DEFAULT_BASKETBALL_SETTINGS, flexShifts: 1 },
+    order: ids,
+    absentIds: ["199"],
+    customShifts: plan,
+  };
+  const rotation = buildRotation(planned);
+  assert.equal(rotation.custom, true);
+  assert.deepEqual(rotation.warnings, []);
+  const rows = rotation.halves.flatMap((h) => h.rows);
+  assert.equal(rows.length, 16);
+  assert.ok(rows[15].flex, "the last shift is the flex");
+  rows.slice(0, 15).forEach((row, i) => assert.deepEqual(row.groups[0].ids, plan[i], `shift ${i + 1} follows the plan`));
+  assert.deepEqual(rows[1].in.sort(), ["197", "201"]);
+  const mins = Object.fromEntries(rotation.minutes.map((m) => [m.id, m.minutes]));
+  assert.deepEqual(
+    ids.map((id) => mins[id]).sort((a, b) => a - b),
+    [17.5, 20, 20, 20, 20, 22.5, 22.5, 22.5, 22.5],
+    "planned minutes match the sheet",
+  );
+
+  let s = startState(planned);
+  assert.deepEqual(courtSpots(s).map((x) => x.id), plan[0], "starters at their spots");
+  assert.deepEqual(sorted(nextSubPairs(s).map((p) => `${p.in}>${p.out}`)), ["197>198", "201>205"], "who goes in for whom, by spot");
+  s = makeSub(s, 0);
+  assert.deepEqual(courtSpots(s).map((x) => x.id), plan[1]);
+  // 197 moves from the 3 to the 4: 202 goes in for 196 and 203 isn't paired with 197.
+  assert.deepEqual(sorted(nextSubPairs(s).map((p) => `${p.in}>${p.out}`)), ["200>196", "202>203"]);
+  s = makeSub(s, 0);
+  assert.deepEqual(courtSpots(s).map((x) => x.id), plan[2]);
+  // Someone on the plan leaves: the bench player with the least time covers.
+  s = { ...s, playedSec: { ...s.playedSec, "196": 10, "198": 5, "203": 50, "205": 50 } };
+  s = takeOut(s, 0, "204");
+  assert.deepEqual(courtSpots(s).map((x) => x.id), ["200", "198", "202", "197", "201"], "the least-played sub takes the 2");
+  assert.deepEqual(nextSub(s).in.includes("204"), false, "an injured player isn't planned back in");
+  s = makeSub(s, 0);
+  assert.deepEqual(courtSpots(s).map((x) => x.id), plan[3]);
+  s = undoLast(s, 0);
+  assert.deepEqual(courtSpots(s).map((x) => x.id), ["200", "198", "202", "197", "201"], "undo works with a plan");
+}
+
 console.log("basketball-live: all checks passed");

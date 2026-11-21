@@ -17,6 +17,7 @@
 // tested with plain Node (test/basketball-live.test.ts).
 
 import {
+  CUSTOM_GROUP,
   startingQueues,
   stickySpots,
   subSplit,
@@ -61,6 +62,12 @@ export interface LiveState extends Lineup {
   undo: Lineup[];
   /** Who was on court when the game started (for the Starts stat). */
   starterIds?: string[];
+  /**
+   * The coach's own plan (per planned shift, ids at spots 1–5), when the game
+   * has one. Then there is one group, its queue's first five are on court in
+   * spot order, and each sub brings on the plan's next five.
+   */
+  script?: string[][] | null;
 }
 
 const EPS = 1e-6;
@@ -75,15 +82,26 @@ export function shiftLengths(settings: BasketballSettings): number[] {
 
 /** Start a game from the Bench Sheet / game lineup (same inputs as buildRotation). */
 export function startState(input: RotationInput): LiveState {
-  const { groups, queues, present } = startingQueues(input);
+  const start = startingQueues(input);
+  const { present } = start;
   const absent = new Set(input.absentIds ?? []);
   const players = input.players.filter((p) => !absent.has(p.id));
+  const script = input.customShifts?.length ? input.customShifts.map((shift) => [...shift]) : null;
+  let groups = start.groups;
+  let queues = start.queues.map((q) => q.map((p) => p.id));
+  if (script) {
+    const here = present.map((p) => p.id);
+    const starters = (script[0] ?? []).filter((id) => here.includes(id)).slice(0, 5);
+    groups = [CUSTOM_GROUP];
+    queues = [[...starters, ...here.filter((id) => !starters.includes(id))]];
+  }
   return {
     version: 2,
     settings: { ...input.settings },
     groups,
+    script,
     players: players.map((p) => present.find((x) => x.id === p.id) ?? p),
-    queues: queues.map((q) => q.map((p) => p.id)),
+    queues,
     starts: queues.map(() => 0),
     subsMade: 0,
     outIds: [],
@@ -205,6 +223,33 @@ export function isFlexShift(s: LiveState, shift: number): boolean {
   return shift >= totalShifts(s) - Math.min(Math.floor(s.settings.flexShifts), totalShifts(s));
 }
 
+/**
+ * With a coach's plan: the queue after the next sub. The plan's next five go
+ * on at their spots; a planned player who isn't available is covered by the
+ * bench player with the least time.
+ */
+function scriptedNext(s: LiveState): string[] {
+  const script = s.script!;
+  const queue = s.queues[0] ?? [];
+  const now = queue.slice(0, 5);
+  const target = script[Math.min(s.subsMade + 1, script.length - 1)] ?? now;
+  const result: (string | null)[] = [null, null, null, null, null];
+  target.slice(0, 5).forEach((id, k) => {
+    if (queue.includes(id) && !result.includes(id)) result[k] = id;
+  });
+  const fill = queue
+    .filter((id) => !result.includes(id))
+    .sort((a, b) => {
+      // Keep whoever is already on first (fewest changes), then least time.
+      const onA = now.includes(a) ? 0 : 1;
+      const onB = now.includes(b) ? 0 : 1;
+      return onA - onB || (s.playedSec[a] ?? 0) - (s.playedSec[b] ?? 0);
+    });
+  for (let k = 0; k < 5 && k < queue.length; k++) if (result[k] === null) result[k] = fill.shift() ?? null;
+  const five = result.filter((id): id is string => id !== null);
+  return [...five, ...queue.filter((id) => !five.includes(id))];
+}
+
 /** Window starts after the next planned sub (`subSize` players, split as on the Bench Sheet). */
 function advanced(s: LiveState): number[] {
   const spots = spotsOf(s);
@@ -222,6 +267,24 @@ function advanced(s: LiveState): number[] {
  * who has been on longest is replaced by the one who has sat longest.
  */
 export function nextSubPairs(s: LiveState): { in: string; out: string }[] {
+  if (s.script) {
+    // Who comes in takes the spot of whoever was there, when they're coming off.
+    const before = (s.queues[0] ?? []).slice(0, 5);
+    const after = scriptedNext(s).slice(0, 5);
+    const ins = after.map((id, k) => ({ id, k })).filter((x) => !before.includes(x.id));
+    const outs = before.filter((id) => !after.includes(id));
+    const pairs: { in: string; out: string }[] = [];
+    const left = [...ins];
+    for (const x of ins) {
+      if (outs.includes(before[x.k]) && !pairs.some((p) => p.out === before[x.k])) {
+        pairs.push({ in: x.id, out: before[x.k] });
+        left.splice(left.indexOf(x), 1);
+      }
+    }
+    const freeOuts = outs.filter((id) => !pairs.some((p) => p.out === id));
+    left.forEach((x, j) => freeOuts[j] && pairs.push({ in: x.id, out: freeOuts[j] }));
+    return pairs;
+  }
   const to = advanced(s);
   const spots = spotsOf(s);
   const pairs: { in: string; out: string }[] = [];
@@ -244,7 +307,7 @@ export function setSubSize(s: LiveState, subSize: number): LiveState {
 /** Who the next planned sub brings in and takes out. */
 export function nextSub(s: LiveState): { in: string[]; out: string[] } {
   const before = new Set(onCourtIds(s));
-  const after = new Set(onCourtIds({ ...s, starts: advanced(s) }));
+  const after = new Set(s.script ? scriptedNext(s).slice(0, 5) : onCourtIds({ ...s, starts: advanced(s) }));
   return { in: [...after].filter((id) => !before.has(id)), out: [...before].filter((id) => !after.has(id)) };
 }
 
@@ -285,7 +348,9 @@ function withUndo(s: LiveState, now: number, change: (s: LiveState) => LiveState
 
 /** Make the next planned sub (when it's due, or early to jump ahead). */
 export function makeSub(s: LiveState, now: number): LiveState {
-  return withUndo(s, now, (x) => ({ ...x, starts: advanced(x), subsMade: x.subsMade + 1 }));
+  return withUndo(s, now, (x) =>
+    x.script ? { ...x, queues: [scriptedNext(x)], starts: [0], subsMade: x.subsMade + 1 } : { ...x, starts: advanced(x), subsMade: x.subsMade + 1 },
+  );
 }
 
 /** Skip a due sub without changing anyone (e.g. it's flex time or the coach wants to wait). */
@@ -327,6 +392,21 @@ function removeFrom(queue: string[], start: number, id: string): { queue: string
 /** Take a player out of the game; the next player in line fills their spot. */
 export function takeOut(s: LiveState, now: number, id: string): LiveState {
   return withUndo(s, now, (x) => {
+    if (x.script) {
+      // Whoever has played least on the bench takes their spot.
+      const queue = [...(x.queues[0] ?? [])];
+      const at = queue.indexOf(id);
+      if (at < 0) return x;
+      const benchIds = queue.slice(5).filter((b) => b !== id);
+      if (at < 5 && benchIds.length) {
+        const sub = [...benchIds].sort((p, q) => (x.playedSec[p] ?? 0) - (x.playedSec[q] ?? 0))[0];
+        queue[at] = sub;
+        queue.splice(queue.indexOf(sub, 5), 1);
+      } else {
+        queue.splice(at, 1);
+      }
+      return { ...x, queues: [queue], starts: [0], outIds: [...new Set([...x.outIds, id])] };
+    }
     const moved = x.queues.map((q, i) => removeFrom(q, x.starts[i], id));
     return {
       ...x,
@@ -384,6 +464,8 @@ export function undoLast(s: LiveState, now: number): LiveState {
 
 /** The on-court players at the 1–5 spots, keeping spots from `previous` where they can. */
 export function courtSpots(s: LiveState, previous: Map<string, CourtSpot> | null = null): { spot: CourtSpot | null; id: string }[] {
+  // The coach's plan says who plays where.
+  if (s.script) return (s.queues[0] ?? []).slice(0, 5).map((id, k) => ({ spot: (k + 1) as CourtSpot, id }));
   const on = onCourt(s);
   return stickySpots(s.groups.map((g, i) => ({ ids: on[i], spots: g.spots })), s.players, previous);
 }

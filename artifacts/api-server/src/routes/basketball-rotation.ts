@@ -290,6 +290,8 @@ const GameLineupZ = z.object({
   /** This game only; null/absent = the team's Bench Sheet setting. */
   shiftMinutes: z.number().min(0.5).max(60).nullable().optional(),
   flexShifts: z.number().int().min(0).max(20).nullable().optional(),
+  /** A custom plan: per planned shift, the player ids at spots 1–5. */
+  customShifts: z.array(z.array(z.number().int().positive()).min(1).max(5)).max(120).nullable().optional(),
 });
 
 router.get("/basketball-games/:gameId/lineup", async (req, res): Promise<void> => {
@@ -311,6 +313,7 @@ router.get("/basketball-games/:gameId/lineup", async (req, res): Promise<void> =
           subSize: row.subSize,
           shiftMinutes: row.shiftMinutes,
           flexShifts: row.flexShifts,
+          customShifts: row.customShifts ?? null,
           updatedAt: row.updatedAt,
         }
       : null,
@@ -340,6 +343,10 @@ router.put("/basketball-games/:gameId/lineup", async (req, res): Promise<void> =
     subSize: parsed.data.subSize,
     shiftMinutes: parsed.data.shiftMinutes ?? null,
     flexShifts: parsed.data.flexShifts ?? null,
+    // Only this team's players; a shift can't list someone twice.
+    customShifts: parsed.data.customShifts
+      ? parsed.data.customShifts.map((shift) => [...new Set(shift.filter((id) => known.has(id)))])
+      : null,
     updatedAt: new Date(),
   };
   await db

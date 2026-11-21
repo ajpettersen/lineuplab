@@ -84,6 +84,12 @@ export const basketballGameLineupsTable = pgTable("basketball_game_lineups", {
   shiftMinutes: doublePrecision("shift_minutes"),
   /** Shifts at the end left to the coach (0 = none); null = the team's setting. */
   flexShifts: integer("flex_shifts"),
+  /**
+   * A coach's own shift-by-shift plan, replacing the generated rotation:
+   * one entry per planned (non-flex) shift, each the player ids at the 1–5.
+   * Null = use the generated rotation.
+   */
+  customShifts: jsonb("custom_shifts").$type<number[][] | null>(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("basketball_game_lineups_user_id_idx").on(table.userId)]);
 
