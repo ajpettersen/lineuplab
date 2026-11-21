@@ -22,11 +22,15 @@ import {
 } from "@/lib/basketball-setup";
 import {
   buildRotation,
+  GROUP_LAYOUTS,
+  groupedQueues,
+  groupsFor,
+  reorderGroup,
   reshuffleStartingOrder,
-  startingOrder,
+  roleIn,
   type BasketballPlayer,
-  type BasketballRole,
   type BasketballSettings,
+  type GroupLayoutId,
 } from "@/lib/basketball-rotation";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -129,23 +133,20 @@ export default function BenchSheetPage() {
     [data, draft],
   );
   const absentIds = useMemo(() => (draft?.gameDay.absentIds ?? []).map(String), [draft]);
-  const queues = useMemo(() => {
-    if (!draft) return { guards: [], front: [] };
-    const absent = new Set(absentIds);
-    const byId = new Map(players.map((p) => [p.id, p]));
-    const queue = (role: BasketballRole, order: number[]) =>
-      startingOrder(players.filter((p) => p.role === role && !absent.has(p.id)), order.map(String)).map((id) => byId.get(id)!);
-    return { guards: queue("guard", draft.gameDay.guardOrder), front: queue("front", draft.gameDay.frontOrder) };
-  }, [draft, players, absentIds]);
+  const layout: GroupLayoutId = data?.settings.groupLayout ?? "guards-front";
+  const groups = useMemo(() => (draft ? groupsFor({ ...draft.settings, groupLayout: layout }) : []), [draft, layout]);
+  const queues = useMemo(
+    () => (draft ? groupedQueues(players, { ...draft.settings, groupLayout: layout }, draft.gameDay.order.map(String), absentIds) : []),
+    [draft, players, absentIds, layout],
+  );
   const rotation = useMemo(
     () =>
       draft &&
       buildRotation({
         players,
         // The team default (Settings → Rotation); 2 when the team asks each game.
-        settings: { ...draft.settings, subSize: data?.defaultSubSize ?? 2 },
-        guardOrder: queues.guards.map((p) => p.id),
-        frontOrder: queues.front.map((p) => p.id),
+        settings: { ...draft.settings, groupLayout: layout, subSize: data?.defaultSubSize ?? 2 },
+        order: draft.gameDay.order.map(String),
         absentIds,
       }),
     [draft, players, queues, absentIds, data?.defaultSubSize],
@@ -255,7 +256,11 @@ export default function BenchSheetPage() {
           <CardContent>
             <ul className="divide-y">
               {data.players.map((p) => {
-                const t = draft.tags[p.id] ?? p;
+                const saved = draft.tags[p.id] ?? p;
+                // Shown in this team's position groups (roles saved under another layout carry over).
+                const t = { ...saved, role: roleIn(layout, saved) };
+                const group = groups.find((g) => g.key === t.role) ?? groups[0];
+                const tagsGuardSpot = group.spots.includes(1) && group.spots.includes(2) && groups.length > 1;
                 return (
                   <li key={p.id} className="flex flex-wrap items-center gap-2 py-2">
                     <span className="min-w-0 flex-1 basis-32 truncate font-medium">
@@ -264,15 +269,16 @@ export default function BenchSheetPage() {
                     </span>
                     <select
                       value={t.role}
-                      onChange={(e) => setTags(p.id, e.target.value === "guard" ? { role: "guard", big: false } : { role: "front", position: null })}
+                      onChange={(e) => setTags(p.id, { role: e.target.value })}
                       disabled={readOnly}
                       aria-label={`${p.name} role`}
                       className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                     >
-                      <option value="guard">Guard (1/2)</option>
-                      <option value="front">Front (3/4/5)</option>
+                      {groups.map((g) => (
+                        <option key={g.key} value={g.key}>{g.one} ({g.spots.join("/")})</option>
+                      ))}
                     </select>
-                    {t.role === "guard" ? (
+                    {tagsGuardSpot ? (
                       <select
                         value={t.position ?? ""}
                         onChange={(e) => setTags(p.id, { position: e.target.value === "1" || e.target.value === "2" ? e.target.value : null })}
@@ -294,7 +300,10 @@ export default function BenchSheetPage() {
                 );
               })}
             </ul>
-            <p className="mt-3 text-xs text-muted-foreground">Guards only ever play the 1 or 2. Front players flex across the 3, 4 and 5; tag your 4s and 5s as Big.</p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {GROUP_LAYOUTS[layout].description} Players only sub with their own group. Change the groups in{" "}
+              <Link href="/settings#lineup" className="underline">Settings → Rotation</Link>.
+            </p>
           </CardContent>
         </Card>
 
@@ -304,8 +313,12 @@ export default function BenchSheetPage() {
             <div className="grid grid-cols-2 gap-3">
               <NumberField label="Half length (min)" value={draft.settings.halfMinutes} step={1} min={1} onChange={(n) => setSetting("halfMinutes", n)} disabled={readOnly} hint="Running clock" />
               <NumberField label="Shift length (min)" value={draft.settings.shiftMinutes} step={0.5} min={0.5} onChange={(n) => setSetting("shiftMinutes", n)} disabled={readOnly} hint={shiftsPerHalf ? `${shiftsPerHalf} shifts a half` : undefined} />
-              <NumberField label="Guard spots" value={draft.settings.guardSpots} step={1} min={0} onChange={(n) => setSetting("guardSpots", n)} disabled={readOnly} />
-              <NumberField label="Front spots" value={draft.settings.frontSpots} step={1} min={0} onChange={(n) => setSetting("frontSpots", n)} disabled={readOnly} hint={`${(draft.settings.guardSpots || 0) + (draft.settings.frontSpots || 0)} on court`} />
+              {layout === "guards-front" && (
+                <>
+                  <NumberField label="Guard spots" value={draft.settings.guardSpots} step={1} min={0} onChange={(n) => setSetting("guardSpots", n)} disabled={readOnly} />
+                  <NumberField label="Front spots" value={draft.settings.frontSpots} step={1} min={0} onChange={(n) => setSetting("frontSpots", n)} disabled={readOnly} hint={`${(draft.settings.guardSpots || 0) + (draft.settings.frontSpots || 0)} on court`} />
+                </>
+              )}
               <NumberField label="Flex shifts" value={draft.settings.flexShifts} step={1} min={0} onChange={(n) => setSetting("flexShifts", n)} disabled={readOnly} hint="Coach's pick at the end of the game" />
             </div>
           </CardContent>
@@ -318,8 +331,8 @@ export default function BenchSheetPage() {
           <Button
             variant="outline"
             onClick={() => {
-              const order = reshuffleStartingOrder(players, draft.settings, absentIds);
-              setGameDay({ guardOrder: order.guardOrder.map(Number), frontOrder: order.frontOrder.map(Number) });
+              const order = reshuffleStartingOrder(players, { ...draft.settings, groupLayout: layout }, absentIds);
+              setGameDay({ order: order.map(Number) });
             }}
           >
             <Shuffle className="mr-2 h-4 w-4" /> Reshuffle starting order
@@ -343,12 +356,18 @@ export default function BenchSheetPage() {
               );
             })}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <QueueList title="Guards — starting order" players={queues.guards} onReorder={(ids) => setGameDay({ guardOrder: ids })} />
-            <QueueList title="Front — starting order" players={queues.front} onReorder={(ids) => setGameDay({ frontOrder: ids })} />
+          <div className={`grid gap-4 ${queues.length >= 3 ? "sm:grid-cols-3" : queues.length === 2 ? "sm:grid-cols-2" : ""}`}>
+            {queues.map((q, i) => (
+              <QueueList
+                key={q.group.key}
+                title={`${q.group.label} — starting order`}
+                players={q.players}
+                onReorder={(ids) => setGameDay({ order: reorderGroup(queues, i, ids.map(String), draft.gameDay.order.map(String)).map(Number) })}
+              />
+            ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            The first {draft.settings.guardSpots} guards and first {draft.settings.frontSpots} front players start. Each shift, whoever has been on longest comes out and whoever has sat longest goes in, straight through halftime.
+            In each group, the first {groups.map((g) => `${g.spots.length} ${g.spots.length === 1 ? g.one.toLowerCase() : g.label.toLowerCase()}`).join(", ")} start. Each shift, whoever has been on longest comes out and whoever has sat longest in the same group goes in, straight through halftime.
           </p>
         </CardContent>
       </Card>

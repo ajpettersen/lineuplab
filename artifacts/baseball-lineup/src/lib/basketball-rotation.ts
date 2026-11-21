@@ -1,36 +1,108 @@
-// Youth basketball rotations for the Bench Sheet page.
+// Youth basketball rotations for the Bench Sheet and game pages.
 //
-// Two separate circular queues, Guards and Front. The players on court are a
-// window over each queue that moves forward by one every shift: the player who
-// has been on longest comes out and the player who has sat longest goes in, so
-// every sub is one guard and one front-court player. The queues run straight
-// through halftime. The last few shifts of the game are left to the coach.
+// The five spots are split into position groups the team picks (Settings →
+// Rotation): Guards (1–2) + Front (3–5) by default, or Guards / Forwards /
+// Center, Guards & wings / Bigs, or one group where everyone flexes. Each
+// group is its own circular queue, and the players on court are a window over
+// each queue that moves forward each sub: whoever has been on longest comes
+// out and whoever has sat longest goes in, so a guard only ever swaps with a
+// guard, a center with a center, and so on. The queues run straight through
+// halftime. The last few shifts of the game are left to the coach.
 //
 // Pure functions only (no React, no fetch), so it can be tested with plain Node:
 // `pnpm --filter @workspace/baseball-lineup run test:basketball-rotation`.
 
-export type BasketballRole = "guard" | "front";
+export type CourtSpot = 1 | 2 | 3 | 4 | 5;
 export type GuardPosition = "1" | "2";
+/** A position group key: "guard", "front", "forward", "center", "perimeter", "big" or "all". */
+export type BasketballRole = string;
+
+export interface PositionGroup {
+  key: BasketballRole;
+  /** Plural, for headings: "Guards". */
+  label: string;
+  /** One player: "Guard". */
+  one: string;
+  /** Initial for tight spaces: "G". */
+  short: string;
+  /** The court spots this group plays, in order. */
+  spots: CourtSpot[];
+}
+
+export type GroupLayoutId = "guards-front" | "guards-forwards-center" | "perimeter-bigs" | "five-out";
+
+export interface GroupLayout {
+  id: GroupLayoutId;
+  label: string;
+  description: string;
+  groups: PositionGroup[];
+}
+
+const GUARDS: PositionGroup = { key: "guard", label: "Guards", one: "Guard", short: "G", spots: [1, 2] };
+
+export const GROUP_LAYOUTS: Record<GroupLayoutId, GroupLayout> = {
+  "guards-front": {
+    id: "guards-front",
+    label: "Guards / Front",
+    description: "Guards play the 1–2; front-court players flex across the 3–5 (tag your 4s and 5s as Big).",
+    groups: [GUARDS, { key: "front", label: "Front", one: "Front", short: "F", spots: [3, 4, 5] }],
+  },
+  "guards-forwards-center": {
+    id: "guards-forwards-center",
+    label: "Guards / Forwards / Center",
+    description: "2 guards (1–2), 2 forwards (3–4) and a center (5).",
+    groups: [
+      GUARDS,
+      { key: "forward", label: "Forwards", one: "Forward", short: "F", spots: [3, 4] },
+      { key: "center", label: "Center", one: "Center", short: "C", spots: [5] },
+    ],
+  },
+  "perimeter-bigs": {
+    id: "perimeter-bigs",
+    label: "Guards & wings / Bigs",
+    description: "Guards and wings play the 1–3; bigs play the 4–5.",
+    groups: [
+      { key: "perimeter", label: "Guards & wings", one: "Guard/wing", short: "G", spots: [1, 2, 3] },
+      { key: "big", label: "Bigs", one: "Big", short: "B", spots: [4, 5] },
+    ],
+  },
+  "five-out": {
+    id: "five-out",
+    label: "Everyone flexes",
+    description: "One group: anyone plays 1–5, and subs rotate the whole roster.",
+    groups: [{ key: "all", label: "Players", one: "Player", short: "P", spots: [1, 2, 3, 4, 5] }],
+  },
+};
+
+export const GROUP_LAYOUT_IDS = Object.keys(GROUP_LAYOUTS) as GroupLayoutId[];
+export const ALL_ROLE_KEYS = [...new Set(GROUP_LAYOUT_IDS.flatMap((id) => GROUP_LAYOUTS[id].groups.map((g) => g.key)))];
+
+export function isGroupLayoutId(value: unknown): value is GroupLayoutId {
+  return typeof value === "string" && value in GROUP_LAYOUTS;
+}
 
 export interface BasketballPlayer {
   id: string;
   name: string;
   role: BasketballRole;
-  /** Front-court players only: a 4/5 who can anchor the paint. */
+  /** A 4/5 who can anchor the paint (used by the front court and spot placement). */
   big?: boolean;
-  /** Guards only, optional: which guard spot they play. */
+  /** Optional: which guard spot they play. */
   position?: GuardPosition | null;
 }
 
 export interface BasketballSettings {
   halfMinutes: number;
   shiftMinutes: number;
+  /** Guards / Front layout only: how many of each are on court (default 2 + 3). */
   guardSpots: number;
   frontSpots: number;
   /** Shifts at the end of the game left to the coach. */
   flexShifts: number;
-  /** Players subbed in (and out) each shift, 1–5. Default 2: one guard and one front. */
+  /** Players subbed in (and out) each shift, 1–5. Default 2. */
   subSize?: number;
+  /** How the five spots are grouped. Default Guards / Front. */
+  groupLayout?: GroupLayoutId;
 }
 
 export const DEFAULT_BASKETBALL_SETTINGS: BasketballSettings = {
@@ -40,45 +112,101 @@ export const DEFAULT_BASKETBALL_SETTINGS: BasketballSettings = {
   frontSpots: 3,
   flexShifts: 1,
   subSize: 2,
+  groupLayout: "guards-front",
 };
 
 export const MIN_SUB_SIZE = 1;
 export const MAX_SUB_SIZE = 5;
 
+/** The position groups in use, with Guards / Front sized by the spot settings. */
+export function groupsFor(settings: Pick<BasketballSettings, "groupLayout" | "guardSpots" | "frontSpots">): PositionGroup[] {
+  const layout = GROUP_LAYOUTS[settings.groupLayout ?? "guards-front"] ?? GROUP_LAYOUTS["guards-front"];
+  if (layout.id !== "guards-front") return layout.groups;
+  const g = Math.max(0, Math.floor(settings.guardSpots));
+  const f = Math.max(0, Math.floor(settings.frontSpots));
+  const spots = Array.from({ length: g + f }, (_, i) => Math.min(5, i + 1) as CourtSpot);
+  return [
+    { ...layout.groups[0], spots: spots.slice(0, g) },
+    { ...layout.groups[1], spots: spots.slice(g) },
+  ];
+}
+
 /**
- * How many guards and front-court players change on the `subNumber`-th sub
- * (1-based) when subbing `subSize` players at a time. The sub is split evenly
- * between guards and front (2 at a time = one of each, 4 = two of each); an
- * odd extra player alternates, starting with the front court (1 at a time =
- * front, guard, front, …). A group can't change more players than it has on
- * the court or on the bench, so any it can't take go to the other group.
+ * A player's group in a layout. Roles saved under another layout are carried
+ * over sensibly (a Big front-court player becomes a Center or a Big, a guard
+ * stays a guard, and so on).
  */
-export function subSplit(
-  subNumber: number,
-  subSize: number,
-  guards: { queue: number; spots: number },
-  front: { queue: number; spots: number },
-): { guards: number; front: number } {
-  const gCap = Math.min(guards.spots, Math.max(0, guards.queue - guards.spots));
-  const fCap = Math.min(front.spots, Math.max(0, front.queue - front.spots));
-  const k = Math.max(0, Math.min(Math.floor(subSize), gCap + fCap));
-  const half = Math.floor(k / 2);
-  const extraToFront = subNumber % 2 === 1;
-  let g = half + (k % 2 === 1 && !extraToFront ? 1 : 0);
-  let f = k - g;
-  // Move what a group can't take over to the other one.
-  if (g > gCap) { f += g - gCap; g = gCap; }
-  if (f > fCap) { g = Math.min(gCap, g + f - fCap); f = fCap; }
-  return { guards: g, front: f };
+export function roleIn(layoutId: GroupLayoutId | undefined, player: Pick<BasketballPlayer, "role" | "big" | "position">): BasketballRole {
+  const layout = GROUP_LAYOUTS[layoutId ?? "guards-front"] ?? GROUP_LAYOUTS["guards-front"];
+  const keys = layout.groups.map((g) => g.key);
+  if (keys.includes(player.role)) return player.role;
+  const guardish = player.role === "guard" || (player.role === "perimeter" && !!player.position) || (player.role === "all" && !!player.position);
+  const big = !!player.big || player.role === "center" || player.role === "big";
+  switch (layout.id) {
+    case "guards-front":
+      return guardish || player.role === "perimeter" ? "guard" : "front";
+    case "guards-forwards-center":
+      return guardish ? "guard" : big ? "center" : "forward";
+    case "perimeter-bigs":
+      return big ? "big" : "perimeter";
+    case "five-out":
+      return "all";
+  }
+}
+
+/**
+ * How many players of each group change on the `subNumber`-th sub (1-based)
+ * when subbing `subSize` at a time. The sub is split evenly across the groups
+ * that have someone on the bench (2 at a time with Guards / Front = one of
+ * each); any extra rotates between groups from sub to sub, starting after the
+ * first group (1 at a time = front, guard, front, …). A group can't change
+ * more players than it has on court or on the bench; what it can't take goes
+ * to the others.
+ */
+export function subSplit(subNumber: number, subSize: number, groups: { queue: number; spots: number }[]): number[] {
+  const caps = groups.map((g) => Math.min(g.spots, Math.max(0, g.queue - g.spots)));
+  const n = groups.length;
+  const k = Math.max(0, Math.min(Math.floor(subSize), caps.reduce((a, b) => a + b, 0)));
+  const counts = groups.map(() => Math.floor(k / Math.max(1, n)));
+  const extra = n > 0 ? k % n : 0;
+  const start = n > 0 ? (subNumber * Math.max(1, extra)) % n : 0;
+  for (let i = 0; i < extra; i++) counts[(start + i) % n] += 1;
+  // Move what a group can't take to the next groups with room.
+  let spill = 0;
+  for (let i = 0; i < n; i++) {
+    if (counts[i] > caps[i]) {
+      spill += counts[i] - caps[i];
+      counts[i] = caps[i];
+    }
+  }
+  for (let step = 0; spill > 0 && step < n; step++) {
+    const i = (start + step) % n;
+    const room = caps[i] - counts[i];
+    const add = Math.min(room, spill);
+    counts[i] += add;
+    spill -= add;
+  }
+  return counts;
 }
 
 export interface RotationInput {
   players: BasketballPlayer[];
   settings: BasketballSettings;
-  /** Player ids, starting order. Missing present guards are added in roster order. */
+  /** Starting order, player ids across all groups (each group keeps this order). */
+  order?: string[];
+  /** Older saves: per-queue orders for Guards / Front. Used when `order` is missing. */
   guardOrder?: string[];
   frontOrder?: string[];
   absentIds?: string[];
+}
+
+export interface RowGroup {
+  key: BasketballRole;
+  label: string;
+  /** Player ids on court in this group. */
+  ids: string[];
+  /** Their names, sorted. */
+  names: string[];
 }
 
 export interface RotationRow {
@@ -89,23 +217,22 @@ export interface RotationRow {
   clock: string;
   minutes: number;
   flex: boolean;
-  guards: string[];
-  front: string[];
+  /** On court by group (empty on flex rows). */
+  groups: RowGroup[];
   bench: string[];
   in: string[];
   out: string[];
-  /** Player ids on court (empty on flex rows), for placing them at the 1–5. */
-  guardIds: string[];
-  frontIds: string[];
 }
 
 export interface MinutesLine {
   id: string;
   name: string;
   role: BasketballRole;
+  /** The role's name in this layout: "Guard", "Center", … */
+  roleLabel: string;
   big: boolean;
-  /** Set when this player is filling a spot outside their role today. */
-  playingAs: BasketballRole | null;
+  /** Set when this player is filling a spot outside their group today: that group's name. */
+  playingAs: string | null;
   minutes: number;
   longestSit: number;
   /** Clock and half where the longest sit starts, e.g. "1st half 17:30". */
@@ -113,13 +240,13 @@ export interface MinutesLine {
 }
 
 export interface RotationResult {
+  groups: PositionGroup[];
   halves: { half: 1 | 2; rows: RotationRow[] }[];
   minutes: MinutesLine[];
   flexSuggestion: string[];
   warnings: string[];
-  /** The queues actually used, ids in starting order (after any borrowing). */
-  guardQueue: string[];
-  frontQueue: string[];
+  /** The queues actually used, by group key, ids in starting order (after any borrowing). */
+  queues: Record<string, string[]>;
 }
 
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
@@ -154,6 +281,13 @@ export function guardWindowOk(window: BasketballPlayer[]): boolean {
 /** Every front-court group needs at least one Big. */
 export function frontWindowOk(window: BasketballPlayer[]): boolean {
   return window.some(p => p.big);
+}
+
+/** The order rule for a group's queue, if it has one. */
+function windowRule(group: PositionGroup): ((w: BasketballPlayer[]) => boolean) | null {
+  if (group.key === "guard") return guardWindowOk;
+  if (group.key === "front") return frontWindowOk;
+  return null;
 }
 
 export function queueIsValid(queue: BasketballPlayer[], size: number, ok: (w: BasketballPlayer[]) => boolean): boolean {
@@ -209,25 +343,29 @@ export function arrangeQueue(
   return place() ? order : null;
 }
 
-/** A fresh random starting order that follows the position and Big rules where possible. */
+/** Players with their role resolved for the settings' layout. */
+export function withLayoutRoles(players: BasketballPlayer[], settings: Pick<BasketballSettings, "groupLayout">): BasketballPlayer[] {
+  return players.map((p) => ({ ...p, role: roleIn(settings.groupLayout, p) }));
+}
+
+/** A fresh random starting order (all groups) that follows the 1/2 and Big rules where possible. */
 export function reshuffleStartingOrder(
   players: BasketballPlayer[],
   settings: BasketballSettings,
   absentIds: string[] = [],
   random: () => number = Math.random,
-): { guardOrder: string[]; frontOrder: string[] } {
+): string[] {
   const absent = new Set(absentIds);
-  const present = players.filter(p => !absent.has(p.id));
-  const guards = present.filter(p => p.role === "guard");
-  const front = present.filter(p => p.role === "front");
-  const guardOrder = arrangeQueue(guards, settings.guardSpots, guardWindowOk, random) ?? shuffled(guards, random);
-  const frontOrder = arrangeQueue(front, settings.frontSpots, frontWindowOk, random) ?? shuffled(front, random);
+  const all = withLayoutRoles(players, settings);
+  const present = all.filter(p => !absent.has(p.id));
+  const order: BasketballPlayer[] = [];
+  for (const group of groupsFor(settings)) {
+    const members = present.filter(p => p.role === group.key);
+    const rule = windowRule(group);
+    order.push(...((rule && arrangeQueue(members, group.spots.length, rule, random)) || shuffled(members, random)));
+  }
   // Absent players keep a place at the end so they slot back in when they return.
-  const rest = players.filter(p => absent.has(p.id));
-  return {
-    guardOrder: [...guardOrder, ...rest.filter(p => p.role === "guard")].map(p => p.id),
-    frontOrder: [...frontOrder, ...rest.filter(p => p.role === "front")].map(p => p.id),
-  };
+  return [...order, ...all.filter(p => absent.has(p.id))].map(p => p.id);
 }
 
 function ordered(players: BasketballPlayer[], order: string[] | undefined): BasketballPlayer[] {
@@ -249,6 +387,70 @@ function validSettings(s: BasketballSettings): string | null {
   return null;
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const article = (word: string) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`);
+const nameList = (ps: { name: string }[]) =>
+  ps.length <= 2 ? ps.map(p => p.name).join(" and ") : `${ps.slice(0, -1).map(p => p.name).join(", ")} and ${ps[ps.length - 1].name}`;
+
+/**
+ * The starting queues by group, after moving players from a group with extras
+ * into a group that's short (with a warning). Shared by the sheet and the live game.
+ */
+export function startingQueues(input: RotationInput): {
+  groups: PositionGroup[];
+  queues: BasketballPlayer[][];
+  spots: number[];
+  present: BasketballPlayer[];
+  playingAs: Map<string, string>;
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const groups = groupsFor(input.settings);
+  const absent = new Set(input.absentIds ?? []);
+  const present = withLayoutRoles(input.players, input.settings).filter(p => !absent.has(p.id) && p.name.trim());
+  const order = input.order ?? [...(input.guardOrder ?? []), ...(input.frontOrder ?? [])];
+  const queues = groups.map(g => ordered(present.filter(p => p.role === g.key), order));
+  const here = queues.map(q => q.length);
+  const playingAs = new Map<string, string>();
+
+  groups.forEach((group, gi) => {
+    const needed = group.spots.length;
+    const moved: { player: BasketballPlayer; from: PositionGroup }[] = [];
+    while (queues[gi].length < needed) {
+      // Take from whichever group has the most to spare.
+      let donor = -1;
+      for (let j = 0; j < groups.length; j++) {
+        if (j === gi) continue;
+        const spare = queues[j].length - groups[j].spots.length;
+        if (spare > 0 && (donor < 0 || spare > queues[donor].length - groups[donor].spots.length)) donor = j;
+      }
+      if (donor < 0) break;
+      const wantsBig = group.spots.includes(5) && !group.spots.includes(1);
+      const pool = [...queues[donor]].reverse();
+      const pick = pool.find(p => (wantsBig ? !!p.big : !p.big)) ?? pool[0];
+      queues[donor] = queues[donor].filter(p => p !== pick);
+      queues[gi] = [...queues[gi], pick];
+      playingAs.set(pick.id, group.one);
+      moved.push({ player: pick, from: groups[donor] });
+    }
+    if (moved.length > 0) {
+      const verb = moved.length === 1 ? "fills" : "fill";
+      const fromLabel = moved[0].from.one;
+      warnings.push(here[gi] === 0
+        ? `Nobody here is set as ${article(group.one)}, so ${nameList(moved.map(m => m.player))} (${fromLabel}) ${verb} in at ${group.one.toLowerCase()}. Set each player's role to fix this.`
+        : `Only ${plural(here[gi], group.one.toLowerCase())} here, so ${nameList(moved.map(m => m.player))} (${fromLabel}) ${verb} in at ${group.one.toLowerCase()}.`);
+    }
+  });
+
+  const spots = groups.map((g, i) => Math.min(g.spots.length, queues[i].length));
+  const totalSpots = groups.reduce((n, g) => n + g.spots.length, 0);
+  const filled = spots.reduce((a, b) => a + b, 0);
+  if (filled < totalSpots) {
+    warnings.push(`Only ${present.length} players here for ${totalSpots} spots, so the team plays short-handed.`);
+  }
+  return { groups, queues, spots, present, playingAs, warnings };
+}
+
 export function buildRotation(input: RotationInput): RotationResult {
   const warnings: string[] = [];
   const settings = {
@@ -257,79 +459,38 @@ export function buildRotation(input: RotationInput): RotationResult {
     frontSpots: Math.floor(input.settings.frontSpots),
     flexShifts: Math.floor(input.settings.flexShifts),
   };
-  const empty: RotationResult = { halves: [], minutes: [], flexSuggestion: [], warnings, guardQueue: [], frontQueue: [] };
+  const empty: RotationResult = { groups: groupsFor(settings), halves: [], minutes: [], flexSuggestion: [], warnings, queues: {} };
 
   const settingsError = validSettings(settings);
   if (settingsError) {
     warnings.push(settingsError);
     return empty;
   }
-
-  const absent = new Set(input.absentIds ?? []);
-  const present = input.players.filter(p => !absent.has(p.id) && p.name.trim());
-  if (present.length === 0) {
+  const start = startingQueues({ ...input, settings });
+  if (start.present.length === 0) {
     warnings.push("No players are marked present.");
     return empty;
   }
+  const { groups, queues, spots, present, playingAs } = start;
+  warnings.push(...start.warnings);
 
-  let guardQueue = ordered(present.filter(p => p.role === "guard"), input.guardOrder);
-  let frontQueue = ordered(present.filter(p => p.role === "front"), input.frontOrder);
-  const playingAs = new Map<string, BasketballRole>();
-  const guardsHere = guardQueue.length;
-  const frontHere = frontQueue.length;
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-  const nameList = (ps: BasketballPlayer[]) =>
-    ps.length <= 2 ? ps.map(p => p.name).join(" and ") : `${ps.slice(0, -1).map(p => p.name).join(", ")} and ${ps[ps.length - 1].name}`;
-
-  // Not enough guards: a front-court player (not a Big, if possible) plays guard.
-  const toGuard: BasketballPlayer[] = [];
-  while (guardQueue.length < settings.guardSpots && frontQueue.length > settings.frontSpots) {
-    const pick = [...frontQueue].reverse().find(p => !p.big) ?? frontQueue[frontQueue.length - 1];
-    frontQueue = frontQueue.filter(p => p !== pick);
-    guardQueue = [...guardQueue, pick];
-    playingAs.set(pick.id, "guard");
-    toGuard.push(pick);
-  }
-  if (toGuard.length > 0) {
-    const verb = toGuard.length === 1 ? "fills" : "fill";
-    warnings.push(guardsHere === 0
-      ? `Nobody here is set as a Guard, so ${nameList(toGuard)} (Front) ${verb} in at guard. Set each player's role to Guard or Front to fix this.`
-      : `Only ${plural(guardsHere, "guard")} here, so ${nameList(toGuard)} (Front) ${verb} in at guard.`);
-  }
-  // Not enough front-court players but extra guards: last resort, a guard plays up front.
-  const toFront: BasketballPlayer[] = [];
-  while (frontQueue.length < settings.frontSpots && guardQueue.length > settings.guardSpots) {
-    const pick = guardQueue[guardQueue.length - 1];
-    guardQueue = guardQueue.slice(0, -1);
-    frontQueue = [...frontQueue, pick];
-    playingAs.set(pick.id, "front");
-    toFront.push(pick);
-  }
-  if (toFront.length > 0) {
-    const verb = toFront.length === 1 ? "fills" : "fill";
-    warnings.push(frontHere === 0
-      ? `Nobody here is set as Front, so ${nameList(toFront)} (Guard) ${verb} in up front. Set each player's role to Guard or Front to fix this.`
-      : `Only ${plural(frontHere, "front-court player")} here, so ${nameList(toFront)} (Guard) ${verb} in up front.`);
-  }
-  const guardSpots = Math.min(settings.guardSpots, guardQueue.length);
-  const frontSpots = Math.min(settings.frontSpots, frontQueue.length);
-  if (guardSpots + frontSpots < settings.guardSpots + settings.frontSpots) {
-    warnings.push(`Only ${present.length} players here for ${settings.guardSpots + settings.frontSpots} spots, so the team plays short-handed.`);
-  }
-
-  if (guardSpots >= 2 && !queueIsValid(guardQueue, guardSpots, guardWindowOk)) {
-    const fixable = arrangeQueue(guardQueue, guardSpots, guardWindowOk) !== null;
-    warnings.push(fixable
-      ? "In this guard order, two guards tagged the same position end up on court together. Reshuffle or drag to fix it."
-      : "The guards' 1/2 tags can't alternate with this group, so some shifts pair two of the same position.");
-  }
-  if (frontSpots > 0 && frontQueue.some(p => p.big) && !queueIsValid(frontQueue, frontSpots, frontWindowOk)) {
-    const fixable = arrangeQueue(frontQueue, frontSpots, frontWindowOk) !== null;
-    warnings.push(fixable
-      ? "In this front-court order, some shifts have no Big on court. Reshuffle or drag to fix it."
-      : `Not enough Bigs to put one in every group of ${frontSpots}, so some shifts have no Big on court.`);
-  }
+  groups.forEach((group, gi) => {
+    const rule = windowRule(group);
+    if (!rule || spots[gi] < 1) return;
+    if (group.key === "guard") {
+      if (spots[gi] >= 2 && !queueIsValid(queues[gi], spots[gi], rule)) {
+        const fixable = arrangeQueue(queues[gi], spots[gi], rule) !== null;
+        warnings.push(fixable
+          ? "In this guard order, two guards tagged the same position end up on court together. Reshuffle or drag to fix it."
+          : "The guards' 1/2 tags can't alternate with this group, so some shifts pair two of the same position.");
+      }
+    } else if (queues[gi].some(p => p.big) && !queueIsValid(queues[gi], spots[gi], rule)) {
+      const fixable = arrangeQueue(queues[gi], spots[gi], rule) !== null;
+      warnings.push(fixable
+        ? "In this front-court order, some shifts have no Big on court. Reshuffle or drag to fix it."
+        : `Not enough Bigs to put one in every group of ${spots[gi]}, so some shifts have no Big on court.`);
+    }
+  });
 
   // Shifts and the clock. A half that doesn't divide evenly ends with a shorter shift.
   const fullShifts = Math.floor(settings.halfMinutes / settings.shiftMinutes + 1e-9);
@@ -346,25 +507,22 @@ export function buildRotation(input: RotationInput): RotationResult {
 
   const name = new Map(present.map(p => [p.id, p.name]));
   const names = (ids: string[]) => sortNames(ids.map(id => name.get(id) ?? id));
-  const windowAt = (queue: BasketballPlayer[], spots: number, start: number) =>
-    queue.length <= spots ? queue.map(p => p.id) : Array.from({ length: spots }, (_, j) => queue[(start + j) % queue.length].id);
+  const windowAt = (queue: BasketballPlayer[], n: number, at: number) =>
+    queue.length <= n ? queue.map(p => p.id) : Array.from({ length: n }, (_, j) => queue[(at + j) % queue.length].id);
 
   // How far each queue's on-court window has moved by each shift.
   const subSize = Math.floor(settings.subSize ?? 2);
-  const groups = () => [{ queue: guardQueue.length, spots: guardSpots }, { queue: frontQueue.length, spots: frontSpots }] as const;
-  const maxSub = subSplit(1, MAX_SUB_SIZE, ...groups());
-  const most = maxSub.guards + maxSub.front;
+  const sizes = queues.map((q, i) => ({ queue: q.length, spots: spots[i] }));
+  const most = subSplit(1, MAX_SUB_SIZE, sizes).reduce((a, b) => a + b, 0);
   if (subSize < MIN_SUB_SIZE || subSize > MAX_SUB_SIZE) {
     warnings.push(`Subs at a time must be ${MIN_SUB_SIZE} to ${MAX_SUB_SIZE}.`);
   } else if (subSize > most && most > 0) {
     warnings.push(`Only ${plural(most, "player")} can sub at once with this group, so subs are ${most} at a time.`);
   }
-  const guardStarts = [0];
-  const frontStarts = [0];
+  const starts: number[][] = [queues.map(() => 0)];
   for (let shift = 1; shift < totalShifts; shift++) {
-    const split = subSplit(shift, subSize, ...groups());
-    guardStarts.push(guardStarts[shift - 1] + split.guards);
-    frontStarts.push(frontStarts[shift - 1] + split.front);
+    const split = subSplit(shift, subSize, sizes);
+    starts.push(starts[shift - 1].map((s, i) => s + split[i]));
   }
 
   const halves: RotationResult["halves"] = [{ half: 1, rows: [] }, { half: 2, rows: [] }];
@@ -375,9 +533,8 @@ export function buildRotation(input: RotationInput): RotationResult {
     const index = shift % shiftLengths.length;
     const elapsed = shiftLengths.slice(0, index).reduce((sum, m) => sum + m, 0);
     const flex = shift >= firstFlex;
-    const guards = windowAt(guardQueue, guardSpots, guardStarts[shift]);
-    const front = windowAt(frontQueue, frontSpots, frontStarts[shift]);
-    const on = new Set([...guards, ...front]);
+    const byGroup = queues.map((q, i) => windowAt(q, spots[i], starts[shift][i]));
+    const on = new Set(byGroup.flat());
     onCourtByShift.push(on);
     const bench = present.filter(p => !on.has(p.id)).map(p => p.id);
     halves[half - 1].rows.push({
@@ -386,13 +543,10 @@ export function buildRotation(input: RotationInput): RotationResult {
       clock: formatClock(settings.halfMinutes - elapsed),
       minutes: shiftLengths[index],
       flex,
-      guards: flex ? [] : names(guards),
-      front: flex ? [] : names(front),
+      groups: groups.map((g, i) => ({ key: g.key, label: g.label, ids: flex ? [] : byGroup[i], names: flex ? [] : names(byGroup[i]) })),
       bench: flex ? [] : names(bench),
       in: flex || !previous ? [] : names([...on].filter(id => !previous!.has(id))),
       out: flex || !previous ? [] : names([...previous].filter(id => !on.has(id))),
-      guardIds: flex ? [] : guards,
-      frontIds: flex ? [] : front,
     });
     previous = on;
   }
@@ -402,6 +556,7 @@ export function buildRotation(input: RotationInput): RotationResult {
     const row = halves[shift < shiftLengths.length ? 0 : 1].rows[shift % shiftLengths.length];
     return `${row.half === 1 ? "1st" : "2nd"} half ${row.clock}`;
   };
+  const roleLabel = new Map(groups.map(g => [g.key, g.one]));
 
   const minutes: MinutesLine[] = present.map(p => {
     let played = 0;
@@ -426,6 +581,7 @@ export function buildRotation(input: RotationInput): RotationResult {
       id: p.id,
       name: p.name,
       role: p.role,
+      roleLabel: roleLabel.get(p.role) ?? p.role,
       big: !!p.big,
       playingAs: playingAs.get(p.id) ?? null,
       minutes: played,
@@ -452,105 +608,135 @@ export function buildRotation(input: RotationInput): RotationResult {
   }
 
   return {
+    groups,
     halves,
     minutes,
     flexSuggestion,
     warnings,
-    guardQueue: guardQueue.map(p => p.id),
-    frontQueue: frontQueue.map(p => p.id),
+    queues: Object.fromEntries(groups.map((g, i) => [g.key, queues[i].map(p => p.id)])),
   };
 }
 
-/** Player ids in starting order for one queue: saved order first, then anyone new in roster order. */
+/** Player ids in starting order: saved order first, then anyone new in roster order. */
 export function startingOrder(players: BasketballPlayer[], order: string[] | undefined): string[] {
   return ordered(players, order).map(p => p.id);
 }
 
-export type CourtSpot = 1 | 2 | 3 | 4 | 5;
+/**
+ * Put one group's on-court players on its spots. A guard tagged 1 or 2 takes
+ * that spot when the group has it; Bigs take the group's highest spots (the 5,
+ * then the 4) and everyone else the lowest (a non-Big at the 3 in the front
+ * court). Ties go by name.
+ */
+function placeGroup(
+  ids: string[],
+  groupSpots: CourtSpot[],
+  byId: Map<string, BasketballPlayer>,
+  taken: Map<CourtSpot, string>,
+): string[] {
+  const name = (id: string) => byId.get(id)?.name ?? id;
+  const free = () => groupSpots.filter(s => !taken.has(s));
+  const left: string[] = [];
+  // Tagged guards first, to their spot.
+  const tagged = ids.filter(id => {
+    const tag = byId.get(id)?.position;
+    return tag && groupSpots.includes(Number(tag) as CourtSpot);
+  }).sort((a, b) => name(a).localeCompare(name(b)));
+  for (const id of tagged) {
+    const spot = Number(byId.get(id)!.position) as CourtSpot;
+    if (!taken.has(spot)) taken.set(spot, id);
+    else left.push(id);
+  }
+  const rest = [...left, ...ids.filter(id => !tagged.includes(id))];
+  const bigs = rest.filter(id => byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
+  const others = rest.filter(id => !byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
+  // Reserve the lowest spot for a non-Big when there is one; Bigs fill from the top.
+  const unplaced: string[] = [];
+  const lowFirst = (id: string) => {
+    const spot = free()[0];
+    if (spot) taken.set(spot, id);
+    else unplaced.push(id);
+  };
+  const highFirst = (id: string) => {
+    const f = free();
+    const spot = f[f.length - 1];
+    if (spot) taken.set(spot, id);
+    else unplaced.push(id);
+  };
+  if (others.length) lowFirst(others.shift()!);
+  for (const id of bigs) highFirst(id);
+  for (const id of others) lowFirst(id);
+  return unplaced;
+}
 
 /**
- * Put on-court players on the 1–5 spots. Guards take the 1 and 2 (by
- * their 1/2 tag when set); front players take the 3, 4 and 5, with Bigs at
- * the 5 and 4 and a non-Big at the 3. With other spot counts, extra players
- * are listed without a number.
+ * Put on-court players on the 1–5 spots, group by group. With the Guards /
+ * Front layout: guards at the 1 and 2 (by their tag), a non-Big at the 3 and
+ * Bigs at the 5 then 4. Players without a spot (odd spot counts) come last
+ * with `spot: null`.
  */
 export function assignSpots(
-  guards: string[],
-  front: string[],
+  onCourt: { ids: string[]; spots: CourtSpot[] }[],
   players: BasketballPlayer[],
 ): { spot: CourtSpot | null; id: string }[] {
-  const byId = new Map(players.map((p) => [p.id, p]));
-  const name = (id: string) => byId.get(id)?.name ?? id;
-  const g = [...guards].sort((a, b) => {
-    const pa = byId.get(a)?.position ?? "9";
-    const pb = byId.get(b)?.position ?? "9";
-    return pa.localeCompare(pb) || name(a).localeCompare(name(b));
-  });
-  // Guard tagged "2" alone should take the 2, not the 1.
-  if (g.length === 2 && byId.get(g[0])?.position === "2" && !byId.get(g[1])?.position) g.reverse();
-  const bigs = front.filter((id) => byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
-  const others = front.filter((id) => !byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
-  // 3 = a non-Big if there is one; 5 then 4 = Bigs first.
-  const three = others.length ? others.shift()! : bigs.pop();
-  const five = bigs.length ? bigs.shift()! : others.shift();
-  const four = bigs.length ? bigs.shift()! : others.shift();
-  const spots: { spot: CourtSpot | null; id: string }[] = [];
-  if (g[0]) spots.push({ spot: 1, id: g[0] });
-  if (g[1]) spots.push({ spot: 2, id: g[1] });
-  for (const id of g.slice(2)) spots.push({ spot: null, id });
-  if (three) spots.push({ spot: 3, id: three });
-  if (four) spots.push({ spot: 4, id: four });
-  if (five) spots.push({ spot: 5, id: five });
-  for (const id of [...bigs, ...others]) spots.push({ spot: null, id });
-  return spots;
+  return stickySpots(onCourt, players, null);
 }
 
 /**
  * Like assignSpots, but players who were already on court keep the spot they
- * had (`previous`: player id → spot). Players coming in take the open spots:
- * guards the 1/2 (their tagged spot if it's open), Bigs the 5 then 4, a
- * non-Big the 3. With no previous spots this is the same as assignSpots.
+ * had (`previous`: player id → spot) if it's still one of their group's spots.
+ * Players coming in take the open spots by the same rules.
  */
 export function stickySpots(
-  guards: string[],
-  front: string[],
+  onCourt: { ids: string[]; spots: CourtSpot[] }[],
   players: BasketballPlayer[],
   previous: Map<string, CourtSpot> | null,
 ): { spot: CourtSpot | null; id: string }[] {
-  if (!previous || previous.size === 0) return assignSpots(guards, front, players);
   const byId = new Map(players.map((p) => [p.id, p]));
   const taken = new Map<CourtSpot, string>();
-  const placed = new Set<string>();
-  const keep = (ids: string[], allowed: CourtSpot[]) => {
-    for (const id of ids) {
-      const spot = previous.get(id);
-      if (spot && allowed.includes(spot) && !taken.has(spot)) {
-        taken.set(spot, id);
-        placed.add(id);
-      }
+  const unplaced: string[] = [];
+  for (const group of onCourt) {
+    const fresh: string[] = [];
+    for (const id of group.ids) {
+      const spot = previous?.get(id);
+      if (spot && group.spots.includes(spot) && !taken.has(spot)) taken.set(spot, id);
+      else fresh.push(id);
     }
-  };
-  keep(guards, [1, 2]);
-  keep(front, [3, 4, 5]);
-  const fill = (id: string, preferences: CourtSpot[]) => {
-    const spot = preferences.find((s) => !taken.has(s));
-    if (spot) {
-      taken.set(spot, id);
-      placed.add(id);
-    }
-  };
-  for (const id of guards.filter((g) => !placed.has(g))) {
-    const tag = byId.get(id)?.position;
-    fill(id, tag === "2" ? [2, 1] : [1, 2]);
-  }
-  const newFront = front.filter((f) => !placed.has(f));
-  // Bigs first so they get the post spots before a non-Big lands there.
-  for (const id of [...newFront.filter((f) => byId.get(f)?.big), ...newFront.filter((f) => !byId.get(f)?.big)]) {
-    fill(id, byId.get(id)?.big ? [5, 4, 3] : [3, 4, 5]);
+    unplaced.push(...placeGroup(fresh, group.spots, byId, taken));
   }
   const spots: { spot: CourtSpot | null; id: string }[] = ([1, 2, 3, 4, 5] as CourtSpot[])
     .filter((s) => taken.has(s))
     .map((s) => ({ spot: s, id: taken.get(s)! }));
-  for (const id of [...guards, ...front]) if (!placed.has(id)) spots.push({ spot: null, id });
+  for (const id of unplaced) spots.push({ spot: null, id });
   return spots;
+}
+
+/** Spot labels for a layout: "PG", "SG", … with the group initial for flexible spots. */
+export const SPOT_CODES: Record<CourtSpot, string> = { 1: "PG", 2: "SG", 3: "SF", 4: "PF", 5: "C" };
+
+/**
+ * Each group's present players in starting order (no fill-ins), for the
+ * starting-order lists. `reorder` gives back the combined order after one
+ * group's list changes.
+ */
+export function groupedQueues(
+  players: BasketballPlayer[],
+  settings: BasketballSettings,
+  order: string[],
+  absentIds: string[],
+): { group: PositionGroup; players: BasketballPlayer[] }[] {
+  const absent = new Set(absentIds);
+  const present = withLayoutRoles(players, settings).filter(p => !absent.has(p.id));
+  return groupsFor(settings).map(group => ({ group, players: ordered(present.filter(p => p.role === group.key), order) }));
+}
+
+export function reorderGroup(
+  queues: { players: BasketballPlayer[] }[],
+  groupIndex: number,
+  ids: string[],
+  allOrder: string[],
+): string[] {
+  const next = queues.flatMap((q, i) => (i === groupIndex ? ids : q.players.map(p => p.id)));
+  // Keep anyone not listed (absent players) after, in their old order.
+  return [...next, ...allOrder.filter(id => !next.includes(id))];
 }

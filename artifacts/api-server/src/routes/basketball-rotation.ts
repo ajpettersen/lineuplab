@@ -40,8 +40,12 @@ export function defaultTags(preferredPositions: string[]): BasketballPlayerTags 
   return { role: "front", big: positions.includes("C"), position: null };
 }
 
+// Position group keys across all layouts (see GROUP_LAYOUTS on the web side).
+const ROLE_KEYS = ["guard", "front", "forward", "center", "perimeter", "big", "all"] as const;
+const GROUP_LAYOUTS = ["guards-front", "guards-forwards-center", "perimeter-bigs", "five-out"] as const;
+
 const TagsZ = z.object({
-  role: z.enum(["guard", "front"]),
+  role: z.enum(ROLE_KEYS),
   big: z.boolean(),
   position: z.enum(["1", "2"]).nullable(),
 });
@@ -55,8 +59,11 @@ const BodyZ = z.object({
   playerTags: z.record(z.string().regex(/^\d+$/), TagsZ),
   gameDay: z.object({
     absentIds: z.array(z.number().int().positive()).max(100),
-    guardOrder: z.array(z.number().int().positive()).max(100),
-    frontOrder: z.array(z.number().int().positive()).max(100),
+    /** Starting order across all position groups. */
+    order: z.array(z.number().int().positive()).max(100).optional(),
+    // Older clients sent one order per Guards / Front queue.
+    guardOrder: z.array(z.number().int().positive()).max(100).optional(),
+    frontOrder: z.array(z.number().int().positive()).max(100).optional(),
   }),
 })
   .refine((b) => b.shiftMinutes <= b.halfMinutes, { message: "Shift length can't be longer than a half." })
@@ -93,8 +100,9 @@ router.get("/basketball-rotation", async (req, res): Promise<void> => {
           guardSpots: saved.guardSpots,
           frontSpots: saved.frontSpots,
           flexShifts: saved.flexShifts,
+          groupLayout: saved.groupLayout,
         }
-      : DEFAULTS,
+      : { ...DEFAULTS, groupLayout: "guards-front" },
     players: roster.map((p) => ({
       id: p.id,
       name: p.name,
@@ -104,13 +112,28 @@ router.get("/basketball-rotation", async (req, res): Promise<void> => {
     })),
     gameDay: {
       absentIds: keep(gameDay.absentIds),
-      guardOrder: keep(gameDay.guardOrder),
-      frontOrder: keep(gameDay.frontOrder),
+      order: keep(gameDay.order ?? [...gameDay.guardOrder, ...gameDay.frontOrder]),
     },
     // Subs at a time for new game lineups; null = ask each time.
     defaultSubSize: saved ? saved.defaultSubSize : 2,
     saved: !!saved,
   });
+});
+
+// Settings → Rotation: how the five spots are grouped.
+router.patch("/basketball-rotation/group-layout", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const parsed = z.object({ groupLayout: z.enum(GROUP_LAYOUTS) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Unknown position groups." });
+    return;
+  }
+  const { groupLayout } = parsed.data;
+  await db
+    .insert(basketballRotationSettingsTable)
+    .values({ userId, groupLayout, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set: { groupLayout, updatedAt: new Date() } });
+  res.json({ ok: true, groupLayout });
 });
 
 // Settings → Rotation: default subs at a time (1–5), or null to ask for each game.
@@ -155,7 +178,12 @@ router.put("/basketball-rotation", async (req, res): Promise<void> => {
     frontSpots: body.frontSpots,
     flexShifts: body.flexShifts,
     playerTags,
-    gameDay: { absentIds: keep(body.gameDay.absentIds), guardOrder: keep(body.gameDay.guardOrder), frontOrder: keep(body.gameDay.frontOrder) },
+    gameDay: {
+      absentIds: keep(body.gameDay.absentIds),
+      order: keep(body.gameDay.order ?? [...(body.gameDay.guardOrder ?? []), ...(body.gameDay.frontOrder ?? [])]),
+      guardOrder: [],
+      frontOrder: [],
+    },
     updatedAt: new Date(),
   };
   await db
@@ -254,9 +282,14 @@ router.delete("/basketball-games/:gameId/stats", async (req, res): Promise<void>
 
 const GameLineupZ = z.object({
   absentIds: z.array(z.number().int().positive()).max(100),
-  guardOrder: z.array(z.number().int().positive()).max(100),
-  frontOrder: z.array(z.number().int().positive()).max(100),
+  /** Starting order across all position groups. */
+  order: z.array(z.number().int().positive()).max(100).optional(),
+  guardOrder: z.array(z.number().int().positive()).max(100).optional(),
+  frontOrder: z.array(z.number().int().positive()).max(100).optional(),
   subSize: z.number().int().min(1).max(5),
+  /** This game only; null/absent = the team's Bench Sheet setting. */
+  shiftMinutes: z.number().min(0.5).max(60).nullable().optional(),
+  flexShifts: z.number().int().min(0).max(20).nullable().optional(),
 });
 
 router.get("/basketball-games/:gameId/lineup", async (req, res): Promise<void> => {
@@ -272,7 +305,14 @@ router.get("/basketball-games/:gameId/lineup", async (req, res): Promise<void> =
     .where(and(eq(basketballGameLineupsTable.gameId, gameId), eq(basketballGameLineupsTable.userId, userId)));
   res.json({
     lineup: row
-      ? { absentIds: row.absentIds, guardOrder: row.guardOrder, frontOrder: row.frontOrder, subSize: row.subSize, updatedAt: row.updatedAt }
+      ? {
+          absentIds: row.absentIds,
+          order: row.startOrder.length ? row.startOrder : [...row.guardOrder, ...row.frontOrder],
+          subSize: row.subSize,
+          shiftMinutes: row.shiftMinutes,
+          flexShifts: row.flexShifts,
+          updatedAt: row.updatedAt,
+        }
       : null,
   });
 });
@@ -294,9 +334,12 @@ router.put("/basketball-games/:gameId/lineup", async (req, res): Promise<void> =
   const values = {
     userId,
     absentIds: keep(parsed.data.absentIds),
-    guardOrder: keep(parsed.data.guardOrder),
-    frontOrder: keep(parsed.data.frontOrder),
+    startOrder: keep(parsed.data.order ?? [...(parsed.data.guardOrder ?? []), ...(parsed.data.frontOrder ?? [])]),
+    guardOrder: [],
+    frontOrder: [],
     subSize: parsed.data.subSize,
+    shiftMinutes: parsed.data.shiftMinutes ?? null,
+    flexShifts: parsed.data.flexShifts ?? null,
     updatedAt: new Date(),
   };
   await db

@@ -20,8 +20,9 @@ function HalfTable({ half, rows }: { half: 1 | 2; rows: RotationRow[] }) {
       <thead>
         <tr>
           <th className="bench-clock">Clock</th>
-          <th className="bench-col-guards">Guards</th>
-          <th className="bench-col-front">Front 3</th>
+          {(rows[0]?.groups ?? []).map((g) => (
+            <th key={g.key} className={g.key === "guard" ? "bench-col-guards" : "bench-col-front"}>{g.label}</th>
+          ))}
           <th className="bench-col-bench">Bench</th>
           <th className="bench-col-sub">In</th>
           <th className="bench-col-sub">Out</th>
@@ -32,11 +33,10 @@ function HalfTable({ half, rows }: { half: 1 | 2; rows: RotationRow[] }) {
           <tr key={row.shift} className={row.flex ? "bench-flex" : undefined}>
             <td className="bench-clock">{row.clock}</td>
             {row.flex ? (
-              <td colSpan={5}><strong>FLEX</strong> / Coach's pick</td>
+              <td colSpan={row.groups.length + 3}><strong>FLEX</strong> / Coach's pick</td>
             ) : (
               <>
-                <td>{list(row.guards)}</td>
-                <td>{list(row.front)}</td>
+                {row.groups.map((g) => <td key={g.key}>{list(g.names)}</td>)}
                 <td className="bench-muted">{list(row.bench)}</td>
                 <td>{row.in.length ? list(row.in) : ""}</td>
                 <td>{row.out.length ? list(row.out) : ""}</td>
@@ -89,7 +89,7 @@ export function BenchSheetTable({ teamName, result, hasFlex }: { teamName: strin
                   <td>{m.name}</td>
                   <td>
                     {m.role === "guard" ? "Guard" : m.big ? "Front (Big)" : "Front"}
-                    {m.playingAs && <em> → {m.playingAs === "guard" ? "Guard" : "Front"} today</em>}
+                    {m.playingAs && <em> → {m.playingAs} today</em>}
                   </td>
                   <td className="bench-num">{formatMinutes(m.minutes)}</td>
                 </tr>

@@ -968,3 +968,44 @@
   size: letter portrait;
   margin: 0.4in;
 }
+
+/* Basketball game bench sheet (components/basketball/game-sheet-print.tsx):
+   landscape, one page, printed from a game page. */
+.game-sheet {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #111;
+  font-size: 11pt;
+  line-height: 1.2;
+}
+.game-sheet-title { font-size: 17pt; font-weight: 800; margin: 0 0 2pt; }
+.game-sheet-sub { font-size: 9pt; color: #444; margin: 0 0 6pt; }
+.game-sheet-half { font-size: 11pt; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 6pt 0 2pt; }
+.game-sheet-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.game-sheet-table th,
+.game-sheet-table td { border: 1px solid #555; padding: 3pt 4.5pt; text-align: left; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.game-sheet-table th { background: #e6e6e6; font-weight: 700; }
+.game-sheet-table .gs-clock { width: 6.5%; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.game-sheet-table .gs-spot { width: 7.9%; }
+.game-sheet-table .gs-in { width: 18%; background: #ecf6e6; white-space: normal; }
+.game-sheet-table th.gs-in { background: #e6e6e6; }
+.game-sheet-table .gs-out { width: 12.5%; color: #444; }
+.game-sheet-table .gs-bench { width: 23.5%; white-space: normal; }
+.game-sheet-table .gs-justin { background: #fdf1c7; font-weight: 700; }
+.game-sheet-table .gs-flex td { background: #eee; }
+.game-sheet .gs-up { text-decoration: underline; font-style: italic; }
+.game-sheet .gs-key-justin { background: #fdf1c7; border: 1px solid #c9b46b; padding: 0 3pt; font-weight: 700; }
+.game-sheet-foot { margin-top: 6pt; font-size: 10pt; }
+.game-sheet-foot p { margin: 0 0 2pt; }
+
+#game-sheet-print { display: none; }
+@media print {
+  body > #game-sheet-print {
+    display: block !important;
+    page: game-sheet-landscape;
+  }
+  #game-sheet-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+@page game-sheet-landscape {
+  size: letter landscape;
+  margin: 0.35in;
+}

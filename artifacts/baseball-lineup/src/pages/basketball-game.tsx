@@ -36,7 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EditGameDialog } from "@/components/edit-game-dialog";
-import { BenchSheetTable } from "@/components/basketball/bench-sheet-table";
+import { GameSheetPrint } from "@/components/basketball/game-sheet-print";
 import { QueueList } from "@/components/basketball/queue-list";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
@@ -52,8 +52,12 @@ import {
   formatMinutes,
   MAX_SUB_SIZE,
   MIN_SUB_SIZE,
+  groupedQueues,
+  groupsFor,
+  reorderGroup,
   reshuffleStartingOrder,
-  startingOrder,
+  roleIn,
+  withLayoutRoles,
   type CourtSpot,
   type RotationRow,
 } from "@/lib/basketball-rotation";
@@ -122,32 +126,58 @@ function SetLineupDialog({
   saving: boolean;
 }) {
   const players = useMemo(() => rotationPlayers(setup), [setup]);
-  const start = initial ?? { ...setup.gameDay, subSize: setup.defaultSubSize ?? 0 };
+  const start: GameLineup = initial ?? { ...setup.gameDay, subSize: setup.defaultSubSize ?? 0 };
   const [absent, setAbsent] = useState<Set<string>>(() => new Set(start.absentIds.map(String)));
-  const [guardOrder, setGuardOrder] = useState<string[]>(() => start.guardOrder.map(String));
-  const [frontOrder, setFrontOrder] = useState<string[]>(() => start.frontOrder.map(String));
+  const [order, setOrder] = useState<string[]>(() => start.order.map(String));
   // 0 = not chosen yet (the team asks each game).
   const [subSize, setSubSize] = useState<number>(start.subSize);
   const asks = setup.defaultSubSize === null;
+  // This game's shift length and whether the last shift is the coach's pick.
+  const [shiftMinutes, setShiftMinutes] = useState<number>(start.shiftMinutes ?? setup.settings.shiftMinutes);
+  const [flexLast, setFlexLast] = useState<boolean>((start.flexShifts ?? setup.settings.flexShifts) > 0);
+  const validShift = Number.isFinite(shiftMinutes) && shiftMinutes >= 0.5 && shiftMinutes <= setup.settings.halfMinutes;
+  const shiftsPerHalf = validShift ? Math.ceil(setup.settings.halfMinutes / shiftMinutes - 1e-9) : 0;
 
   const present = players.filter((p) => !absent.has(p.id));
-  const byId = new Map(players.map((p) => [p.id, p]));
-  const queue = (role: "guard" | "front", order: string[]) =>
-    startingOrder(present.filter((p) => p.role === role), order).map((id) => byId.get(id)!);
-  const guards = queue("guard", guardOrder);
-  const front = queue("front", frontOrder);
+  const queues = groupedQueues(players, setup.settings, order, [...absent]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90dvh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit lineup" : "Set lineup"}</DialogTitle>
           <DialogDescription>
-            Pick who's here, how many sub at a time, and the starting order. Roles and game length come from the Bench Sheet.
+            Pick who's here, the shift length, how many sub at a time, and the starting order. Roles and half length come from the Bench Sheet.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm font-semibold">
+              Shift length (min)
+              <Input
+                type="number"
+                inputMode="decimal"
+                step={0.5}
+                min={0.5}
+                max={setup.settings.halfMinutes}
+                value={Number.isFinite(shiftMinutes) ? shiftMinutes : ""}
+                onChange={(e) => setShiftMinutes(e.target.value === "" ? Number.NaN : Number(e.target.value))}
+                className="mt-1"
+              />
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                {validShift ? `${shiftsPerHalf} shifts a ${formatMinutes(setup.settings.halfMinutes)}-min half` : `0.5 to ${formatMinutes(setup.settings.halfMinutes)} minutes`}
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+              <Checkbox checked={flexLast} onCheckedChange={(v) => setFlexLast(!!v)} className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-semibold">Flex the last shift</span>
+                <span className="block text-xs text-muted-foreground">The final shift of the game is your pick; the sheet suggests who.</span>
+              </span>
+            </label>
+          </div>
+
           <div>
             <Label className="mb-2 block">Subs at a time{asks && <span className="ml-1 text-destructive">*</span>}</Label>
             <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Subs at a time">
@@ -165,15 +195,11 @@ function SetLineupDialog({
               ))}
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              {subSize === 2
-                ? "One guard and one front-court player each sub."
-                : subSize === 1
-                  ? "One player each sub, alternating front and guard."
-                  : subSize === 5
-                    ? "A full line change when the bench is deep enough."
-                    : subSize > 0
-                      ? "Split evenly between guards and front; an odd extra alternates."
-                      : "Choose how many players change each sub."}
+              {subSize === 5
+                ? "A full line change when the bench is deep enough."
+                : subSize > 0
+                  ? `Split evenly across ${groupsFor(setup.settings).map((g) => g.label.toLowerCase()).join(" / ")}; any extra rotates between groups. Players only swap within their group.`
+                  : "Choose how many players change each sub."}
               {setup.defaultSubSize !== null ? ` Your default is ${setup.defaultSubSize} (Settings → Rotation).` : ""}
             </p>
           </div>
@@ -202,7 +228,10 @@ function SetLineupDialog({
                     }
                   />
                   <span className="truncate font-medium">{p.name}</span>
-                  <span className="ml-auto text-[11px] text-muted-foreground">{p.role === "guard" ? "G" : p.big ? "F·Big" : "F"}</span>
+                  <span className="ml-auto text-[11px] text-muted-foreground">
+                    {groupsFor(setup.settings).find((g) => g.key === roleIn(setup.settings.groupLayout, p))?.short ?? ""}
+                    {p.big ? "·Big" : ""}
+                  </span>
                 </label>
               ))}
             </div>
@@ -216,21 +245,18 @@ function SetLineupDialog({
                 variant="outline"
                 size="sm"
                 className="gap-1"
-                onClick={() => {
-                  const order = reshuffleStartingOrder(players, setup.settings, [...absent]);
-                  setGuardOrder(order.guardOrder);
-                  setFrontOrder(order.frontOrder);
-                }}
+                onClick={() => setOrder(reshuffleStartingOrder(players, setup.settings, [...absent]))}
               >
                 <Shuffle className="h-4 w-4" /> Reshuffle
               </Button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <QueueList title="Guards" players={guards} onReorder={(ids) => setGuardOrder(ids.map(String))} />
-              <QueueList title="Front" players={front} onReorder={(ids) => setFrontOrder(ids.map(String))} />
+            <div className={`grid gap-4 ${queues.length >= 3 ? "md:grid-cols-3" : queues.length === 2 ? "sm:grid-cols-2" : ""}`}>
+              {queues.map((q, i) => (
+                <QueueList key={q.group.key} title={q.group.label} players={q.players} onReorder={(ids) => setOrder(reorderGroup(queues, i, ids.map(String), order))} />
+              ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              The first {setup.settings.guardSpots} guards and first {setup.settings.frontSpots} front players start.
+              The players at the top of each group start.
             </p>
           </div>
         </div>
@@ -238,13 +264,14 @@ function SetLineupDialog({
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            disabled={saving || subSize < MIN_SUB_SIZE || present.length === 0}
+            disabled={saving || subSize < MIN_SUB_SIZE || present.length === 0 || !validShift}
             onClick={() =>
               onSave({
                 absentIds: [...absent].map(Number),
-                guardOrder: guards.map((p) => Number(p.id)),
-                frontOrder: front.map((p) => Number(p.id)),
+                order: [...queues.flatMap((q) => q.players.map((p) => p.id)), ...order].filter((id, i, all) => all.indexOf(id) === i).map(Number),
                 subSize,
+                shiftMinutes: shiftMinutes === setup.settings.shiftMinutes ? null : shiftMinutes,
+                flexShifts: flexLast ? Math.max(1, setup.settings.flexShifts) : 0,
               })
             }
             className="gap-2"
@@ -288,6 +315,21 @@ export default function BasketballGame() {
       return r.json();
     },
   });
+  const { data: season } = useQuery({
+    queryKey: ["basketball-season"],
+    queryFn: async (): Promise<{ gamesTracked: number; players: { playerId: number; seconds: number }[] }> => {
+      const r = await fetch(`${BASE}/api/basketball-season`);
+      if (!r.ok) throw new Error(`GET /api/basketball-season failed (${r.status})`);
+      return r.json();
+    },
+  });
+  // Season minutes before this game (the printout shows them next to today's plan).
+  const seasonBefore = useMemo(() => {
+    if (!season || season.gamesTracked === 0) return null;
+    const thisGame = new Map((stats?.players ?? []).map((p) => [p.playerId, p.seconds]));
+    const map = new Map(season.players.map((p) => [String(p.playerId), Math.max(0, p.seconds - (thisGame.get(p.playerId) ?? 0))]));
+    return [...map.values()].some((v) => v > 0) ? map : null;
+  }, [season, stats]);
   const updateGame = useUpdateGame();
   const saveLineup = useMutation({
     mutationFn: (l: GameLineup) => saveGameLineup(id, l),
@@ -315,7 +357,7 @@ export default function BasketballGame() {
     let previous: Map<string, CourtSpot> | null = null;
     for (const row of rotation.halves.flatMap((h) => h.rows)) {
       if (row.flex) continue;
-      const spots = stickySpots(row.guardIds, row.frontIds, players, previous);
+      const spots = stickySpots(rotation.groups.map((g, i) => ({ ids: row.groups[i]?.ids ?? [], spots: g.spots })), players, previous);
       previous = new Map(spots.filter((x) => x.spot !== null).map((x) => [x.id, x.spot as CourtSpot]));
       map.set(row.shift, new Map(spots.filter((x) => x.spot !== null).map((x) => [x.spot as CourtSpot, x.id])));
     }
@@ -347,7 +389,9 @@ export default function BasketballGame() {
   const status = effectiveStatus(game);
   const date = new Date(game.gameDate);
   const final = game.status === "completed" && game.ourScore != null && game.opponentScore != null;
-  const hasFlex = (setup?.settings.flexShifts ?? 0) > 0;
+  // This game's lineup can change the shift length and turn the final flex shift on or off.
+  const shiftMinutes = lineup?.shiftMinutes ?? setup?.settings.shiftMinutes ?? 0;
+  const hasFlex = (lineup?.flexShifts ?? setup?.settings.flexShifts ?? 0) > 0;
 
   const saveScore = () => {
     updateGame.mutate(
@@ -461,7 +505,7 @@ export default function BasketballGame() {
             {game.location && <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{game.location}</span>}
             {setup && (
               <span>
-                {formatMinutes(setup.settings.halfMinutes)}-min halves · {formatMinutes(setup.settings.shiftMinutes)}-min shifts
+                {formatMinutes(setup.settings.halfMinutes)}-min halves · {formatMinutes(shiftMinutes)}-min shifts
                 {lineup ? ` · ${lineup.subSize} at a time` : ""}
               </span>
             )}
@@ -568,8 +612,19 @@ export default function BasketballGame() {
                     {presentCount} players here · {lineup.subSize} sub at a time. Run it live on the Court Display: it alerts you at each sub and you can change things on the fly.
                   </p>
                   {createPortal(
-                    <div id="bench-sheet-print">
-                      <BenchSheetTable teamName={`${teamName || "Us"} vs. ${game.opponent}`} result={rotation} hasFlex={hasFlex} />
+                    <div id="game-sheet-print">
+                      <GameSheetPrint
+                        title={`${teamName || "Our team"} Bench Sheet — vs. ${game.opponent} · ${format(date, "MMM d")}`}
+                        result={rotation}
+                        players={withLayoutRoles(rotationPlayers(setup), setup.settings)}
+                        spotsByShift={spotsByShift}
+                        halfMinutes={setup.settings.halfMinutes}
+                        shiftMinutes={shiftMinutes}
+                        subSize={lineup.subSize}
+                        absentNames={setup.players.filter((p) => lineup.absentIds.includes(p.id)).map((p) => p.name)}
+                        seasonSeconds={seasonBefore}
+                        notes={game.notes}
+                      />
                     </div>,
                     document.body,
                   )}
@@ -601,7 +656,7 @@ export default function BasketballGame() {
                         <td className="py-2 pr-2"><Chip name={m.name} color={color(m.id)} /></td>
                         <td className="px-2 py-2 text-muted-foreground">
                           {m.role === "guard" ? "Guard" : m.big ? "Front · Big" : "Front"}
-                          {m.playingAs && <em> → {m.playingAs === "guard" ? "Guard" : "Front"} today</em>}
+                          {m.playingAs && <em> → {m.playingAs} today</em>}
                         </td>
                         <td className="px-2 py-2 text-right font-semibold tabular-nums">{formatMinutes(m.minutes)}</td>
                         <td className="py-2 pl-2 text-right tabular-nums">{m.longestSit ? formatClock(m.longestSit) : "—"}</td>

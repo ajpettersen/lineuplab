@@ -39,13 +39,13 @@ export function QueueList({ title, players, onReorder }: { title: string; player
             >
               <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
               <span className="w-5 text-right text-xs font-bold tabular-nums text-muted-foreground">{i + 1}</span>
-              <span className="flex-1 truncate font-medium">{p.name}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
               {p.big && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">Big</span>}
               {p.position && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">{p.position}</span>}
-              <Button type="button" variant="ghost" size="icon" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`Move ${p.name} up`}>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`Move ${p.name} up`}>
                 <ArrowUp className="h-4 w-4" />
               </Button>
-              <Button type="button" variant="ghost" size="icon" onClick={() => move(i, i + 1)} disabled={i === players.length - 1} aria-label={`Move ${p.name} down`}>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => move(i, i + 1)} disabled={i === players.length - 1} aria-label={`Move ${p.name} down`}>
                 <ArrowDown className="h-4 w-4" />
               </Button>
             </li>

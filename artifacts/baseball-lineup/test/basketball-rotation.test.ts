@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   buildRotation,
+  roleIn,
   stickySpots,
   subSplit,
   DEFAULT_BASKETBALL_SETTINGS,
@@ -10,6 +11,11 @@ import {
   reshuffleStartingOrder,
   type BasketballPlayer,
 } from "../src/lib/basketball-rotation.ts";
+import type { RotationRow } from "../src/lib/basketball-rotation.ts";
+
+/** On-court names by group (Guards / Front layout). */
+const G = (row: RotationRow) => row.groups[0]?.names ?? [];
+const F = (row: RotationRow) => row.groups[1]?.names ?? [];
 
 const guard = (name: string, position?: "1" | "2"): BasketballPlayer => ({ id: name, name, role: "guard", position: position ?? null });
 const front = (name: string, big = false): BasketballPlayer => ({ id: name, name, role: "front", big });
@@ -41,35 +47,35 @@ function seeded(seed: number) {
   const [first, second, third] = result.halves[0].rows;
   assert.deepEqual(first, {
     shift: 0, half: 1, clock: "20:00", minutes: 2.5, flex: false,
-    guards: ["Brody", "Vinnie J"],
-    front: ["Anders", "Henry", "Rory"],
     bench: ["Bash", "Luke", "Miles", "Vinnie V"],
     in: [], out: [],
-    guardIds: ["Vinnie J", "Brody"],
-    frontIds: ["Anders", "Henry", "Rory"],
+    groups: [
+      { key: "guard", label: "Guards", ids: ["Vinnie J", "Brody"], names: ["Brody", "Vinnie J"] },
+      { key: "front", label: "Front", ids: ["Anders", "Henry", "Rory"], names: ["Anders", "Henry", "Rory"] },
+    ],
   });
   assert.equal(second.clock, "17:30");
-  assert.deepEqual(second.guards, ["Brody", "Luke"]);
-  assert.deepEqual(second.front, ["Bash", "Henry", "Rory"]);
+  assert.deepEqual(G(second), ["Brody", "Luke"]);
+  assert.deepEqual(F(second), ["Bash", "Henry", "Rory"]);
   assert.deepEqual(second.in, ["Bash", "Luke"]);
   assert.deepEqual(second.out, ["Anders", "Vinnie J"]);
   assert.equal(third.clock, "15:00");
-  assert.deepEqual(third.guards, ["Luke", "Vinnie V"]);
-  assert.deepEqual(third.front, ["Bash", "Miles", "Rory"]);
+  assert.deepEqual(G(third), ["Luke", "Vinnie V"]);
+  assert.deepEqual(F(third), ["Bash", "Miles", "Rory"]);
   assert.deepEqual(third.in, ["Miles", "Vinnie V"]);
   assert.deepEqual(third.out, ["Brody", "Henry"]);
 
   // Queues continue through halftime: 2nd half opens on shift 8, not a reset.
   const secondHalfStart = result.halves[1].rows[0];
   assert.equal(secondHalfStart.clock, "20:00");
-  assert.deepEqual(secondHalfStart.guards, ["Brody", "Vinnie J"], "guard window at shift 8 = 8 mod 4 = 0");
-  assert.deepEqual(secondHalfStart.front, ["Anders", "Bash", "Miles"], "front window at shift 8 starts at 8 mod 5 = 3");
+  assert.deepEqual(G(secondHalfStart), ["Brody", "Vinnie J"], "guard window at shift 8 = 8 mod 4 = 0");
+  assert.deepEqual(F(secondHalfStart), ["Anders", "Bash", "Miles"], "front window at shift 8 starts at 8 mod 5 = 3");
   assert.equal(secondHalfStart.in.length, 2, "subs still happen at the start of the 2nd half");
 
   // Last shift is flex.
   const last = result.halves[1].rows[7];
   assert.equal(last.flex, true);
-  assert.deepEqual([last.guards, last.front, last.bench, last.in, last.out], [[], [], [], [], []]);
+  assert.deepEqual([G(last), F(last), last.bench, last.in, last.out], [[], [], [], [], []]);
   assert.equal(result.halves.flatMap(h => h.rows).filter(r => r.flex).length, 1);
 
   // Every sub is 1 guard + 1 front.
@@ -81,7 +87,7 @@ function seeded(seed: number) {
 
   // Every name list is sorted.
   for (const row of result.halves.flatMap(h => h.rows)) {
-    for (const list of [row.guards, row.front, row.bench, row.in, row.out]) {
+    for (const list of [G(row), F(row), row.bench, row.in, row.out]) {
       assert.deepEqual(list, [...list].sort((a, b) => a.localeCompare(b)), `shift ${row.shift} sorted`);
     }
   }
@@ -116,12 +122,12 @@ function seeded(seed: number) {
   const rows = result.halves.flatMap(h => h.rows);
   assert.equal(rows.length, 16);
   for (const row of rows.filter(r => !r.flex)) {
-    assert.equal(row.guards.length, 2);
-    assert.equal(row.front.length, 3);
+    assert.equal(G(row).length, 2);
+    assert.equal(F(row).length, 3);
     assert.equal(row.bench.length, 3);
-    const onGuards = guards.filter(g => row.guards.includes(g.name));
+    const onGuards = guards.filter(g => G(row).includes(g.name));
     assert.ok(guardWindowOk(onGuards), `shift ${row.shift}: a 1 and a 2 on court`);
-    assert.ok(row.front.includes("Eli") || row.front.includes("Gus"), `shift ${row.shift}: a Big on court`);
+    assert.ok(F(row).includes("Eli") || F(row).includes("Gus"), `shift ${row.shift}: a Big on court`);
   }
   const minutes = Object.fromEntries(result.minutes.map(m => [m.name, m.minutes]));
   // 15 shifts × 3 front spots / 4 players; window of 3 over 4: each sits every 4th shift.
@@ -144,8 +150,8 @@ function seeded(seed: number) {
   // Reshuffle always finds a valid order when one exists.
   for (let seed = 1; seed <= 50; seed++) {
     const order = reshuffleStartingOrder([...guards, ...fronts], DEFAULT_BASKETBALL_SETTINGS, [], seeded(seed));
-    const g = order.guardOrder.map(id => guards.find(p => p.id === id)!);
-    const f = order.frontOrder.map(id => fronts.find(p => p.id === id)!);
+    const g = order.filter(id => guards.some(p => p.id === id)).map(id => guards.find(p => p.id === id)!);
+    const f = order.filter(id => fronts.some(p => p.id === id)).map(id => fronts.find(p => p.id === id)!);
     assert.ok(queueIsValid(g, 2, guardWindowOk), `seed ${seed}: guards alternate`);
     assert.ok(queueIsValid(f, 3, frontWindowOk), `seed ${seed}: a Big in every front group`);
   }
@@ -160,26 +166,26 @@ function seeded(seed: number) {
   // One kid out: rotation rebuilds from whoever is present.
   const oneOut = buildRotation({ players, settings: DEFAULT_BASKETBALL_SETTINGS, absentIds: ["Luke"] });
   assert.ok(oneOut.minutes.every(m => m.name !== "Luke"));
-  assert.ok(oneOut.halves.flatMap(h => h.rows).every(r => ![...r.guards, ...r.bench].includes("Luke")));
+  assert.ok(oneOut.halves.flatMap(h => h.rows).every(r => ![...G(r), ...r.bench].includes("Luke")));
 
   // Only one guard: a non-Big front player fills in and it's flagged.
   const oneGuard = buildRotation({ players, settings: DEFAULT_BASKETBALL_SETTINGS, absentIds: ["Brody", "Luke", "Vinnie V"] });
   assert.ok(oneGuard.warnings.some(w => w.includes("fills in at guard")));
-  const filler = oneGuard.minutes.find(m => m.playingAs === "guard");
+  const filler = oneGuard.minutes.find(m => m.playingAs === "Guard");
   assert.ok(filler && !filler.big, "a non-Big is borrowed first");
-  assert.ok(oneGuard.halves[0].rows.every(r => r.guards.length === 2));
+  assert.ok(oneGuard.halves[0].rows.every(r => G(r).length === 2));
 
   // Nobody tagged Guard (e.g. a fresh import with no positions): one clear warning, still 2 at guard.
   const noGuards = buildRotation({ players: players.map(p => ({ ...p, role: "front" as const })), settings: DEFAULT_BASKETBALL_SETTINGS });
   const guardWarnings = noGuards.warnings.filter(w => w.includes("in at guard"));
   assert.equal(guardWarnings.length, 1, "one combined warning, not one per player");
   assert.match(guardWarnings[0], /^Nobody here is set as a Guard, so .+ and .+ \(Front\) fill in at guard\./);
-  assert.ok(noGuards.halves[0].rows.every(r => r.guards.length === 2));
+  assert.ok(noGuards.halves[0].rows.every(r => G(r).length === 2));
 
   // Too few players overall: plays short, warns, doesn't throw.
   const short = buildRotation({ players: [guard("A"), front("B", true), front("C")], settings: DEFAULT_BASKETBALL_SETTINGS });
   assert.ok(short.warnings.some(w => w.includes("short-handed")));
-  assert.equal(short.halves[0].rows[0].guards.length + short.halves[0].rows[0].front.length, 3);
+  assert.equal(G(short.halves[0].rows[0]).length + F(short.halves[0].rows[0]).length, 3);
 
   // No Bigs possible in every window: warns.
   const fewBigs = buildRotation({
@@ -251,25 +257,80 @@ function seeded(seed: number) {
   // The split rule on its own.
   const g = { queue: 4, spots: 2 };
   const f = { queue: 5, spots: 3 };
-  assert.deepEqual(subSplit(1, 2, g, f), { guards: 1, front: 1 });
-  assert.deepEqual(subSplit(1, 1, g, f), { guards: 0, front: 1 });
-  assert.deepEqual(subSplit(2, 1, g, f), { guards: 1, front: 0 });
-  assert.deepEqual(subSplit(1, 5, g, { queue: 6, spots: 3 }), { guards: 2, front: 3 }, "a full line change with a deep bench");
-  assert.deepEqual(subSplit(1, 2, { queue: 2, spots: 2 }, f), { guards: 0, front: 2 }, "no bench guards: both subs are front");
+  assert.deepEqual(subSplit(1, 2, [g, f]), [1, 1]);
+  assert.deepEqual(subSplit(1, 1, [g, f]), [0, 1]);
+  assert.deepEqual(subSplit(2, 1, [g, f]), [1, 0]);
+  assert.deepEqual(subSplit(1, 5, [g, { queue: 6, spots: 3 }]), [2, 3], "a full line change with a deep bench");
+  assert.deepEqual(subSplit(1, 2, [{ queue: 2, spots: 2 }, f]), [0, 2], "no bench guards: both subs are front");
 }
 
 // ── Sticky spots: players who stay on keep their spot ─────────────────────
 {
   const players = [guard("A"), guard("B"), guard("C"), front("D", true), front("E"), front("F", true), front("G")];
-  const first = new Map(stickySpots(["A", "B"], ["D", "E", "F"], players, null).map((s) => [s.id, s.spot!]));
+  const first = new Map(stickySpots([{ ids: ["A", "B"], spots: [1, 2] }, { ids: ["D", "E", "F"], spots: [3, 4, 5] }], players, null).map((s) => [s.id, s.spot!]));
   assert.equal(first.get("E"), 3, "non-Big at the 3");
   // A and F stay; C comes in for B, G (non-Big) comes in for D (Big).
-  const next = new Map(stickySpots(["A", "C"], ["E", "F", "G"], players, first).map((s) => [s.id, s.spot!]));
+  const next = new Map(stickySpots([{ ids: ["A", "C"], spots: [1, 2] }, { ids: ["E", "F", "G"], spots: [3, 4, 5] }], players, first).map((s) => [s.id, s.spot!]));
   assert.equal(next.get("A"), first.get("A"), "A keeps their spot");
   assert.equal(next.get("F"), first.get("F"), "F keeps their spot");
   assert.equal(next.get("E"), 3);
   assert.equal(next.get("C"), first.get("B"), "C takes B's spot");
   assert.equal(next.get("G"), first.get("D"), "G takes the open post spot");
+}
+
+// ── Position groups: Guards / Forwards / Center ────────────────────────────
+{
+  const guards = [guard("Vinnie J"), guard("Brody"), guard("Luke"), guard("Vinnie V")];
+  const fronts = [front("Anders", true), front("Henry"), front("Rory", true), front("Bash"), front("Miles", true)];
+  const settings = { ...DEFAULT_BASKETBALL_SETTINGS, groupLayout: "guards-forwards-center" as const };
+  // Roles saved as Guard / Front carry over: Bigs become centers, others forwards.
+  assert.equal(roleIn("guards-forwards-center", fronts[0]), "center");
+  assert.equal(roleIn("guards-forwards-center", fronts[1]), "forward");
+  assert.equal(roleIn("guards-forwards-center", guards[0]), "guard");
+  assert.equal(roleIn("perimeter-bigs", fronts[1]), "perimeter");
+  assert.equal(roleIn("five-out", guards[0]), "all");
+
+  const r = buildRotation({ players: [...guards, ...fronts], settings, order: [...guards, ...fronts].map((p) => p.id) });
+  assert.deepEqual(r.groups.map((g) => g.key), ["guard", "forward", "center"]);
+  assert.deepEqual(r.warnings, []);
+  const rows = r.halves.flatMap((h) => h.rows).filter((row) => !row.flex);
+  const centers = ["Anders", "Rory", "Miles"];
+  for (const row of rows) {
+    assert.equal(row.groups[0].ids.length, 2, "2 guards");
+    assert.equal(row.groups[1].ids.length, 2, "2 forwards");
+    assert.equal(row.groups[2].ids.length, 1, "1 center");
+    assert.ok(centers.includes(row.groups[2].ids[0]), "the center is a Big");
+    if (row.shift > 0) {
+      for (const name of row.in) {
+        const wentOut = row.out;
+        // A center only comes in for a center, a guard for a guard.
+        const group = (n: string) => (guards.some((g) => g.name === n) ? "g" : centers.includes(n) ? "c" : "f");
+        assert.ok(wentOut.some((o) => group(o) === group(name)), `${name} replaces someone in the same group`);
+      }
+    }
+  }
+  // Henry and Bash are the only forwards, so they play every shift.
+  const m = Object.fromEntries(r.minutes.map((x) => [x.name, x.minutes]));
+  assert.equal(m["Henry"], 37.5);
+  assert.equal(m["Bash"], 37.5);
+  const centerMins = centers.map((c) => m[c]);
+  assert.ok(Math.max(...centerMins) - Math.min(...centerMins) <= 2.5, "centers share the 5 evenly");
+  assert.equal(r.minutes.find((x) => x.name === "Anders")!.roleLabel, "Center");
+  // Spots: guards 1–2, forwards 3–4, center 5.
+  const row0 = rows[0];
+  const spots = new Map(stickySpots(r.groups.map((g, i) => ({ ids: row0.groups[i].ids, spots: g.spots })), [...guards, ...fronts], null).map((x) => [x.spot, x.id]));
+  assert.ok(centers.includes(spots.get(5)!));
+  assert.ok(["Henry", "Bash"].includes(spots.get(3)!) && ["Henry", "Bash"].includes(spots.get(4)!));
+}
+
+// ── Everyone flexes: one group, the whole roster rotates ──────────────────
+{
+  const players = ["A", "B", "C", "D", "E", "F", "G"].map((n) => guard(n));
+  const r = buildRotation({ players, settings: { ...DEFAULT_BASKETBALL_SETTINGS, groupLayout: "five-out" } });
+  assert.deepEqual(r.groups.map((g) => g.key), ["all"]);
+  const mins = r.minutes.map((x) => x.minutes);
+  assert.ok(Math.max(...mins) - Math.min(...mins) <= 5, "even minutes");
+  assert.ok(r.halves[0].rows.every((row) => row.groups[0].ids.length === 5));
 }
 
 console.log("basketball-rotation: all checks passed");
