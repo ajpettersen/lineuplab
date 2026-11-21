@@ -1,4 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { Link, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getGetGameQueryKey, useGetGame } from "@workspace/api-client-react";
@@ -7,6 +19,7 @@ import {
   Bell,
   BellOff,
   ChevronsRight,
+  GripVertical,
   Minus,
   Pause,
   Play,
@@ -39,6 +52,7 @@ import {
   onCourt,
   putBack,
   secondsToNextSub,
+  nudgeClock,
   setClock,
   setSubSize,
   settle,
@@ -139,6 +153,58 @@ function chime(ctx: AudioContext | null, urgent: boolean) {
 const fmt = (sec: number) => formatClock(Math.max(0, sec) / 60);
 const joinNames = (names: string[]) => (names.length ? names.join(", ") : "—");
 
+/** Drag handle + drop target for one player (court token or bench row). */
+function usePlayerDnd(id: string) {
+  const drag = useDraggable({ id: `player:${id}` });
+  const drop = useDroppable({ id: `player:${id}` });
+  const ref = (node: HTMLElement | null) => {
+    drag.setNodeRef(node);
+    drop.setNodeRef(node);
+  };
+  return { ref, attributes: drag.attributes, listeners: drag.listeners, isDragging: drag.isDragging, isOver: drop.isOver && !drag.isDragging };
+}
+
+function CourtToken({
+  spot,
+  id,
+  name,
+  selected,
+  onTap,
+}: {
+  spot: CourtSpot;
+  id: string;
+  name: string;
+  selected: boolean;
+  onTap: (id: string) => void;
+}) {
+  const { ref, attributes, listeners, isDragging, isOver } = usePlayerDnd(id);
+  const [x, y] = SPOT_XY[spot];
+  return (
+    <button
+      ref={ref}
+      type="button"
+      {...attributes}
+      {...listeners}
+      onClick={() => onTap(id)}
+      aria-label={`${spot} ${SPOT_LABEL[spot]}: ${name}. Drag onto a bench player to sub, or tap.`}
+      className={`absolute flex -translate-x-1/2 -translate-y-1/2 touch-none select-none flex-col items-center ${isDragging ? "opacity-30" : ""}`}
+      style={{ left: `${(x / 500) * 100}%`, top: `${((y + 14) / 470) * 100}%` }}
+    >
+      <span
+        className={`flex h-[clamp(2.75rem,9vw,4.25rem)] w-[clamp(2.75rem,9vw,4.25rem)] flex-col items-center justify-center rounded-full border-4 leading-none shadow-md transition-transform ${
+          selected ? "border-amber-700 bg-amber-400 text-black" : isOver ? "scale-110 border-amber-400 bg-primary text-primary-foreground" : "border-background bg-primary text-primary-foreground"
+        }`}
+      >
+        <span className="font-display text-[clamp(1.1rem,3.4vw,1.6rem)] font-bold">{spot}</span>
+        <span className="text-[10px] font-semibold opacity-85">{SPOT_LABEL[spot]}</span>
+      </span>
+      <span className="mt-1 max-w-[9rem] truncate rounded-md border bg-background/95 px-2 py-0.5 text-[clamp(0.8rem,2.2vw,1.05rem)] font-bold text-foreground shadow-sm">
+        {name}
+      </span>
+    </button>
+  );
+}
+
 function HalfCourt({
   spots,
   nameOf,
@@ -152,38 +218,85 @@ function HalfCourt({
 }) {
   const placed = spots.filter((s): s is { spot: CourtSpot; id: string } => s.spot !== null);
   return (
-    <svg viewBox="0 0 500 470" className="h-full w-full" role="img" aria-label="Half court with the players on the floor">
-      <rect x="2" y="2" width="496" height="466" rx="6" className="fill-amber-100 stroke-amber-900/60 dark:fill-amber-950/40 dark:stroke-amber-200/40" strokeWidth="3" />
-      {/* Paint, free-throw circle, three-point arc, hoop. Basket at the bottom. */}
-      <g className="fill-none stroke-amber-900/60 dark:stroke-amber-200/40" strokeWidth="3">
-        <rect x="190" y="280" width="120" height="188" />
-        <circle cx="250" cy="280" r="60" />
-        <path d="M 35 468 L 35 400 A 215 215 0 0 1 465 400 L 465 468" />
-        <line x1="220" y1="430" x2="280" y2="430" />
-        <circle cx="250" cy="415" r="11" />
-        <path d="M 2 2 L 498 2" />
-        <circle cx="250" cy="2" r="60" />
-      </g>
-      {placed.map(({ spot, id }) => {
-        const [x, y] = SPOT_XY[spot];
-        const isSelected = selected === id;
-        return (
-          <g key={spot} transform={`translate(${x} ${y})`} onClick={() => onTap(id)} className="cursor-pointer" role="button" aria-label={`${spot} ${SPOT_LABEL[spot]}: ${nameOf(id)}`}>
-            <circle r="34" className={isSelected ? "fill-amber-400 stroke-amber-700" : "fill-primary stroke-background"} strokeWidth="4" />
-            <text textAnchor="middle" dy="0.1em" className={isSelected ? "fill-black" : "fill-primary-foreground"} style={{ font: "700 26px var(--font-display, sans-serif)" }}>
-              {spot}
-            </text>
-            <text textAnchor="middle" dy="1.25em" className={isSelected ? "fill-black" : "fill-primary-foreground"} style={{ font: "600 12px var(--app-font-sans, sans-serif)", opacity: 0.85 }}>
-              {SPOT_LABEL[spot]}
-            </text>
-            <rect x="-70" y="40" width="140" height="30" rx="8" className="fill-background/95 stroke-border" strokeWidth="1.5" />
-            <text textAnchor="middle" y="61" className="fill-foreground" style={{ font: "700 18px var(--app-font-sans, sans-serif)" }}>
-              {nameOf(id).length > 13 ? `${nameOf(id).slice(0, 12)}…` : nameOf(id)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+    <div className="relative h-full w-full">
+      <svg viewBox="0 0 500 470" className="h-full w-full" role="img" aria-label="Half court">
+        <rect x="2" y="2" width="496" height="466" rx="6" className="fill-amber-100 stroke-amber-900/60 dark:fill-amber-950/40 dark:stroke-amber-200/40" strokeWidth="3" />
+        {/* Paint, free-throw circle, three-point arc, hoop. Basket at the bottom. */}
+        <g className="fill-none stroke-amber-900/60 dark:stroke-amber-200/40" strokeWidth="3">
+          <rect x="190" y="280" width="120" height="188" />
+          <circle cx="250" cy="280" r="60" />
+          <path d="M 35 468 L 35 400 A 215 215 0 0 1 465 400 L 465 468" />
+          <line x1="220" y1="430" x2="280" y2="430" />
+          <circle cx="250" cy="415" r="11" />
+          <path d="M 2 2 L 498 2" />
+          <circle cx="250" cy="2" r="60" />
+        </g>
+      </svg>
+      {placed.map(({ spot, id }) => (
+        <CourtToken key={id} spot={spot} id={id} name={nameOf(id)} selected={selected === id} onTap={onTap} />
+      ))}
+    </div>
+  );
+}
+
+function BenchRow({
+  id,
+  name,
+  role,
+  comingIn,
+  selected,
+  onTap,
+  onTakeOut,
+}: {
+  id: string;
+  name: string;
+  role: string;
+  comingIn: boolean;
+  selected: boolean;
+  onTap: (id: string) => void;
+  onTakeOut: (id: string) => void;
+}) {
+  const { ref, attributes, listeners, isDragging, isOver } = usePlayerDnd(id);
+  return (
+    <li
+      className={`flex items-center gap-2 rounded-md border px-2 py-1.5 ${isDragging ? "opacity-30" : ""} ${
+        selected ? "border-amber-500 bg-amber-100 dark:bg-amber-900/40" : isOver ? "border-amber-400 bg-amber-50 dark:bg-amber-900/30" : comingIn ? "border-primary/50 bg-primary/5" : ""
+      }`}
+    >
+      <button
+        ref={ref}
+        type="button"
+        {...attributes}
+        {...listeners}
+        onClick={() => onTap(id)}
+        aria-label={`${name} on the bench. Drag onto a player on the court to sub, or tap.`}
+        className="flex min-h-10 flex-1 touch-none select-none items-center gap-2 text-left"
+      >
+        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="w-5 text-xs font-bold text-muted-foreground">{role}</span>
+        <span className="flex-1 truncate text-lg font-semibold">{name}</span>
+        {comingIn && <span className="text-xs font-bold uppercase text-primary">Next in</span>}
+      </button>
+      <Button variant="ghost" size="icon" aria-label={`Take ${name} out of the game`} onClick={() => onTakeOut(id)}>
+        <UserMinus className="h-4 w-4" />
+      </Button>
+    </li>
+  );
+}
+
+/** Drop a player here to take them out of the game. Only shown while dragging. */
+function OutZone({ active }: { active: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "out" });
+  if (!active) return null;
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex min-h-16 items-center justify-center gap-2 rounded-md border-2 border-dashed text-sm font-bold ${
+        isOver ? "border-destructive bg-destructive/10 text-destructive" : "border-muted-foreground/40 text-muted-foreground"
+      }`}
+    >
+      <UserMinus className="h-5 w-5" /> Drop here to take out of the game
+    </div>
   );
 }
 
@@ -208,7 +321,16 @@ export default function BasketballCourtDisplay() {
   const [state, setStateRaw] = useState<LiveState | null>(() => (gameId ? loadState(gameId) : null));
   const [now, setNow] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  // Same feel as the baseball lineup grid: a mouse drag starts after 5px; on
+  // touch, press and hold briefly so normal scrolling still works.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+  );
   const [editingClock, setEditingClock] = useState(false);
+  // How far the clock buttons move it: 1 second, or bigger chunks.
+  const [clockStep, setClockStep] = useState<1 | 10 | 60>(1);
   const [clockInput, setClockInput] = useState("");
   const [alertsOn, setAlertsOn] = useState(true);
   const audio = useRef<AudioContext | null>(null);
@@ -345,6 +467,17 @@ export default function BasketballCourtDisplay() {
     setSelected(null);
   };
 
+  // Drop a player on another to swap them (bench ↔ court, or across groups),
+  // or on the out-of-game area to take them out.
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragging(null);
+    if (!over) return;
+    const from = String(active.id).replace(/^player:/, "");
+    if (over.id === "out") return act((s, t) => takeOut(s, t, from));
+    const to = String(over.id).replace(/^player:/, "");
+    if (to !== from) act((s, t) => swapPlayers(s, t, from, to));
+  };
+
   const tapPlayer = (id: string) => {
     if (!selected) return setSelected(id);
     if (selected === id) return setSelected(null);
@@ -407,7 +540,14 @@ export default function BasketballCourtDisplay() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" aria-label="Back 10 seconds" onClick={() => act((s, t) => setClock(s, t, settle(s, t).clockSec + 10))} disabled={view.phase === "final"}>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={`Add ${clockStep === 60 ? "1 minute" : `${clockStep} second${clockStep === 1 ? "" : "s"}`} to the clock`}
+            title="Add time to the clock (takes it off the players on the floor)"
+            onClick={() => act((s, t) => nudgeClock(s, t, clockStep))}
+            disabled={view.phase === "final"}
+          >
             <Plus className="h-4 w-4" />
           </Button>
           {editingClock ? (
@@ -433,9 +573,30 @@ export default function BasketballCourtDisplay() {
               {fmt(view.clockSec)}
             </button>
           )}
-          <Button variant="outline" size="icon" aria-label="Forward 10 seconds" onClick={() => act((s, t) => setClock(s, t, settle(s, t).clockSec - 10))} disabled={view.phase === "final"}>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={`Take ${clockStep === 60 ? "1 minute" : `${clockStep} second${clockStep === 1 ? "" : "s"}`} off the clock`}
+            title="Run the clock down (counts as time played for the players on the floor)"
+            onClick={() => act((s, t) => nudgeClock(s, t, -clockStep))}
+            disabled={view.phase === "final"}
+          >
             <Minus className="h-4 w-4" />
           </Button>
+          <div className="flex overflow-hidden rounded-md border text-xs font-bold" role="radiogroup" aria-label="Clock button step">
+            {([1, 10, 60] as const).map((step) => (
+              <button
+                key={step}
+                type="button"
+                role="radio"
+                aria-checked={clockStep === step}
+                onClick={() => setClockStep(step)}
+                className={`h-9 px-2 ${clockStep === step ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+              >
+                {step === 60 ? "1m" : `${step}s`}
+              </button>
+            ))}
+          </div>
           {view.runningSince ? (
             <Button size="lg" variant="secondary" onClick={() => act(stopClock)} className="gap-2"><Pause className="h-5 w-5" /> Pause</Button>
           ) : view.phase === "final" ? null : (
@@ -509,6 +670,15 @@ export default function BasketballCourtDisplay() {
         </div>
       )}
 
+      <DndContext
+        sensors={sensors}
+        onDragStart={(e: DragStartEvent) => {
+          setDragging(String(e.active.id).replace(/^player:/, ""));
+          setSelected(null);
+        }}
+        onDragCancel={() => setDragging(null)}
+        onDragEnd={onDragEnd}
+      >
       <main className="grid flex-1 gap-4 p-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] md:p-5">
         {/* Court */}
         <section className="flex flex-col gap-2">
@@ -521,7 +691,7 @@ export default function BasketballCourtDisplay() {
           <p className="text-center text-sm text-muted-foreground">
             {selected
               ? `Tap a player on the bench (or court) to swap with ${nameOf(selected)}.`
-              : "Tap two players to swap them. The rotation carries on from the new lineup."}
+              : "Drag a bench player onto someone on the court to sub (or tap two players). The rotation carries on from the new lineup."}
           </p>
         </section>
 
@@ -533,23 +703,21 @@ export default function BasketballCourtDisplay() {
               <p className="text-sm text-muted-foreground">Nobody on the bench.</p>
             ) : (
               <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {benchIds.map((id) => {
-                  const comingIn = upcoming.in.includes(id);
-                  return (
-                    <li key={id} className={`flex items-center gap-2 rounded-md border px-2 py-1.5 ${selected === id ? "border-amber-500 bg-amber-100 dark:bg-amber-900/40" : comingIn ? "border-primary/50 bg-primary/5" : ""}`}>
-                      <button type="button" onClick={() => tapPlayer(id)} className="flex min-h-10 flex-1 items-center gap-2 text-left">
-                        <span className="w-5 text-xs font-bold text-muted-foreground">{roleOf(id)}</span>
-                        <span className="flex-1 truncate text-lg font-semibold">{nameOf(id)}</span>
-                        {comingIn && <span className="text-xs font-bold uppercase text-primary">Next in</span>}
-                      </button>
-                      <Button variant="ghost" size="icon" aria-label={`Take ${nameOf(id)} out of the game`} onClick={() => act((s, t) => takeOut(s, t, id))}>
-                        <UserMinus className="h-4 w-4" />
-                      </Button>
-                    </li>
-                  );
-                })}
+                {benchIds.map((id) => (
+                  <BenchRow
+                    key={id}
+                    id={id}
+                    name={nameOf(id)}
+                    role={roleOf(id)}
+                    comingIn={upcoming.in.includes(id)}
+                    selected={selected === id}
+                    onTap={tapPlayer}
+                    onTakeOut={(pid) => act((s, t) => takeOut(s, t, pid))}
+                  />
+                ))}
               </ul>
             )}
+            <div className="mt-2"><OutZone active={dragging !== null} /></div>
             {selected && onIds.has(selected) && (
               <Button variant="outline" size="sm" className="mt-2 gap-1" onClick={() => act((s, t) => takeOut(s, t, selected))}>
                 <UserMinus className="h-4 w-4" /> Take {nameOf(selected)} out of the game
@@ -640,6 +808,12 @@ export default function BasketballCourtDisplay() {
           </div>
         </section>
       </main>
+      <DragOverlay dropAnimation={null}>
+        {dragging && (
+          <span className="rounded-full border-2 border-primary bg-background px-3 py-1.5 text-lg font-bold shadow-lg">{nameOf(dragging)}</span>
+        )}
+      </DragOverlay>
+      </DndContext>
     </div>
   );
 }
