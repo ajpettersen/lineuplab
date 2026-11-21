@@ -19,6 +19,7 @@ const importers: Record<string, () => Promise<unknown>> = {
   "/stats": () => import("@/pages/stats"),
   "/season-stats": () => import("@/pages/season-stats"),
   "/arm-watch": () => import("@/pages/arm-watch"),
+  "/bench-sheet": () => import("@/pages/bench-sheet"),
   "/settings": () => import("@/pages/settings"),
   "/help": () => import("@/pages/help"),
   "/admin": () => import("@/pages/admin"),

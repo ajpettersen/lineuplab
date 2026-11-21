@@ -34,6 +34,7 @@ import adminRouter from "./admin";
 import helpRouter from "./help";
 import heartbeatRouter from "./heartbeat";
 import pushRouter from "./push";
+import basketballRotationRouter from "./basketball-rotation";
 
 const router: IRouter = Router();
 
@@ -68,6 +69,7 @@ router.use(assistantRouter);
 router.use(lineupFromImageRouter);
 router.use(locksRouter);
 router.use(teamSettingsRouter);
+router.use(basketballRotationRouter);
 router.use(preferencesRouter);
 router.use(teamRouter);
 router.use(practicesRouter);

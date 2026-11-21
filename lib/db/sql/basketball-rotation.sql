@@ -1,0 +1,14 @@
+-- Basketball bench-sheet setup, one row per team. Matches
+-- src/schema/basketball_rotation.ts. Additive and safe to rerun; apply to
+-- production by hand (or review `drizzle-kit push`'s plan first).
+CREATE TABLE IF NOT EXISTS "basketball_rotation_settings" (
+  "user_id" text PRIMARY KEY,
+  "half_minutes" double precision NOT NULL DEFAULT 20,
+  "shift_minutes" double precision NOT NULL DEFAULT 2.5,
+  "guard_spots" integer NOT NULL DEFAULT 2,
+  "front_spots" integer NOT NULL DEFAULT 3,
+  "flex_shifts" integer NOT NULL DEFAULT 1,
+  "player_tags" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "game_day" jsonb NOT NULL DEFAULT '{"absentIds":[],"guardOrder":[],"frontOrder":[]}'::jsonb,
+  "updated_at" timestamp with time zone NOT NULL DEFAULT now()
+);

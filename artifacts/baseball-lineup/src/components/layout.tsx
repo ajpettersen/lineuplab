@@ -17,6 +17,7 @@ import {
   Trophy,
   Clipboard,
   ListOrdered,
+  ClipboardList,
   ChevronLeft,
   ChevronRight,
   MoreHorizontal,
@@ -383,6 +384,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         // Arm Watch tracks pitcher rest/pitch counts — baseball-only.
         ...(sportProfile.features.pitchCounts
           ? [{ href: "/arm-watch", label: "Arm Watch", icon: Shield }]
+          : []),
+        // Bench sheet: halves, shifts and 1-guard + 1-front subs — basketball-only.
+        ...(sportProfile.id === "basketball"
+          ? [{ href: "/bench-sheet", label: "Bench Sheet", icon: ClipboardList }]
           : []),
       ],
     },

@@ -867,3 +867,104 @@
     display: none !important;
   }
 }
+
+
+/* Basketball bench sheet (pages/bench-sheet.tsx) (components/basketball/bench-sheet-table.tsx). The same markup is
+   the on-screen preview and the printout; printing shows only the copy in
+   `.lineup-print-root` (a portal on <body>, outside the app shell). */
+.bench-sheet {
+  font-size: var(--bench-font, 12pt);
+  line-height: 1.15;
+}
+.bench-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.4em;
+}
+.bench-header h2 {
+  font-family: var(--font-display);
+  font-size: 1.6em;
+  font-weight: 700;
+}
+.bench-header span { font-weight: 600; opacity: 0.7; }
+.bench-warnings {
+  margin: 0 0 0.6em;
+  padding: 0.4em 0.6em;
+  border: 1.5px solid hsl(var(--destructive) / 0.5);
+  border-radius: 0.4em;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.bench-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0.6em;
+}
+.bench-table caption {
+  text-align: left;
+  font-weight: 800;
+  font-size: 1.05em;
+  padding-bottom: 0.15em;
+}
+.bench-table th,
+.bench-table td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.18em 0.35em;
+  text-align: left;
+  vertical-align: top;
+}
+.bench-table th {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: hsl(var(--muted) / 0.6);
+}
+.bench-sheet .bench-table:not(.bench-notes .bench-table) { table-layout: fixed; }
+.bench-name { white-space: nowrap; }
+.bench-col-guards { width: 18%; }
+.bench-col-front { width: 21%; }
+.bench-col-bench { width: 25%; }
+.bench-col-sub { width: 14%; }
+.bench-clock { width: 4.6em; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bench-num { text-align: right !important; font-variant-numeric: tabular-nums; width: 3em; }
+.bench-muted { opacity: 0.7; }
+.bench-small { font-size: 0.8em; }
+.bench-flex td { background: hsl(var(--accent) / 0.18); }
+.bench-notes {
+  font-size: 0.88em;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 1em;
+}
+.bench-notes h3 { font-weight: 800; font-size: 1.05em; margin-bottom: 0.15em; }
+.bench-notes p { margin-bottom: 0.3em; }
+.bench-sits { margin-bottom: 0.5em; font-size: 0.9em; columns: 2; column-gap: 1em; }
+.bench-sits li { break-inside: avoid; }
+@media (max-width: 640px) {
+  .bench-notes { grid-template-columns: minmax(0, 1fr); }
+}
+
+#bench-sheet-print { display: none; }
+@media print {
+  /* Wins over the game-detail rule that hides every body child except
+     #printable-lineup (same specificity, later in the file). */
+  body > #bench-sheet-print {
+    display: block !important;
+    page: bench-portrait;
+    color: #000;
+    --border: 0 0% 45%;
+    --muted: 0 0% 90%;
+    --accent: 45 80% 50%;
+    --destructive: 0 70% 45%;
+  }
+  #bench-sheet-print .bench-table { break-inside: avoid; }
+  #bench-sheet-print .bench-notes { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  #bench-sheet-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+/* The lineup printout is landscape; the bench sheet is one portrait page. */
+@page bench-portrait {
+  size: letter portrait;
+  margin: 0.4in;
+}
