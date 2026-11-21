@@ -63,6 +63,7 @@ const FieldDisplay = lazy(() => import("@/pages/field-display"));
 const Stats = lazy(() => import("@/pages/stats"));
 const SeasonStats = lazy(() => import("@/pages/season-stats"));
 const ArmWatch = lazy(() => import("@/pages/arm-watch"));
+const BenchSheet = lazy(() => import("@/pages/bench-sheet"));
 const Settings = lazy(() => import("@/pages/settings"));
 const Teams = lazy(() => import("@/pages/teams"));
 const Help = lazy(() => import("@/pages/help"));
@@ -507,6 +508,7 @@ function AppRoutes() {
                 <Route path="/stats" component={Stats} />
                 <Route path="/season-stats" component={SeasonStats} />
                 <Route path="/arm-watch" component={ArmWatch} />
+                <Route path="/bench-sheet" component={BenchSheet} />
                 {/* Constraints lives inside Settings now — keep the old URL alive for bookmarks. */}
                 <Route path="/constraints">
                   <Redirect to="/settings#constraints" />
