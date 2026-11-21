@@ -29,6 +29,8 @@ export interface GameLineup {
   shiftMinutes?: number | null;
   /** Shifts at the end left to the coach (0 = none); null = the team's setting. */
   flexShifts?: number | null;
+  /** The coach's own plan: per planned shift, player ids at spots 1–5. Null = generated. */
+  customShifts?: number[][] | null;
 }
 
 export const gameLineupKey = (gameId: number) => ["basketball-game-lineup", gameId] as const;
@@ -62,6 +64,7 @@ export function normalizeLineup(raw: GameLineup | null): GameLineup | null {
     absentIds: Array.isArray(raw.absentIds) ? raw.absentIds : [],
     order: orderOf(legacy),
     subSize: typeof raw.subSize === "number" ? raw.subSize : 2,
+    customShifts: Array.isArray(raw.customShifts) && raw.customShifts.length ? raw.customShifts : null,
   };
 }
 
@@ -100,6 +103,7 @@ export function gameRotationInput(setup: BasketballSetup, lineup: GameLineup | n
     },
     order: day.order.map(String),
     absentIds: day.absentIds.map(String),
+    customShifts: lineup?.customShifts ? lineup.customShifts.map((shift) => shift.map(String)) : null,
   };
 }
 

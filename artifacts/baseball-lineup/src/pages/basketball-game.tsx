@@ -137,6 +137,9 @@ function SetLineupDialog({
   // This game's shift length and whether the last shift is the coach's pick.
   const [shiftMinutes, setShiftMinutes] = useState<number>(start.shiftMinutes ?? setup.settings.shiftMinutes);
   const [flexLast, setFlexLast] = useState<boolean>((start.flexShifts ?? setup.settings.flexShifts) > 0);
+  // A game loaded from the coach's own sheet keeps following it unless they switch it off.
+  const hasPlan = !!initial?.customShifts?.length;
+  const [keepPlan, setKeepPlan] = useState(hasPlan);
   const validShift = Number.isFinite(shiftMinutes) && shiftMinutes >= 0.5 && shiftMinutes <= setup.settings.halfMinutes;
   const shiftsPerHalf = validShift ? Math.ceil(setup.settings.halfMinutes / shiftMinutes - 1e-9) : 0;
 
@@ -154,6 +157,18 @@ function SetLineupDialog({
         </DialogHeader>
 
         <div className="space-y-5">
+          {hasPlan && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border-2 border-primary/40 bg-primary/5 p-3 text-sm">
+              <Checkbox checked={keepPlan} onCheckedChange={(v) => setKeepPlan(v === true)} className="mt-0.5" />
+              <span>
+                <span className="font-semibold">Follow my own plan</span>
+                <span className="block text-muted-foreground">
+                  This game uses your shift-by-shift sheet, so subs at a time and the starting order below don't apply. If someone on
+                  it is marked out, the bench player with the least time covers their spot. Turn this off to generate a rotation instead.
+                </span>
+              </span>
+            </label>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm font-semibold">
               Shift length (min)
@@ -266,7 +281,7 @@ function SetLineupDialog({
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            disabled={saving || subSize < MIN_SUB_SIZE || present.length === 0 || !validShift}
+            disabled={saving || (!keepPlan && subSize < MIN_SUB_SIZE) || present.length === 0 || !validShift}
             onClick={() =>
               onSave({
                 absentIds: [...absent].map(Number),
@@ -274,6 +289,7 @@ function SetLineupDialog({
                 subSize,
                 shiftMinutes: shiftMinutes === setup.settings.shiftMinutes ? null : shiftMinutes,
                 flexShifts: flexLast ? Math.max(1, setup.settings.flexShifts) : 0,
+                customShifts: keepPlan ? initial?.customShifts ?? null : null,
               })
             }
             className="gap-2"
@@ -516,7 +532,7 @@ export default function BasketballGame() {
             {setup && (
               <span>
                 {formatMinutes(setup.settings.halfMinutes)}-min halves · {formatMinutes(shiftMinutes)}-min shifts
-                {lineup ? ` · ${lineup.subSize} at a time` : ""}
+                {lineup ? (lineup.customShifts ? " · your own plan" : ` · ${lineup.subSize} at a time`) : ""}
               </span>
             )}
           </div>
@@ -599,7 +615,7 @@ export default function BasketballGame() {
                       </Button>
                     </div>
                   </div>
-                  <div>
+                  {!lineup.customShifts && <div>
                     <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subs at a time</div>
                     <div className="flex gap-1" role="radiogroup" aria-label="Subs at a time">
                       {[1, 2, 3, 4, 5].map((n) => (
@@ -616,7 +632,7 @@ export default function BasketballGame() {
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </div>}
                   <label className="flex h-9 cursor-pointer items-center gap-2 text-sm font-semibold">
                     <Checkbox
                       checked={hasFlex}
@@ -678,7 +694,7 @@ export default function BasketballGame() {
                     </table>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">
-                    {presentCount} players here · {lineup.subSize} sub at a time. Run it live on the Court Display: it alerts you at each sub and you can change things on the fly.
+                    {presentCount} players here · {lineup.customShifts ? "following your own plan" : `${lineup.subSize} sub at a time`}. Run it live on the Court Display: it alerts you at each sub and you can change things on the fly.
                   </p>
                   {createPortal(
                     <div id="game-sheet-print">

@@ -151,7 +151,7 @@ export function GameSheetPrint({
       <h2 className="game-sheet-title">{title}</h2>
       <p className="game-sheet-sub">
         {formatMinutes(halfMinutes)}-min running halves · {formatMinutes(shiftMinutes)}-min shifts (sub at the first dead ball after each mark) ·{" "}
-        {subSize} in / {subSize} out every sub
+        {result.custom ? "coach's own plan" : <>{subSize} in / {subSize} out every sub</>}
         {absentNames.length > 0 && <> · {absentNames.join(", ")} out</>} · <span className="gs-key-justin">Highlighted</span> = just came in ·{" "}
         <span className="gs-up">Underlined</span> = guard playing up a spot (1 at the 2, or 2 at the 3)
       </p>

@@ -55,3 +55,6 @@ CREATE TABLE IF NOT EXISTS "basketball_plays" (
   "updated_at" timestamp with time zone NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "basketball_plays_user_id_idx" ON "basketball_plays" ("user_id");
+
+-- A coach's own shift-by-shift plan for a game (replaces the generated rotation).
+ALTER TABLE "basketball_game_lineups" ADD COLUMN IF NOT EXISTS "custom_shifts" jsonb;

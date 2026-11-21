@@ -198,6 +198,11 @@ export interface RotationInput {
   guardOrder?: string[];
   frontOrder?: string[];
   absentIds?: string[];
+  /**
+   * A coach's own plan instead of the generated rotation: per planned
+   * (non-flex) shift, the player ids at spots 1–5 in order.
+   */
+  customShifts?: string[][] | null;
 }
 
 export interface RowGroup {
@@ -247,7 +252,12 @@ export interface RotationResult {
   warnings: string[];
   /** The queues actually used, by group key, ids in starting order (after any borrowing). */
   queues: Record<string, string[]>;
+  /** True when this is the coach's own plan (rows' ids are in spot order 1–5). */
+  custom: boolean;
 }
+
+/** One group covering all five spots, used for a coach's own plan. */
+export const CUSTOM_GROUP: PositionGroup = { key: "all", label: "On court", one: "Player", short: "", spots: [1, 2, 3, 4, 5] };
 
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 const sortNames = (names: string[]) => [...names].sort(byName);
@@ -459,7 +469,8 @@ export function buildRotation(input: RotationInput): RotationResult {
     frontSpots: Math.floor(input.settings.frontSpots),
     flexShifts: Math.floor(input.settings.flexShifts),
   };
-  const empty: RotationResult = { groups: groupsFor(settings), halves: [], minutes: [], flexSuggestion: [], warnings, queues: {} };
+  const custom = !!input.customShifts && input.customShifts.length > 0;
+  const empty: RotationResult = { groups: groupsFor(settings), halves: [], minutes: [], flexSuggestion: [], warnings, queues: {}, custom };
 
   const settingsError = validSettings(settings);
   if (settingsError) {
@@ -471,10 +482,14 @@ export function buildRotation(input: RotationInput): RotationResult {
     warnings.push("No players are marked present.");
     return empty;
   }
-  const { groups, queues, spots, present, playingAs } = start;
-  warnings.push(...start.warnings);
+  const { present } = start;
+  const groups = custom ? [CUSTOM_GROUP] : start.groups;
+  const queues = custom ? [] : start.queues;
+  const spots = custom ? [] : start.spots;
+  const playingAs = custom ? new Map<string, string>() : start.playingAs;
+  if (!custom) warnings.push(...start.warnings);
 
-  groups.forEach((group, gi) => {
+  if (!custom) groups.forEach((group, gi) => {
     const rule = windowRule(group);
     if (!rule || spots[gi] < 1) return;
     if (group.key === "guard") {
@@ -514,7 +529,17 @@ export function buildRotation(input: RotationInput): RotationResult {
   const subSize = Math.floor(settings.subSize ?? 2);
   const sizes = queues.map((q, i) => ({ queue: q.length, spots: spots[i] }));
   const most = subSplit(1, MAX_SUB_SIZE, sizes).reduce((a, b) => a + b, 0);
-  if (subSize < MIN_SUB_SIZE || subSize > MAX_SUB_SIZE) {
+  if (custom) {
+    // The coach's plan: check it covers the game and only uses players who are here.
+    const planned = totalShifts - flexShifts;
+    const shifts = input.customShifts!;
+    if (shifts.length !== planned) {
+      warnings.push(`This plan has ${plural(shifts.length, "shift")} but the game has ${planned} before the flex; ${shifts.length < planned ? "the last planned group stays on for the rest" : "the extra shifts are left off"}.`);
+    }
+    const here = new Set(present.map(p => p.id));
+    const missing = [...new Set(shifts.flat().filter(id => !here.has(id)))];
+    if (missing.length) warnings.push(`The plan uses ${plural(missing.length, "player")} who ${missing.length === 1 ? "isn't" : "aren't"} here today.`);
+  } else if (subSize < MIN_SUB_SIZE || subSize > MAX_SUB_SIZE) {
     warnings.push(`Subs at a time must be ${MIN_SUB_SIZE} to ${MAX_SUB_SIZE}.`);
   } else if (subSize > most && most > 0) {
     warnings.push(`Only ${plural(most, "player")} can sub at once with this group, so subs are ${most} at a time.`);
@@ -533,7 +558,10 @@ export function buildRotation(input: RotationInput): RotationResult {
     const index = shift % shiftLengths.length;
     const elapsed = shiftLengths.slice(0, index).reduce((sum, m) => sum + m, 0);
     const flex = shift >= firstFlex;
-    const byGroup = queues.map((q, i) => windowAt(q, spots[i], starts[shift][i]));
+    const presentIds = new Set(present.map(p => p.id));
+    const byGroup = custom
+      ? [(input.customShifts![Math.min(shift, input.customShifts!.length - 1)] ?? []).filter(id => presentIds.has(id))]
+      : queues.map((q, i) => windowAt(q, spots[i], starts[shift][i]));
     const on = new Set(byGroup.flat());
     onCourtByShift.push(on);
     const bench = present.filter(p => !on.has(p.id)).map(p => p.id);
@@ -613,7 +641,8 @@ export function buildRotation(input: RotationInput): RotationResult {
     minutes,
     flexSuggestion,
     warnings,
-    queues: Object.fromEntries(groups.map((g, i) => [g.key, queues[i].map(p => p.id)])),
+    queues: custom ? {} : Object.fromEntries(groups.map((g, i) => [g.key, queues[i].map(p => p.id)])),
+    custom,
   };
 }
 
@@ -750,6 +779,11 @@ export function spotsByShift(result: RotationResult, players: BasketballPlayer[]
   let previous: Map<string, CourtSpot> | null = null;
   for (const row of result.halves.flatMap(h => h.rows)) {
     if (row.flex) continue;
+    if (result.custom) {
+      // The coach's plan says exactly who plays where.
+      map.set(row.shift, new Map((row.groups[0]?.ids ?? []).slice(0, 5).map((id, i) => [(i + 1) as CourtSpot, id])));
+      continue;
+    }
     const spots = stickySpots(result.groups.map((g, i) => ({ ids: row.groups[i]?.ids ?? [], spots: g.spots })), players, previous);
     const placed = spots.filter((x): x is { spot: CourtSpot; id: string } => x.spot !== null);
     previous = new Map(placed.map(x => [x.id, x.spot]));
