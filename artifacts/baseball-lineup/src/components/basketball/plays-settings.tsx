@@ -9,7 +9,7 @@ import { useConfirm } from "@/lib/confirm";
 import { toastError } from "@/lib/toast-error";
 import { GROUP_LAYOUTS, type GroupLayoutId } from "@/lib/basketball-rotation";
 import { deletePlay, fetchPlays, PLAYS_KEY, savePlay, stepCount, type BasketballPlay } from "@/lib/basketball-plays";
-import { BASKETBALL_SETUP_KEY, fetchBasketballSetup } from "@/lib/basketball-setup";
+import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, normalizeSetup } from "@/lib/basketball-setup";
 import { PlayDiagram } from "@/components/basketball/court";
 import { PlayEditor, type PlayDraft } from "@/components/basketball/play-editor";
 
@@ -19,7 +19,7 @@ export function PlaysSettings({ canEdit }: { canEdit: boolean }) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const { data: plays = [], isLoading } = useQuery({ queryKey: PLAYS_KEY, queryFn: fetchPlays });
-  const { data: setup } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data: setup } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
   const [editing, setEditing] = useState<BasketballPlay | "new" | null>(null);
   const defaultLayout: GroupLayoutId = setup?.settings.groupLayout ?? "guards-front";
 

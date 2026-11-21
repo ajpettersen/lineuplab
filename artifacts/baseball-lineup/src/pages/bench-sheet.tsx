@@ -17,6 +17,7 @@ import { QueueList } from "@/components/basketball/queue-list";
 import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
+  normalizeSetup,
   type BasketballSetup,
   type SetupGameDay,
   type SetupTags,
@@ -83,7 +84,7 @@ export default function BenchSheetPage() {
   const { can } = usePermission();
   const canEdit = can("partial");
   const { teamName, sportProfile } = useTeamSettings();
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: QUERY_KEY, queryFn: fetchSetup });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: QUERY_KEY, queryFn: fetchSetup, select: normalizeSetup });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dirty, setDirty] = useState(false);
 

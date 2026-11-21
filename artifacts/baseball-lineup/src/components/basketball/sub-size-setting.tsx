@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
-import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, type BasketballSetup } from "@/lib/basketball-setup";
+import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, normalizeSetup, type BasketballSetup } from "@/lib/basketball-setup";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const CHOICES: { value: number | null; label: string }[] = [
@@ -18,7 +18,7 @@ const CHOICES: { value: number | null; label: string }[] = [
 export function SubSizeSetting({ disabled }: { disabled: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
   const save = useMutation({
     mutationFn: async (defaultSubSize: number | null) => {
       const r = await fetch(`${BASE}/api/basketball-rotation/default-sub-size`, {

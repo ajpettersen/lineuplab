@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Loader2, Move, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,9 @@ import {
   ACTION_LABELS,
   blankPlay,
   clampToCourt,
+  distanceToLine,
+  moveLine,
+  moveLineEnd,
   pathLength,
   simplifyStroke,
   smoothPath,
@@ -16,6 +19,7 @@ import {
   zigzagPath,
   DEFAULT_SPOTS,
   type BasketballPlay,
+  type PlayAction,
   type PlayActionType,
   type PlayData,
   type Point,
@@ -25,7 +29,7 @@ import { CourtLines, PlayLayers } from "@/components/basketball/court";
 type Tool = "move" | PlayActionType;
 
 const TOOLS: { tool: Tool; label: string; hint: string }[] = [
-  { tool: "move", label: "Move", hint: "Drag players to where they start" },
+  { tool: "move", label: "Select / Move", hint: "Drag players. Tap a line to select it, then drag it or its ends, or delete it" },
   { tool: "cut", label: "Cut", hint: "Solid arrow: a player cuts" },
   { tool: "dribble", label: "Dribble", hint: "Zigzag arrow: dribble" },
   { tool: "pass", label: "Pass", hint: "Dashed arrow: pass (drawn straight)" },
@@ -93,7 +97,34 @@ export function PlayEditor({
   const [step, setStep] = useState<number>(() => stepCount(initial?.data ?? blankPlay()));
   const [stroke, setStroke] = useState<Point[] | null>(null);
   const [dragSpot, setDragSpot] = useState<CourtSpot | null>(null);
+  // Line editing (Select / Move tool): the selected line and what's being dragged.
+  const [selected, setSelected] = useState<number | null>(null);
+  const [lineDrag, setLineDrag] = useState<{ index: number; mode: "line" | "start" | "end"; last: Point } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+
+  const selectedAction = selected !== null ? data.actions[selected] ?? null : null;
+  const updateAction = (index: number, change: (a: PlayAction) => PlayAction) =>
+    setData((d) => ({ ...d, actions: d.actions.map((a, i) => (i === index ? change(a) : a)) }));
+  const deleteAction = (index: number) => {
+    setData((d) => ({ ...d, actions: d.actions.filter((_, i) => i !== index) }));
+    setSelected(null);
+  };
+
+  // Delete / Backspace removes the selected line (not while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (selected === null) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteAction(selected);
+      }
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const toCourt = (e: PointerEvent): Point => {
     const svg = svgRef.current!;
@@ -122,18 +153,47 @@ export function PlayEditor({
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const p = toCourt(e);
     if (tool === "move") {
-      setDragSpot(nearestSpot(p));
+      // Ends of the selected line first, then players, then any visible line.
+      if (selectedAction) {
+        const first = selectedAction.points[0];
+        const last = selectedAction.points[selectedAction.points.length - 1];
+        if (Math.hypot(last.x - p.x, last.y - p.y) < 16) return setLineDrag({ index: selected!, mode: "end", last: p });
+        if (Math.hypot(first.x - p.x, first.y - p.y) < 16) return setLineDrag({ index: selected!, mode: "start", last: p });
+      }
+      const spot = nearestSpot(p);
+      if (spot !== null) {
+        setDragSpot(spot);
+        return;
+      }
+      let hit: number | null = null;
+      let bestD = 14;
+      data.actions.forEach((a, i) => {
+        if (a.step > step) return;
+        const d = distanceToLine(p, a.points);
+        if (d < bestD) {
+          bestD = d;
+          hit = i;
+        }
+      });
+      setSelected(hit);
+      if (hit !== null) setLineDrag({ index: hit, mode: "line", last: p });
       return;
     }
+    setSelected(null);
     // Start from the nearest player when the stroke begins on one.
     const spot = nearestSpot(p);
     const startAt = spot ? data.players.find((x) => x.spot === spot)! : p;
     setStroke([{ x: startAt.x, y: startAt.y }, p]);
   };
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
-    if (dragSpot === null && !stroke) return;
+    if (dragSpot === null && !stroke && !lineDrag) return;
     const p = toCourt(e);
-    if (dragSpot !== null) {
+    if (lineDrag) {
+      const { index, mode, last } = lineDrag;
+      if (mode === "line") updateAction(index, (a) => ({ ...a, points: moveLine(a.points, p.x - last.x, p.y - last.y) }));
+      else updateAction(index, (a) => ({ ...a, points: moveLineEnd(a.points, mode, p) }));
+      setLineDrag({ ...lineDrag, last: p });
+    } else if (dragSpot !== null) {
       setData((d) => ({ ...d, players: d.players.map((x) => (x.spot === dragSpot ? { ...x, x: Math.round(p.x), y: Math.round(p.y) } : x)) }));
     } else if (stroke) {
       const last = stroke[stroke.length - 1];
@@ -158,6 +218,7 @@ export function PlayEditor({
     }
     setStroke(null);
     setDragSpot(null);
+    setLineDrag(null);
   };
 
   const steps = stepCount(data);
@@ -174,7 +235,7 @@ export function PlayEditor({
               role="radio"
               aria-checked={tool === t.tool}
               title={t.hint}
-              onClick={() => setTool(t.tool)}
+              onClick={() => { setTool(t.tool); if (t.tool !== "move") setSelected(null); }}
               className={`flex min-h-10 items-center gap-1.5 rounded-md border-2 px-3 text-sm font-semibold ${tool === t.tool ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted"}`}
             >
               <ToolIcon tool={t.tool} /> {t.label}
@@ -195,7 +256,14 @@ export function PlayEditor({
             aria-label="Draw the play"
           >
             <CourtLines />
+            {selectedAction && (
+              <path d={smoothPath(selectedAction.points)} fill="none" stroke="#2563eb" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" opacity="0.25" />
+            )}
             <PlayLayers data={data} groupLayout={groupLayout} uptoStep={step} showStepNumbers />
+            {selectedAction &&
+              [selectedAction.points[0], selectedAction.points[selectedAction.points.length - 1]].map((q, i) => (
+                <circle key={i} cx={q.x} cy={q.y} r="8" fill="#fff" stroke="#2563eb" strokeWidth="3" />
+              ))}
             {stroke && tool !== "move" && (
               <path
                 d={tool === "dribble" ? zigzagPath(stroke) : tool === "pass" ? smoothPath([stroke[0], stroke[stroke.length - 1]]) : smoothPath(stroke)}
@@ -241,6 +309,64 @@ export function PlayEditor({
           </p>
         </div>
 
+        {selectedAction && selected !== null && (
+          <div className="space-y-2 rounded-md border-2 border-blue-500/50 bg-blue-500/5 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-bold">Selected: {ACTION_LABELS[selectedAction.type]} (step {selectedAction.step})</span>
+              <Button type="button" size="sm" variant="destructive" className="gap-1" onClick={() => deleteAction(selected)}>
+                <Trash2 className="h-4 w-4" /> Delete line
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(ACTION_LABELS) as PlayActionType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() =>
+                    updateAction(selected, (a) => ({
+                      ...a,
+                      type,
+                      points: type === "pass" ? [a.points[0], a.points[a.points.length - 1]] : a.points,
+                    }))
+                  }
+                  className={`flex h-8 items-center gap-1 rounded-md border px-2 text-xs font-semibold ${selectedAction.type === type ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                >
+                  <ToolIcon tool={type} /> {ACTION_LABELS[type]}
+                </button>
+              ))}
+              <select
+                aria-label="Step for this line"
+                value={selectedAction.step}
+                onChange={(e) => updateAction(selected, (a) => ({ ...a, step: Number(e.target.value) }))}
+                className="h-8 rounded-md border bg-background px-2 text-xs font-semibold"
+              >
+                {Array.from({ length: Math.max(steps, step) }, (_, i) => i + 1).map((n) => <option key={n} value={n}>Step {n}</option>)}
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground">Drag the line to move it, or drag a white dot to move that end. Press Delete to remove it.</p>
+          </div>
+        )}
+
+        {thisStep > 0 && (
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lines in step {step}</div>
+            <ul className="divide-y rounded-md border">
+              {data.actions.map((a, i) =>
+                a.step !== step ? null : (
+                  <li key={i} className={`flex items-center gap-2 px-2 py-1 text-sm ${selected === i ? "bg-blue-500/10" : ""}`}>
+                    <button type="button" className="flex flex-1 items-center gap-2 text-left" onClick={() => { setTool("move"); setSelected(i); }}>
+                      <ToolIcon tool={a.type} /> {ACTION_LABELS[a.type]}
+                    </button>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`Delete this ${ACTION_LABELS[a.type].toLowerCase()}`} onClick={() => deleteAction(i)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ),
+              )}
+            </ul>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -248,7 +374,7 @@ export function PlayEditor({
             size="sm"
             className="gap-1"
             disabled={data.actions.length === 0}
-            onClick={() => setData((d) => ({ ...d, actions: d.actions.slice(0, -1) }))}
+            onClick={() => { setSelected(null); setData((d) => ({ ...d, actions: d.actions.slice(0, -1) })); }}
           >
             <Undo2 className="h-4 w-4" /> Undo line
           </Button>
@@ -258,7 +384,7 @@ export function PlayEditor({
             size="sm"
             className="gap-1"
             disabled={thisStep === 0}
-            onClick={() => setData((d) => ({ ...d, actions: d.actions.filter((a) => a.step !== step) }))}
+            onClick={() => { setSelected(null); setData((d) => ({ ...d, actions: d.actions.filter((a) => a.step !== step) })); }}
           >
             <Trash2 className="h-4 w-4" /> Clear step {step}
           </Button>

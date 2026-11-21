@@ -65,12 +65,14 @@ import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
   fetchGameLineup,
+  normalizeLineup,
   gameLineupKey,
   gameRotationInput,
   rotationPlayers,
   saveGameLineup,
   type BasketballSetup,
   type GameLineup,
+  normalizeSetup,
 } from "@/lib/basketball-setup";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -300,11 +302,12 @@ export default function BasketballGame() {
   const canEdit = can("partial");
   const { teamName } = useTeamSettings();
   const { data: game, isLoading } = useGetGame(id, { query: { enabled: !!id, queryKey: getGetGameQueryKey(id) } });
-  const { data: setup } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data: setup } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
   const { data: lineup, isLoading: lineupLoading } = useQuery({
     queryKey: gameLineupKey(id),
     enabled: !!id,
     queryFn: () => fetchGameLineup(id),
+    select: normalizeLineup,
   });
   const { data: stats } = useQuery({
     queryKey: ["basketball-game-stats", id],

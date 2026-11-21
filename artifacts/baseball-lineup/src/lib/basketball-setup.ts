@@ -33,10 +33,42 @@ export interface GameLineup {
 
 export const gameLineupKey = (gameId: number) => ["basketball-game-lineup", gameId] as const;
 
+type Legacy = { order?: number[]; guardOrder?: number[]; frontOrder?: number[] };
+const orderOf = (x: Legacy | null | undefined): number[] =>
+  Array.isArray(x?.order) ? x!.order! : [...(x?.guardOrder ?? []), ...(x?.frontOrder ?? [])];
+
+/**
+ * The app keeps copies of fetched data on the device (offline support), so a
+ * copy saved by an older version can come back in an older shape. These fill
+ * in anything missing so the pages never crash on it; fresh data replaces it
+ * as soon as the device is online.
+ */
+export function normalizeSetup(raw: BasketballSetup): BasketballSetup {
+  const day = (raw?.gameDay ?? {}) as SetupGameDay & Legacy;
+  return {
+    ...raw,
+    settings: { ...raw.settings, groupLayout: raw.settings?.groupLayout ?? "guards-front" },
+    players: Array.isArray(raw.players) ? raw.players : [],
+    gameDay: { absentIds: Array.isArray(day.absentIds) ? day.absentIds : [], order: orderOf(day) },
+    defaultSubSize: raw.defaultSubSize === undefined ? 2 : raw.defaultSubSize,
+  };
+}
+
+export function normalizeLineup(raw: GameLineup | null): GameLineup | null {
+  if (!raw) return null;
+  const legacy = raw as GameLineup & Legacy;
+  return {
+    ...raw,
+    absentIds: Array.isArray(raw.absentIds) ? raw.absentIds : [],
+    order: orderOf(legacy),
+    subSize: typeof raw.subSize === "number" ? raw.subSize : 2,
+  };
+}
+
 export async function fetchGameLineup(gameId: number): Promise<GameLineup | null> {
   const r = await fetch(`${BASE}/api/basketball-games/${gameId}/lineup`);
   if (!r.ok) throw new Error(`GET /api/basketball-games/${gameId}/lineup failed (${r.status})`);
-  return ((await r.json()) as { lineup: GameLineup | null }).lineup;
+  return normalizeLineup(((await r.json()) as { lineup: GameLineup | null }).lineup);
 }
 
 export async function saveGameLineup(gameId: number, lineup: GameLineup): Promise<void> {
@@ -74,7 +106,7 @@ export function gameRotationInput(setup: BasketballSetup, lineup: GameLineup | n
 export async function fetchBasketballSetup(): Promise<BasketballSetup> {
   const r = await fetch(`${BASE}/api/basketball-rotation`);
   if (!r.ok) throw new Error(`GET /api/basketball-rotation failed (${r.status})`);
-  return (await r.json()) as BasketballSetup;
+  return normalizeSetup((await r.json()) as BasketballSetup);
 }
 
 /** Setup players as the rotation sees them (string ids). */

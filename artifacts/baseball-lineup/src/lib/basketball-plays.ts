@@ -151,9 +151,170 @@ export function screenBar(points: Point[], half = 11): { a: Point; b: Point } | 
   return { a: { x: end.x + nx * half, y: end.y + ny * half }, b: { x: end.x - nx * half, y: end.y - ny * half } };
 }
 
+/** Shortest distance from a point to a drawn line (its polyline). */
+export function distanceToLine(p: Point, points: Point[]): number {
+  if (points.length === 0) return Infinity;
+  if (points.length === 1) return dist(p, points[0]);
+  let best = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+    best = Math.min(best, dist(p, { x: a.x + t * dx, y: a.y + t * dy }));
+  }
+  return best;
+}
+
+/** Move a whole line by (dx, dy), kept on the court. */
+export function moveLine(points: Point[], dx: number, dy: number): Point[] {
+  const minX = Math.min(...points.map((q) => q.x));
+  const maxX = Math.max(...points.map((q) => q.x));
+  const minY = Math.min(...points.map((q) => q.y));
+  const maxY = Math.max(...points.map((q) => q.y));
+  const sx = Math.max(-minX, Math.min(COURT_W - maxX, dx));
+  const sy = Math.max(-minY, Math.min(COURT_H - maxY, dy));
+  return points.map((q) => ({ x: Math.round(q.x + sx), y: Math.round(q.y + sy) }));
+}
+
+/**
+ * Move one end of a line to `to`. The rest of a curved line bends smoothly
+ * toward the new end (points nearer that end move more), so the shape keeps
+ * its feel instead of kinking.
+ */
+export function moveLineEnd(points: Point[], end: "start" | "end", to: Point): Point[] {
+  if (points.length < 2) return points;
+  const ordered = end === "end" ? points : [...points].reverse();
+  const last = ordered[ordered.length - 1];
+  const dx = to.x - last.x;
+  const dy = to.y - last.y;
+  const n = ordered.length - 1;
+  const moved = ordered.map((q, i) => ({ x: Math.round(q.x + (dx * i) / n), y: Math.round(q.y + (dy * i) / n) }));
+  return end === "end" ? moved : moved.reverse();
+}
+
 /** How many steps the play has. */
 export function stepCount(data: PlayData): number {
   return Math.max(1, ...data.actions.map((a) => a.step));
+}
+
+// ── Playback: players move along their lines, the ball along passes ─────────
+
+export type SpotPositions = Record<CourtSpot, Point>;
+
+export interface StepMotion {
+  step: number;
+  /** Where everyone is when this step starts and ends. */
+  from: SpotPositions;
+  to: SpotPositions;
+  /** Who moves, along which line (cuts, dribbles and screens). */
+  moves: { spot: CourtSpot; points: Point[] }[];
+  /** Passes in this step, as lines (the ball flies along them). */
+  passes: Point[][];
+  /** Who has the ball before and after the step (null = nobody / loose). */
+  ballFrom: CourtSpot | null;
+  ballTo: CourtSpot | null;
+}
+
+const MATCH_RADIUS = 36;
+
+function nearestPlayer(p: Point, positions: SpotPositions, exclude: Set<CourtSpot>, radius: number): CourtSpot | null {
+  let best: CourtSpot | null = null;
+  let bestD = radius;
+  for (const spot of [1, 2, 3, 4, 5] as CourtSpot[]) {
+    const q = positions[spot];
+    if (!q || exclude.has(spot)) continue;
+    const d = dist(p, q);
+    if (d < bestD) {
+      bestD = d;
+      best = spot;
+    }
+  }
+  return best;
+}
+
+/**
+ * Work out how the play moves, step by step. A cut, dribble or screen moves
+ * the player it starts on (the line runs from them) to its end. A pass sends
+ * the ball from the player it starts on to whoever is at its end once the
+ * step's movement is done (or as close as possible).
+ */
+export function playTimeline(data: PlayData): StepMotion[] {
+  let positions = Object.fromEntries(data.players.map((p) => [p.spot, { x: p.x, y: p.y }])) as SpotPositions;
+  let holder: CourtSpot | null = data.ballSpot;
+  const steps: StepMotion[] = [];
+  for (let step = 1; step <= stepCount(data); step++) {
+    const actions = data.actions.filter((a) => a.step === step);
+    const moving = new Set<CourtSpot>();
+    const moves: StepMotion["moves"] = [];
+    for (const a of actions) {
+      if (a.type === "pass") continue;
+      const spot = nearestPlayer(a.points[0], positions, moving, MATCH_RADIUS);
+      if (spot === null) continue;
+      moving.add(spot);
+      moves.push({ spot, points: [positions[spot], ...a.points.slice(1)] });
+    }
+    const to = { ...positions };
+    for (const m of moves) to[m.spot] = m.points[m.points.length - 1];
+    const passes = actions.filter((a) => a.type === "pass").map((a) => a.points);
+    let ballTo = holder;
+    for (const pass of passes) {
+      const receiver = nearestPlayer(pass[pass.length - 1], to, new Set(), Infinity);
+      ballTo = receiver;
+    }
+    steps.push({ step, from: positions, to, moves, passes, ballFrom: holder, ballTo });
+    positions = to;
+    holder = ballTo;
+  }
+  return steps;
+}
+
+/** The point a fraction `f` (0–1) of the way along a line, by distance. */
+export function pointAlong(points: Point[], f: number): Point {
+  if (points.length === 1 || f <= 0) return points[0];
+  const total = pathLength(points);
+  if (total === 0 || f >= 1) return points[points.length - 1];
+  let left = total * f;
+  for (let i = 1; i < points.length; i++) {
+    const seg = dist(points[i - 1], points[i]);
+    if (left <= seg) {
+      const t = seg === 0 ? 0 : left / seg;
+      return { x: points[i - 1].x + (points[i].x - points[i - 1].x) * t, y: points[i - 1].y + (points[i].y - points[i - 1].y) * t };
+    }
+    left -= seg;
+  }
+  return points[points.length - 1];
+}
+
+const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+
+/**
+ * Everyone's position and the ball at fraction `t` (0–1) of a step. Players
+ * move through the whole step; a pass flies in the second half, after the
+ * cutters have started (so a cutter can catch it).
+ */
+export function frameAt(motion: StepMotion, t: number): { positions: SpotPositions; ball: Point | null } {
+  const e = ease(Math.max(0, Math.min(1, t)));
+  const positions = { ...motion.from };
+  for (const m of motion.moves) positions[m.spot] = pointAlong(m.points, e);
+  let ball: Point | null = null;
+  if (motion.passes.length > 0 && t > 0.5) {
+    const pass = motion.passes[motion.passes.length - 1];
+    const f = Math.min(1, (t - 0.5) * 2);
+    const receiver = motion.ballTo !== null ? positions[motion.ballTo] : pass[pass.length - 1];
+    ball = f >= 1 ? receiver : { x: pass[0].x + (receiver.x - pass[0].x) * f, y: pass[0].y + (receiver.y - pass[0].y) * f };
+    if (f >= 1 && motion.ballTo !== null) ball = null; // back in a player's hands
+  }
+  return { positions, ball };
+}
+
+/** Who holds the ball at fraction `t` of a step (null while it's in the air). */
+export function holderAt(motion: StepMotion, t: number): CourtSpot | null {
+  if (motion.passes.length === 0) return motion.ballFrom;
+  if (t <= 0.5) return motion.ballFrom;
+  return t >= 1 ? motion.ballTo : null;
 }
 
 // ── API ────────────────────────────────────────────────────────────────────
