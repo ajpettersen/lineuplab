@@ -9,7 +9,8 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:basketball-rotation": "node ./test/basketball-rotation.test.ts",
-    "test:basketball-live": "node ./test/basketball-live.test.ts"
+    "test:basketball-live": "node ./test/basketball-live.test.ts",
+    "test:basketball-plays": "node ./test/basketball-plays.test.ts"
   },
   "devDependencies": {
     "@dnd-kit/core": "^6.3.1",
