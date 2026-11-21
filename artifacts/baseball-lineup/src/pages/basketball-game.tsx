@@ -47,7 +47,7 @@ import { isVersionConflict } from "@/lib/conflict-registry";
 import { effectiveStatus } from "@/lib/game-status";
 import {
   buildRotation,
-  stickySpots,
+  spotsByShift as shiftSpots,
   formatClock,
   formatMinutes,
   MAX_SUB_SIZE,
@@ -350,19 +350,10 @@ export default function BasketballGame() {
     [setup, lineup],
   );
   // Each shift's 1–5, carried forward so players who stay on keep their spot.
-  const spotsByShift = useMemo(() => {
-    const map = new Map<number, Map<CourtSpot, string>>();
-    if (!rotation || !setup) return map;
-    const players = rotationPlayers(setup);
-    let previous: Map<string, CourtSpot> | null = null;
-    for (const row of rotation.halves.flatMap((h) => h.rows)) {
-      if (row.flex) continue;
-      const spots = stickySpots(rotation.groups.map((g, i) => ({ ids: row.groups[i]?.ids ?? [], spots: g.spots })), players, previous);
-      previous = new Map(spots.filter((x) => x.spot !== null).map((x) => [x.id, x.spot as CourtSpot]));
-      map.set(row.shift, new Map(spots.filter((x) => x.spot !== null).map((x) => [x.spot as CourtSpot, x.id])));
-    }
-    return map;
-  }, [rotation, setup]);
+  const spotsByShift = useMemo(
+    () => (rotation && setup ? shiftSpots(rotation, rotationPlayers(setup)) : new Map<number, Map<CourtSpot, string>>()),
+    [rotation, setup],
+  );
   const color = useMemo(() => {
     const ids = setup ? setup.players.map((p) => String(p.id)) : [];
     return (pid: string) => CHIP_COLORS[Math.max(0, ids.indexOf(pid)) % CHIP_COLORS.length];

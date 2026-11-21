@@ -979,23 +979,42 @@
 }
 .game-sheet-title { font-size: 17pt; font-weight: 800; margin: 0 0 2pt; }
 .game-sheet-sub { font-size: 9pt; color: #444; margin: 0 0 6pt; }
-.game-sheet-half { font-size: 11pt; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 6pt 0 2pt; }
-.game-sheet-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.game-sheet-half {
+  font-size: 11pt; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 7pt 0 0; padding: 2.5pt 6pt; background: #1e293b; color: #fff;
+}
+.game-sheet-table {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  border: 2px solid #1e293b;
+}
 .game-sheet-table th,
-.game-sheet-table td { border: 1px solid #555; padding: 3pt 4.5pt; text-align: left; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.game-sheet-table th { background: #e6e6e6; font-weight: 700; }
-.game-sheet-table .gs-clock { width: 6.5%; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
-.game-sheet-table .gs-spot { width: 7.9%; }
-.game-sheet-table .gs-in { width: 18%; background: #ecf6e6; white-space: normal; }
-.game-sheet-table th.gs-in { background: #e6e6e6; }
-.game-sheet-table .gs-out { width: 12.5%; color: #444; }
-.game-sheet-table .gs-bench { width: 23.5%; white-space: normal; }
-.game-sheet-table .gs-justin { background: #fdf1c7; font-weight: 700; }
-.game-sheet-table .gs-flex td { background: #eee; }
-.game-sheet .gs-up { text-decoration: underline; font-style: italic; }
-.game-sheet .gs-key-justin { background: #fdf1c7; border: 1px solid #c9b46b; padding: 0 3pt; font-weight: 700; }
-.game-sheet-foot { margin-top: 6pt; font-size: 10pt; }
-.game-sheet-foot p { margin: 0 0 2pt; }
+.game-sheet-table td {
+  border: 1px solid #8a8f98; padding: 3pt 4.5pt; text-align: left; vertical-align: middle;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.game-sheet-table thead th {
+  background: #e2e8f0; color: #0f172a; font-weight: 800; border-bottom: 2px solid #1e293b;
+  font-size: 0.95em;
+}
+.game-sheet-table tbody tr:nth-child(even) td { background: #f4f6f9; }
+.game-sheet-table tbody tr { border-bottom: 1px solid #8a8f98; }
+.game-sheet-table .gs-clock {
+  width: 6.5%; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: #e8eefc !important; border-right: 2px solid #1e293b;
+}
+.game-sheet-table thead .gs-clock { background: #e2e8f0 !important; }
+.game-sheet-table .gs-spot { width: 7.9%; text-align: center; }
+.game-sheet-table tbody td:nth-child(n+2):nth-child(-n+6) { text-align: center; }
+.game-sheet-table .gs-in { width: 18%; background: #e3f4dc !important; white-space: normal; border-left: 2px solid #1e293b; }
+.game-sheet-table thead th.gs-in { background: #e2e8f0 !important; }
+.game-sheet-table .gs-out { width: 12.5%; color: #333; }
+.game-sheet-table .gs-bench { width: 23.5%; white-space: normal; color: #333; }
+.game-sheet-table td.gs-justin { background: #ffe27a !important; font-weight: 800; }
+.game-sheet-table .gs-flex td { background: #e5e7eb !important; font-weight: 700; }
+.game-sheet .gs-up { text-decoration: underline; text-decoration-thickness: 1.5px; font-style: italic; }
+.game-sheet .gs-key-justin { background: #ffe27a; border: 1px solid #b59a2e; padding: 0 3pt; font-weight: 800; }
+.game-sheet-foot { margin-top: 7pt; font-size: 10pt; border-top: 2px solid #1e293b; padding-top: 4pt; }
+.game-sheet-foot p { margin: 0 0 2.5pt; }
 
 #game-sheet-print { display: none; }
 @media print {
