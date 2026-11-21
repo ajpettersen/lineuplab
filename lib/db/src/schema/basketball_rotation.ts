@@ -1,4 +1,4 @@
-import { doublePrecision, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { doublePrecision, index, integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * Basketball bench-sheet setup for one team (Bench Sheet page). Keyed by the
@@ -88,3 +88,28 @@ export const basketballGameLineupsTable = pgTable("basketball_game_lineups", {
 }, (table) => [index("basketball_game_lineups_user_id_idx").on(table.userId)]);
 
 export type BasketballGameLineup = typeof basketballGameLineupsTable.$inferSelect;
+
+/** A drawn play (Settings → Plays), shown on the court display at timeouts. */
+export interface BasketballPlayData {
+  /** Where the 1–5 start, in court units (viewBox 500 × 470, basket at the bottom). */
+  players: { spot: number; x: number; y: number }[];
+  /** Spot that starts with the ball, if any. */
+  ballSpot: number | null;
+  /** Cuts, passes, dribbles and screens, each drawn as a path, in step order. */
+  actions: { type: "cut" | "pass" | "dribble" | "screen"; step: number; points: { x: number; y: number }[] }[];
+}
+
+export const basketballPlaysTable = pgTable("basketball_plays", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  notes: text("notes"),
+  /** Position groups this play uses (same options as Settings → Rotation). */
+  groupLayout: text("group_layout").notNull().default("guards-front"),
+  data: jsonb("data").$type<BasketballPlayData>().notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("basketball_plays_user_id_idx").on(table.userId)]);
+
+export type BasketballPlay = typeof basketballPlaysTable.$inferSelect;

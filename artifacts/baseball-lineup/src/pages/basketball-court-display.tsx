@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
+  BookOpen,
   ChevronsRight,
   GripVertical,
   Minus,
@@ -34,6 +35,7 @@ import { useConfirm } from "@/lib/confirm";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { formatClock } from "@/lib/basketball-rotation";
+import { PlaysViewer } from "@/components/basketball/plays-viewer";
 import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
@@ -322,6 +324,7 @@ export default function BasketballCourtDisplay() {
   const [now, setNow] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [playsOpen, setPlaysOpen] = useState(false);
   // Same feel as the baseball lineup grid: a mouse drag starts after 5px; on
   // touch, press and hold briefly so normal scrolling still works.
   const sensors = useSensors(
@@ -618,6 +621,9 @@ export default function BasketballCourtDisplay() {
               <Play className="h-5 w-5" /> {view.phase === "pregame" ? "Start game" : view.phase === "halftime" ? "Start 2nd half" : "Resume"}
             </Button>
           )}
+          <Button variant="outline" className="gap-1" onClick={() => setPlaysOpen(true)}>
+            <BookOpen className="h-5 w-5" /> Plays
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -628,6 +634,14 @@ export default function BasketballCourtDisplay() {
           </Button>
         </div>
       </header>
+
+      <PlaysViewer
+        open={playsOpen}
+        onClose={() => setPlaysOpen(false)}
+        namesBySpot={Object.fromEntries(spots.filter((x) => x.spot !== null).map((x) => [x.spot, nameOf(x.id)]))}
+        clockRunning={view.runningSince !== null}
+        onPauseClock={() => act(stopClock)}
+      />
 
       {view.phase === "pregame" && needsLineup && (
         <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-100 px-3 py-3 text-amber-950 md:px-5 dark:bg-amber-900/40 dark:text-amber-100">

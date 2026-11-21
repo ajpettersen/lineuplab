@@ -35,6 +35,7 @@ import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
 import { SubSizeSetting } from "@/components/basketball/sub-size-setting";
+import { PlaysSettings } from "@/components/basketball/plays-settings";
 import { GroupLayoutSetting } from "@/components/basketball/group-layout-setting";
 import { CoachesCard } from "@/components/coaches-card";
 import { PasswordCard } from "@/components/password-card";
@@ -311,7 +312,7 @@ export default function Settings() {
     if (typeof window === "undefined") return "team";
     const h = window.location.hash.replace(/^#/, "");
     if (h === "constraints-section" || h === "constraints") return "constraints";
-    if (["team", "coaches", "lineup", "gameday", "constraints"].includes(h)) return h;
+    if (["team", "coaches", "lineup", "plays", "gameday", "constraints"].includes(h)) return h;
     return "team";
   });
   useEffect(() => {
@@ -319,7 +320,7 @@ export default function Settings() {
     const onHash = () => {
       const h = window.location.hash.replace(/^#/, "");
       if (h === "constraints-section" || h === "constraints") setTab("constraints");
-      else if (["team", "coaches", "lineup", "gameday"].includes(h)) setTab(h);
+      else if (["team", "coaches", "lineup", "plays", "gameday"].includes(h)) setTab(h);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -359,6 +360,7 @@ export default function Settings() {
           <TabsTrigger value="team" data-testid="tab-team">Team</TabsTrigger>
           <TabsTrigger value="coaches" data-testid="tab-coaches">Coaches</TabsTrigger>
           <TabsTrigger value="lineup" data-testid="tab-lineup">{savedBasketball ? "Rotation" : "Lineup"}</TabsTrigger>
+          {savedBasketball && <TabsTrigger value="plays" data-testid="tab-plays">Plays</TabsTrigger>}
           <TabsTrigger value="gameday" data-testid="tab-gameday">Game Day</TabsTrigger>
           {!savedBasketball && (
             <TabsTrigger value="constraints" data-testid="tab-constraints">Constraints</TabsTrigger>
@@ -840,6 +842,12 @@ export default function Settings() {
 
       </>)}
       </TabsContent>
+
+      {savedBasketball && (
+        <TabsContent value="plays" className="space-y-6 mt-4">
+          <PlaysSettings canEdit={can("partial")} />
+        </TabsContent>
+      )}
 
       <TabsContent value="gameday" className="space-y-6 mt-4">
       {DEMO_SEED_ENABLED && <DemoDataCard />}

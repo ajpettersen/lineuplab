@@ -331,6 +331,22 @@ export default function BasketballGame() {
     return [...map.values()].some((v) => v > 0) ? map : null;
   }, [season, stats]);
   const updateGame = useUpdateGame();
+  // Quick changes from the controls above the grid (shift length, subs at a
+  // time, flex): saved right away, and the grid updates immediately.
+  const quickSave = useMutation({
+    mutationFn: async (change: Partial<GameLineup>) => {
+      const current = qc.getQueryData<GameLineup | null>(gameLineupKey(id));
+      if (!current) return;
+      const next: GameLineup = { ...current, ...change };
+      if (setup && next.shiftMinutes === setup.settings.shiftMinutes) next.shiftMinutes = null;
+      qc.setQueryData(gameLineupKey(id), next);
+      await saveGameLineup(id, next);
+    },
+    onError: (err) => {
+      toastError(toast, "Couldn't save the change", err);
+      void qc.invalidateQueries({ queryKey: gameLineupKey(id) });
+    },
+  });
   const saveLineup = useMutation({
     mutationFn: (l: GameLineup) => saveGameLineup(id, l),
     onSuccess: async () => {
@@ -510,7 +526,7 @@ export default function BasketballGame() {
                 </Button>
               )}
               <Button onClick={() => setLineupOpen(true)} className="gap-2">
-                <Wand2 className="h-4 w-4" /> {lineup ? "Replace Lineup" : "Set Lineup"}
+                <Wand2 className="h-4 w-4" /> {lineup ? "Edit Lineup" : "Set Lineup"}
               </Button>
             </div>
           )}
@@ -550,6 +566,65 @@ export default function BasketballGame() {
               </div>
             </CardHeader>
             <CardContent>
+              {lineup && setup && canEdit && (
+                <div className="mb-4 flex flex-wrap items-end gap-x-6 gap-y-3 rounded-md border bg-muted/40 p-3">
+                  <div>
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift length</div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9"
+                        aria-label="Shorter shifts"
+                        disabled={quickSave.isPending || shiftMinutes <= 0.5}
+                        onClick={() => quickSave.mutate({ shiftMinutes: Math.max(0.5, shiftMinutes - 0.5) })}
+                      >
+                        −
+                      </Button>
+                      <span className="w-20 text-center font-bold tabular-nums">{formatMinutes(shiftMinutes)} min</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9"
+                        aria-label="Longer shifts"
+                        disabled={quickSave.isPending || shiftMinutes + 0.5 > setup.settings.halfMinutes}
+                        onClick={() => quickSave.mutate({ shiftMinutes: Math.min(setup.settings.halfMinutes, shiftMinutes + 0.5) })}
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subs at a time</div>
+                    <div className="flex gap-1" role="radiogroup" aria-label="Subs at a time">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          role="radio"
+                          aria-checked={lineup.subSize === n}
+                          disabled={quickSave.isPending}
+                          onClick={() => quickSave.mutate({ subSize: n })}
+                          className={`h-9 w-9 rounded-md border-2 text-sm font-bold ${lineup.subSize === n ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted"}`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex h-9 cursor-pointer items-center gap-2 text-sm font-semibold">
+                    <Checkbox
+                      checked={hasFlex}
+                      disabled={quickSave.isPending}
+                      onCheckedChange={(v) => quickSave.mutate({ flexShifts: v ? Math.max(1, setup.settings.flexShifts) : 0 })}
+                    />
+                    Flex the last shift
+                  </label>
+                  {quickSave.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </div>
+              )}
               {lineupLoading || !setup ? (
                 <Skeleton className="h-40 w-full" />
               ) : !lineup || !rotation ? (
