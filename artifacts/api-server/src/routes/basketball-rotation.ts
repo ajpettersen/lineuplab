@@ -3,6 +3,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
+  basketballGameLineupsTable,
   basketballGameStatsTable,
   basketballRotationSettingsTable,
   playersTable,
@@ -106,8 +107,26 @@ router.get("/basketball-rotation", async (req, res): Promise<void> => {
       guardOrder: keep(gameDay.guardOrder),
       frontOrder: keep(gameDay.frontOrder),
     },
+    // Subs at a time for new game lineups; null = ask each time.
+    defaultSubSize: saved ? saved.defaultSubSize : 2,
     saved: !!saved,
   });
+});
+
+// Settings → Rotation: default subs at a time (1–5), or null to ask for each game.
+router.patch("/basketball-rotation/default-sub-size", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const parsed = z.object({ defaultSubSize: z.number().int().min(1).max(5).nullable() }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Subs at a time must be 1 to 5, or ask each time." });
+    return;
+  }
+  const { defaultSubSize } = parsed.data;
+  await db
+    .insert(basketballRotationSettingsTable)
+    .values({ userId, defaultSubSize, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set: { defaultSubSize, updatedAt: new Date() } });
+  res.json({ ok: true, defaultSubSize });
 });
 
 router.put("/basketball-rotation", async (req, res): Promise<void> => {
@@ -231,6 +250,73 @@ router.delete("/basketball-games/:gameId/stats", async (req, res): Promise<void>
 });
 
 /** Season totals per player: games played, starts, and seconds on court. */
+// ── Per-game lineup (game page → Set Lineup) ───────────────────────────────
+
+const GameLineupZ = z.object({
+  absentIds: z.array(z.number().int().positive()).max(100),
+  guardOrder: z.array(z.number().int().positive()).max(100),
+  frontOrder: z.array(z.number().int().positive()).max(100),
+  subSize: z.number().int().min(1).max(5),
+});
+
+router.get("/basketball-games/:gameId/lineup", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(basketballGameLineupsTable)
+    .where(and(eq(basketballGameLineupsTable.gameId, gameId), eq(basketballGameLineupsTable.userId, userId)));
+  res.json({
+    lineup: row
+      ? { absentIds: row.absentIds, guardOrder: row.guardOrder, frontOrder: row.frontOrder, subSize: row.subSize, updatedAt: row.updatedAt }
+      : null,
+  });
+});
+
+router.put("/basketball-games/:gameId/lineup", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const parsed = GameLineupZ.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid lineup" });
+    return;
+  }
+  const known = new Set((await rosterFor(userId)).map((p) => p.id));
+  const keep = (ids: number[]) => [...new Set(ids.filter((id) => known.has(id)))];
+  const values = {
+    userId,
+    absentIds: keep(parsed.data.absentIds),
+    guardOrder: keep(parsed.data.guardOrder),
+    frontOrder: keep(parsed.data.frontOrder),
+    subSize: parsed.data.subSize,
+    updatedAt: new Date(),
+  };
+  await db
+    .insert(basketballGameLineupsTable)
+    .values({ gameId, ...values })
+    .onConflictDoUpdate({ target: basketballGameLineupsTable.gameId, set: values });
+  res.json({ ok: true });
+});
+
+router.delete("/basketball-games/:gameId/lineup", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (gameId) {
+    await db
+      .delete(basketballGameLineupsTable)
+      .where(and(eq(basketballGameLineupsTable.gameId, gameId), eq(basketballGameLineupsTable.userId, userId)));
+  }
+  res.status(204).send();
+});
+
 router.get("/basketball-season", async (req, res): Promise<void> => {
   res.json(await basketballSeason(req.ownerUserId!));
 });

@@ -16,11 +16,16 @@
 // tested with plain Node (test/basketball-live.test.ts).
 
 import {
+  assignSpots,
   buildRotation,
+  subSplit,
+  type CourtSpot,
   type BasketballPlayer,
   type BasketballRole,
   type BasketballSettings,
 } from "./basketball-rotation.ts";
+
+export type { CourtSpot } from "./basketball-rotation.ts";
 
 export type LivePhase = "pregame" | "live" | "halftime" | "final";
 
@@ -180,13 +185,50 @@ export function isFlexShift(s: LiveState, shift: number): boolean {
   return shift >= totalShifts(s) - Math.min(Math.floor(s.settings.flexShifts), totalShifts(s));
 }
 
+/** Window starts after the next planned sub (`subSize` players, split as on the Bench Sheet). */
+function advanced(s: LiveState): { guardStart: number; frontStart: number } {
+  const split = subSplit(
+    s.subsMade + 1,
+    s.settings.subSize ?? 2,
+    { queue: s.guardQueue.length, spots: s.guardSpots },
+    { queue: s.frontQueue.length, spots: s.frontSpots },
+  );
+  return { guardStart: s.guardStart + split.guards, frontStart: s.frontStart + split.front };
+}
+
+/**
+ * The next planned sub as pairs: who goes in for whom. Pairs stay inside a
+ * group (a guard for a guard, a front player for a front player); within a
+ * group, the one who has been on longest is replaced by the one who has sat
+ * longest.
+ */
+export function nextSubPairs(s: LiveState): { in: string; out: string }[] {
+  const { guardStart, frontStart } = advanced(s);
+  const pairs: { in: string; out: string }[] = [];
+  const pair = (queue: string[], spots: number, from: number, to: number) => {
+    if (queue.length <= spots) return;
+    const before = windowOf(queue, from, spots);
+    const after = windowOf(queue, to, spots);
+    const out = before.filter((id) => !after.includes(id));
+    const inn = after.filter((id) => !before.includes(id));
+    out.forEach((id, i) => inn[i] && pairs.push({ in: inn[i], out: id }));
+  };
+  pair(s.guardQueue, s.guardSpots, s.guardStart, guardStart);
+  pair(s.frontQueue, s.frontSpots, s.frontStart, frontStart);
+  return pairs;
+}
+
+/** Change how many players sub at a time for the rest of the game. */
+export function setSubSize(s: LiveState, subSize: number): LiveState {
+  return { ...s, settings: { ...s.settings, subSize: Math.max(1, Math.min(5, Math.floor(subSize))) } };
+}
+
 /** Who the next planned sub brings in and takes out. */
 export function nextSub(s: LiveState): { in: string[]; out: string[] } {
   const now = onCourt(s);
   const next = onCourt({
     ...s,
-    guardStart: s.guardQueue.length > s.guardSpots ? s.guardStart + 1 : s.guardStart,
-    frontStart: s.frontQueue.length > s.frontSpots ? s.frontStart + 1 : s.frontStart,
+    ...advanced(s),
   });
   const before = new Set([...now.guards, ...now.front]);
   const after = new Set([...next.guards, ...next.front]);
@@ -238,8 +280,7 @@ function withUndo(s: LiveState, now: number, change: (s: LiveState) => LiveState
 export function makeSub(s: LiveState, now: number): LiveState {
   return withUndo(s, now, (x) => ({
     ...x,
-    guardStart: x.guardQueue.length > x.guardSpots ? x.guardStart + 1 : x.guardStart,
-    frontStart: x.frontQueue.length > x.frontSpots ? x.frontStart + 1 : x.frontStart,
+    ...advanced(x),
     subsMade: x.subsMade + 1,
   }));
 }
@@ -346,40 +387,8 @@ export function undoLast(s: LiveState, now: number): LiveState {
   };
 }
 
-export type CourtSpot = 1 | 2 | 3 | 4 | 5;
-
-/**
- * Put the on-court players on the 1–5 spots. Guards take the 1 and 2 (by
- * their 1/2 tag when set); front players take the 3, 4 and 5, with Bigs at
- * the 5 and 4 and a non-Big at the 3. With other spot counts, extra players
- * are listed without a number.
- */
-export function courtSpots(
-  s: LiveState,
-): { spot: CourtSpot | null; id: string }[] {
-  const byId = new Map(s.players.map((p) => [p.id, p]));
+/** The on-court players at the 1–5 spots (see assignSpots in basketball-rotation.ts). */
+export function courtSpots(s: LiveState): { spot: CourtSpot | null; id: string }[] {
   const { guards, front } = onCourt(s);
-  const name = (id: string) => byId.get(id)?.name ?? id;
-  const g = [...guards].sort((a, b) => {
-    const pa = byId.get(a)?.position ?? "9";
-    const pb = byId.get(b)?.position ?? "9";
-    return pa.localeCompare(pb) || name(a).localeCompare(name(b));
-  });
-  // Guard tagged "2" alone should take the 2, not the 1.
-  if (g.length === 2 && byId.get(g[0])?.position === "2" && !byId.get(g[1])?.position) g.reverse();
-  const bigs = front.filter((id) => byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
-  const others = front.filter((id) => !byId.get(id)?.big).sort((a, b) => name(a).localeCompare(name(b)));
-  // 3 = a non-Big if there is one; 5 then 4 = Bigs first.
-  const three = others.length ? others.shift()! : bigs.pop();
-  const five = bigs.length ? bigs.shift()! : others.shift();
-  const four = bigs.length ? bigs.shift()! : others.shift();
-  const spots: { spot: CourtSpot | null; id: string }[] = [];
-  if (g[0]) spots.push({ spot: 1, id: g[0] });
-  if (g[1]) spots.push({ spot: 2, id: g[1] });
-  for (const id of g.slice(2)) spots.push({ spot: null, id });
-  if (three) spots.push({ spot: 3, id: three });
-  if (four) spots.push({ spot: 4, id: four });
-  if (five) spots.push({ spot: 5, id: five });
-  for (const id of [...bigs, ...others]) spots.push({ spot: null, id });
-  return spots;
+  return assignSpots(guards, front, s.players);
 }

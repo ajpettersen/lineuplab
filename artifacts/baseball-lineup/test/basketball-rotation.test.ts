@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   buildRotation,
+  stickySpots,
+  subSplit,
   DEFAULT_BASKETBALL_SETTINGS,
   frontWindowOk,
   guardWindowOk,
@@ -43,6 +45,8 @@ function seeded(seed: number) {
     front: ["Anders", "Henry", "Rory"],
     bench: ["Bash", "Luke", "Miles", "Vinnie V"],
     in: [], out: [],
+    guardIds: ["Vinnie J", "Brody"],
+    frontIds: ["Anders", "Henry", "Rory"],
   });
   assert.equal(second.clock, "17:30");
   assert.deepEqual(second.guards, ["Brody", "Luke"]);
@@ -193,6 +197,79 @@ function seeded(seed: number) {
   assert.deepEqual(uneven.halves[0].rows.map(r => r.clock), ["20:00", "17:00", "14:00", "11:00", "8:00", "5:00", "2:00"]);
   assert.equal(uneven.halves[0].rows[6].minutes, 2);
   assert.ok(uneven.warnings.some(w => w.includes("don't split evenly")));
+}
+
+// ── Subs at a time ─────────────────────────────────────────────────────────
+{
+  const guards = [guard("Vinnie J"), guard("Brody"), guard("Luke"), guard("Vinnie V")];
+  const fronts = [front("Anders", true), front("Henry"), front("Rory", true), front("Bash"), front("Miles", true)];
+  const run = (subSize: number) =>
+    buildRotation({
+      players: [...guards, ...fronts],
+      settings: { ...DEFAULT_BASKETBALL_SETTINGS, subSize },
+      guardOrder: guards.map((p) => p.id),
+      frontOrder: fronts.map((p) => p.id),
+    });
+  const isGuard = (n: string) => guards.some((g) => g.name === n);
+  const subRows = (r: ReturnType<typeof run>) => r.halves.flatMap((h) => h.rows).filter((row) => !row.flex && row.shift > 0);
+
+  // 2 at a time is the default and matches the sheet without the setting.
+  assert.deepEqual(run(2).halves, buildRotation({ players: [...guards, ...fronts], settings: { ...DEFAULT_BASKETBALL_SETTINGS, subSize: undefined }, guardOrder: guards.map((p) => p.id), frontOrder: fronts.map((p) => p.id) }).halves);
+
+  for (const k of [1, 2, 3, 4]) {
+    const r = run(k);
+    assert.deepEqual(
+      r.warnings,
+      k === 1 ? ["Some players sit 10:00 in a row. Shorter shifts or more subs at a time spread the minutes more evenly."] : [],
+      `${k} at a time: warnings`,
+    );
+    for (const row of subRows(r)) {
+      assert.equal(row.in.length, k, `${k} at a time, shift ${row.shift}: ${k} in`);
+      assert.equal(row.out.length, k, `${k} at a time, shift ${row.shift}: ${k} out`);
+      assert.equal(row.in.filter(isGuard).length, row.out.filter(isGuard).length, "guards only swap with guards");
+    }
+  }
+  // 1 at a time alternates front, guard, front…
+  const one = subRows(run(1));
+  assert.deepEqual(one.slice(0, 4).map((r) => isGuard(r.in[0])), [false, true, false, true]);
+  // 3 at a time alternates 1 guard + 2 front, then 2 guards + 1 front.
+  const three = subRows(run(3));
+  assert.deepEqual(three.slice(0, 2).map((r) => r.in.filter(isGuard).length), [1, 2]);
+  // 4 at a time = 2 guards + 2 front every time.
+  assert.ok(subRows(run(4)).every((r) => r.in.filter(isGuard).length === 2));
+  // 5 at a time: only 2 guards and 2 front are on the bench, so it's 4 at a time, with a warning.
+  const five = run(5);
+  assert.ok(five.warnings.some((w) => w.includes("4 at a time")));
+  assert.ok(subRows(five).every((r) => r.in.length === 4));
+  // Minutes stay fair inside each group whatever the sub size.
+  for (const k of [3, 4]) {
+    const m = Object.fromEntries(run(k).minutes.map((x) => [x.name, x.minutes]));
+    const frontMins = fronts.map((f) => m[f.name]);
+    assert.ok(Math.max(...frontMins) - Math.min(...frontMins) <= 5, `${k} at a time: front minutes within 5`);
+  }
+
+  // The split rule on its own.
+  const g = { queue: 4, spots: 2 };
+  const f = { queue: 5, spots: 3 };
+  assert.deepEqual(subSplit(1, 2, g, f), { guards: 1, front: 1 });
+  assert.deepEqual(subSplit(1, 1, g, f), { guards: 0, front: 1 });
+  assert.deepEqual(subSplit(2, 1, g, f), { guards: 1, front: 0 });
+  assert.deepEqual(subSplit(1, 5, g, { queue: 6, spots: 3 }), { guards: 2, front: 3 }, "a full line change with a deep bench");
+  assert.deepEqual(subSplit(1, 2, { queue: 2, spots: 2 }, f), { guards: 0, front: 2 }, "no bench guards: both subs are front");
+}
+
+// ── Sticky spots: players who stay on keep their spot ─────────────────────
+{
+  const players = [guard("A"), guard("B"), guard("C"), front("D", true), front("E"), front("F", true), front("G")];
+  const first = new Map(stickySpots(["A", "B"], ["D", "E", "F"], players, null).map((s) => [s.id, s.spot!]));
+  assert.equal(first.get("E"), 3, "non-Big at the 3");
+  // A and F stay; C comes in for B, G (non-Big) comes in for D (Big).
+  const next = new Map(stickySpots(["A", "C"], ["E", "F", "G"], players, first).map((s) => [s.id, s.spot!]));
+  assert.equal(next.get("A"), first.get("A"), "A keeps their spot");
+  assert.equal(next.get("F"), first.get("F"), "F keeps their spot");
+  assert.equal(next.get("E"), 3);
+  assert.equal(next.get("C"), first.get("B"), "C takes B's spot");
+  assert.equal(next.get("G"), first.get("D"), "G takes the open post spot");
 }
 
 console.log("basketball-rotation: all checks passed");

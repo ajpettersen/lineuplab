@@ -34,6 +34,7 @@ import { isVersionConflict } from "@/lib/conflict-registry";
 import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
+import { SubSizeSetting } from "@/components/basketball/sub-size-setting";
 import { CoachesCard } from "@/components/coaches-card";
 import { PasswordCard } from "@/components/password-card";
 import { SyncIssuesCard } from "@/components/sync-issues-card";
@@ -562,13 +563,15 @@ export default function Settings() {
           <CardHeader>
             <CardTitle>Rotation</CardTitle>
             <CardDescription>
-              Basketball rotations are set on the{" "}
+              Players' roles and game length are set on the{" "}
               <Link href="/bench-sheet" className="text-primary underline">Bench Sheet</Link>
-              : each player's role (Guard or Front, Big, plays the 1 or 2), half and shift
-              length, flex shifts, and who's here. Each game's court display runs the
-              clock and sub alerts from it.
+              . Each game's lineup (who's here, starting order, subs at a time) is set on
+              its game page, and its court display runs the clock and sub alerts from it.
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            <SubSizeSetting disabled={!canEditTeam} />
+          </CardContent>
         </Card>
       ) : (<>
       <Card data-testid="card-defaults">
