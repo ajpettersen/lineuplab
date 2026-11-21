@@ -20,6 +20,8 @@ interface ExtendedPlayerStats {
 }
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { historicalFieldingQuery } from "@/lib/extra-queries";
+import { SeasonCourtTime } from "@/components/basketball/season-court-time";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { Button } from "@/components/ui/button";
@@ -502,6 +504,7 @@ function HistoryTab({ players }: { players: { id: number; name: string; number?:
 
 // ---- Main Stats component ----
 export default function Stats() {
+  const { sport } = useTeamSettings();
   const { data: seasonStats } = useGetSeasonStats();
   // Default true so we don't flash-hide the card on first load before prefs
   // arrive — matches Dashboard treatment.
@@ -567,6 +570,8 @@ export default function Stats() {
         <h1 className="page-title text-foreground mt-1">Rotation Report</h1>
         <p className="text-muted-foreground mt-2 text-sm">Playing time, position fairness, and offensive stats</p>
       </div>
+
+      {sport === "basketball" && <SeasonCourtTime />}
 
       {/* Summary Cards. Fairness card is gated on the user's Show Fairness
           Score preference; layout collapses cleanly to 2 columns when off. */}
