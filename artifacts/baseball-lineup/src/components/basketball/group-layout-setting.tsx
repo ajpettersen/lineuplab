@@ -3,7 +3,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { GROUP_LAYOUT_IDS, GROUP_LAYOUTS, type GroupLayoutId } from "@/lib/basketball-rotation";
-import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, type BasketballSetup } from "@/lib/basketball-setup";
+import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, normalizeSetup, type BasketballSetup } from "@/lib/basketball-setup";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -14,7 +14,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 export function GroupLayoutSetting({ disabled }: { disabled: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
   const save = useMutation({
     mutationFn: async (groupLayout: GroupLayoutId) => {
       const r = await fetch(`${BASE}/api/basketball-rotation/group-layout`, {

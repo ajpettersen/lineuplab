@@ -40,8 +40,10 @@ import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
   fetchGameLineup,
+  normalizeLineup,
   gameLineupKey,
   gameRotationInput,
+  normalizeSetup,
 } from "@/lib/basketball-setup";
 import {
   bench,
@@ -311,11 +313,12 @@ export default function BasketballCourtDisplay() {
   const confirm = useConfirm();
   const { teamShortName, teamName } = useTeamSettings();
   const { data: game } = useGetGame(gameId, { query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) } });
-  const { data: setup, isLoading: setupLoading } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup });
+  const { data: setup, isLoading: setupLoading } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
   const { data: gameLineup, isLoading: lineupLoading } = useQuery({
     queryKey: gameLineupKey(gameId),
     enabled: !!gameId,
     queryFn: () => fetchGameLineup(gameId),
+    select: normalizeLineup,
   });
   const isLoading = setupLoading || lineupLoading;
 

@@ -57,8 +57,20 @@ export function PlayLayers({
   showStepNumbers,
   tokenProps,
   tokenScale = 1,
+  positions,
+  ballHolder,
+  ballPoint,
+  actionStyle,
 }: {
   data: PlayData;
+  /** Override where players are drawn (playback). */
+  positions?: Partial<Record<CourtSpot, { x: number; y: number }>>;
+  /** Override who has the ball (playback); null = nobody. */
+  ballHolder?: CourtSpot | null;
+  /** The ball in the air (playback). */
+  ballPoint?: { x: number; y: number } | null;
+  /** Playback: how to draw each line; overrides `uptoStep`. */
+  actionStyle?: (a: PlayAction) => "hidden" | "faded" | "normal" | "hot";
   groupLayout: GroupLayoutId;
   names?: Partial<Record<CourtSpot, string>>;
   uptoStep?: number;
@@ -70,7 +82,20 @@ export function PlayLayers({
   const markerHot = `${markerId}-hot`;
   const groups = groupsFor({ groupLayout, guardSpots: 2, frontSpots: 3 });
   const short = (spot: CourtSpot) => groups.find((g) => g.spots.includes(spot))?.short ?? "";
-  const actions = data.actions.filter((a) => uptoStep === undefined || a.step <= uptoStep);
+  const styleOf = (a: PlayAction) =>
+    actionStyle
+      ? actionStyle(a)
+      : uptoStep === undefined
+        ? "normal"
+        : a.step > uptoStep
+          ? "hidden"
+          : a.step === uptoStep && uptoStep > 0
+            ? "hot"
+            : a.step < uptoStep
+              ? "faded"
+              : "normal";
+  const actions = data.actions.filter((a) => styleOf(a) !== "hidden");
+  const holder = ballHolder === undefined ? data.ballSpot : ballHolder;
   return (
     <>
       <defs>
@@ -82,18 +107,19 @@ export function PlayLayers({
         </marker>
       </defs>
       {actions.map((a, i) => {
-        const hot = uptoStep !== undefined && a.step === uptoStep && uptoStep > 0;
-        const faded = uptoStep !== undefined && a.step < uptoStep;
-        return <ActionPath key={i} action={a} markerId={hot ? markerHot : markerId} faded={faded} highlight={hot} />;
+        const style = styleOf(a);
+        const hot = style === "hot";
+        return <ActionPath key={i} action={a} markerId={hot ? markerHot : markerId} faded={style === "faded"} highlight={hot} />;
       })}
       {showStepNumbers &&
         actions.map((a, i) => (
-          <g key={`n${i}`} transform={`translate(${a.points[Math.floor(a.points.length / 2)].x + (a.points.length === 2 ? (a.points[1].x - a.points[0].x) / 2 : 0)} ${a.points[Math.floor(a.points.length / 2)].y + (a.points.length === 2 ? (a.points[1].y - a.points[0].y) / 2 : 0) - 12})`}>
+          <g key={`n${i}`} transform={`translate(${midOf(a.points).x} ${midOf(a.points).y - 12})`}>
             <circle r="9" fill="#fff" stroke={STROKE} strokeWidth="1.5" />
             <text textAnchor="middle" dy="0.35em" fontSize="11" fontWeight="700" fill={STROKE}>{a.step}</text>
           </g>
         ))}
-      {data.players.map((p) => {
+      {data.players.map((base) => {
+        const p = { ...base, ...(positions?.[base.spot] ?? {}) };
         const name = names?.[p.spot];
         const r = 22 * tokenScale;
         return (
@@ -105,7 +131,7 @@ export function PlayLayers({
             <text textAnchor="middle" dy={`${1.3}em`} className="fill-primary-foreground" style={{ font: `600 ${9 * tokenScale}px sans-serif`, opacity: 0.85 }}>
               {short(p.spot)}
             </text>
-            {data.ballSpot === p.spot && <circle cx={r * 0.8} cy={-r * 0.8} r={7 * tokenScale} fill="#f97316" stroke="#7c2d12" strokeWidth={1.5} />}
+            {holder === p.spot && <circle cx={r * 0.8} cy={-r * 0.8} r={7 * tokenScale} fill="#f97316" stroke="#7c2d12" strokeWidth={1.5} />}
             {name && (
               <>
                 <rect x={-55} y={r + 3} width={110} height={22} rx={6} className="fill-background/95 stroke-border" strokeWidth={1.5} />
@@ -117,8 +143,15 @@ export function PlayLayers({
           </g>
         );
       })}
+      {ballPoint && <circle cx={ballPoint.x} cy={ballPoint.y} r={8 * tokenScale} fill="#f97316" stroke="#7c2d12" strokeWidth={1.5} />}
     </>
   );
+}
+
+/** The middle of a line (for its step number). */
+function midOf(points: { x: number; y: number }[]): { x: number; y: number } {
+  if (points.length === 2) return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+  return points[Math.floor(points.length / 2)];
 }
 
 /** A complete, read-only play diagram. */
