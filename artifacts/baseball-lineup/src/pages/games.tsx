@@ -99,7 +99,8 @@ function TypeBadge({ type }: { type: EventKind | string }) {
 export default function Games() {
   const { data: games = [], isLoading } = useListGames();
   const { data: players = [] } = useListPlayers();
-  const { teamName } = useTeamSettings();
+  const { teamName, sportProfile } = useTeamSettings();
+  const isBasketball = sportProfile.id === "basketball";
   const deleteGame = useDeleteGame();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -197,10 +198,12 @@ export default function Games() {
     g,
     teamName,
     onViewBoxScore,
+    isBasketball,
   }: {
     g: typeof games[0];
     teamName: string;
     onViewBoxScore: (id: number) => void;
+    isBasketball: boolean;
   }) => (
     <Card className="border-border hover:border-primary/30 transition-colors">
       <CardContent className="p-4">
@@ -245,7 +248,7 @@ export default function Games() {
                 </span>
                 {g.location && <FieldLink location={g.location} />}
                 {effectiveStatus(g) === "upcoming" && <UmpireInfo game={extras(g)} />}
-                <span className="text-xs">{g.innings} innings</span>
+                {!isBasketball && <span className="text-xs">{g.innings} innings</span>}
               </div>
               <ScheduleChangeNotice game={extras(g)} className="mt-1.5" />
             </div>
@@ -269,7 +272,7 @@ export default function Games() {
                   e.preventDefault();
                   window.open(`${BASE}/games/${g.id}/display`, "_blank", "noopener");
                 }}
-                title="Open the dugout / fence-iPad display in a new tab"
+                title={isBasketball ? "Open the court display in a new tab" : "Open the dugout / fence-iPad display in a new tab"}
                 data-testid={`button-game-display-${g.id}`}
               >
                 <Tv className="h-4 w-4" />
@@ -467,7 +470,7 @@ export default function Games() {
           {upcomingForList.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Upcoming</h2>
-              {upcomingForList.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
+              {upcomingForList.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} isBasketball={isBasketball} />)}
             </div>
           )}
           {pastForList.length > 0 && (
@@ -475,7 +478,7 @@ export default function Games() {
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 {filter === "game" ? "Past Games" : "Past"}
               </h2>
-              {pastForList.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} />)}
+              {pastForList.map((g) => <GameCard key={g.id} g={g} teamName={teamName} onViewBoxScore={setBoxScoreGameId} isBasketball={isBasketball} />)}
             </div>
           )}
         </>

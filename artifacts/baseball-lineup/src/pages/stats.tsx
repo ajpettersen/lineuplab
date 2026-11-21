@@ -563,6 +563,21 @@ export default function Stats() {
       return { p, cells };
     });
 
+  // Basketball: playing time and starts come from the court display; the
+  // innings, position-fairness and batting sections below are baseball's.
+  if (sport === "basketball") {
+    return (
+      <div className="flex flex-col gap-6">
+        <div>
+          <div className="eyebrow text-primary/70">Season Analytics</div>
+          <h1 className="page-title text-foreground mt-1">Rotation Report</h1>
+          <p className="text-muted-foreground mt-2 text-sm">Starts and playing time across the season</p>
+        </div>
+        <SeasonCourtTime />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -570,8 +585,6 @@ export default function Stats() {
         <h1 className="page-title text-foreground mt-1">Rotation Report</h1>
         <p className="text-muted-foreground mt-2 text-sm">Playing time, position fairness, and offensive stats</p>
       </div>
-
-      {sport === "basketball" && <SeasonCourtTime />}
 
       {/* Summary Cards. Fairness card is gated on the user's Show Fairness
           Score preference; layout collapses cleanly to 2 columns when off. */}

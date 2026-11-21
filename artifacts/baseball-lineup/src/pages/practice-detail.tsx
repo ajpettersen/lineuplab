@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { Link, useRoute } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,7 +17,7 @@ import {
   type PracticeDetail,
 } from "@workspace/api-client-react";
 import {
-  PRACTICE_FOCUS_AREAS,
+  usePracticeFocusAreas,
   PRACTICE_DRILL_TYPES,
   FOCUS_AREA_BY_KEY,
   DRILL_TYPE_BY_KEY,
@@ -112,6 +113,8 @@ function blockStartLabels(practiceStart: Date, blocks: PracticeBlock[]): string[
 }
 
 export default function PracticeDetailPage() {
+  const focusAreas = usePracticeFocusAreas();
+  const { sport } = useTeamSettings();
   const [, params] = useRoute("/practices/:id");
   const practiceId = parseInt(params?.id ?? "0", 10);
   const qc = useQueryClient();
@@ -1197,7 +1200,7 @@ export default function PracticeDetailPage() {
             <div className="space-y-1.5">
               <Label>Focus areas</Label>
               <div className="flex flex-wrap gap-1.5">
-                {PRACTICE_FOCUS_AREAS.map((f) => {
+                {focusAreas.map((f) => {
                   const active = hFocus.includes(f.key);
                   return (
                     <button
@@ -1292,7 +1295,7 @@ export default function PracticeDetailPage() {
             <div className="space-y-1.5">
               <Label>Focus areas</Label>
               <div className="flex flex-wrap gap-1.5">
-                {PRACTICE_FOCUS_AREAS.map((f) => {
+                {focusAreas.map((f) => {
                   const active = bFocus.includes(f.key);
                   return (
                     <button
@@ -1389,7 +1392,9 @@ export default function PracticeDetailPage() {
                 value={genRequiredDrills}
                 onChange={(e) => setGenRequiredDrills(e.target.value)}
                 rows={3}
-                placeholder={"One drill per line — each becomes its own block.\ne.g. 4-corners infield\nPickoff plays at 1st"}
+                placeholder={sport === "basketball"
+                  ? "One drill per line — each becomes its own block.\ne.g. Mikan drill\n3-on-2 / 2-on-1 transition"
+                  : "One drill per line — each becomes its own block.\ne.g. 4-corners infield\nPickoff plays at 1st"}
                 data-testid="input-generate-required-drills"
               />
               <p className="text-[11px] text-muted-foreground">
@@ -1411,7 +1416,9 @@ export default function PracticeDetailPage() {
             )}
             {activePlayers.length > 0 && (
               <p className="text-[11px] text-muted-foreground">
-                For infield/outfield/catching/pitching blocks, the AI may split players into groups by preferred position.
+                {sport === "basketball"
+                  ? "For ball-handling and post-play blocks, the AI may split players into guard and big stations."
+                  : "For infield/outfield/catching/pitching blocks, the AI may split players into groups by preferred position."}
                 {Array.from(attDraft.values()).some((r) => r.attended !== null)
                   ? " Today's attendance will limit groups to players marked present."
                   : " Mark attendance below first if you want groups limited to who's actually here."}

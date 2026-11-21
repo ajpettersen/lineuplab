@@ -5,6 +5,7 @@ import { extras, mapsUrl, ScheduleChangeNotice, umpireLabel } from "@/components
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { isPastUnrecorded, isTrulyUpcoming } from "@/lib/game-status";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import {
   shortenTeamName,
   formatOpponentForMatchup,
@@ -67,6 +68,8 @@ export function NextGameHero({
   const date = new Date(game.gameDate);
   const isPast = isPastUnrecorded(game as never);
   const label = getHeroLabel(date, isPast);
+  const { sportProfile } = useTeamSettings();
+  const isBasketball = sportProfile.id === "basketball";
 
   return (
     <Card
@@ -141,12 +144,14 @@ export function NextGameHero({
                   <span className="text-sm sm:text-base">Ump: {umpireLabel(extras(game))}</span>
                 </span>
               )}
-              <span className="flex items-center gap-2 px-2.5 py-0.5 rounded-sm bg-white/10 border border-white/20">
-                <span className="font-numeric text-sm text-white">
-                  {game.innings}
+              {!isBasketball && (
+                <span className="flex items-center gap-2 px-2.5 py-0.5 rounded-sm bg-white/10 border border-white/20">
+                  <span className="font-numeric text-sm text-white">
+                    {game.innings}
+                  </span>
+                  <span className="eyebrow text-white/60">innings</span>
                 </span>
-                <span className="eyebrow text-white/60">innings</span>
-              </span>
+              )}
             </div>
             <ScheduleChangeNotice game={extras(game)} className="mt-3" />
           </div>
@@ -163,10 +168,10 @@ export function NextGameHero({
                   )
                 }
                 data-testid="button-hero-field-display"
-                title="Open the dugout / fence-iPad display in a new tab"
+                title={isBasketball ? "Open the court display (clock, subs, playing time) in a new tab" : "Open the dugout / fence-iPad display in a new tab"}
               >
                 <Tv className="h-5 w-5 mr-2" />
-                Open Field Display
+                {isBasketball ? "Open Court Display" : "Open Field Display"}
               </Button>
             )}
             <Link href={`/games/${game.id}`}>

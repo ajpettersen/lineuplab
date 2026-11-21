@@ -54,14 +54,16 @@ function ScoreBadge({ our, opp }: { our: number | null | undefined; opp: number 
 
 export default function Dashboard() {
   const { data: games = [] } = useListGames();
-  const { teamName } = useTeamSettings();
+  const { teamName, sportProfile } = useTeamSettings();
+  // Basketball has no innings: playing time comes from the court display.
+  const isBasketball = sportProfile.id === "basketball";
   const { data: seasonStats } = useGetSeasonStats();
   const { data: playerStats = [], isSuccess: playerStatsLoaded } =
     useGetPlayerStats();
   // Default true — coaches who haven't toggled it yet see the score, matching
   // legacy behavior. While prefs are loading we err on the side of showing.
   const { data: prefs } = useGetPreferences();
-  const showFairness = prefs?.showFairnessScore ?? true;
+  const showFairness = !isBasketball && (prefs?.showFairnessScore ?? true);
 
   const actualGames = games.filter((g) => g.type === "game");
   const completedGames = actualGames.filter((g) => g.status === "completed");
@@ -223,14 +225,16 @@ export default function Dashboard() {
             hint: pastUnrecorded
               ? "Looks like you've got a past game without a score yet — close the loop."
               : nextUpcoming
-                ? "Use Field Display to manage positions inning by inning, then record the score."
+                ? isBasketball
+                  ? "Run it on the court display (clock, sub alerts, playing time), then record the score."
+                  : "Use Field Display to manage positions inning by inning, then record the score."
                 : "Once a game is on the books, you'll generate lineups and score it from here.",
             cta: pastUnrecorded
               ? { href: `/games/${pastUnrecorded.id}`, label: "Score it" }
               : nextUpcoming
                 ? {
                     href: `/games/${nextUpcoming.id}/display`,
-                    label: "Open Field Display",
+                    label: isBasketball ? "Open Court Display" : "Open Field Display",
                   }
                 : null,
           },
@@ -447,7 +451,7 @@ export default function Dashboard() {
                         {format(new Date(g.gameDate), "EEE, MMM d")} {g.location ? `· ${g.location}` : ""}
                       </div>
                     </Link>
-                    <div className="text-xs text-muted-foreground hidden sm:block shrink-0">{g.innings} inn.</div>
+                    {!isBasketball && <div className="text-xs text-muted-foreground hidden sm:block shrink-0">{g.innings} inn.</div>}
                     {/* Quick Field Display launcher — opens the live dugout
                      *  display in a new tab without leaving the dashboard.
                      *  Sibling to (not nested in) the Link so the click
@@ -461,8 +465,8 @@ export default function Dashboard() {
                         window.open(`${BASE}/games/${g.id}/display`, "_blank", "noopener");
                       }}
                       data-testid={`button-upcoming-field-display-${g.id}`}
-                      title="Open Field Display in a new tab"
-                      aria-label="Open Field Display"
+                      title={isBasketball ? "Open the court display in a new tab" : "Open Field Display in a new tab"}
+                      aria-label={isBasketball ? "Open court display" : "Open Field Display"}
                     >
                       <Tv className="h-4 w-4" />
                     </Button>
@@ -512,7 +516,7 @@ export default function Dashboard() {
         </div>
 
         {/* Playing Time Alert */}
-        {mostBenchPlayer && mostBenchPlayer.benchInnings > 0 && (
+        {!isBasketball && mostBenchPlayer && mostBenchPlayer.benchInnings > 0 && (
           <Card className="border-yellow-200 bg-yellow-50 lg:col-span-2">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-yellow-800 flex items-center gap-2">

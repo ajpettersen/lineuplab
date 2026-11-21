@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { BASKETBALL_PROMPT_NOTE, teamSport } from "../lib/team-sport";
 import { z } from "zod";
 import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
@@ -118,7 +119,11 @@ router.post("/help/ask", async (req, res): Promise<void> => {
       max_completion_tokens: 800,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "system",
+          content:
+            (await teamSport(req.ownerUserId!)) === "basketball" ? `${SYSTEM_PROMPT}\n${BASKETBALL_PROMPT_NOTE}` : SYSTEM_PROMPT,
+        },
         { role: "user", content: parsed.data.question },
       ],
     });

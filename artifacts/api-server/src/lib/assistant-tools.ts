@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { basketballSeason } from "./basketball-season";
 import {
   db,
   gamesTable,
@@ -356,6 +357,15 @@ export const ASSISTANT_TOOL_DEFS = [
   {
     type: "function" as const,
     function: {
+      name: "get_basketball_season",
+      description:
+        "Basketball teams only: each player's games played, starts, and seconds on court this season, recorded by the court display.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "get_roster",
       description:
         "List the team's active players with jersey number, preferred positions, and whether they can pitch.",
@@ -459,6 +469,8 @@ export async function executeAssistantTool(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   switch (name) {
+    case "get_basketball_season":
+      return basketballSeason(userId);
     case "get_roster":
       return getRoster(userId);
     case "get_games":

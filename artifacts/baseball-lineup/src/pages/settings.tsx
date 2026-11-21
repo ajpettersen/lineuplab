@@ -171,6 +171,8 @@ export default function Settings() {
   // disabled form (server still 403s as the source of truth).
   const { can } = usePermission();
   const canEditTeam = can("full");
+  // Basketball teams don't use the baseball lineup generator; their rotation lives on the Bench Sheet.
+  const savedBasketball = teamQuery.data?.sport === "basketball";
 
   const [teamName, setTeamName] = useState("");
   const [teamShortName, setTeamShortName] = useState("");
@@ -354,9 +356,11 @@ export default function Settings() {
         <TabsList className="w-full overflow-x-auto justify-start">
           <TabsTrigger value="team" data-testid="tab-team">Team</TabsTrigger>
           <TabsTrigger value="coaches" data-testid="tab-coaches">Coaches</TabsTrigger>
-          <TabsTrigger value="lineup" data-testid="tab-lineup">Lineup</TabsTrigger>
+          <TabsTrigger value="lineup" data-testid="tab-lineup">{savedBasketball ? "Rotation" : "Lineup"}</TabsTrigger>
           <TabsTrigger value="gameday" data-testid="tab-gameday">Game Day</TabsTrigger>
-          <TabsTrigger value="constraints" data-testid="tab-constraints">Constraints</TabsTrigger>
+          {!savedBasketball && (
+            <TabsTrigger value="constraints" data-testid="tab-constraints">Constraints</TabsTrigger>
+          )}
         </TabsList>
 
       <TabsContent value="coaches" className="space-y-6 mt-4">
@@ -553,6 +557,20 @@ export default function Settings() {
       </TabsContent>
 
       <TabsContent value="lineup" className="space-y-6 mt-4">
+      {savedBasketball ? (
+        <Card data-testid="card-basketball-rotation">
+          <CardHeader>
+            <CardTitle>Rotation</CardTitle>
+            <CardDescription>
+              Basketball rotations are set on the{" "}
+              <Link href="/bench-sheet" className="text-primary underline">Bench Sheet</Link>
+              : each player's role (Guard or Front, Big, plays the 1 or 2), half and shift
+              length, flex shifts, and who's here. Each game's court display runs the
+              clock and sub alerts from it.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : (<>
       <Card data-testid="card-defaults">
         <CardHeader>
           <CardTitle>Defaults</CardTitle>
@@ -815,6 +833,7 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      </>)}
       </TabsContent>
 
       <TabsContent value="gameday" className="space-y-6 mt-4">
@@ -827,7 +846,9 @@ export default function Settings() {
             <Link href="/depth-chart" className="text-primary underline">
               Team → Depth Chart
             </Link>{" "}
-            so you can pull it up alongside the lineup grid during a game.
+            {savedBasketball
+              ? "so you can rank your players at each spot."
+              : "so you can pull it up alongside the lineup grid during a game."}
           </CardDescription>
         </CardHeader>
       </Card>

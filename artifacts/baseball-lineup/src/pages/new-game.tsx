@@ -376,20 +376,22 @@ export default function NewGame() {
                   required
                 />
               </div>
-              <div className="flex flex-col gap-1.5 min-w-0">
-                <Label htmlFor="innings">Innings</Label>
-                <Input
-                  id="innings"
-                  type="number"
-                  min="1"
-                  max="9"
-                  value={innings}
-                  onChange={(e) => {
-                    setInningsTouched(true);
-                    setInnings(e.target.value);
-                  }}
-                />
-              </div>
+              {sportProfile.features.battingOrder && (
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <Label htmlFor="innings">Innings</Label>
+                  <Input
+                    id="innings"
+                    type="number"
+                    min="1"
+                    max="9"
+                    value={innings}
+                    onChange={(e) => {
+                      setInningsTouched(true);
+                      setInnings(e.target.value);
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="location">Location (optional)</Label>

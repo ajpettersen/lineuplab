@@ -99,7 +99,7 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
   // Conversely, brand-new teams that flip the toggle ON in Settings see
   // the reminders right away (no past imports needed).
   const [settings] = await db
-    .select({ usesGameChanger: teamSettingsTable.usesGameChanger })
+    .select({ usesGameChanger: teamSettingsTable.usesGameChanger, sport: teamSettingsTable.sport })
     .from(teamSettingsTable)
     .where(eq(teamSettingsTable.userId, userId));
   // The column is a non-nullable boolean defaulting to false, so we can't
@@ -112,7 +112,8 @@ router.get("/dashboard/tasks", async (req, res): Promise<void> => {
   const hasEverImportedBoxScore = pastGames.some(
     (g) => g.boxScoreImportedAt != null,
   );
-  const usesGameChanger = explicitlyOn || hasEverImportedBoxScore;
+  // Box-score import is baseball-only.
+  const usesGameChanger = settings?.sport !== "basketball" && (explicitlyOn || hasEverImportedBoxScore);
 
   // Existing dismissals — keyed by `${gameId}:${taskType}` for cheap lookup.
   const dismissed = await db

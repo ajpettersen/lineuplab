@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Accordion,
@@ -178,7 +179,68 @@ const FAQ: FaqEntry[] = [
   },
 ];
 
+// Basketball teams: the questions above about lineups, innings, the dugout
+// display, batting/pitching stats and tournaments are baseball's.
+const BASKETBALL_FAQ: FaqEntry[] = [
+  FAQ[0],
+  FAQ[1],
+  {
+    q: "How do I build a rotation?",
+    a: (
+      <>
+        Open the{" "}
+        <Link href="/bench-sheet" className="text-primary underline underline-offset-2">
+          Bench Sheet
+        </Link>{" "}
+        (Team menu). Tag each player Guard (plays the 1 or 2) or Front (flexes across the 3, 4 and 5), mark your 4s and 5s as Big, and set half length, shift length and how many shifts at the end are your pick. Mark who's here, then reshuffle or drag the starting order. Each sub is one guard and one front-court player: whoever has been on longest comes out and whoever has sat longest goes in, straight through halftime. Print it as a one-page bench sheet.
+      </>
+    ),
+  },
+  {
+    q: "How do I run the game from the bench?",
+    a: (
+      <>
+        Open a game and tap Open court display. It shows a half court with your five at the 1 (PG) through 5 (C), a game clock, and an alert when it's time to sub (with a heads-up 30 seconds before). Tap Sub made, or Sub now to jump ahead. Tap any two players to swap them, take a player out if they're hurt, set the clock, or undo. The rotation carries on from whatever you change.
+      </>
+    ),
+  },
+  {
+    q: "How are starts and minutes tracked?",
+    a: (
+      <>
+        The court display records who was on the floor when you tapped Start game and counts each player's minutes from the game clock. Each game page shows that game's starters and minutes, and the{" "}
+        <Link href="/stats" className="text-primary underline underline-offset-2">
+          Rotation Report
+        </Link>{" "}
+        totals games, starts and minutes for the season.
+      </>
+    ),
+  },
+  {
+    q: "How do I share my team with another coach?",
+    a: (
+      <>
+        From{" "}
+        <Link href="/settings" className="text-primary underline underline-offset-2">
+          Settings
+        </Link>{" "}
+        you can invite other coaches and give each one a permission level, from view-only up to a full co-coach who can edit everything. The owner always keeps full control.
+      </>
+    ),
+  },
+  FAQ.find((f) => f.q.startsWith("Can I change my team colors")) ?? FAQ[0],
+  {
+    q: "Does it work offline, and can I install it?",
+    a: (
+      <>
+        The court display keeps running without a connection: the game is saved on the device, and starters and minutes sync when you're back online. You can also install the app to your phone or iPad's home screen from your browser's share / install menu.
+      </>
+    ),
+  },
+];
+
 export default function Help() {
+  const { sport } = useTeamSettings();
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -220,7 +282,7 @@ export default function Help() {
         </CardHeader>
         <CardContent>
           <Accordion type="single" collapsible className="w-full">
-            {FAQ.map((item, i) => (
+            {(sport === "basketball" ? BASKETBALL_FAQ : FAQ).map((item, i) => (
               <AccordionItem key={i} value={`faq-${i}`} data-testid={`faq-item-${i}`}>
                 <AccordionTrigger className="text-sm font-medium">
                   {item.q}

@@ -1,4 +1,5 @@
 import type OpenAI from "openai";
+import { BASKETBALL_PROMPT_NOTE, teamSport } from "./team-sport";
 import type { Logger } from "pino";
 import { AI_MODEL, createChatCompletion } from "./ai";
 import { ASSISTANT_TOOL_DEFS, executeAssistantTool } from "./assistant-tools";
@@ -50,7 +51,10 @@ export async function runTeamAssistant(opts: {
 }): Promise<TeamAssistantResult> {
   const today = opts.today ?? new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   const convo: ChatMessage[] = [
-    { role: "system", content: `${SYSTEM_PROMPT}\n\nToday's date is ${today}.` },
+    {
+      role: "system",
+      content: `${SYSTEM_PROMPT}${(await teamSport(opts.userId)) === "basketball" ? `\n${BASKETBALL_PROMPT_NOTE}\n- For starts and playing time, call get_basketball_season (seconds; divide by 60 for minutes).` : ""}\n\nToday's date is ${today}.`,
+    },
     ...opts.messages.map((m) => ({ role: m.role, content: m.content }) as ChatMessage),
   ];
   const toolsUsed: string[] = [];
