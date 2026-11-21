@@ -154,12 +154,26 @@ export function stopClock(s: LiveState, now: number): LiveState {
   return { ...settled, runningSince: null };
 }
 
-/** Set the clock (seconds left in this half); keeps it running if it was. */
+/**
+ * Set the clock (seconds left in this half); keeps it running if it was.
+ * Moving it is treated as game time passing (or being taken back) for the
+ * players on the floor right now: winding it down credits them, adding time
+ * back takes it off (never below zero).
+ */
 export function setClock(s: LiveState, now: number, clockSec: number): LiveState {
   const settled = settle(s, now);
   const max = s.settings.halfMinutes * 60;
   const value = Math.max(0, Math.min(max, clockSec));
-  return { ...settled, clockSec: value, runningSince: settled.runningSince === null ? null : now };
+  const passed = settled.clockSec - value;
+  const { guards, front } = onCourt(settled);
+  const playedSec = { ...settled.playedSec };
+  for (const id of [...guards, ...front]) playedSec[id] = Math.max(0, (playedSec[id] ?? 0) + passed);
+  return { ...settled, clockSec: value, playedSec, runningSince: settled.runningSince === null ? null : now };
+}
+
+/** Move the clock by `deltaSec` (positive adds time back, negative runs it down). */
+export function nudgeClock(s: LiveState, now: number, deltaSec: number): LiveState {
+  return setClock(s, now, settle(s, now).clockSec + deltaSec);
 }
 
 /** Which shift of the game the clock is in (0-based, across both halves). */

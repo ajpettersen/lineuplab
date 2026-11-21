@@ -12,6 +12,7 @@ import {
   setSubSize,
   secondsToNextSub,
   setClock,
+  nudgeClock,
   settle,
   skipSub,
   startClock,
@@ -219,6 +220,27 @@ for (const subSize of [1, 3, 4]) {
   assert.deepEqual(nextSubPairs(s), [{ in: "Vinnie V", out: "Brody" }, { in: "Miles", out: "Henry" }]);
   const one = startClock(startState({ ...input, settings: { ...DEFAULT_BASKETBALL_SETTINGS, subSize: 1 } }), 0);
   assert.deepEqual(nextSubPairs(one), [{ in: "Bash", out: "Anders" }], "1 at a time starts with the front court");
+}
+
+// ── Setting the clock by hand moves on-court time with it ─────────────────
+{
+  let s = startState(input); // clock stopped, 20:00
+  s = setClock(s, 0, 1200 - 90); // ran 1:30 that wasn't timed
+  assert.equal(s.playedSec["Brody"], 90, "on-court players get the time");
+  assert.equal(s.playedSec["Luke"], 0, "bench players don't");
+  s = nudgeClock(s, 0, -1);
+  assert.equal(s.playedSec["Brody"], 91, "1 second down = 1 more second played");
+  s = nudgeClock(s, 0, 10);
+  assert.equal(s.playedSec["Brody"], 81, "adding time back takes it off");
+  assert.equal(s.clockSec, 1200 - 81);
+  s = nudgeClock(s, 0, 600);
+  assert.equal(s.clockSec, 1200, "can't go past the start of the half");
+  assert.equal(s.playedSec["Brody"], 0, "never below zero");
+  // While running, the running time and the nudge both count.
+  let r = startClock(startState(input), 0);
+  r = nudgeClock(r, 30_000, -60);
+  assert.equal(Math.round(r.playedSec["Anders"]), 90);
+  assert.equal(Math.round(r.clockSec), 1200 - 90);
 }
 
 console.log("basketball-live: all checks passed");
