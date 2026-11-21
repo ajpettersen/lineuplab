@@ -326,7 +326,11 @@ const SOURCES: Array<{ name: string; steps: string }> = [
 export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { refresh } = useCalendarSync();
   const { toast } = useToast();
-  const [mode, setMode] = useState<"mbl" | "link">("mbl");
+  const [chosenMode, setMode] = useState<"mbl" | "link">("mbl");
+  // Metro Baseball League is baseball-only; other sports just paste a link.
+  const { sport } = useTeamSettings();
+  const offerMbl = sport === "baseball";
+  const mode = offerMbl ? chosenMode : "link";
   const [url, setUrl] = useState("");
   const [mblTeam, setMblTeam] = useState<MblTeam | null>(null);
   const [preview, setPreview] = useState<PreviewGame[] | null>(null);
@@ -396,7 +400,7 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-1">
-          <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm" role="tablist">
+          {offerMbl && <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm" role="tablist">
             {([
               { m: "mbl" as const, label: "Find my MBL team" },
               { m: "link" as const, label: "Paste a link" },
@@ -414,7 +418,7 @@ export function ConnectCalendarDialog({ open, onClose }: { open: boolean; onClos
                 {label}
               </button>
             ))}
-          </div>
+          </div>}
 
           {mode === "mbl" && (
             <>

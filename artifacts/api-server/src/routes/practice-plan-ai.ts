@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { teamSport } from "../lib/team-sport";
 import { gateWrites } from "../lib/permissions";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
@@ -43,7 +44,23 @@ const VALID_FOCUS_AREAS = new Set([
   "situational",
   "conditioning",
   "team",
+  // Basketball teams (see BASKETBALL_PRACTICE_FOCUS_AREAS on the web side).
+  "ball_handling",
+  "shooting",
+  "layups",
+  "passing",
+  "defense",
+  "rebounding",
+  "post_play",
+  "team_offense",
 ]);
+
+// Added for basketball teams: the prompt below was written for baseball.
+const BASKETBALL_PRACTICE_NOTE = `THIS TEAM PLAYS BASKETBALL, NOT BASEBALL. Ignore every baseball-specific instruction and drill example above. Plan a youth basketball practice (ages 8–14) instead:
+- Use only these focus area keys: ball_handling, shooting, layups, passing, defense, rebounding, post_play, team_offense, conditioning, team.
+- Name real youth basketball drills and how to run them, e.g. "two-ball dribbling", "Mikan drill", "3-line layups", "form shooting close to the rim", "shell defense", "box-out battles", "3-on-2 / 2-on-1 transition", "partner passing on the move", "knockout", "sideline-to-sideline sprints".
+- Players' preferred positions are PG, SG, SF, PF, C. For blocks focused on ball_handling or post_play you MAY split players into "Guards" (PG/SG) and "Bigs" (PF/C) stations, with SF in either.
+- There is no pitching; ignore any pitcher status in the roster.`;
 
 const SYSTEM_PROMPT = `You are an assistant for a youth baseball coach designing a practice plan.
 
@@ -215,6 +232,9 @@ const DEFENSIVE_FOCUS_KEYS = new Set([
   "outfield",
   "catching",
   "pitching",
+  // Basketball: guard / big stations.
+  "ball_handling",
+  "post_play",
 ]);
 
 interface RawPlan {
@@ -533,7 +553,7 @@ Build the time-blocked plan now.`;
           max_completion_tokens: 1800,
           response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            { role: "system", content: (await teamSport(userId)) === "basketball" ? `${SYSTEM_PROMPT}\n${BASKETBALL_PRACTICE_NOTE}` : SYSTEM_PROMPT },
             { role: "user", content: userPrompt },
           ],
         },

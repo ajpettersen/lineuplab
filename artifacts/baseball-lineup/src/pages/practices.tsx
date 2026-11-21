@@ -7,7 +7,7 @@ import {
   getListPracticesQueryKey,
 } from "@workspace/api-client-react";
 import {
-  PRACTICE_FOCUS_AREAS,
+  usePracticeFocusAreas,
   FOCUS_AREA_BY_KEY,
   DEFAULT_PRACTICE_DURATION,
 } from "@/lib/practice-focus-areas";
@@ -60,6 +60,7 @@ function combineDateTimeISO(date: string, time: string): string {
 }
 
 export default function Practices() {
+  const focusAreaOptions = usePracticeFocusAreas();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -201,7 +202,7 @@ export default function Practices() {
               <div className="space-y-1.5">
                 <Label>Focus areas</Label>
                 <div className="flex flex-wrap gap-1.5">
-                  {PRACTICE_FOCUS_AREAS.map((f) => {
+                  {focusAreaOptions.map((f) => {
                     const active = focusAreas.includes(f.key);
                     return (
                       <button
@@ -228,7 +229,7 @@ export default function Practices() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
-                  placeholder="e.g. Sarah's first practice as catcher"
+                  placeholder="e.g. Sarah's first practice back after injury"
                   data-testid="input-practice-notes"
                 />
               </div>

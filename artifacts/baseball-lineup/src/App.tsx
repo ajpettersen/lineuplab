@@ -54,7 +54,7 @@ const Players = lazy(() => import("@/pages/players"));
 const PlayerDetail = lazy(() => import("@/pages/player-detail"));
 const Games = lazy(() => import("@/pages/games"));
 const NewGame = lazy(() => import("@/pages/new-game"));
-const GameDetail = lazy(() => import("@/pages/game-detail"));
+const GameDetail = lazy(() => import("@/pages/game-page"));
 const Tournaments = lazy(() => import("@/pages/tournaments"));
 const TournamentDetail = lazy(() => import("@/pages/tournament-detail"));
 const Practices = lazy(() => import("@/pages/practices"));

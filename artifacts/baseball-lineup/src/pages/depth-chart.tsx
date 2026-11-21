@@ -44,6 +44,13 @@ import { usePermission } from "@/hooks/use-permission";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 
+/** Full position name for the team's sport, e.g. "PG" → "Point Guard". */
+function usePositionLabel() {
+  const { sportProfile } = useTeamSettings();
+  return (code: string) =>
+    sportProfile.positions.find((p) => p.code === code)?.label ?? POSITION_LABELS[code] ?? code;
+}
+
 const POSITION_LABELS: Record<string, string> = {
   P: "Pitcher",
   C: "Catcher",
@@ -74,6 +81,7 @@ type PlayerRow = {
  */
 export default function DepthChart() {
   const { activeFieldPositions } = useTeamSettings();
+  const positionLabel = usePositionLabel();
   const { can } = usePermission();
   const canEdit = can("full");
   const { data: players = [], isLoading: playersLoading } = useListPlayers();
@@ -276,7 +284,7 @@ export default function DepthChart() {
             <SelectContent>
               {activeFieldPositions.map((pos) => (
                 <SelectItem key={pos} value={pos}>
-                  {pos} — {POSITION_LABELS[pos] ?? pos} ({(chart[pos] ?? []).length})
+                  {pos} — {positionLabel(pos)} ({(chart[pos] ?? []).length})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -290,7 +298,7 @@ export default function DepthChart() {
             <span className="inline-flex items-center justify-center rounded-md bg-primary/10 text-primary px-2.5 py-1 text-sm font-broadcast tracking-wider">
               {activePos}
             </span>
-            <span>{POSITION_LABELS[activePos] ?? activePos}</span>
+            <span>{positionLabel(activePos)}</span>
           </CardTitle>
           <CardDescription>
             {currentList.length === 0
@@ -460,6 +468,7 @@ function DepthRow({
  */
 export function DepthChartReference({ topN = 3 }: { topN?: number }) {
   const { activeFieldPositions } = useTeamSettings();
+  const positionLabel = usePositionLabel();
   const { data: players = [] } = useListPlayers();
   const settingsQuery = useGetTeamSettings();
 
@@ -516,7 +525,7 @@ export function DepthChartReference({ topN = 3 }: { topN?: number }) {
                 {pos}
               </span>
               <span className="text-xs text-muted-foreground">
-                {POSITION_LABELS[pos] ?? pos}
+                {positionLabel(pos)}
               </span>
             </div>
             {ids.length === 0 ? (

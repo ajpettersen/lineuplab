@@ -146,10 +146,12 @@ export function EditGameDialog({
                 onChange={(e) => setGameDate(`${gameDatePart}T${e.target.value}`)}
               />
             </div>
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <Label>Innings</Label>
-              <Input type="number" min="1" max="9" value={innings} onChange={(e) => setInnings(e.target.value)} />
-            </div>
+            {sportProfile.features.battingOrder && (
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <Label>Innings</Label>
+                <Input type="number" min="1" max="9" value={innings} onChange={(e) => setInnings(e.target.value)} />
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Location</Label>

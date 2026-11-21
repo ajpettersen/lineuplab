@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Users,
@@ -25,7 +26,8 @@ import type { ComponentType } from "react";
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface TourStep {
-  image: string;
+  /** Screenshot under public/; null shows the step's icon instead. */
+  image: string | null;
   title: string;
   body: string;
   icon: ComponentType<{ className?: string }>;
@@ -64,9 +66,46 @@ const STEPS: TourStep[] = [
   },
 ];
 
+// Basketball teams: the screenshots above are of baseball screens, so these
+// steps show their icon instead.
+const BASKETBALL_STEPS: TourStep[] = [
+  {
+    image: null,
+    title: "Build your roster",
+    body: "Add players by hand or bulk-import from a list or a screenshot, with positions PG, SG, SF, PF and C.",
+    icon: Users,
+  },
+  {
+    image: null,
+    title: "Set up the Bench Sheet",
+    body: "Tag each player Guard or Front (and Big), set half and shift length, mark who's here, and print a one-page rotation for the bench.",
+    icon: Sparkles,
+  },
+  {
+    image: null,
+    title: "Schedule your season",
+    body: "Add games with opponent, date, and location — or paste an iCal link to pull in a whole season at once.",
+    icon: CalendarDays,
+  },
+  {
+    image: null,
+    title: "Run the game on the court display",
+    body: "A half court with your five at the 1–5, a game clock, sub alerts, and playing time. Swap players or jump ahead on the fly.",
+    icon: MonitorPlay,
+  },
+  {
+    image: null,
+    title: "Track starts & minutes",
+    body: "The Rotation Report shows each player's games, starts and minutes across the season.",
+    icon: BarChart3,
+  },
+];
+
 const ADVANCE_MS = 6000;
 
 export function QuickTour() {
+  const { sport } = useTeamSettings();
+  const steps = sport === "basketball" ? BASKETBALL_STEPS : STEPS;
   const reduceMotion = useReducedMotion();
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -74,20 +113,20 @@ export function QuickTour() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const go = useCallback((next: number) => {
-    setIndex((next + STEPS.length) % STEPS.length);
+    setIndex((next + steps.length) % steps.length);
   }, []);
 
   useEffect(() => {
     if (paused) return;
     timerRef.current = setTimeout(() => {
-      setIndex((i) => (i + 1) % STEPS.length);
+      setIndex((i) => (i + 1) % steps.length);
     }, ADVANCE_MS);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [index, paused]);
 
-  const step = STEPS[index];
+  const step = steps[index];
   const Icon = step.icon;
 
   return (
@@ -107,7 +146,7 @@ export function QuickTour() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="absolute inset-0"
           >
-            {!failed[index] ? (
+            {step.image && !failed[index] ? (
               <img
                 src={`${basePath}/${step.image}`}
                 alt={step.title}
@@ -125,7 +164,7 @@ export function QuickTour() {
               <div className="flex items-center gap-2 text-accent">
                 <Icon className="h-4 w-4" />
                 <span className="text-[11px] font-broadcast uppercase tracking-[0.18em]">
-                  Step {index + 1} of {STEPS.length}
+                  Step {index + 1} of {steps.length}
                 </span>
               </div>
               <h3 className="mt-1 font-broadcast text-lg uppercase tracking-wide text-white sm:text-xl">

@@ -16,9 +16,9 @@ import {
   gamesTable,
   gameBattingLinesTable,
   pitchCountsTable,
-  teamSettingsTable,
 } from "@workspace/db";
-import { getSportProfile, sportPositionCodes, type SportId } from "@workspace/sport-profiles";
+import { sportPositionCodes, type SportId } from "@workspace/sport-profiles";
+import { teamSport } from "../lib/team-sport";
 import { desc } from "drizzle-orm";
 import { AI_MODEL, createChatCompletion } from "../lib/ai";
 import { chargeAiCall } from "../lib/ai-usage";
@@ -95,15 +95,6 @@ const BulkPlayerSchema = z
     message: "Each player needs a first name",
   });
 const BulkBodySchema = z.object({ players: z.array(BulkPlayerSchema).min(1).max(100) });
-
-/** The team's sport. Roster import keeps only that sport's position codes. */
-async function teamSport(userId: string): Promise<SportId> {
-  const [row] = await db
-    .select({ sport: teamSettingsTable.sport })
-    .from(teamSettingsTable)
-    .where(eq(teamSettingsTable.userId, userId));
-  return getSportProfile(row?.sport).id;
-}
 
 function knownPositions(sport: SportId): Set<string> {
   return new Set<string>(sport === "baseball" ? ALL_POSITIONS : sportPositionCodes(sport));

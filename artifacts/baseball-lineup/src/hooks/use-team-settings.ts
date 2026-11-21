@@ -10,23 +10,30 @@ export function useTeamSettings() {
   // Fall back to the standard 9 when the team has never picked, so existing
   // teams behave exactly the same as before this feature shipped.
   const stored = query.data?.activeFieldPositions;
-  const activeFieldPositions: readonly string[] =
-    Array.isArray(stored) && stored.length > 0 ? stored : DEFAULT_FIELD_POSITIONS;
-  // Tournament feature flag — defaults true so any team that hasn't
-  // explicitly turned it off in Settings keeps the existing behavior
-  // (Tournaments visible in the Events nav, Tournament option in the
-  // game-type picker). While the query is loading we also assume true
-  // so the nav doesn't flash an item in/out on every page load.
-  const usesTournaments: boolean = query.data?.usesTournaments ?? true;
-  // Defensive Lineup → Select Positions button visibility. Hidden by
-  // default; coaches who swap field formats game-to-game enable it
-  // from Settings → Defaults.
-  const showSelectPositions: boolean = query.data?.showSelectPositions ?? false;
   // Per-team sport (default baseball so existing teams are untouched). The
   // resolved profile drives positions, period labels, on-court count, and
   // which baseball-only features show across the app.
   const sport: SportId = query.data?.sport === "basketball" ? "basketball" : "baseball";
   const sportProfile: SportProfile = getSportProfile(sport);
+  // Basketball teams always use PG/SG/SF/PF/C; the stored list is baseball's
+  // field layout (standard 9 or 10-player), which only baseball teams edit.
+  const activeFieldPositions: readonly string[] =
+    sport !== "baseball"
+      ? sportProfile.positions.map((p) => p.code)
+      : Array.isArray(stored) && stored.length > 0
+        ? stored
+        : DEFAULT_FIELD_POSITIONS;
+  // Tournament feature flag — defaults true so any team that hasn't
+  // explicitly turned it off in Settings keeps the existing behavior
+  // (Tournaments visible in the Events nav, Tournament option in the
+  // game-type picker). While the query is loading we also assume true
+  // so the nav doesn't flash an item in/out on every page load.
+  const usesTournaments: boolean = sportProfile.features.tournaments && (query.data?.usesTournaments ?? true);
+  // Defensive Lineup → Select Positions button visibility. Hidden by
+  // default; coaches who swap field formats game-to-game enable it
+  // from Settings → Defaults.
+  // Baseball-only (it switches between the 9- and 10-player field).
+  const showSelectPositions: boolean = sport === "baseball" && (query.data?.showSelectPositions ?? false);
   // Calendar-sync fields are returned by GET /team-settings but aren't in
   // the generated OpenAPI type (they're managed by the hand-rolled
   // /api/calendar routes, not the settings PATCH).

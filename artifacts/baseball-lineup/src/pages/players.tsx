@@ -345,7 +345,9 @@ function ImportRosterDialog({
                 <Textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder={`One player per line, e.g.:\n1 Smith, John P/SS\n23 Bobby Jones - 1B, 2B\n#7 Mike Davis OF\nAlex Lee #15 catcher`}
+                  placeholder={showPitching
+                    ? `One player per line, e.g.:\n1 Smith, John P/SS\n23 Bobby Jones - 1B, 2B\n#7 Mike Davis OF\nAlex Lee #15 catcher`
+                    : `One player per line, e.g.:\n1 Smith, John PG\n23 Bobby Jones - SF, PF\n#7 Mike Davis guard\nAlex Lee #15 center`}
                   rows={10}
                   data-testid="input-import-text"
                 />

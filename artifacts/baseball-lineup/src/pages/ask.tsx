@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, type ReactNode } from "react";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { Sparkles, Send, User } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,12 @@ const SUGGESTIONS = [
   "How many times has each player pitched?",
   "What's our win-loss record so far?",
   "Who has the highest OPS on the team?",
+];
+const BASKETBALL_SUGGESTIONS = [
+  "Who has the fewest minutes this season?",
+  "How many starts does each player have?",
+  "What's our win-loss record so far?",
+  "Who should start next game to even out starts?",
 ];
 
 // In-app paths the assistant hands back (e.g. a lineup-copy preview link
@@ -36,6 +43,7 @@ function WithAppLinks({ text }: { text: string }) {
 }
 
 export default function Ask() {
+  const { sport } = useTeamSettings();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -110,7 +118,7 @@ export default function Ask() {
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-              {SUGGESTIONS.map((s) => (
+              {(sport === "basketball" ? BASKETBALL_SUGGESTIONS : SUGGESTIONS).map((s) => (
                 <button
                   key={s}
                   type="button"

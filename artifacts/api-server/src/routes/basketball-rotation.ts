@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { gateWrites } from "../lib/permissions";
 import { filterOwnedPlayerIds, getOwnedGame } from "../lib/ownership";
+import { basketballSeason } from "../lib/basketball-season";
 
 // Basketball bench sheet: per-team rotation setup on top of the team's roster.
 // Building the rotation for a game is lineup work, so assistant coaches with
@@ -188,6 +189,36 @@ router.put("/basketball-games/:gameId/stats", async (req, res): Promise<void> =>
   res.json({ ok: true });
 });
 
+router.get("/basketball-games/:gameId/stats", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const [[row], roster] = await Promise.all([
+    db
+      .select()
+      .from(basketballGameStatsTable)
+      .where(and(eq(basketballGameStatsTable.gameId, gameId), eq(basketballGameStatsTable.userId, userId))),
+    rosterFor(userId),
+  ]);
+  if (!row) {
+    res.json({ tracked: false, players: [] });
+    return;
+  }
+  const players = roster
+    .map((p) => ({
+      playerId: p.id,
+      name: p.name,
+      number: p.number,
+      started: row.starterIds.includes(p.id),
+      seconds: row.playedSec[String(p.id)] ?? 0,
+    }))
+    .filter((p) => p.started || p.seconds > 0);
+  res.json({ tracked: true, players });
+});
+
 router.delete("/basketball-games/:gameId/stats", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const gameId = gameIdParam(req.params.gameId);
@@ -201,25 +232,7 @@ router.delete("/basketball-games/:gameId/stats", async (req, res): Promise<void>
 
 /** Season totals per player: games played, starts, and seconds on court. */
 router.get("/basketball-season", async (req, res): Promise<void> => {
-  const userId = req.ownerUserId!;
-  const [roster, games] = await Promise.all([
-    rosterFor(userId),
-    db.select().from(basketballGameStatsTable).where(eq(basketballGameStatsTable.userId, userId)),
-  ]);
-  const players = roster.map((p) => {
-    let gamesPlayed = 0;
-    let starts = 0;
-    let seconds = 0;
-    for (const g of games) {
-      const sec = g.playedSec[String(p.id)] ?? 0;
-      const started = g.starterIds.includes(p.id);
-      if (started) starts++;
-      if (started || sec > 0) gamesPlayed++;
-      seconds += sec;
-    }
-    return { playerId: p.id, name: p.name, number: p.number, games: gamesPlayed, starts, seconds };
-  });
-  res.json({ gamesTracked: games.length, players });
+  res.json(await basketballSeason(req.ownerUserId!));
 });
 
 export default router;

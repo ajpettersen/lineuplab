@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,11 +13,17 @@ interface HelpAnswer {
   links: { label: string; href: string }[];
 }
 
-const SAMPLE_QUESTIONS = [
+const BASEBALL_SAMPLE_QUESTIONS = [
   "I have 10 defensive players, how do I do that in this app?",
   "How do I import a roster from a screenshot?",
   "How do I share my team with another coach?",
   "How does the Fairness Score work?",
+];
+const BASKETBALL_SAMPLE_QUESTIONS = [
+  "How do I set up the Bench Sheet?",
+  "How does the court display tell me when to sub?",
+  "How do I import a roster from a screenshot?",
+  "How do I share my team with another coach?",
 ];
 
 /**
@@ -26,6 +33,8 @@ const SAMPLE_QUESTIONS = [
  * prompts seed the input as one-tap shortcuts when the card is empty.
  */
 export function HelpCard() {
+  const { sport } = useTeamSettings();
+  const SAMPLE_QUESTIONS = sport === "basketball" ? BASKETBALL_SAMPLE_QUESTIONS : BASEBALL_SAMPLE_QUESTIONS;
   const [question, setQuestion] = useState("");
   const [submittedQuestion, setSubmittedQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState<HelpAnswer | null>(null);
