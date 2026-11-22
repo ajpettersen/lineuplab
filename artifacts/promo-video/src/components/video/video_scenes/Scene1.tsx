@@ -53,7 +53,7 @@ export function Scene1() {
           animate={phase >= 2 ? { opacity: 1, filter: 'blur(0px)' } : { opacity: 0, filter: 'blur(10px)' }}
           transition={{ duration: 1, delay: 0.5 }}
         >
-          Between managing playing time, tracking pitch counts, and finding the clipboard... you barely get to coach.
+          Between managing playing time, remembering who sat last game, and finding the clipboard... you barely get to coach.
         </motion.p>
       </div>
     </motion.div>

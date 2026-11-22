@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import logo from '@assets/generated_images/lineup-lab-icon.png';
+// The app's current icon (sport-neutral shield).
+const logo = `${import.meta.env.BASE_URL}logo-icon.png`;
 
 export function Scene5() {
   const [phase, setPhase] = useState(0);
