@@ -117,6 +117,13 @@ export const PoolPlayJson = z.object({
    * `advanceCount` — you can't grant more byes than advancing seeds.
    */
   byeCount: z.number().int().min(0).max(8).default(0),
+  /**
+   * Most one game's margin counts toward the point (or run) differential,
+   * e.g. 15 in many Minnesota basketball tournaments. Null/absent = no cap.
+   */
+  diffCap: z.number().int().min(1).max(100).nullable().optional(),
+  /** Which preset these rules came from (e.g. "myba"), for the picker; null = custom. */
+  ruleSet: z.string().max(40).nullable().optional(),
   updatedAt: z.string(),
 })
   .refine((v) => v.advanceCount <= v.teams.length, {

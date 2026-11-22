@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:passwords": "node ./test/run-test.mjs passwords.test.ts",
+    "test:pool-play-cap": "DATABASE_URL=${DATABASE_URL:-postgres://unused@localhost/none} node ./test/run-test.mjs pool-play-cap.test.ts",
     "auth": "node ./scripts/run-auth-cli.mjs"
   },
   "dependencies": {

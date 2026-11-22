@@ -939,6 +939,17 @@ Capped by `advanceCount`.
    * @maximum 8
    */
   byeCount: number;
+  /**
+   * Most one game's margin counts toward the point/run differential (e.g. 15). Null = no cap.
+   * @minimum 1
+   * @maximum 100
+   */
+  diffCap?: number | null;
+  /**
+   * Which preset the rules came from (e.g. "myba"); null = custom.
+   * @maxLength 40
+   */
+  ruleSet?: string | null;
   updatedAt: string;
 }
 

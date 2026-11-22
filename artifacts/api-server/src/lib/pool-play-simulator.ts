@@ -36,6 +36,8 @@ export type TeamRecord = {
   runsFor: number;
   runsAgainst: number;
   runDiff: number;
+  /** Differential with each game's margin capped (when the rules cap it). */
+  cappedDiff?: number;
   winPct: number;
 };
 
@@ -99,6 +101,7 @@ function emptyRecord(name: string): TeamRecord {
     runsFor: 0,
     runsAgainst: 0,
     runDiff: 0,
+    cappedDiff: 0,
     winPct: 0,
   };
 }
@@ -109,6 +112,8 @@ function applyGameToRecords(
   // Override outcome for simulated remaining games. If provided, scores
   // contribute 0 to runFor/runAgainst (we don't invent scores).
   override?: "home" | "away",
+  /** Most a single game's margin counts toward the differential (e.g. 15); null = no cap. */
+  diffCap: number | null = null,
 ): void {
   const home = records.get(game.home);
   const away = records.get(game.away);
@@ -136,6 +141,9 @@ function applyGameToRecords(
   home.runsAgainst += as;
   away.runsFor += as;
   away.runsAgainst += hs;
+  const margin = diffCap ? Math.max(-diffCap, Math.min(diffCap, hs - as)) : hs - as;
+  home.cappedDiff = (home.cappedDiff ?? 0) + margin;
+  away.cappedDiff = (away.cappedDiff ?? 0) - margin;
   if (hs > as) {
     home.wins++;
     away.losses++;
@@ -149,7 +157,8 @@ function applyGameToRecords(
 }
 
 function finalizeRecord(r: TeamRecord): void {
-  r.runDiff = r.runsFor - r.runsAgainst;
+  // With a cap, the differential is the sum of each game's capped margin.
+  r.runDiff = r.cappedDiff ?? r.runsFor - r.runsAgainst;
   const decisions = r.wins + r.losses; // ties don't count toward pct
   r.winPct = decisions === 0 ? 0 : r.wins / decisions;
 }
@@ -296,7 +305,7 @@ export function computeStandings(pool: PoolPlayJson): TeamRecord[] {
   for (const t of pool.teams) records.set(t.name, emptyRecord(t.name));
   for (const g of pool.games) {
     if (g.final && g.homeScore != null && g.awayScore != null) {
-      applyGameToRecords(records, g);
+      applyGameToRecords(records, g, undefined, pool.diffCap ?? null);
     }
   }
   for (const r of records.values()) finalizeRecord(r);
@@ -332,7 +341,7 @@ export function simulatePoolPlay(pool: PoolPlayJson): PoolPlayAnalysis {
   // Standings today (final games only).
   const todayRecords = new Map<string, TeamRecord>();
   for (const t of pool.teams) todayRecords.set(t.name, emptyRecord(t.name));
-  for (const g of finalGames) applyGameToRecords(todayRecords, g);
+  for (const g of finalGames) applyGameToRecords(todayRecords, g, undefined, pool.diffCap ?? null);
   for (const r of todayRecords.values()) finalizeRecord(r);
   const standingsToday = sortTeams(
     Array.from(todayRecords.values()),
