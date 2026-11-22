@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
-    <title>Lineup Lab — Fair Lineups for Youth Baseball &amp; Softball Coaches</title>
-    <meta name="description" content="Lineup Lab helps youth baseball and softball coaches build fair rotational lineups, manage rosters, schedule games, track season stats, and run practices — with AI-assisted lineup generation and an iPad-friendly Field Display." />
+    <title>Lineup Lab — Fair Lineups &amp; Rotations for Youth Sports Coaches</title>
+    <meta name="description" content="Lineup Lab helps youth baseball, softball, and basketball coaches build fair lineups and rotations, manage rosters, schedule games, track season stats, and run practices — with AI-assisted lineup generation and an iPad-friendly Field Display." />
     <link rel="canonical" href="https://lineup-lab-production-7c33.up.railway.app/" />
 
     <!-- Open Graph (Facebook, iMessage, Slack, LinkedIn, etc.) and
@@ -16,15 +16,15 @@
          are absolute — update them if the deployed host changes. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Lineup Lab" />
-    <meta property="og:title" content="Lineup Lab — Fair Lineups for Youth Baseball &amp; Softball Coaches" />
+    <meta property="og:title" content="Lineup Lab — Fair Lineups &amp; Rotations for Youth Sports Coaches" />
     <meta property="og:description" content="Build fair rotational lineups, manage rosters, schedule games, track season stats, and run practices — with AI-assisted lineup generation and an iPad-friendly Field Display." />
     <meta property="og:url" content="https://lineup-lab-production-7c33.up.railway.app/" />
     <meta property="og:image" content="https://lineup-lab-production-7c33.up.railway.app/opengraph.jpg" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="720" />
-    <meta property="og:image:alt" content="Lineup Lab — fair lineups, rosters, and stats for youth baseball and softball coaches" />
+    <meta property="og:image:alt" content="Lineup Lab — fair lineups, rotations, rosters, and stats for youth baseball, softball, and basketball coaches" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Lineup Lab — Fair Lineups for Youth Baseball &amp; Softball Coaches" />
+    <meta name="twitter:title" content="Lineup Lab — Fair Lineups &amp; Rotations for Youth Sports Coaches" />
     <meta name="twitter:description" content="Build fair rotational lineups, manage rosters, schedule games, track season stats, and run practices — with AI-assisted lineup generation." />
     <meta name="twitter:image" content="https://lineup-lab-production-7c33.up.railway.app/opengraph.jpg" />
 
@@ -37,7 +37,7 @@
         "name": "Lineup Lab",
         "applicationCategory": "SportsApplication",
         "operatingSystem": "Web, iOS, Android",
-        "description": "Fair rotational lineup generator, roster manager, schedule importer, season stats tracker, and practice planner for youth baseball and softball coaches.",
+        "description": "Fair lineup and rotation builder, roster manager, schedule importer, playing-time tracker, and practice planner for youth baseball, softball, and basketball coaches.",
         "url": "https://lineup-lab-production-7c33.up.railway.app/",
         "image": "https://lineup-lab-production-7c33.up.railway.app/opengraph.jpg",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -89,16 +89,15 @@
          seconds on a phone or a cold cache. Without anything in #root
          the user stares at a blank screen the whole time. This inline
          markup (no external CSS/JS, so it paints on the very first
-         frame) shows a branded "base runner" splash: a baseball laps the
-         infield diamond while the wordmark and an indeterminate bar sit
+         frame) shows a branded splash: the logo's rotation ring turns around
+         three players while the wordmark and an indeterminate bar sit
          below. createRoot's render() replaces #root's children, so the
          splash vanishes the moment the React tree mounts — no teardown
          code needed. The navy backdrop matches the PWA manifest
          background_color (#0a2552) so a standalone launch has no color
          flash. Oswald is requested in <head> but may not be ready on the
          first frame; the wordmark falls back to system sans and swaps in
-         when the font loads. prefers-reduced-motion parks the runner at
-         home and stops all motion. -->
+         when the font loads. prefers-reduced-motion stops all motion. -->
     <style>
       #boot-splash {
         position: fixed;
@@ -120,20 +119,15 @@
         width: 200px;
         height: 200px;
       }
-      #boot-splash .bs-field {
+      #boot-splash .bs-ring {
         position: absolute;
         inset: 0;
+        transform-origin: 50% 50%;
+        animation: bs-spin 2.4s linear infinite;
       }
-      #boot-splash .bs-field .bs-path {
-        stroke-dasharray: 6 8;
-        animation: bs-stitch 6s linear infinite;
-      }
-      #boot-splash .bs-runner {
+      #boot-splash .bs-players {
         position: absolute;
-        left: 50%;
-        top: 85%;
-        transform: translate(-50%, -50%);
-        animation: bs-run 2.8s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+        inset: 0;
       }
       #boot-splash .bs-foot {
         display: flex;
@@ -176,23 +170,15 @@
         );
         animation: bs-indeterminate 1.5s ease-in-out infinite;
       }
-      @keyframes bs-run {
-        0% { left: 50%; top: 85%; }
-        25% { left: 85%; top: 50%; }
-        50% { left: 50%; top: 15%; }
-        75% { left: 15%; top: 50%; }
-        100% { left: 50%; top: 85%; }
-      }
-      @keyframes bs-stitch {
-        to { stroke-dashoffset: -200; }
+      @keyframes bs-spin {
+        to { transform: rotate(360deg); }
       }
       @keyframes bs-indeterminate {
         0% { left: -42%; }
         100% { left: 100%; }
       }
       @media (prefers-reduced-motion: reduce) {
-        #boot-splash .bs-runner,
-        #boot-splash .bs-field .bs-path {
+        #boot-splash .bs-ring {
           animation: none;
         }
         #boot-splash .bs-bar span {
@@ -206,39 +192,22 @@
     <div id="root">
       <div id="boot-splash" role="status" aria-label="Loading Lineup Lab">
         <div class="bs-stage">
-          <svg class="bs-field" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+          <svg class="bs-ring" viewBox="0 0 200 200" fill="none" aria-hidden="true">
             <defs>
-              <linearGradient id="bsgold" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#ffe08a" />
-                <stop offset="55%" stop-color="#f5b324" />
-                <stop offset="100%" stop-color="#d98c0b" />
-              </linearGradient>
+              <marker id="bsarrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.4" markerHeight="3.4" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 Z" fill="#f5b324" />
+              </marker>
             </defs>
-            <path
-              class="bs-path"
-              d="M100 30 L170 100 L100 170 L30 100 Z"
-              fill="rgba(245,179,36,0.06)"
-              stroke="url(#bsgold)"
-              stroke-width="4"
-              stroke-linejoin="round"
-            />
-            <rect x="162" y="92" width="16" height="16" rx="3" fill="url(#bsgold)" transform="rotate(45 170 100)" />
-            <rect x="92" y="22" width="16" height="16" rx="3" fill="url(#bsgold)" transform="rotate(45 100 30)" />
-            <rect x="22" y="92" width="16" height="16" rx="3" fill="url(#bsgold)" transform="rotate(45 30 100)" />
-            <path
-              d="M91 162 L109 162 L109 170 L100 178 L91 170 Z"
-              fill="#ffffff"
-              stroke="#d98c0b"
-              stroke-width="1.5"
-            />
+            <g stroke="#f5b324" stroke-width="7" stroke-linecap="round">
+              <path d="M38.2 77.6 A66 66 0 0 1 148.3 55.1" marker-end="url(#bsarrow)" />
+              <path d="M161.8 122.4 A66 66 0 0 1 51.7 144.9" marker-end="url(#bsarrow)" />
+            </g>
           </svg>
-          <span class="bs-runner">
-            <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
-              <circle cx="17" cy="17" r="14" fill="#ffffff" stroke="#d98c0b" stroke-width="2" />
-              <path d="M8 11 Q17 7 26 11" stroke="#d42a2a" stroke-width="1.8" stroke-linecap="round" />
-              <path d="M8 23 Q17 27 26 23" stroke="#d42a2a" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
-          </span>
+          <svg class="bs-players" viewBox="0 0 200 200" fill="#ffffff" aria-hidden="true">
+            <circle cx="100" cy="78" r="15" />
+            <circle cx="74" cy="122" r="15" />
+            <circle cx="126" cy="122" r="15" />
+          </svg>
         </div>
         <div class="bs-foot">
           <div class="bs-word">Lineup <b>Lab</b></div>

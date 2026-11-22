@@ -193,9 +193,9 @@ function SignInPage() {
 
 function SignUpPage() {
   const valueProps = [
-    "AI-generated lineups in seconds",
-    "Box-score import from GameChanger screenshots",
-    "iPad-friendly dugout view that works offline",
+    "Fair lineups and rotations in seconds",
+    "Playing time, starts, and fairness tracked all season",
+    "Game-day field and court displays that work offline",
     "Schedule, roster, and practices in one place",
   ];
   return (
@@ -243,7 +243,7 @@ function SignUpPage() {
           </ul>
         </div>
         <p className="relative z-10 text-sm text-white/60">
-          The team binder for youth baseball and softball coaches.
+          The team binder for youth baseball, softball, and basketball coaches.
         </p>
       </div>
 
