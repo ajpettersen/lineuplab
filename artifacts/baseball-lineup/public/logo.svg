@@ -14,14 +14,13 @@
       <stop offset="0%" stop-color="hsl(42, 95%, 60%)" stop-opacity="0.55"/>
       <stop offset="100%" stop-color="hsl(42, 95%, 60%)" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="ballGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="hsl(0, 0%, 100%)"/>
-      <stop offset="100%" stop-color="hsl(220, 30%, 90%)"/>
-    </linearGradient>
     <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="hsl(0, 0%, 100%)" stop-opacity="0.45"/>
       <stop offset="100%" stop-color="hsl(0, 0%, 100%)" stop-opacity="0"/>
     </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.4" markerHeight="3.4" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="hsl(44, 98%, 62%)"/>
+    </marker>
   </defs>
 
   <!-- soft gold halo -->
@@ -30,42 +29,20 @@
   <!-- shield body with thick gold rim -->
   <path d="M32 3 L57 10 V30 C57 44 47 55 32 61 C17 55 7 44 7 30 V10 Z"
         fill="url(#shieldGrad)" stroke="url(#goldGrad)" stroke-width="3" stroke-linejoin="round"/>
-  <!-- inner hairline for depth -->
   <path d="M32 7 L53.5 13 V30 C53.5 41.5 45 51 32 56.5 C19 51 10.5 41.5 10.5 30 V13 Z"
         fill="none" stroke="hsl(42, 95%, 62%)" stroke-width="0.8" stroke-opacity="0.5" stroke-linejoin="round"/>
-
-  <!-- top sheen / gloss -->
   <path d="M32 5 L55 11 V22 C46 17 38 15 32 15 C26 15 18 17 9 22 V11 Z" fill="url(#gloss)"/>
 
-  <!-- baseball -->
-  <circle cx="32" cy="31" r="13.5" fill="url(#ballGrad)" stroke="url(#goldGrad)" stroke-width="2"/>
-  <path d="M21.5 25 Q32 20.5 42.5 25" stroke="hsl(0, 80%, 46%)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-  <path d="M21.5 37 Q32 41.5 42.5 37" stroke="hsl(0, 80%, 46%)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-  <g stroke="hsl(0, 80%, 46%)" stroke-width="1.1" stroke-linecap="round">
-    <line x1="24" y1="26" x2="23" y2="24.5"/>
-    <line x1="26.5" y1="24" x2="25.5" y2="22.5"/>
-    <line x1="29" y1="22.7" x2="28" y2="21.2"/>
-    <line x1="31.7" y1="22.1" x2="31" y2="20.5"/>
-    <line x1="34.3" y1="22.1" x2="35" y2="20.5"/>
-    <line x1="37" y1="22.7" x2="38" y2="21.2"/>
-    <line x1="39.5" y1="24" x2="40.5" y2="22.5"/>
-    <line x1="42" y1="26" x2="43" y2="24.5"/>
-    <line x1="24" y1="36" x2="23" y2="37.5"/>
-    <line x1="26.5" y1="38" x2="25.5" y2="39.5"/>
-    <line x1="29" y1="39.3" x2="28" y2="40.8"/>
-    <line x1="31.7" y1="39.9" x2="31" y2="41.5"/>
-    <line x1="34.3" y1="39.9" x2="35" y2="41.5"/>
-    <line x1="37" y1="39.3" x2="38" y2="40.8"/>
-    <line x1="39.5" y1="38" x2="40.5" y2="39.5"/>
-    <line x1="42" y1="36" x2="43" y2="37.5"/>
+  <!-- rotation ring: a lineup that keeps turning over (any sport) -->
+  <g stroke="hsl(44, 98%, 62%)" stroke-width="2.4" stroke-linecap="round" fill="none">
+    <path d="M19.8 26.6 A13 13 0 0 1 41.5 22.2" marker-end="url(#arrow)"/>
+    <path d="M44.2 35.4 A13 13 0 0 1 22.5 39.8" marker-end="url(#arrow)"/>
   </g>
-  <!-- specular highlight on the ball -->
-  <ellipse cx="27" cy="26" rx="3.4" ry="2.2" fill="hsl(0,0%,100%)" opacity="0.7"/>
 
-  <!-- splashy sparkles -->
-  <g fill="url(#goldGrad)">
-    <path d="M50 16 l1.1 2.6 2.6 1.1 -2.6 1.1 -1.1 2.6 -1.1 -2.6 -2.6 -1.1 2.6 -1.1 Z"/>
-    <path d="M14.5 40 l0.8 1.9 1.9 0.8 -1.9 0.8 -0.8 1.9 -0.8 -1.9 -1.9 -0.8 1.9 -0.8 Z"/>
+  <!-- three players -->
+  <g fill="hsl(0, 0%, 100%)">
+    <circle cx="32" cy="26.2" r="3.1"/>
+    <circle cx="26.6" cy="35" r="3.1"/>
+    <circle cx="37.4" cy="35" r="3.1"/>
   </g>
-  <circle cx="48" cy="44" r="1.3" fill="hsl(46,100%,70%)"/>
 </svg>
