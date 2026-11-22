@@ -61,3 +61,20 @@ ALTER TABLE "basketball_game_lineups" ADD COLUMN IF NOT EXISTS "custom_shifts" j
 
 -- Team rotation rules: limits for rebalancing, halves/quarters, pairing rules.
 ALTER TABLE "basketball_rotation_settings" ADD COLUMN IF NOT EXISTS "rules" jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+-- Plus/minus: the court display's scoring log per game.
+ALTER TABLE "basketball_game_stats" ADD COLUMN IF NOT EXISTS "score_log" jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+-- Second-coach mode: a live game shared between devices.
+CREATE TABLE IF NOT EXISTS "basketball_live_games" (
+  "game_id" integer PRIMARY KEY,
+  "user_id" text NOT NULL,
+  "version" integer NOT NULL DEFAULT 0,
+  "state" jsonb NOT NULL,
+  "clock_device" text,
+  "updated_by" text,
+  "updated_by_name" text,
+  "last_change" text,
+  "updated_at" timestamp with time zone NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "basketball_live_games_user_id_idx" ON "basketball_live_games" ("user_id");

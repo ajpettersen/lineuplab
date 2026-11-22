@@ -83,6 +83,12 @@ export const basketballGameStatsTable = pgTable("basketball_game_stats", {
   starterIds: integer("starter_ids").array().notNull().default([]),
   /** Player id (as a string key) → seconds on court. */
   playedSec: jsonb("played_sec").$type<Record<string, number>>().notNull().default({}),
+  /**
+   * Every scoring change from the court display: who scored (us/them), the
+   * points, the period, game seconds elapsed, and our five on court. Feeds
+   * plus/minus by player and by five-player group (Statistics → Lineups).
+   */
+  scoreLog: jsonb("score_log").$type<BasketballScoreEvent[]>().notNull().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("basketball_game_stats_user_id_idx").on(table.userId)]);
 
@@ -142,3 +148,30 @@ export const basketballPlaysTable = pgTable("basketball_plays", {
 }, (table) => [index("basketball_plays_user_id_idx").on(table.userId)]);
 
 export type BasketballPlay = typeof basketballPlaysTable.$inferSelect;
+
+export interface BasketballScoreEvent {
+  team: "us" | "them";
+  pts: number;
+  half: number;
+  at: number;
+  on: string[];
+}
+
+/**
+ * A game being run live on the court display, shared between coaches'
+ * devices (second-coach mode). `state` is the court display's game state;
+ * `version` goes up on every change so devices can tell who's behind.
+ */
+export const basketballLiveGamesTable = pgTable("basketball_live_games", {
+  gameId: integer("game_id").primaryKey(),
+  userId: text("user_id").notNull(),
+  version: integer("version").notNull().default(0),
+  state: jsonb("state").$type<Record<string, unknown>>().notNull(),
+  /** The device running the clock (start/stop, timeouts). */
+  clockDevice: text("clock_device"),
+  /** Who made the last change, for the "who did this" indicator. */
+  updatedBy: text("updated_by"),
+  updatedByName: text("updated_by_name"),
+  lastChange: text("last_change"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -133,7 +133,12 @@ function syncGameStats(gameId: number, s: LiveState) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     keepalive: true,
-    body: JSON.stringify({ starterIds: s.starterIds.filter((id) => /^\d+$/.test(id)).map(Number), playedSec }),
+    body: JSON.stringify({
+      starterIds: s.starterIds.filter((id) => /^\d+$/.test(id)).map(Number),
+      playedSec,
+      // Lineup changes and scoring, for plus/minus by lineup (Statistics → Lineups).
+      log: [...(s.lineupLog ?? []).map((l) => ({ kind: "lineup", ...l })), ...(s.scoreLog ?? []).map((e) => ({ kind: "score", ...e }))].slice(-2000),
+    }),
   }).catch(() => undefined);
 }
 
