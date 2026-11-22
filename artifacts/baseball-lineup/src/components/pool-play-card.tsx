@@ -62,6 +62,7 @@ import {
   Link2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { TournamentFormatChatDialog } from "@/components/tournament-format-chat-dialog";
 
 /**
@@ -284,6 +285,8 @@ function EmptyState({
 // ---------------------------------------------------------------------------
 
 function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: PoolPlayAnalysis }) {
+  const labels = useTiebreakerLabels();
+  const isBasketball = labels === BASKETBALL_TIEBREAKER_LABELS;
   return (
     <div className="space-y-4">
       {analysis.ourTeamInsights.length > 0 && (
@@ -321,7 +324,7 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
                 <TableHead className="w-8">#</TableHead>
                 <TableHead>Team</TableHead>
                 <TableHead className="text-center">W-L-T</TableHead>
-                <TableHead className="text-right">Run Diff</TableHead>
+                <TableHead className="text-right">{isBasketball ? "Pt Diff" : "Run Diff"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -386,7 +389,8 @@ function PoolPlayBody({ poolPlay, analysis }: { poolPlay: PoolPlay; analysis: Po
       </div>
 
       <div className="text-[11px] text-muted-foreground">
-        Tiebreakers: {tiebreakerChainLabel(analysis.tiebreakers)} • Pool of{" "}
+        Tiebreakers: {tiebreakerChainLabel(analysis.tiebreakers, labels)}
+        {poolPlay.diffCap ? ` (${isBasketball ? "points" : "runs"} capped at ${poolPlay.diffCap} a game)` : ""} • Pool of{" "}
         {poolPlay.teams.length} teams • Top {analysis.advanceCount} advance
         {analysis.byeCount > 0 ? ` (top ${analysis.byeCount} get a bye)` : ""} •{" "}
         {analysis.remainingGames}{" "}
@@ -527,11 +531,45 @@ const TIEBREAKER_LABELS: Record<PoolPlayTiebreakerKey, string> = {
   runsScored: "Most runs scored",
   coinFlip: "Coin flip",
 };
+// Basketball says points. (The stored keys stay the same.)
+const BASKETBALL_TIEBREAKER_LABELS: Record<PoolPlayTiebreakerKey, string> = {
+  ...TIEBREAKER_LABELS,
+  runDiff: "Point diff",
+  runsAllowed: "Fewest points allowed",
+  runsScored: "Most points scored",
+};
 
-function tiebreakerChainLabel(keys: PoolPlayTiebreakerKey[]): string {
-  if (!keys || keys.length === 0) return "Win %";
-  return keys.map((k) => TIEBREAKER_LABELS[k] ?? k).join(" → ");
+function useTiebreakerLabels(): Record<PoolPlayTiebreakerKey, string> {
+  const { sportProfile } = useTeamSettings();
+  return sportProfile.id === "basketball" ? BASKETBALL_TIEBREAKER_LABELS : TIEBREAKER_LABELS;
 }
+
+function tiebreakerChainLabel(keys: PoolPlayTiebreakerKey[], labels: Record<PoolPlayTiebreakerKey, string> = TIEBREAKER_LABELS): string {
+  if (!keys || keys.length === 0) return "Win %";
+  return keys.map((k) => labels[k] ?? k).join(" → ");
+}
+
+/**
+ * Basketball rule sets a coach can pick instead of setting tiebreakers by
+ * hand. Tournaments differ, so these are starting points: the editor shows
+ * exactly what each one does, and every part stays editable.
+ */
+const RULE_SETS: { id: string; label: string; tiebreakers: PoolPlayTiebreakerKey[]; diffCap: number | null; note: string }[] = [
+  {
+    id: "myba",
+    label: "MYBA (Minnesota youth)",
+    tiebreakers: ["winPct", "h2h", "runDiff", "runsAllowed", "runsScored", "coinFlip"],
+    diffCap: 15,
+    note: "Win %, then head-to-head, then point differential capped at 15 a game, then fewest points allowed, most points scored, coin flip. Typical for Minnesota youth tournaments; check this tournament's rules sheet.",
+  },
+  {
+    id: "mn-aau",
+    label: "MN AAU",
+    tiebreakers: ["winPct", "h2h", "runDiff", "runsAllowed", "coinFlip"],
+    diffCap: 13,
+    note: "Win %, then head-to-head, then point differential capped at 13 a game, then fewest points allowed, coin flip.",
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Import dialog: upload → preview → save
@@ -825,6 +863,10 @@ function PreviewEditor({
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const labels = useTiebreakerLabels();
+  const isBasketball = labels === BASKETBALL_TIEBREAKER_LABELS;
+  const [diffCap, setDiffCap] = useState<number | null>(existing?.diffCap ?? null);
+  const [ruleSet, setRuleSet] = useState<string | null>(existing?.ruleSet ?? null);
   const [teams, setTeams] = useState<{ name: string }[]>(preview.teams);
   const [games, setGames] = useState<PoolPlayGame[]>(preview.games);
   const [ourTeam, setOurTeam] = useState<string>(
@@ -974,12 +1016,15 @@ function PreviewEditor({
       tiebreakers,
       advanceCount,
       byeCount,
+      diffCap,
+      ruleSet,
       updatedAt: new Date().toISOString(),
     };
     save.mutate({ id: tournamentId, data: body });
   }
 
   function moveTiebreaker(idx: number, delta: -1 | 1) {
+    setRuleSet(null);
     setTiebreakers((prev) => {
       const next = [...prev];
       const swap = idx + delta;
@@ -989,12 +1034,14 @@ function PreviewEditor({
     });
   }
   function removeTiebreaker(idx: number) {
+    setRuleSet(null);
     setTiebreakers((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
   }
   function addTiebreaker(key: PoolPlayTiebreakerKey) {
+    setRuleSet(null);
     setTiebreakers((prev) => (prev.includes(key) ? prev : [...prev, key]));
   }
-  const availableTiebreakers = (Object.keys(TIEBREAKER_LABELS) as PoolPlayTiebreakerKey[]).filter(
+  const availableTiebreakers = (Object.keys(labels) as PoolPlayTiebreakerKey[]).filter(
     (k) => !tiebreakers.includes(k),
   );
 
@@ -1081,6 +1128,62 @@ function PreviewEditor({
         </div>
       </section>
 
+      {/* Rule set (basketball) and differential cap */}
+      <section className="space-y-2">
+        {isBasketball && (
+          <div>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rule set</Label>
+            <Select
+              value={ruleSet ?? "custom"}
+              onValueChange={(v) => {
+                const preset = RULE_SETS.find((r) => r.id === v);
+                setRuleSet(preset ? preset.id : null);
+                if (preset) {
+                  setTiebreakers(preset.tiebreakers);
+                  setDiffCap(preset.diffCap);
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RULE_SETS.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>{r.label}</SelectItem>
+                ))}
+                <SelectItem value="custom">Custom (set below)</SelectItem>
+              </SelectContent>
+            </Select>
+            {ruleSet && (
+              <p className="mt-1 text-xs text-muted-foreground">{RULE_SETS.find((r) => r.id === ruleSet)?.note}</p>
+            )}
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          <div>
+            <Label className="text-xs">{isBasketball ? "Point" : "Run"} differential cap per game</Label>
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              placeholder="No cap"
+              value={diffCap ?? ""}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                setDiffCap(Number.isFinite(n) && n >= 1 && n <= 100 ? n : null);
+                setRuleSet(null);
+              }}
+              className="h-8 mt-1 w-28"
+            />
+          </div>
+          <p className="pb-1.5 text-xs text-muted-foreground">
+            {diffCap
+              ? `A ${diffCap + 10}-${isBasketball ? "point" : "run"} win counts as +${diffCap}.`
+              : `Every ${isBasketball ? "point" : "run"} of margin counts.`}
+          </p>
+        </div>
+      </section>
+
       {/* Tiebreaker chain */}
       <section>
         <div className="flex items-center justify-between mb-1.5">
@@ -1097,7 +1200,7 @@ function PreviewEditor({
               <span className="font-mono text-[11px] text-muted-foreground w-5 text-center">
                 {idx + 1}
               </span>
-              <span className="text-sm flex-1">{TIEBREAKER_LABELS[key]}</span>
+              <span className="text-sm flex-1">{labels[key]}</span>
               <Button
                 size="icon"
                 variant="ghost"
@@ -1143,7 +1246,7 @@ function PreviewEditor({
               <SelectContent>
                 {availableTiebreakers.map((k) => (
                   <SelectItem key={k} value={k}>
-                    {TIEBREAKER_LABELS[k]}
+                    {labels[k]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1243,6 +1346,7 @@ function FormatExtractDialog({
     tiebreakers?: PoolPlayTiebreakerKey[];
   }) => void;
 }) {
+  const labels = useTiebreakerLabels();
   const { toast } = useToast();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1452,7 +1556,7 @@ function FormatExtractDialog({
                 />
                 <span>
                   Tiebreakers:{" "}
-                  <strong>{tiebreakerChainLabel(parsed.tiebreakers)}</strong>
+                  <strong>{tiebreakerChainLabel(parsed.tiebreakers, labels)}</strong>
                 </span>
               </label>
             )}

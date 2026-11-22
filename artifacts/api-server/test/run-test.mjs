@@ -7,6 +7,7 @@ import { build } from "esbuild";
 const [testFile] = process.argv.slice(2);
 const allowedTests = new Set([
   "passwords.test.ts",
+  "pool-play-cap.test.ts",
 ]);
 if (!allowedTests.has(testFile)) {
   throw new Error(`Unknown test file: ${testFile}`);

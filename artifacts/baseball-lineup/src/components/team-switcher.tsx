@@ -147,7 +147,7 @@ export function TeamSwitcher({ className }: { className?: string }) {
           className="gap-2"
         >
           <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-          My Teams
+          Manage teams
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => setLocation("/teams?create=1")}

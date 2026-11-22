@@ -1607,6 +1607,10 @@ export const getTournamentResponseTwoPoolPlayTwoAdvanceCountMax = 8;
 export const getTournamentResponseTwoPoolPlayTwoByeCountMin = 0;
 export const getTournamentResponseTwoPoolPlayTwoByeCountMax = 8;
 
+export const getTournamentResponseTwoPoolPlayTwoDiffCapMax = 100;
+
+export const getTournamentResponseTwoPoolPlayTwoRuleSetMax = 40;
+
 export const GetTournamentResponse = zod
   .object({
     rowVersion: zod
@@ -2014,6 +2018,21 @@ export const GetTournamentResponse = zod
                 .max(getTournamentResponseTwoPoolPlayTwoByeCountMax)
                 .describe(
                   "How many of the advancing teams earn a bracket bye (default 0).\nCapped by `advanceCount`.\n",
+                ),
+              diffCap: zod
+                .number()
+                .min(1)
+                .max(getTournamentResponseTwoPoolPlayTwoDiffCapMax)
+                .nullish()
+                .describe(
+                  "Most one game's margin counts toward the point\/run differential (e.g. 15). Null = no cap.",
+                ),
+              ruleSet: zod
+                .string()
+                .max(getTournamentResponseTwoPoolPlayTwoRuleSetMax)
+                .nullish()
+                .describe(
+                  'Which preset the rules came from (e.g. \"myba\"); null = custom.',
                 ),
               updatedAt: zod.string(),
             })
@@ -2672,6 +2691,10 @@ export const saveTournamentPoolPlayBodyAdvanceCountMax = 8;
 export const saveTournamentPoolPlayBodyByeCountMin = 0;
 export const saveTournamentPoolPlayBodyByeCountMax = 8;
 
+export const saveTournamentPoolPlayBodyDiffCapMax = 100;
+
+export const saveTournamentPoolPlayBodyRuleSetMax = 40;
+
 export const SaveTournamentPoolPlayBody = zod
   .object({
     ourTeamName: zod
@@ -2764,6 +2787,21 @@ export const SaveTournamentPoolPlayBody = zod
       .describe(
         "How many of the advancing teams earn a bracket bye (default 0).\nCapped by `advanceCount`.\n",
       ),
+    diffCap: zod
+      .number()
+      .min(1)
+      .max(saveTournamentPoolPlayBodyDiffCapMax)
+      .nullish()
+      .describe(
+        "Most one game's margin counts toward the point\/run differential (e.g. 15). Null = no cap.",
+      ),
+    ruleSet: zod
+      .string()
+      .max(saveTournamentPoolPlayBodyRuleSetMax)
+      .nullish()
+      .describe(
+        'Which preset the rules came from (e.g. \"myba\"); null = custom.',
+      ),
     updatedAt: zod.string(),
   })
   .describe("Saved pool-play import for a tournament.");
@@ -2793,6 +2831,10 @@ export const saveTournamentPoolPlayResponsePoolPlayAdvanceCountMax = 8;
 
 export const saveTournamentPoolPlayResponsePoolPlayByeCountMin = 0;
 export const saveTournamentPoolPlayResponsePoolPlayByeCountMax = 8;
+
+export const saveTournamentPoolPlayResponsePoolPlayDiffCapMax = 100;
+
+export const saveTournamentPoolPlayResponsePoolPlayRuleSetMax = 40;
 
 export const SaveTournamentPoolPlayResponse = zod.object({
   poolPlay: zod
@@ -2886,6 +2928,21 @@ export const SaveTournamentPoolPlayResponse = zod.object({
         .max(saveTournamentPoolPlayResponsePoolPlayByeCountMax)
         .describe(
           "How many of the advancing teams earn a bracket bye (default 0).\nCapped by `advanceCount`.\n",
+        ),
+      diffCap: zod
+        .number()
+        .min(1)
+        .max(saveTournamentPoolPlayResponsePoolPlayDiffCapMax)
+        .nullish()
+        .describe(
+          "Most one game's margin counts toward the point\/run differential (e.g. 15). Null = no cap.",
+        ),
+      ruleSet: zod
+        .string()
+        .max(saveTournamentPoolPlayResponsePoolPlayRuleSetMax)
+        .nullish()
+        .describe(
+          'Which preset the rules came from (e.g. \"myba\"); null = custom.',
         ),
       updatedAt: zod.string(),
     })

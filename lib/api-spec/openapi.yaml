@@ -2541,6 +2541,17 @@ components:
           description: |
             How many of the advancing teams earn a bracket bye (default 0).
             Capped by `advanceCount`.
+        diffCap:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+          description: Most one game's margin counts toward the point/run differential (e.g. 15). Null = no cap.
+        ruleSet:
+          type: string
+          nullable: true
+          maxLength: 40
+          description: Which preset the rules came from (e.g. "myba"); null = custom.
         updatedAt:
           type: string
       required:

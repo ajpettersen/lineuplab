@@ -260,7 +260,7 @@ export default function Teams() {
           className="text-2xl font-bold font-broadcast uppercase tracking-wide"
           data-testid="text-teams-title"
         >
-          My Teams
+          Manage Teams
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Pick a team to work with, or create a new one for a new season or
@@ -351,6 +351,11 @@ export default function Teams() {
                         {isOwn && !isPersonal && (
                           <DropdownMenuItem onClick={() => handleArchive(t)}>
                             <Archive className="h-4 w-4 mr-2" /> Archive
+                          </DropdownMenuItem>
+                        )}
+                        {isOwn && !isPersonal && isActive && (
+                          <DropdownMenuItem disabled>
+                            <Trash2 className="h-4 w-4 mr-2" /> To delete, switch to another team first
                           </DropdownMenuItem>
                         )}
                         {isOwn && !isPersonal && !isActive && (
