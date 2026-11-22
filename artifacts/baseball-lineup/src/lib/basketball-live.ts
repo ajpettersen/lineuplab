@@ -96,6 +96,8 @@ export interface LiveState extends Lineup {
   stints?: Record<string, { on: boolean; since: number }>;
   /** True after a change the plan didn't call for (offers Rebalance). */
   offPlan?: boolean;
+  /** Each time our five on court changed (game seconds), for minutes together by lineup. */
+  lineupLog?: { at: number; on: string[] }[];
 }
 
 export interface ScoreEvent {
@@ -179,6 +181,16 @@ export function trackStints(next: LiveState): LiveState {
       stints[p.id] = { on: isOn, since: at };
       changed = true;
     }
+  }
+  // Log the five whenever it changes (plus/minus and minutes by lineup).
+  const five = [...on].filter((id) => !next.outIds.includes(id)).sort();
+  const log = next.lineupLog ?? [];
+  const last = log[log.length - 1];
+  const fiveChanged = !last || last.on.join(",") !== five.join(",");
+  if (fiveChanged && next.phase !== "pregame") {
+    // Two changes at the same moment: keep only the latest five.
+    const kept = last && last.at === at ? log.slice(0, -1) : log;
+    return { ...next, stints: changed ? stints : next.stints, lineupLog: [...kept, { at, on: five }] };
   }
   return changed ? { ...next, stints } : next;
 }

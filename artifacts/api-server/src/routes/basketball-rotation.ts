@@ -6,11 +6,12 @@ import {
   basketballGameLineupsTable,
   basketballGameStatsTable,
   basketballRotationSettingsTable,
+  gamesTable,
   playersTable,
   type BasketballGameDay,
   type BasketballPlayerTags,
 } from "@workspace/db";
-import { gateWrites } from "../lib/permissions";
+import { assertPermission, gateWrites } from "../lib/permissions";
 import { filterOwnedPlayerIds, getOwnedGame } from "../lib/ownership";
 import { basketballSeason } from "../lib/basketball-season";
 
@@ -239,9 +240,22 @@ router.put("/basketball-rotation", async (req, res): Promise<void> => {
 
 // ── Per-game starters and playing time (court display) ───────────────────
 
+const LogEventZ = z.union([
+  z.object({ kind: z.literal("lineup"), at: z.number().min(0).max(4 * 60 * 60), on: z.array(z.string().regex(/^\d+$/)).max(5) }),
+  z.object({
+    kind: z.literal("score").optional(),
+    team: z.enum(["us", "them"]),
+    pts: z.number().int().min(-10).max(10),
+    half: z.number().int().min(1).max(8).optional(),
+    at: z.number().min(0).max(4 * 60 * 60),
+    on: z.array(z.string().regex(/^\d+$/)).max(5),
+  }),
+]);
 const GameStatsZ = z.object({
   starterIds: z.array(z.number().int().positive()).max(15),
   playedSec: z.record(z.string().regex(/^\d+$/), z.number().min(0).max(4 * 60 * 60)),
+  /** Lineup changes and scoring, for plus/minus by lineup. */
+  log: z.array(LogEventZ).max(2000).optional(),
 });
 
 function gameIdParam(raw: string | string[] | undefined): number | null {
@@ -294,6 +308,11 @@ router.put("/basketball-games/:gameId/stats", async (req, res): Promise<void> =>
         .filter(([id]) => owned.has(Number(id)))
         .map(([id, sec]) => [id, Math.round(sec)]),
     ),
+    ...(parsed.data.log
+      ? {
+          scoreLog: parsed.data.log.map((e) => ({ ...e, on: e.on.filter((id) => owned.has(Number(id))) })) as unknown as (typeof basketballGameStatsTable.$inferInsert)["scoreLog"],
+        }
+      : {}),
     updatedAt: new Date(),
   };
   await db
@@ -434,6 +453,37 @@ router.delete("/basketball-games/:gameId/lineup", async (req, res): Promise<void
       .where(and(eq(basketballGameLineupsTable.gameId, gameId), eq(basketballGameLineupsTable.userId, userId)));
   }
   res.status(204).send();
+});
+
+// Statistics → Lineups (coach-only): each tracked game's lineup and scoring
+// log, for plus/minus by five-player group and by player.
+router.get("/basketball-lineups", assertPermission("partial"), async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const rows = await db
+    .select({
+      gameId: basketballGameStatsTable.gameId,
+      playedSec: basketballGameStatsTable.playedSec,
+      log: basketballGameStatsTable.scoreLog,
+      date: gamesTable.gameDate,
+      opponent: gamesTable.opponent,
+    })
+    .from(basketballGameStatsTable)
+    .innerJoin(gamesTable, and(eq(gamesTable.id, basketballGameStatsTable.gameId), eq(gamesTable.userId, userId), isNull(gamesTable.deletedAt)))
+    .where(eq(basketballGameStatsTable.userId, userId));
+  const roster = await rosterFor(userId);
+  res.json({
+    games: rows
+      .filter((r) => Array.isArray(r.log) && r.log.length > 0)
+      .map((r) => ({
+        gameId: r.gameId,
+        date: new Date(r.date).toISOString(),
+        opponent: r.opponent,
+        gameSec: Math.round(Object.values(r.playedSec).reduce((a, b) => a + (Number(b) || 0), 0) / 5),
+        events: r.log,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    players: roster.map((p) => ({ id: String(p.id), name: p.name })),
+  });
 });
 
 router.get("/basketball-season", async (req, res): Promise<void> => {
