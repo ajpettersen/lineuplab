@@ -29,6 +29,7 @@ import {
   Undo2,
   UserMinus,
   UserPlus,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/confirm";
@@ -613,7 +614,11 @@ export default function BasketballCourtDisplay() {
           </div>
           {view.runningSince ? (
             <Button size="lg" variant="secondary" onClick={() => act(stopClock)} className="gap-2"><Pause className="h-5 w-5" /> Pause</Button>
-          ) : view.phase === "final" ? null : (
+          ) : view.phase === "final" ? (
+            <Link href={`/games/${gameId}`}>
+              <Button size="lg" className="gap-2"><Trophy className="h-5 w-5" /> Log the final score</Button>
+            </Link>
+          ) : (
             <Button
               size="lg"
               onClick={() => { void enableAlerts(); act(startClock); }}
