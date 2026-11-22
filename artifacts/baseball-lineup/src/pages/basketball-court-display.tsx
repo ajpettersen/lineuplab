@@ -487,6 +487,10 @@ export default function BasketballCourtDisplay() {
   const [dragging, setDragging] = useState<string | null>(null);
   const [playsOpen, setPlaysOpen] = useState(false);
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
+  // This page sits outside the app frame, so it names the browser tab itself.
+  useEffect(() => {
+    document.title = game?.opponent ? `Court Display · vs ${game.opponent} · Lineup Lab` : "Court Display · Lineup Lab";
+  }, [game?.opponent]);
   // Same feel as the baseball lineup grid: a mouse drag starts after 5px; on
   // touch, press and hold briefly so normal scrolling still works.
   const sensors = useSensors(
