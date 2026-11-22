@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { QuickScoreDialog } from "@/components/quick-score-dialog";
 import { format, isToday, isTomorrow } from "date-fns";
 import { CalendarDays, ChevronRight, MapPin, Tv, UserRound } from "lucide-react";
@@ -75,6 +75,7 @@ export function NextGameHero({
   const label = getHeroLabel(date, isPast);
   const { sportProfile } = useTeamSettings();
   const isBasketball = sportProfile.id === "basketball";
+  const [, navigate] = useLocation();
   // Basketball records a result with a small score pop-up, right here.
   const [scoring, setScoring] = useState(false);
   const quickScore = isPast && isBasketball;
@@ -169,17 +170,17 @@ export function NextGameHero({
                 size="lg"
                 className="bg-broadcast-gold text-broadcast-navy hover:bg-amber-300 font-broadcast uppercase tracking-wider shadow-[0_4px_16px_rgba(251,191,36,0.35)] border-0"
                 onClick={() =>
-                  window.open(
-                    `${BASE}/games/${game.id}/display`,
-                    "_blank",
-                    "noopener",
-                  )
+                  // Basketball: one tap straight into the court display (same tab, so it works
+                  // as an iPad home-screen app); baseball keeps its separate display tab.
+                  isBasketball
+                    ? navigate(`/games/${game.id}/display`)
+                    : window.open(`${BASE}/games/${game.id}/display`, "_blank", "noopener")
                 }
                 data-testid="button-hero-field-display"
-                title={isBasketball ? "Open the court display (clock, subs, playing time) in a new tab" : "Open the dugout / fence-iPad display in a new tab"}
+                title={isBasketball ? "Open the court display for this game (clock, subs, playing time)" : "Open the dugout / fence-iPad display in a new tab"}
               >
                 <Tv className="h-5 w-5 mr-2" />
-                {isBasketball ? "Open Court Display" : "Open Field Display"}
+                {isBasketball ? "Start next game" : "Open Field Display"}
               </Button>
             )}
             <Link

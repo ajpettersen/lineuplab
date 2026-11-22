@@ -55,6 +55,6 @@ export async function purgePersistedQueryCache(): Promise<void> {
 // Bumping this string invalidates ALL persisted caches across users
 // (e.g. when we change a query shape that would otherwise crash on
 // rehydrate). Keep in sync with breaking changes to query payloads.
-export const PERSIST_BUSTER = "v1.3.0"; // v1.3.0: basketball setup/lineups use one starting order
+export const PERSIST_BUSTER = "v1.4.0"; // v1.4.0: basketball season data gained per-game and availability fields
 
 export const PERSIST_MAX_AGE = 1000 * 60 * 60 * 24 * 14; // 14 days

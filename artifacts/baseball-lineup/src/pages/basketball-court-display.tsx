@@ -12,6 +12,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { Link, useRoute } from "wouter";
+import { BASKETBALL_SEASON_KEY, fetchBasketballSeason, normalizeSeason } from "@/lib/basketball-season";
 import { useQuery } from "@tanstack/react-query";
 import { minuteTargets, paceOf, seasonBeforeGame } from "@/lib/basketball-targets";
 import { getGetGameQueryKey, useGetGame } from "@workspace/api-client-react";
@@ -456,12 +457,9 @@ export default function BasketballCourtDisplay() {
   const { data: setup, isLoading: setupLoading } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
   // Season minutes (before this game) nudge each player's target for today.
   const { data: season } = useQuery({
-    queryKey: ["basketball-season"],
-    queryFn: async (): Promise<{ gamesTracked: number; players: { playerId: number; seconds: number; games: number }[] }> => {
-      const r = await fetch(`${BASE}/api/basketball-season`);
-      if (!r.ok) throw new Error(`GET /api/basketball-season failed (${r.status})`);
-      return r.json();
-    },
+    queryKey: BASKETBALL_SEASON_KEY,
+    queryFn: fetchBasketballSeason,
+    select: normalizeSeason,
     staleTime: 5 * 60_000,
   });
   const { data: savedStats } = useQuery({

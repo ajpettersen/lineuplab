@@ -22,6 +22,7 @@ import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 import { SprayChart, useSprayChart } from "@/components/spray-chart";
 import { useSportProfile } from "@/hooks/use-sport-profile";
+import { fmtMinutes, useBasketballSeason } from "@/lib/basketball-season";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -53,6 +54,55 @@ const POSITION_LABELS: Record<string, string> = {
   RF: "Right Field",
 };
 
+/**
+ * Basketball: the same numbers as the Rotation Report (/stats), from the
+ * season playing-time data, in minutes.
+ */
+function BasketballRotationReport({ playerId }: { playerId: number }) {
+  const { data, isLoading } = useBasketballSeason();
+  const p = data?.players.find((x) => x.playerId === playerId);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Rotation Report</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !p || !data || data.gamesTracked === 0 ? (
+          <p className="text-sm text-muted-foreground">No tracked games yet. Playing time fills in from the court display.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold">{p.games}</div>
+                <div className="text-xs text-muted-foreground">Games Played</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold font-mono">{fmtMinutes(p.seconds)}</div>
+                <div className="text-xs text-muted-foreground">Court Time</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold font-mono">{fmtMinutes(p.benchSec)}</div>
+                <div className="text-xs text-muted-foreground">Bench Time</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${p.outGames > 0 ? "text-amber-600" : "text-foreground"}`}>{p.outGames}</div>
+                <div className="text-xs text-muted-foreground">Out (Unavailable)</div>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {p.starts} start{p.starts === 1 ? "" : "s"}
+              {p.pctAvailable !== null ? ` · played ${Math.round(p.pctAvailable * 100)}% of the minutes in games they were available for` : ""}. Bench time
+              counts only games they were available for.
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function PlayerDetail() {
   const [, params] = useRoute("/players/:id");
   const id = parseInt(params?.id ?? "0");
@@ -81,6 +131,7 @@ export default function PlayerDetail() {
   const { toast } = useToast();
   // Positions and pitching follow the team's sport (PG/SG/SF/PF/C for basketball).
   const { profile } = useSportProfile();
+  const isBasketball = profile.id === "basketball";
   const sportPositions = profile.positions.map((p) => p.code);
   const positionLabel = (code: string) =>
     profile.positions.find((p) => p.code === code)?.label ?? POSITION_LABELS[code] ?? code;
@@ -408,7 +459,8 @@ export default function PlayerDetail() {
       )}
 
       {/* Rotation Report */}
-      {stats && (
+      {isBasketball && <BasketballRotationReport playerId={id} />}
+      {!isBasketball && stats && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Rotation Report</CardTitle>
