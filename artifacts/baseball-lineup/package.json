@@ -15,6 +15,7 @@
     "test:basketball-priority": "node test/basketball-priority.test.ts",
     "test:basketball-pairing": "node test/basketball-pairing.test.ts",
     "test:basketball-lineups": "node test/basketball-lineups.test.ts",
+    "test:basketball-live-sync": "node test/basketball-live-sync.test.ts",
     "test:basketball-plays": "node ./test/basketball-plays.test.ts"
   },
   "devDependencies": {

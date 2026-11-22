@@ -6,6 +6,7 @@ import {
   basketballGameLineupsTable,
   basketballGameStatsTable,
   basketballRotationSettingsTable,
+  basketballLiveGamesTable,
   gamesTable,
   playersTable,
   type BasketballGameDay,
@@ -451,6 +452,113 @@ router.delete("/basketball-games/:gameId/lineup", async (req, res): Promise<void
     await db
       .delete(basketballGameLineupsTable)
       .where(and(eq(basketballGameLineupsTable.gameId, gameId), eq(basketballGameLineupsTable.userId, userId)));
+  }
+  res.status(204).send();
+});
+
+// ── Second-coach mode: one live game shared between devices ────────────────
+// Every change to the court display's state is saved here with a version
+// number; other devices poll GET ?since=<version> about once a second and
+// take the newer state. Last write wins: a save made without seeing the
+// latest version still goes through, and the response hands back what it
+// replaced so that device can offer Undo. One device runs the clock.
+
+const LiveSaveZ = z.object({
+  /** The version this device last saw (null = it never saw one). */
+  baseVersion: z.number().int().min(0).nullable(),
+  state: z.record(z.string(), z.unknown()),
+  deviceId: z.string().min(4).max(64),
+  /** Short description of the change, for the "who did this" line. */
+  change: z.string().max(160),
+  name: z.string().trim().max(60).nullable().optional(),
+  /** Claim the clock for this device (start/stop, timeouts). */
+  takeClock: z.boolean().optional(),
+});
+
+function presentLive(row: typeof basketballLiveGamesTable.$inferSelect) {
+  return {
+    version: row.version,
+    state: row.state,
+    clockDevice: row.clockDevice,
+    updatedBy: row.updatedBy,
+    updatedByName: row.updatedByName,
+    lastChange: row.lastChange,
+    updatedAt: row.updatedAt,
+  };
+}
+
+router.get("/basketball-games/:gameId/live", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(basketballLiveGamesTable)
+    .where(and(eq(basketballLiveGamesTable.gameId, gameId), eq(basketballLiveGamesTable.userId, userId)));
+  const since = Number(req.query.since);
+  if (row && Number.isInteger(since) && since === row.version) {
+    res.status(204).send();
+    return;
+  }
+  res.json({ live: row ? presentLive(row) : null });
+});
+
+router.put("/basketball-games/:gameId/live", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  const parsed = LiveSaveZ.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid live game" });
+    return;
+  }
+  const { baseVersion, state, deviceId, change, name, takeClock } = parsed.data;
+  if (JSON.stringify(state).length > 400_000) {
+    res.status(413).json({ error: "Live game state is too large" });
+    return;
+  }
+  const result = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(basketballLiveGamesTable)
+      .where(and(eq(basketballLiveGamesTable.gameId, gameId), eq(basketballLiveGamesTable.userId, userId)))
+      .for("update");
+    const replaced = row && baseVersion !== row.version ? presentLive(row) : null;
+    const version = (row?.version ?? 0) + 1;
+    const clockDevice = takeClock || !row?.clockDevice ? deviceId : row.clockDevice;
+    const values = {
+      gameId,
+      userId,
+      version,
+      state,
+      clockDevice,
+      updatedBy: deviceId,
+      updatedByName: name ?? null,
+      lastChange: change,
+      updatedAt: new Date(),
+    };
+    const [saved] = await tx
+      .insert(basketballLiveGamesTable)
+      .values(values)
+      .onConflictDoUpdate({ target: basketballLiveGamesTable.gameId, set: values })
+      .returning();
+    return { live: presentLive(saved), replaced };
+  });
+  res.json(result);
+});
+
+// Reset on the court display clears the shared copy too.
+router.delete("/basketball-games/:gameId/live", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const gameId = gameIdParam(req.params.gameId);
+  if (gameId) {
+    await db.delete(basketballLiveGamesTable).where(and(eq(basketballLiveGamesTable.gameId, gameId), eq(basketballLiveGamesTable.userId, userId)));
   }
   res.status(204).send();
 });
