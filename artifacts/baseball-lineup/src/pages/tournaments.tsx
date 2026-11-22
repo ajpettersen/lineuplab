@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trophy, MapPin, CalendarDays, Users, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { RestTiersEditor } from "@/components/rest-tiers-editor";
@@ -74,6 +75,9 @@ export default function Tournaments() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  // Pitch counts are baseball/softball only; basketball tournaments are about pool play and playing time.
+  const { sportProfile } = useTeamSettings();
+  const pitches = sportProfile.features.pitchCounts;
   // Which tournament's "add a game" dialog is open (null = closed). Shared
   // with the tournament detail page so the card shortcut and the detail page
   // offer the exact same create-or-link flow.
@@ -177,7 +181,9 @@ export default function Tournaments() {
             Tournaments
           </h1>
           <p className="text-sm text-muted-foreground mt-2">
-            Group multi-game weekends so the app rolls per-pitcher pitch counts and rest days across every game.
+            {pitches
+              ? "Group multi-game weekends so the app rolls per-pitcher pitch counts and rest days across every game."
+              : "Group a tournament's games so you can track pool play (standings, tiebreakers, what you need to advance) and playing time across the weekend."}
           </p>
         </div>
         <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
@@ -191,7 +197,7 @@ export default function Tournaments() {
             <DialogHeader>
               <DialogTitle>New tournament</DialogTitle>
               <DialogDescription>
-                Pitch limits and rest tiers fall back to your team defaults if you leave them blank.
+                {pitches ? "Pitch limits and rest tiers fall back to your team defaults if you leave them blank." : "Add the dates; then link your games and set up pool play."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -239,6 +245,7 @@ export default function Tournaments() {
                 />
               </div>
 
+              {pitches && (<>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="t-daily-max" className="text-xs">Pitches / day</Label>
@@ -289,6 +296,7 @@ export default function Tournaments() {
                   placeholder="Inheriting team default — add rows here to override."
                 />
               </div>
+              </>)}
 
               <div className="space-y-1.5">
                 <Label htmlFor="t-notes">Notes (optional)</Label>
@@ -322,7 +330,9 @@ export default function Tournaments() {
           <CardContent className="py-12 text-center">
             <Trophy className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm text-muted-foreground">
-              No tournaments yet. Create one to start tracking pitch counts across a multi-game weekend.
+              {pitches
+                ? "No tournaments yet. Create one to start tracking pitch counts across a multi-game weekend."
+                : "No tournaments yet. Create one to track pool play and playing time across a tournament weekend."}
             </p>
           </CardContent>
         </Card>
@@ -423,11 +433,15 @@ export default function Tournaments() {
                     <CalendarDays className="h-3 w-3" />
                     {t.gameCount} game{t.gameCount === 1 ? "" : "s"}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    {t.pitchersUsed} pitcher{t.pitchersUsed === 1 ? "" : "s"}
-                  </span>
-                  <span>{t.totalPitches} pitches</span>
+                  {pitches && (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <Users className="h-3 w-3" />
+                        {t.pitchersUsed} pitcher{t.pitchersUsed === 1 ? "" : "s"}
+                      </span>
+                      <span>{t.totalPitches} pitches</span>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

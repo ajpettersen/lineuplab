@@ -49,7 +49,9 @@ import type { RestTier } from "@/lib/pitch-rulesets";
 import { tournamentDateAsLocal, safeFormatDate } from "@/lib/tournament-date";
 import { withSync } from "@/lib/sync-envelope";
 import { AddGameToTournamentDialog } from "@/components/add-game-to-tournament-dialog";
+import { useTeamSettings } from "@/hooks/use-team-settings";
 import { PoolPlayCard } from "@/components/pool-play-card";
+import { TournamentMinutesCard } from "@/components/basketball/tournament-minutes-card";
 import { TournamentNetworkCard } from "@/components/tournament-network-card";
 import {
   computeTournamentStatus,
@@ -92,6 +94,9 @@ export default function TournamentDetail() {
   const tournamentId = parseInt(params?.id ?? "0");
   const qc = useQueryClient();
   const { toast } = useToast();
+  // Pitch counts are baseball/softball only.
+  const { sportProfile } = useTeamSettings();
+  const pitches = sportProfile.features.pitchCounts;
 
   const { data: tournament, isLoading } = useGetTournament(tournamentId, {
     query: {
@@ -417,6 +422,7 @@ export default function TournamentDetail() {
                 <span className="text-base text-white/50">/{record.total}</span>
               </div>
             </div>
+            {pitches && (<>
             <div>
               <div className="text-[10px] uppercase font-display font-semibold tracking-[0.18em] text-white/55">
                 Pitches
@@ -436,6 +442,7 @@ export default function TournamentDetail() {
                 {tournament.pitcherAvailability.length}
               </div>
             </div>
+            </>)}
           </div>
           {/* Rules row — collapses naturally on small widths. Each chip
            *  exposes the same info that used to live in a single dense
@@ -443,6 +450,7 @@ export default function TournamentDetail() {
            *  outline badge — now split so each is independently
            *  scannable and the time-limit chip can sit alongside. */}
           <div className="mt-3 pt-3 border-t border-white/10 flex flex-wrap items-center gap-2">
+            {pitches && (<>
             <Badge variant="outline" className="text-xs border-white/20 text-white/80">
               {dailyLabel}
             </Badge>
@@ -454,7 +462,8 @@ export default function TournamentDetail() {
             <Badge variant="outline" className="text-xs border-white/20 text-white/80">
               {restTiersLabel}
             </Badge>
-            {hasAnyTimeLimit && (
+            </>)}
+            {pitches && hasAnyTimeLimit && (
               <Badge
                 variant="outline"
                 className="text-xs gap-1 flex items-center border-white/20 text-white/80"
@@ -472,6 +481,7 @@ export default function TournamentDetail() {
         </div>
       </div>
 
+      {pitches ? (
       <Card data-testid="card-pitcher-availability">
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div className="min-w-0">
@@ -673,6 +683,9 @@ export default function TournamentDetail() {
           )}
         </CardContent>
       </Card>
+      ) : (
+        <TournamentMinutesCard gameIds={tournament.games.map((g) => g.id)} />
+      )}
 
       <TournamentNetworkCard tournamentId={tournamentId} />
 
@@ -687,7 +700,7 @@ export default function TournamentDetail() {
           <div>
             <CardTitle className="text-base">Games</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Linked games' pitch counts feed availability above.
+              {pitches ? "Linked games' pitch counts feed availability above." : "Linked games' scores and playing time feed this page."}
             </p>
           </div>
           <Button
@@ -802,7 +815,7 @@ export default function TournamentDetail() {
                           {outcome} {g.ourScore}-{g.opponentScore}
                         </Badge>
                       )}
-                      {usage && usage.totalPitches > 0 ? (
+                      {!pitches ? null : usage && usage.totalPitches > 0 ? (
                         <Badge
                           variant="secondary"
                           className="text-xs font-mono"
@@ -824,7 +837,7 @@ export default function TournamentDetail() {
                       {safeFormatDate(g.gameDate, "EEE, MMM d · h:mm a", "Date TBD")}
                       {g.location ? ` · ${g.location}` : ""}
                     </div>
-                    {usage && usage.perPitcher.length > 0 && (
+                    {pitches && usage && usage.perPitcher.length > 0 && (
                       <div
                         className="mt-2 flex flex-wrap gap-1.5"
                         data-testid={`pitcher-breakdown-${g.id}`}
@@ -847,7 +860,7 @@ export default function TournamentDetail() {
                         ))}
                       </div>
                     )}
-                    {suggestion && suggestion.pitchers.length > 0 && (
+                    {pitches && suggestion && suggestion.pitchers.length > 0 && (
                       <div
                         className="mt-2"
                         data-testid={`suggested-pitchers-${g.id}`}
@@ -896,7 +909,7 @@ export default function TournamentDetail() {
               })}
             </div>
           )}
-          {tournament.games.length > 0 && (
+          {pitches && tournament.games.length > 0 && (
             <div
               className="mt-3 pt-3 border-t flex items-center justify-between text-sm"
               data-testid="tournament-pitch-total"
@@ -997,6 +1010,7 @@ function EditTournamentDialog({
   }) => void;
   isPending: boolean;
 }) {
+  const pitches = useTeamSettings().sportProfile.features.pitchCounts;
   const [name, setName] = useState(tournament.name);
   const [startDate, setStartDate] = useState(
     new Date(tournament.startDate).toISOString().slice(0, 10),
@@ -1143,6 +1157,7 @@ function EditTournamentDialog({
               onChange={(e) => setLocation(e.target.value)}
             />
           </div>
+          {pitches && (<>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="e-daily-max" className="text-xs">Pitches / day</Label>
@@ -1279,6 +1294,7 @@ function EditTournamentDialog({
               placeholder="Inheriting team default — add rows here to override."
             />
           </div>
+          </>)}
         </div>
         <DialogFooter>
           <Button
