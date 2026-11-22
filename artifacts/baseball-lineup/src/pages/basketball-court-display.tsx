@@ -15,6 +15,10 @@ import { Link, useRoute } from "wouter";
 import { BASKETBALL_SEASON_KEY, fetchBasketballSeason, normalizeSeason } from "@/lib/basketball-season";
 import { useQuery } from "@tanstack/react-query";
 import { minuteTargets, paceOf, seasonBeforeGame } from "@/lib/basketball-targets";
+import { useLiveSync } from "@/lib/use-live-sync";
+import { describeChange } from "@/lib/basketball-live-sync";
+import { useTeamContext } from "@/hooks/use-team-context";
+import { usePermission } from "@/hooks/use-permission";
 import { getGetGameQueryKey, useGetGame } from "@workspace/api-client-react";
 import {
   ArrowLeft,
@@ -513,15 +517,39 @@ export default function BasketballCourtDisplay() {
   const [alertsOn, setAlertsOn] = useState(true);
   const audio = useRef<AudioContext | null>(null);
 
+  // Second-coach mode: the live game is shared with other coaches' devices.
+  const { data: teamCtx } = useTeamContext();
+  const canWrite = usePermission().can("partial");
+  const stateRef = useRef<LiveState | null>(state);
+  const namesRef = useRef<(id: string) => string>((id) => id);
+  const sync = useLiveSync({
+    gameId,
+    myName: teamCtx?.currentUser?.displayName ?? null,
+    canWrite,
+    applyRemote: (remote) => {
+      stateRef.current = remote;
+      setStateRaw(remote);
+      saveState(gameId, remote);
+    },
+  });
+
   const setState = useCallback(
     (raw: LiveState | null) => {
       // Note who went on or off (for the rebalance limits).
       const next = raw ? trackStints(raw) : raw;
+      const prev = stateRef.current;
+      stateRef.current = next;
       setStateRaw(next);
       saveState(gameId, next);
-      if (next) syncGameStats(gameId, next);
+      if (next) {
+        syncGameStats(gameId, next);
+        // Starting the clock here makes this the clock device.
+        const startedClock = !!prev && prev.runningSince === null && next.runningSince !== null;
+        sync.push(next, describeChange(prev, next, namesRef.current, game?.opponent ?? "them"), { takeClock: startedClock || !prev });
+      }
     },
-    [gameId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [gameId, sync.push, game?.opponent],
   );
 
   // Until the game starts, the plan follows this game's lineup (game page →
@@ -551,8 +579,9 @@ export default function BasketballCourtDisplay() {
   }, [state, gameId]);
   // When the clock hits zero (halftime / final), store the settled state.
   useEffect(() => {
-    if (state && view && view.phase !== state.phase) setState(view);
-  }, [state, view, setState]);
+    // Only the clock device records the end of a period (the other follows it).
+    if (state && view && view.phase !== state.phase && sync.clockOwner) setState(view);
+  }, [state, view, setState, sync.clockOwner]);
 
   // Players who stay on keep their spot on the court drawing.
   const previousSpots = useRef<Map<string, CourtSpot> | null>(null);
@@ -567,6 +596,9 @@ export default function BasketballCourtDisplay() {
   }, [onCourtKey]);
 
   const nameOf = useCallback((id: string) => view?.players.find((p) => p.id === id)?.name ?? id, [view]);
+  namesRef.current = nameOf;
+  // Another device runs the clock: its controls are read-only here.
+  const clockLocked = !sync.clockOwner;
   const sortNames = (ids: string[]) => ids.map(nameOf).sort((a, b) => a.localeCompare(b));
 
   const due = view ? subDue(view) : false;
@@ -764,7 +796,7 @@ export default function BasketballCourtDisplay() {
             aria-label={`Add ${clockStep === 60 ? "1 minute" : `${clockStep} second${clockStep === 1 ? "" : "s"}`} to the clock`}
             title="Add time to the clock (takes it off the players on the floor)"
             onClick={() => act((s, t) => nudgeClock(s, t, clockStep))}
-            disabled={view.phase === "final"}
+            disabled={view.phase === "final" || clockLocked}
           >
             <Plus className="h-4 w-4" />
           </Button>
@@ -784,7 +816,7 @@ export default function BasketballCourtDisplay() {
           ) : (
             <button
               type="button"
-              onClick={() => { setClockInput(fmt(view.clockSec)); setEditingClock(true); }}
+              onClick={() => { if (clockLocked) return; setClockInput(fmt(view.clockSec)); setEditingClock(true); }}
               title="Tap to set the clock"
               className="min-w-[7.5rem] rounded-md px-2 text-center font-display text-5xl font-bold tabular-nums"
             >
@@ -797,7 +829,7 @@ export default function BasketballCourtDisplay() {
             aria-label={`Take ${clockStep === 60 ? "1 minute" : `${clockStep} second${clockStep === 1 ? "" : "s"}`} off the clock`}
             title="Run the clock down (counts as time played for the players on the floor)"
             onClick={() => act((s, t) => nudgeClock(s, t, -clockStep))}
-            disabled={view.phase === "final"}
+            disabled={view.phase === "final" || clockLocked}
           >
             <Minus className="h-4 w-4" />
           </Button>
@@ -816,7 +848,7 @@ export default function BasketballCourtDisplay() {
             ))}
           </div>
           {view.runningSince ? (
-            <Button size="lg" variant="secondary" onClick={() => act(stopClock)} className="gap-2"><Pause className="h-5 w-5" /> Pause</Button>
+            <Button size="lg" variant="secondary" onClick={() => act(stopClock)} disabled={clockLocked} className="gap-2"><Pause className="h-5 w-5" /> Pause</Button>
           ) : view.phase === "final" ? (
             <Link href={`/games/${gameId}?complete=1${view.score ? `&us=${view.score.us}&them=${view.score.them}` : ""}`}>
               <Button size="lg" className="gap-2"><Trophy className="h-5 w-5" /> Log the final score</Button>
@@ -825,7 +857,7 @@ export default function BasketballCourtDisplay() {
             <Button
               size="lg"
               onClick={() => { void enableAlerts(); act(startClock); }}
-              disabled={view.phase === "pregame" && needsLineup}
+              disabled={(view.phase === "pregame" && needsLineup) || clockLocked}
               title={view.phase === "pregame" && needsLineup ? "Set this game's lineup first" : undefined}
               className="gap-2"
             >
@@ -836,6 +868,7 @@ export default function BasketballCourtDisplay() {
             <Button
               variant="secondary"
               className="gap-1 font-bold"
+              disabled={clockLocked}
               onClick={() => {
                 // One tap: stop the clock, count the timeout, open the plays.
                 const t = Date.now();
@@ -860,6 +893,34 @@ export default function BasketballCourtDisplay() {
           </Button>
         </div>
       </header>
+
+      {/* Second-coach mode: who changed what, the clock device, offline, Undo. */}
+      {(sync.activity || clockLocked || !sync.online || sync.conflict) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/40 px-3 py-1.5 text-sm md:px-5">
+          {!sync.online && <span className="font-semibold text-amber-700 dark:text-amber-300">Offline: changes are saved here and sync when you reconnect.</span>}
+          {sync.activity && (
+            <span className="text-muted-foreground">
+              <span className="font-semibold text-foreground">{sync.activity.mine ? "You" : sync.activity.name}</span>: {sync.activity.change}
+              <span className="ml-1">· {Math.max(0, Math.round((now - sync.activity.at) / 1000))}s ago</span>
+            </span>
+          )}
+          {clockLocked && (
+            <span className="flex items-center gap-2">
+              <span className="text-muted-foreground">Clock runs on {sync.clockName ? `${sync.clockName}'s` : "another"} device.</span>
+              <Button size="sm" variant="outline" className="h-7" disabled={!canWrite} onClick={() => sync.push(state ?? view, "took over the clock", { takeClock: true })}>
+                Run the clock here
+              </Button>
+            </span>
+          )}
+          {sync.conflict && (
+            <span className="flex items-center gap-2 font-semibold">
+              Your change replaced {sync.conflict.name}'s ({sync.conflict.change}).
+              <Button size="sm" variant="outline" className="h-7" onClick={sync.undoConflict}>Undo</Button>
+              <Button size="sm" variant="ghost" className="h-7" onClick={sync.dismissConflict}>OK</Button>
+            </span>
+          )}
+        </div>
+      )}
 
       <PlaysViewer
         open={playsOpen}
@@ -1152,6 +1213,7 @@ export default function BasketballCourtDisplay() {
                 onClick={async () => {
                   if (await confirm({ title: "Reset this game?", description: "The clock, subs and playing time go back to the start, using the Bench Sheet's current setup.", confirmText: "Reset game", variant: "destructive" })) {
                     setState(null);
+                    void sync.clear();
                     setSelected(null);
                     void fetch(`${BASE}/api/basketball-games/${gameId}/stats`, { method: "DELETE" }).catch(() => undefined);
                   }
