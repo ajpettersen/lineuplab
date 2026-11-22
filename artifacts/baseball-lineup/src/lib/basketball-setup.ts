@@ -87,7 +87,12 @@ export function normalizeSetup(raw: BasketballSetup): BasketballSetup {
   const day = (raw?.gameDay ?? {}) as SetupGameDay & Legacy;
   return {
     ...raw,
-    settings: { ...raw.settings, groupLayout: raw.settings?.groupLayout ?? "guards-front" },
+    settings: {
+      ...raw.settings,
+      groupLayout: raw.settings?.groupLayout ?? "guards-front",
+      // Halves or quarters (Settings → Rotation); the length is halfMinutes either way.
+      periods: raw.rules?.format?.periods === 4 ? 4 : 2,
+    },
     players: Array.isArray(raw.players) ? raw.players : [],
     gameDay: { absentIds: Array.isArray(day.absentIds) ? day.absentIds : [], order: orderOf(day) },
     defaultSubSize: raw.defaultSubSize === undefined ? 2 : raw.defaultSubSize,

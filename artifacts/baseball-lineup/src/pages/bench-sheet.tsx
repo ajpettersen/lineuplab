@@ -323,8 +323,8 @@ export default function BenchSheetPage() {
           <CardHeader><CardTitle>Game settings</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
-              <NumberField label="Half length (min)" value={draft.settings.halfMinutes} step={1} min={1} onChange={(n) => setSetting("halfMinutes", n)} disabled={readOnly} hint="Running clock" />
-              <NumberField label="Shift length (min)" value={draft.settings.shiftMinutes} step={0.5} min={0.5} onChange={(n) => setSetting("shiftMinutes", n)} disabled={readOnly} hint={shiftsPerHalf ? `${shiftsPerHalf} shifts a half` : undefined} />
+              <NumberField label={draft.settings.periods === 4 ? "Quarter length (min)" : "Half length (min)"} value={draft.settings.halfMinutes} step={1} min={1} onChange={(n) => setSetting("halfMinutes", n)} disabled={readOnly} hint="Running clock · halves or quarters: Settings → Rotation" />
+              <NumberField label="Shift length (min)" value={draft.settings.shiftMinutes} step={0.5} min={0.5} onChange={(n) => setSetting("shiftMinutes", n)} disabled={readOnly} hint={shiftsPerHalf ? `${shiftsPerHalf} shifts a ${draft.settings.periods === 4 ? "quarter" : "half"}` : undefined} />
               {layout === "guards-front" && (
                 <>
                   <NumberField label="Guard spots" value={draft.settings.guardSpots} step={1} min={0} onChange={(n) => setSetting("guardSpots", n)} disabled={readOnly} />
