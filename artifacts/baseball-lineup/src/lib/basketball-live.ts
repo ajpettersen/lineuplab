@@ -70,16 +70,93 @@ export interface LiveState extends Lineup {
   script?: string[][] | null;
   /** Personal fouls this game, by player id. */
   fouls?: Record<string, number>;
+  /** Our team fouls by half ("1", "2"); they reset each half. */
+  teamFouls?: Record<string, number>;
+  /** The other team's fouls by half (puts us in the bonus). */
+  oppFouls?: Record<string, number>;
+  score?: { us: number; them: number };
+  /**
+   * Every scoring change with who was on court for us, for plus/minus by
+   * lineup. `at` is game seconds elapsed; a correction is a negative `pts`.
+   */
+  scoreLog?: ScoreEvent[];
+}
+
+export interface ScoreEvent {
+  team: "us" | "them";
+  pts: number;
+  half: 1 | 2;
+  at: number;
+  on: string[];
 }
 
 /** Fouls that put a player out of the game. */
 export const FOUL_OUT = 5;
 
-/** Add (or with -1, take back) a foul. Fouls never go below zero or past the limit. */
-export function addFoul(s: LiveState, id: string, delta: 1 | -1 = 1): LiveState {
+/** Team fouls that put the other team in the bonus (one-and-one) and double bonus (two shots), per half. */
+export const BONUS_AT = 7;
+export const DOUBLE_BONUS_AT = 10;
+
+/**
+ * Add (or with -1, take back) a personal foul; it counts as a team foul this
+ * half. The fifth fouls the player out: they leave the game (the next one in
+ * line covers) and the rest of the plan goes on without them. Taking the
+ * fifth back brings them back.
+ */
+export function addFoul(s: LiveState, id: string, delta: 1 | -1 = 1, now = Date.now()): LiveState {
   const current = s.fouls?.[id] ?? 0;
   const next = Math.max(0, Math.min(FOUL_OUT, current + delta));
-  return { ...s, fouls: { ...(s.fouls ?? {}), [id]: next } };
+  if (next === current) return s;
+  const half = String(s.half);
+  let out: LiveState = {
+    ...s,
+    fouls: { ...(s.fouls ?? {}), [id]: next },
+    teamFouls: { ...(s.teamFouls ?? {}), [half]: Math.max(0, (s.teamFouls?.[half] ?? 0) + (next - current)) },
+  };
+  if (next >= FOUL_OUT && !out.outIds.includes(id)) out = takeOut(out, now, id);
+  if (current >= FOUL_OUT && next < FOUL_OUT && out.outIds.includes(id)) {
+    const player = out.players.find((p) => p.id === id);
+    if (player) out = putBack(out, now, player);
+  }
+  return out;
+}
+
+export function teamFoulsOf(s: LiveState, who: "us" | "them" = "us"): number {
+  return (who === "us" ? s.teamFouls : s.oppFouls)?.[String(s.half)] ?? 0;
+}
+
+/** The other team's fouls (a tap per foul; −1 to correct). */
+export function addOppFoul(s: LiveState, delta: 1 | -1 = 1): LiveState {
+  const half = String(s.half);
+  return { ...s, oppFouls: { ...(s.oppFouls ?? {}), [half]: Math.max(0, (s.oppFouls?.[half] ?? 0) + delta) } };
+}
+
+/** "Bonus" / "Double bonus" for whoever is shooting free throws off these fouls, or null. */
+export function bonusLabel(teamFouls: number): string | null {
+  return teamFouls >= DOUBLE_BONUS_AT ? "Double bonus" : teamFouls >= BONUS_AT ? "Bonus" : null;
+}
+
+/** Game seconds elapsed (both halves). */
+export function elapsedGameSec(s: LiveState): number {
+  const half = s.settings.halfMinutes * 60;
+  if (s.phase === "pregame") return 0;
+  if (s.phase === "final") return half * 2;
+  if (s.phase === "halftime") return half;
+  return (s.half - 1) * half + (half - s.clockSec);
+}
+
+/** Points for us or them (negative to correct), logged with who was on court. */
+export function addPoints(s: LiveState, team: "us" | "them", pts: number, now = Date.now()): LiveState {
+  const x = settle(s, now);
+  const score = { us: x.score?.us ?? 0, them: x.score?.them ?? 0 };
+  const nextScore = Math.max(0, score[team] + pts);
+  const applied = nextScore - score[team];
+  if (applied === 0) return s;
+  return {
+    ...x,
+    score: { ...score, [team]: nextScore },
+    scoreLog: [...(x.scoreLog ?? []), { team, pts: applied, half: x.half, at: Math.round(elapsedGameSec(x)), on: onCourtIds(x) }],
+  };
 }
 
 export function foulsOf(s: LiveState, id: string): number {
