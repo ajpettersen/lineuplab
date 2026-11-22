@@ -41,7 +41,7 @@ export function Scene4() {
           animate={phase >= 1 ? { opacity: 1, x: 0 } : { opacity: 0, x: 30 }}
           transition={{ duration: 0.8 }}
         >
-          Dugout<br/>
+          Game-day<br/>
           <span className="text-emerald-400">Ready</span>
         </motion.h1>
 

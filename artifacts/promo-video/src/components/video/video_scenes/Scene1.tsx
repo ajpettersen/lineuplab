@@ -35,7 +35,7 @@ export function Scene1() {
           animate={phase >= 1 ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
-          Coaching youth baseball
+          Coaching youth sports
         </motion.h1>
         
         <motion.h2 
