@@ -80,6 +80,8 @@ export interface LiveState extends Lineup {
    * lineup. `at` is game seconds elapsed; a correction is a negative `pts`.
    */
   scoreLog?: ScoreEvent[];
+  /** Our timeouts by half ("1", "2"). */
+  timeouts?: Record<string, number>;
 }
 
 export interface ScoreEvent {
@@ -134,6 +136,17 @@ export function addOppFoul(s: LiveState, delta: 1 | -1 = 1): LiveState {
 /** "Bonus" / "Double bonus" for whoever is shooting free throws off these fouls, or null. */
 export function bonusLabel(teamFouls: number): string | null {
   return teamFouls >= DOUBLE_BONUS_AT ? "Double bonus" : teamFouls >= BONUS_AT ? "Bonus" : null;
+}
+
+/** Timeout: stop the clock and count it for this half. The clock stays stopped until Start/Resume. */
+export function callTimeout(s: LiveState, now: number): LiveState {
+  const stopped = stopClock(s, now);
+  const half = String(stopped.half);
+  return { ...stopped, timeouts: { ...(stopped.timeouts ?? {}), [half]: (stopped.timeouts?.[half] ?? 0) + 1 } };
+}
+
+export function timeoutsOf(s: LiveState): number {
+  return s.timeouts?.[String(s.half)] ?? 0;
 }
 
 /** Game seconds elapsed (both halves). */

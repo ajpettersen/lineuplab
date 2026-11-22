@@ -20,6 +20,7 @@ import {
   Bell,
   BellOff,
   BookOpen,
+  Hand,
   ChevronsRight,
   GripVertical,
   Minus,
@@ -75,6 +76,8 @@ import {
   FOUL_OUT,
   addPoints,
   addOppFoul,
+  callTimeout,
+  timeoutsOf,
   teamFoulsOf,
   bonusLabel,
   totalShifts,
@@ -702,6 +705,21 @@ export default function BasketballCourtDisplay() {
               <Play className="h-5 w-5" /> {view.phase === "pregame" ? "Start game" : view.phase === "halftime" ? "Start 2nd half" : "Resume"}
             </Button>
           )}
+          {view.phase === "live" && (
+            <Button
+              variant="secondary"
+              className="gap-1 font-bold"
+              onClick={() => {
+                // One tap: stop the clock, count the timeout, open the plays.
+                const t = Date.now();
+                setNow(t);
+                setState(callTimeout(state ?? view, t));
+                setPlaysOpen(true);
+              }}
+            >
+              <Hand className="h-5 w-5" /> Timeout{timeoutsOf(view) > 0 ? ` (${timeoutsOf(view)})` : ""}
+            </Button>
+          )}
           <Button variant="outline" className="gap-1" onClick={() => setPlaysOpen(true)}>
             <BookOpen className="h-5 w-5" /> Plays
           </Button>
@@ -721,6 +739,7 @@ export default function BasketballCourtDisplay() {
         onClose={() => setPlaysOpen(false)}
         namesBySpot={Object.fromEntries(spots.filter((x) => x.spot !== null).map((x) => [x.spot, nameOf(x.id)]))}
         clockRunning={view.runningSince !== null}
+        note={view.phase === "live" && view.runningSince === null && timeoutsOf(view) > 0 ? `Timeout ${timeoutsOf(view)} this half · clock stopped at ${fmt(view.clockSec)} until you tap Resume` : null}
         onPauseClock={() => act(stopClock)}
       />
 
