@@ -137,7 +137,7 @@ const BASKETBALL_PROFILE: SportProfile = {
     pitching: false,
     battingOrder: false,
     boxScoreImport: false,
-    tournaments: false,
+    tournaments: true,
     pitchCounts: false,
   },
   terms: {

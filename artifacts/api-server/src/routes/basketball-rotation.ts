@@ -393,7 +393,10 @@ router.delete("/basketball-games/:gameId/lineup", async (req, res): Promise<void
 });
 
 router.get("/basketball-season", async (req, res): Promise<void> => {
-  res.json(await basketballSeason(req.ownerUserId!));
+  // ?gameIds=1,2,3 limits it to those games (a tournament's).
+  const raw = typeof req.query.gameIds === "string" ? req.query.gameIds : null;
+  const gameIds = raw === null ? null : raw.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 200);
+  res.json(await basketballSeason(req.ownerUserId!, gameIds));
 });
 
 export default router;
