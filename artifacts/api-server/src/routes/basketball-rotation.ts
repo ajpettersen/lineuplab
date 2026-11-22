@@ -205,16 +205,39 @@ function gameIdParam(raw: string | string[] | undefined): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+/** Total seconds in a playedSec map. */
+const totalSec = (played: Record<string, number> | null | undefined) =>
+  Object.values(played ?? {}).reduce((sum, sec) => sum + (Number(sec) || 0), 0);
+
+// The court display saves as it goes. Two guards keep a stray run from wiping
+// real numbers (it happened when an old game's court display was reopened
+// and its clock started again from zero):
+//   - once a game has its final score, its playing time is kept as it is;
+//   - a save that would cut the stored total by more than half is a new run
+//     starting over, not a correction, so it waits until it catches up.
 router.put("/basketball-games/:gameId/stats", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const gameId = gameIdParam(req.params.gameId);
-  if (!gameId || !(await getOwnedGame(userId, gameId))) {
+  const game = gameId ? await getOwnedGame(userId, gameId) : null;
+  if (!gameId || !game) {
     res.status(404).json({ error: "Game not found" });
     return;
   }
   const parsed = GameStatsZ.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid game stats" });
+    return;
+  }
+  if (game.status === "completed") {
+    res.json({ ok: false, kept: "final" });
+    return;
+  }
+  const [existing] = await db
+    .select({ playedSec: basketballGameStatsTable.playedSec })
+    .from(basketballGameStatsTable)
+    .where(and(eq(basketballGameStatsTable.gameId, gameId), eq(basketballGameStatsTable.userId, userId)));
+  if (existing && totalSec(parsed.data.playedSec) < totalSec(existing.playedSec) / 2) {
+    res.json({ ok: false, kept: "larger" });
     return;
   }
   const mentioned = [...new Set([...parsed.data.starterIds, ...Object.keys(parsed.data.playedSec).map(Number)])];
@@ -269,10 +292,12 @@ router.get("/basketball-games/:gameId/stats", async (req, res): Promise<void> =>
 router.delete("/basketball-games/:gameId/stats", async (req, res): Promise<void> => {
   const userId = req.ownerUserId!;
   const gameId = gameIdParam(req.params.gameId);
-  if (gameId) {
+  // A game with its final score keeps its playing time (resetting the court display doesn't clear it).
+  const game = gameId ? await getOwnedGame(userId, gameId) : null;
+  if (game && game.status !== "completed") {
     await db
       .delete(basketballGameStatsTable)
-      .where(and(eq(basketballGameStatsTable.gameId, gameId), eq(basketballGameStatsTable.userId, userId)));
+      .where(and(eq(basketballGameStatsTable.gameId, game.id), eq(basketballGameStatsTable.userId, userId)));
   }
   res.status(204).send();
 });
