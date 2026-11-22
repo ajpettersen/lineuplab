@@ -30,6 +30,8 @@ import {
   addOppFoul,
   teamFoulsOf,
   bonusLabel,
+  callTimeout,
+  timeoutsOf,
   type LiveState,
 } from "../src/lib/basketball-live.ts";
 
@@ -342,6 +344,18 @@ for (const subSize of [1, 3, 4]) {
   assert.equal(s.scoreLog!.length, 4);
   assert.equal(s.scoreLog![3].pts, -2, "the log keeps the change actually made");
   assert.deepEqual(sorted(s.scoreLog![0].on), sorted(onCourt(s).flat()));
+}
+
+// Timeout: stops the clock, counts per half, stays stopped.
+{
+  let s = startClock(startState(input), 0);
+  s = callTimeout(s, 30_000);
+  assert.equal(s.runningSince, null, "clock stopped");
+  assert.equal(Math.round(s.clockSec), 1200 - 30);
+  assert.equal(timeoutsOf(s), 1);
+  s = callTimeout(startClock(s, 40_000), 50_000);
+  assert.equal(timeoutsOf(s), 2);
+  assert.equal(timeoutsOf({ ...s, half: 2 }), 0, "counted per half");
 }
 
 console.log("basketball-live: all checks passed");

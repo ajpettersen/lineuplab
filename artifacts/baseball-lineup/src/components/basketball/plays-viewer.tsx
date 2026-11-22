@@ -16,12 +16,15 @@ export function PlaysViewer({
   namesBySpot,
   clockRunning,
   onPauseClock,
+  note = null,
 }: {
   open: boolean;
   onClose: () => void;
   namesBySpot: Partial<Record<CourtSpot, string>>;
   clockRunning: boolean;
   onPauseClock: () => void;
+  /** e.g. "Timeout 2 this half · clock stopped at 12:34". */
+  note?: string | null;
 }) {
   const { data: plays = [], isLoading } = useQuery({ queryKey: PLAYS_KEY, queryFn: fetchPlays, enabled: open });
   const [playId, setPlayId] = useState<number | null>(null);
@@ -134,6 +137,7 @@ export function PlaysViewer({
             </Button>
           )}
           <h2 className="font-display text-2xl font-bold uppercase">{play ? play.name : "Plays"}</h2>
+          {note && <span className="hidden rounded-md bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-950 sm:inline dark:bg-amber-900/50 dark:text-amber-100">{note}</span>}
         </div>
         <div className="flex items-center gap-2">
           {clockRunning && (
