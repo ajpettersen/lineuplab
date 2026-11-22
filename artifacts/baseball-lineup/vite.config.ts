@@ -105,7 +105,7 @@ export default defineConfig({
         name: "Lineup Lab",
         short_name: "Lineup Lab",
         description:
-          "Build lineups, run rotations, and manage tournament days for youth baseball / softball teams.",
+          "Build fair lineups and rotations, track playing time, and run game days for youth baseball, softball, and basketball teams.",
         // Deep navy primary from the broadcast theme.
         theme_color: "#0a2552",
         background_color: "#0a2552",

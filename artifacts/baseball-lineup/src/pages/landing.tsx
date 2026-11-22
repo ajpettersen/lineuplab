@@ -31,7 +31,7 @@ const FEATURES = [
     image: "feature-shots/ai-lineups.webp",
     title: "AI lineups in seconds",
     body:
-      "Generate fair, balanced lineups from your roster, batting order, and fielding history — or talk to the assistant in plain English.",
+      "Fair lineups and rotations from your roster and playing-time history: batting orders and positions for baseball and softball, sub rotations for basketball. Or just ask the assistant in plain English.",
   },
   {
     icon: Users,
@@ -45,21 +45,21 @@ const FEATURES = [
     image: "feature-shots/stats.webp",
     title: "Stats that mean something",
     body:
-      "Box-score import from GameChanger screenshots, season batting and pitching aggregates, and a fairness score for playing time.",
+      "Season playing time, starts, and a fairness score for every sport, plus plus/minus for basketball and GameChanger box scores, batting, and pitching for baseball and softball.",
   },
   {
     icon: CalendarDays,
     image: "feature-shots/schedule.webp",
     title: "Schedule + practices",
     body:
-      "Paste an iCal URL to import games, plan practices with AI-generated drill blocks, and track tournament pitching rules.",
+      "Paste a calendar link to import games, plan practices with AI-generated drill blocks, and run tournament days with pool-play standings.",
   },
   {
     icon: ClipboardList,
     image: "feature-shots/field-display.webp",
-    title: "Field display for the dugout",
+    title: "Game-day display",
     body:
-      "iPad-friendly view that works offline so you can adjust positions on the fence without losing your spot.",
+      "A field or court display for your iPad or phone: positions or sub alerts, playing time, and the score. It keeps working without a signal.",
   },
   {
     icon: Trophy,
@@ -145,7 +145,7 @@ export default function Landing() {
           <div className="mx-auto max-w-3xl text-center">
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <Sparkles className="h-3.5 w-3.5" />
-              Built for youth baseball
+              Built for youth sports coaches
             </span>
             <h1 className="mt-5 font-display text-4xl font-bold tracking-tight sm:text-6xl">
               Better lineups.
@@ -153,9 +153,10 @@ export default function Landing() {
               <span className="text-primary">Less paper-shuffling.</span>
             </h1>
             <p className="mt-6 text-lg text-muted-foreground sm:text-xl">
-              Lineup Lab is the all-in-one team binder for youth baseball and
-              softball coaches — rosters, schedules, AI-generated lineups,
-              practice plans, and box-score stats in one tidy place.
+              Lineup Lab is the all-in-one team binder for youth baseball,
+              softball, and basketball coaches: rosters, schedules, fair
+              lineups and rotations, practice plans, and playing-time stats
+              in one tidy place.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link href="/sign-up">
@@ -233,13 +234,13 @@ export default function Landing() {
                 icon: Wand2,
                 title: "2. Generate a fair lineup",
                 body:
-                  "Tell Lineup Lab the game and inning count. It builds a balanced batting order and rotation that respects who sat last week.",
+                  "Mark who's here. Lineup Lab builds a fair lineup or sub rotation that respects who sat last time.",
               },
               {
                 icon: Tablet,
-                title: "3. Coach from the dugout",
+                title: "3. Coach from the bench",
                 body:
-                  "Open the iPad-friendly Field Display, swap players inning-by-inning, and let parents follow along — even with no signal.",
+                  "Open the Field or Court Display on your iPad or phone, make changes on the fly, and keep playing time fair, even with no signal.",
               },
             ].map(({ icon: Icon, title, body }) => (
               <li
@@ -267,8 +268,8 @@ export default function Landing() {
                 Everything a head coach actually needs
               </h2>
               <p className="mt-3 text-muted-foreground">
-                Built around real game-day workflows — not a calendar app
-                wearing a baseball hat.
+                Built around real game-day workflows, not a calendar app
+                with a whistle bolted on.
               </p>
             </div>
             <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -314,15 +315,15 @@ export default function Landing() {
               {[
                 {
                   q: "Is Lineup Lab free?",
-                  a: "Yes. The full app — roster management, AI lineups, schedule import, practice plans, box-score stats, and the iPad Field Display — is free for coaches to use today.",
+                  a: "Yes. The full app (roster management, lineups and rotations, schedule import, practice plans, stats, and the game-day displays) is free for coaches to use today.",
                 },
                 {
-                  q: "Does it work for both baseball and softball?",
-                  a: "Yes. The defensive shape (standard 9 with CF, or 10-player with LCF/RCF) and pitching rules are configurable per team, so it works for Little League, travel ball, rec leagues, and youth softball.",
+                  q: "Which sports does it work for?",
+                  a: "Baseball, softball, and basketball. Each team picks its sport. Baseball and softball get positions by inning, batting orders, and pitching rules (standard 9 or 10-player defense). Basketball gets sub rotations by position group, a court display with sub alerts, fouls and score, and playing-time targets.",
                 },
                 {
                   q: "How does the fair lineup generator work?",
-                  a: "Lineup Lab tracks how often each player has batted, sat, and played each position across the season. When you generate a new lineup, it weights the rotation toward kids who've sat the most and rotates infield/outfield assignments so playing time evens out across games. You can dial the fairness from 0 (skill-first) to 100 (strict equal time).",
+                  a: "Lineup Lab tracks how much each player has played and sat across the season. New lineups and rotations give more time to kids who've sat the most, so playing time evens out across games. In baseball and softball it also rotates positions, with a fairness dial from 0 (skill-first) to 100 (strict equal time); in basketball, players behind on minutes or starts get the extra shift and the start.",
                 },
                 {
                   q: "Can my assistant coaches help?",
@@ -330,7 +331,7 @@ export default function Landing() {
                 },
                 {
                   q: "Does it work without a signal at the field?",
-                  a: "Yes. The Field Display caches your roster and lineup on the device. You can adjust positions inning-by-inning even with no cellular signal, and changes sync automatically when you're back online.",
+                  a: "Yes. The Field and Court Displays keep your roster and lineup on the device, so you can keep coaching with no cellular signal, and changes sync automatically when you're back online.",
                 },
                 {
                   q: "Can I import my schedule from my league?",
@@ -338,7 +339,7 @@ export default function Landing() {
                 },
                 {
                   q: "Can I import GameChanger box scores?",
-                  a: "Yes. Snap 1–4 phone screenshots of your GameChanger box score; the AI extracts batting and pitching lines plus the final score, with an editable preview before it saves.",
+                  a: "Yes, for baseball and softball. Snap 1–4 phone screenshots of your GameChanger box score; the AI extracts batting and pitching lines plus the final score, with an editable preview before it saves.",
                 },
               ].map(({ q, a }) => (
                 <details
@@ -386,7 +387,7 @@ export default function Landing() {
       </main>
 
       <footer className="border-t border-border/60 bg-card/40 py-8 text-center text-xs text-muted-foreground">
-        Lineup Lab · Built for youth baseball and softball coaches
+        Lineup Lab · Built for youth baseball, softball, and basketball coaches
       </footer>
     </div>
   );
