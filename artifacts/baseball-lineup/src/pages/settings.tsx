@@ -378,8 +378,7 @@ export default function Settings() {
         <CardHeader>
           <CardTitle>Sport</CardTitle>
           <CardDescription>
-            Sets the positions, periods, and tools this team uses. Existing
-            teams stay on Baseball / Softball.
+            Sets the positions, periods, and tools this team uses.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
