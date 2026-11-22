@@ -170,10 +170,13 @@ router.patch("/basketball-rotation/rules", async (req, res): Promise<void> => {
     if (value === null) delete rules[key];
     else rules[key] = value;
   }
+  // Halves or quarters: the period length lives in half_minutes (one source of truth).
+  const periodMinutes = parsed.data.format ? parsed.data.format.periodMinutes : undefined;
+  const set = { rules, updatedAt: new Date(), ...(periodMinutes !== undefined ? { halfMinutes: periodMinutes } : {}) };
   await db
     .insert(basketballRotationSettingsTable)
-    .values({ userId, rules, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set: { rules, updatedAt: new Date() } });
+    .values({ userId, ...set })
+    .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set });
   res.json({ ok: true, rules });
 });
 

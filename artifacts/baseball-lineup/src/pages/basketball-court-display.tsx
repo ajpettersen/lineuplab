@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/confirm";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import { formatClock, groupsFor } from "@/lib/basketball-rotation";
+import { formatClock, groupsFor, periodShort, periodsOf } from "@/lib/basketball-rotation";
 import { PlaysViewer } from "@/components/basketball/plays-viewer";
 import {
   BASKETBALL_SETUP_KEY,
@@ -86,6 +86,7 @@ import {
   planRebalance,
   applyRebalance,
   shiftLengths,
+  elapsedGameSec,
   teamFoulsOf,
   bonusLabel,
   totalShifts,
@@ -154,11 +155,13 @@ function RebalanceDialog({
   // Planned once when opened (the clock keeps ticking underneath).
   const [plan] = useState(() => planRebalance(view, targets, rules, nameOf));
   const lengths = shiftLengths(view.settings);
-  const all = [...lengths, ...lengths];
+  const periods = periodsOf(view.settings);
+  const all = Array.from({ length: periods }, () => lengths).flat();
   const halfSec = view.settings.halfMinutes * 60;
   const clockAt = (i: number) => {
     const start = all.slice(0, i).reduce((a, b) => a + b, 0);
-    return i < lengths.length ? { half: 1, clock: halfSec - start } : { half: 2, clock: 2 * halfSec - start };
+    const period = Math.floor(i / lengths.length) + 1;
+    return { half: period, clock: period * halfSec - start };
   };
   const players = view.players.filter((p) => !view.outIds.includes(p.id));
   return (
@@ -192,7 +195,7 @@ function RebalanceDialog({
                   const at = clockAt(plan.firstShift + k);
                   return (
                     <tr key={k} className="border-b last:border-0">
-                      <td className="whitespace-nowrap py-1.5 pr-2 font-mono tabular-nums">{at.half === 1 ? "1H" : "2H"} {fmt(at.clock)}</td>
+                      <td className="whitespace-nowrap py-1.5 pr-2 font-mono tabular-nums">{periodShort(at.half, periods)} {fmt(at.clock)}</td>
                       {five.map((id) => (
                         <td key={id} className={`px-1 py-1.5 ${prev.includes(id) ? "" : "font-bold text-primary"}`}>{nameOf(id)}</td>
                       ))}
@@ -682,12 +685,13 @@ export default function BasketballCourtDisplay() {
   const onIds = new Set(onCourtIds(view));
   // Minutes vs. target: an even share of the game among available players,
   // nudged by season minutes; "owed" = behind where they should be by now.
-  const gameSec = view.settings.halfMinutes * 60 * 2;
+  const periodCount = periodsOf(view.settings);
+  const gameSec = view.settings.halfMinutes * 60 * periodCount;
   const elapsedSec =
     view.phase === "pregame" ? 0
     : view.phase === "final" ? gameSec
-    : view.phase === "halftime" ? gameSec / 2
-    : (view.half - 1) * (gameSec / 2) + (view.settings.halfMinutes * 60 - view.clockSec);
+    : view.phase === "halftime" ? elapsedGameSec(view)
+    : elapsedGameSec(view);
   const availableIds = view.players.filter((p) => !view.outIds.includes(p.id)).map((p) => p.id);
   const seasonLines = season && season.gamesTracked > 0
     ? seasonBeforeGame(season.players, new Map((savedStats?.players ?? []).map((p) => [p.playerId, p.seconds])))
@@ -716,7 +720,7 @@ export default function BasketballCourtDisplay() {
     .sort((a, b) => owed(b.id) - owed(a.id) || a.name.localeCompare(b.name));
   const outPlayers = view.players.filter((p) => view.outIds.includes(p.id));
   const fewest = minutes.length ? Math.min(...minutes.filter((p) => !view.outIds.includes(p.id)).map((p) => view.playedSec[p.id] ?? 0)) : 0;
-  const halfLabel = view.phase === "halftime" ? "Halftime" : view.phase === "final" ? "Final" : view.half === 1 ? "1st half" : "2nd half";
+  const halfLabel = view.phase === "halftime" ? "Halftime" : view.phase === "final" ? "Final" : periodCount === 4 ? `Q${view.half}` : view.half === 1 ? "1st half" : "2nd half";
 
   const saveClock = () => {
     // "17:30", "17", or digits only like "1730" / "730".
@@ -819,7 +823,7 @@ export default function BasketballCourtDisplay() {
               title={view.phase === "pregame" && needsLineup ? "Set this game's lineup first" : undefined}
               className="gap-2"
             >
-              <Play className="h-5 w-5" /> {view.phase === "pregame" ? "Start game" : view.phase === "halftime" ? "Start 2nd half" : "Resume"}
+              <Play className="h-5 w-5" /> {view.phase === "pregame" ? "Start game" : view.phase === "halftime" ? (periodCount === 4 ? `Start Q${view.half + 1}` : "Start 2nd half") : "Resume"}
             </Button>
           )}
           {view.phase === "live" && (
@@ -856,7 +860,7 @@ export default function BasketballCourtDisplay() {
         onClose={() => setPlaysOpen(false)}
         namesBySpot={Object.fromEntries(spots.filter((x) => x.spot !== null).map((x) => [x.spot, nameOf(x.id)]))}
         clockRunning={view.runningSince !== null}
-        note={view.phase === "live" && view.runningSince === null && timeoutsOf(view) > 0 ? `Timeout ${timeoutsOf(view)} this half · clock stopped at ${fmt(view.clockSec)} until you tap Resume` : null}
+        note={view.phase === "live" && view.runningSince === null && timeoutsOf(view) > 0 ? `Timeout ${timeoutsOf(view)} this ${periodCount === 4 ? "quarter" : "half"} · clock stopped at ${fmt(view.clockSec)} until you tap Resume` : null}
         onPauseClock={() => act(stopClock)}
       />
 
@@ -895,7 +899,7 @@ export default function BasketballCourtDisplay() {
                 {subWhat()}
               </>
             ) : view.phase === "halftime" ? (
-              <span className="font-semibold">Halftime. Subs carry on in the 2nd half.</span>
+              <span className="font-semibold">{periodCount === 4 && view.half !== 2 ? `End of Q${view.half}.` : "Halftime."} Subs carry on {periodCount === 4 ? `in Q${view.half + 1}` : "in the 2nd half"}.</span>
             ) : (
               <span className="text-muted-foreground">No more planned subs this half.</span>
             )}
@@ -965,8 +969,8 @@ export default function BasketballCourtDisplay() {
           <span>
             <span className="text-muted-foreground">Our team fouls: </span>
             <span className="font-bold tabular-nums">{teamFoulsOf(view)}</span>
-            {bonusLabel(teamFoulsOf(view)) && (
-              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/50 dark:text-red-100">They're in the {bonusLabel(teamFoulsOf(view))!.toLowerCase()}</span>
+            {bonusLabel(teamFoulsOf(view), periodCount) && (
+              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/50 dark:text-red-100">They're in the {bonusLabel(teamFoulsOf(view), periodCount)!.toLowerCase()}</span>
             )}
           </span>
           <span className="flex items-center gap-1">
@@ -974,11 +978,11 @@ export default function BasketballCourtDisplay() {
             <span className="font-bold tabular-nums">{teamFoulsOf(view, "them")}</span>
             <Button size="sm" variant="outline" className="ml-1 h-8 px-2" onClick={() => setState(addOppFoul(state ?? view, 1))}>F +</Button>
             <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground" disabled={teamFoulsOf(view, "them") === 0} onClick={() => setState(addOppFoul(state ?? view, -1))}>−</Button>
-            {bonusLabel(teamFoulsOf(view, "them")) && (
-              <span className="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-800 dark:bg-green-900/50 dark:text-green-100">We're in the {bonusLabel(teamFoulsOf(view, "them"))!.toLowerCase()}</span>
+            {bonusLabel(teamFoulsOf(view, "them"), periodCount) && (
+              <span className="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-800 dark:bg-green-900/50 dark:text-green-100">We're in the {bonusLabel(teamFoulsOf(view, "them"), periodCount)!.toLowerCase()}</span>
             )}
           </span>
-          <span className="text-xs text-muted-foreground">Reset each half</span>
+          <span className="text-xs text-muted-foreground">Reset each {periodCount === 4 ? "quarter" : "half"}</span>
         </div>
       </div>
 

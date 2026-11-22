@@ -56,6 +56,8 @@ export function RotationLimitsSetting({ disabled }: { disabled: boolean }) {
   };
 
   return (
+    <div className="space-y-6">
+    <GameFormatSetting disabled={disabled} />
     <div className="space-y-3">
       <div>
         <Label className="text-sm font-medium">Rotation limits</Label>
@@ -92,6 +94,89 @@ export function RotationLimitsSetting({ disabled }: { disabled: boolean }) {
         />
         Keep the position-group balance on court (e.g. 2 guards + 3 front)
       </label>
+    </div>
+    </div>
+  );
+}
+
+/**
+ * Settings → Rotation: halves or quarters, and how long each one is. The
+ * court display, Bench Sheet, shifts and team-foul resets follow it.
+ */
+function GameFormatSetting({ disabled }: { disabled: boolean }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
+  const periods = data?.settings.periods === 4 ? 4 : 2;
+  const length = data?.settings.halfMinutes ?? 20;
+  const [minutes, setMinutes] = useState("");
+  useEffect(() => {
+    if (data) setMinutes(String(length));
+  }, [data, length]);
+  const save = useMutation({
+    mutationFn: (format: { periods: 2 | 4; periodMinutes: number }) => saveTeamRules({ format }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: BASKETBALL_SETUP_KEY }),
+    onError: (err) => {
+      toastError(toast, "Couldn't save the game format", err);
+      void qc.invalidateQueries({ queryKey: BASKETBALL_SETUP_KEY });
+    },
+  });
+  const choose = (next: 2 | 4) => {
+    if (next === periods) return;
+    // Keep the game about the same length: 2 × 16 ↔ 4 × 8.
+    const periodMinutes = Math.max(1, Math.round(((length * periods) / next) * 2) / 2);
+    save.mutate({ periods: next, periodMinutes });
+  };
+  const commitLength = () => {
+    const n = Number(minutes);
+    if (!Number.isFinite(n) || n < 1 || n > 30) {
+      setMinutes(String(length));
+      return;
+    }
+    if (n !== length) save.mutate({ periods: periods as 2 | 4, periodMinutes: n });
+  };
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm font-medium">Game format</Label>
+      <p className="text-xs text-muted-foreground">
+        Halves or quarters. The court display, Bench Sheet, shifts and team-foul resets follow it (quarters: team fouls reset each quarter, bonus from the 5th).
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex gap-2" role="radiogroup" aria-label="Halves or quarters">
+          {([2, 4] as const).map((n) => (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={periods === n}
+              disabled={disabled || !data || save.isPending}
+              onClick={() => choose(n)}
+              className={`min-h-10 rounded-md border-2 px-4 text-sm font-bold transition-colors disabled:opacity-60 ${
+                periods === n ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted"
+              }`}
+            >
+              {n === 2 ? "Halves" : "Quarters"}
+            </button>
+          ))}
+        </div>
+        <label className="block text-sm">
+          <span className="font-medium">{periods === 4 ? "Quarter" : "Half"} length (min)</span>
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={1}
+            max={30}
+            step={0.5}
+            disabled={disabled || !data || save.isPending}
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            onBlur={commitLength}
+            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            className="mt-1 w-24"
+          />
+        </label>
+        <span className="pb-2 text-xs text-muted-foreground">{periods} × {length} min = {periods * length} min game</span>
+      </div>
     </div>
   );
 }

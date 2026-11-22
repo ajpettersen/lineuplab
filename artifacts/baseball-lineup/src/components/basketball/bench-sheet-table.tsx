@@ -1,4 +1,4 @@
-import { formatClock, formatMinutes, type RotationResult, type RotationRow } from "@/lib/basketball-rotation";
+import { formatClock, formatMinutes, periodName, type RotationResult, type RotationRow } from "@/lib/basketball-rotation";
 
 import { Fragment } from "react";
 
@@ -13,10 +13,10 @@ function list(names: string[]) {
   ));
 }
 
-function HalfTable({ half, rows }: { half: 1 | 2; rows: RotationRow[] }) {
+function HalfTable({ half, rows, periods = 2 }: { half: number; rows: RotationRow[]; periods?: number }) {
   return (
     <table className="bench-table">
-      <caption>{half === 1 ? "1st half" : "2nd half"}</caption>
+      <caption>{periodName(half, periods)}</caption>
       <thead>
         <tr>
           <th className="bench-clock">Clock</th>
@@ -74,7 +74,7 @@ export function BenchSheetTable({ teamName, result, hasFlex }: { teamName: strin
         </ul>
       )}
 
-      {result.halves.map(h => <HalfTable key={h.half} half={h.half} rows={h.rows} />)}
+      {result.halves.map(h => <HalfTable key={h.half} half={h.half} rows={h.rows} periods={result.halves.length} />)}
 
       {result.minutes.length > 0 && (
         <div className="bench-notes">

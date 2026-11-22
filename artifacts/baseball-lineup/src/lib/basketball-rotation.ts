@@ -92,7 +92,10 @@ export interface BasketballPlayer {
 }
 
 export interface BasketballSettings {
+  /** Length of one period (a half, or a quarter when periods = 4), in minutes. */
   halfMinutes: number;
+  /** 2 = halves (default), 4 = quarters. */
+  periods?: number;
   shiftMinutes: number;
   /** Guards / Front layout only: how many of each are on court (default 2 + 3). */
   guardSpots: number;
@@ -217,7 +220,8 @@ export interface RowGroup {
 export interface RotationRow {
   /** 0-based across the whole game. */
   shift: number;
-  half: 1 | 2;
+  /** Period number (1–2 for halves, 1–4 for quarters). */
+  half: number;
   /** Game clock at the start of the shift, counting down: "20:00". */
   clock: string;
   minutes: number;
@@ -246,7 +250,8 @@ export interface MinutesLine {
 
 export interface RotationResult {
   groups: PositionGroup[];
-  halves: { half: 1 | 2; rows: RotationRow[] }[];
+  /** One entry per period (halves or quarters). */
+  halves: { half: number; rows: RotationRow[] }[];
   minutes: MinutesLine[];
   flexSuggestion: string[];
   warnings: string[];
@@ -389,9 +394,9 @@ function ordered(players: BasketballPlayer[], order: string[] | undefined): Bask
 function validSettings(s: BasketballSettings): string | null {
   const nums = [s.halfMinutes, s.shiftMinutes, s.guardSpots, s.frontSpots, s.flexShifts];
   if (nums.some(n => !Number.isFinite(n))) return "Game settings must all be numbers.";
-  if (s.halfMinutes <= 0 || s.shiftMinutes <= 0) return "Half length and shift length must be more than 0.";
-  if (s.shiftMinutes > s.halfMinutes) return "Shift length can't be longer than a half.";
-  if (s.halfMinutes / s.shiftMinutes > 60) return "That's more than 60 shifts a half. Use a longer shift.";
+  if (s.halfMinutes <= 0 || s.shiftMinutes <= 0) return "Period length and shift length must be more than 0.";
+  if (s.shiftMinutes > s.halfMinutes) return "Shift length can't be longer than a period.";
+  if (s.halfMinutes / s.shiftMinutes > 60) return "That's more than 60 shifts a period. Use a longer shift.";
   if (s.guardSpots < 0 || s.frontSpots < 0 || s.guardSpots + s.frontSpots < 1) return "There must be at least one spot on court.";
   if (s.flexShifts < 0) return "Flex shifts can't be negative.";
   return null;
@@ -513,9 +518,11 @@ export function buildRotation(input: RotationInput): RotationResult {
   const shiftLengths = Array.from({ length: fullShifts }, () => settings.shiftMinutes);
   if (remainder > 1e-6) {
     shiftLengths.push(remainder);
-    warnings.push(`${formatMinutes(settings.halfMinutes)}-minute halves don't split evenly into ${formatMinutes(settings.shiftMinutes)}-minute shifts, so each half ends with a ${formatMinutes(remainder)}-minute shift.`);
+    const unit = periodsOf(settings) === 4 ? "quarter" : "half";
+    warnings.push(`${formatMinutes(settings.halfMinutes)}-minute ${unit === "half" ? "halves" : "quarters"} don't split evenly into ${formatMinutes(settings.shiftMinutes)}-minute shifts, so each ${unit} ends with a ${formatMinutes(remainder)}-minute shift.`);
   }
-  const totalShifts = shiftLengths.length * 2;
+  const periods = periodsOf(settings);
+  const totalShifts = shiftLengths.length * periods;
   const flexShifts = Math.min(settings.flexShifts, totalShifts);
   if (flexShifts < settings.flexShifts) warnings.push("There are more flex shifts than shifts in the game.");
   const firstFlex = totalShifts - flexShifts;
@@ -550,11 +557,11 @@ export function buildRotation(input: RotationInput): RotationResult {
     starts.push(starts[shift - 1].map((s, i) => s + split[i]));
   }
 
-  const halves: RotationResult["halves"] = [{ half: 1, rows: [] }, { half: 2, rows: [] }];
+  const halves: RotationResult["halves"] = Array.from({ length: periods }, (_, i) => ({ half: i + 1, rows: [] }));
   const onCourtByShift: Set<string>[] = [];
   let previous: Set<string> | null = null;
   for (let shift = 0; shift < totalShifts; shift++) {
-    const half = shift < shiftLengths.length ? 1 : 2;
+    const half = Math.floor(shift / shiftLengths.length) + 1;
     const index = shift % shiftLengths.length;
     const elapsed = shiftLengths.slice(0, index).reduce((sum, m) => sum + m, 0);
     const flex = shift >= firstFlex;
@@ -581,8 +588,8 @@ export function buildRotation(input: RotationInput): RotationResult {
 
   const lengthOf = (shift: number) => shiftLengths[shift % shiftLengths.length];
   const describe = (shift: number) => {
-    const row = halves[shift < shiftLengths.length ? 0 : 1].rows[shift % shiftLengths.length];
-    return `${row.half === 1 ? "1st" : "2nd"} half ${row.clock}`;
+    const row = halves[Math.floor(shift / shiftLengths.length)].rows[shift % shiftLengths.length];
+    return `${periodName(row.half, periods)} ${row.clock}`;
   };
   const roleLabel = new Map(groups.map(g => [g.key, g.one]));
 
@@ -790,4 +797,20 @@ export function spotsByShift(result: RotationResult, players: BasketballPlayer[]
     map.set(row.shift, new Map(placed.map(x => [x.spot, x.id])));
   }
   return map;
+}
+
+/** 2 = halves (default), 4 = quarters. */
+export function periodsOf(settings: Pick<BasketballSettings, "periods">): number {
+  return settings.periods === 4 ? 4 : 2;
+}
+
+/** "1st half" / "2nd half", or "Q1"–"Q4". */
+export function periodName(period: number, periods: number): string {
+  if (periods === 4) return `Q${period}`;
+  return period === 1 ? "1st half" : "2nd half";
+}
+
+/** "1H" / "2H", or "Q1"–"Q4" (tight spaces). */
+export function periodShort(period: number, periods: number): string {
+  return periods === 4 ? `Q${period}` : `${period}H`;
 }

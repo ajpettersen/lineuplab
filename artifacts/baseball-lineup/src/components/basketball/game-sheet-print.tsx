@@ -1,4 +1,4 @@
-import {
+import { periodName,
   formatClock,
   formatMinutes,
   type BasketballPlayer,
@@ -79,11 +79,11 @@ export function GameSheetPrint({
 
   const longestSit = Math.max(0, ...result.minutes.map((m) => m.longestSit));
 
-  const Half = ({ half }: { half: 1 | 2 }) => {
+  const Half = ({ half }: { half: number }) => {
     const halfRows = result.halves.find((h) => h.half === half)?.rows ?? [];
     return (
       <>
-        <h3 className="game-sheet-half">{half === 1 ? "1st half" : "2nd half"}</h3>
+        <h3 className="game-sheet-half">{periodName(half, result.halves.length)}</h3>
         <table className="game-sheet-table">
           <thead>
             <tr>
@@ -150,14 +150,13 @@ export function GameSheetPrint({
     <div className="game-sheet">
       <h2 className="game-sheet-title">{title}</h2>
       <p className="game-sheet-sub">
-        {formatMinutes(halfMinutes)}-min running halves · {formatMinutes(shiftMinutes)}-min shifts (sub at the first dead ball after each mark) ·{" "}
+        {formatMinutes(halfMinutes)}-min running {result.halves.length === 4 ? "quarters" : "halves"} · {formatMinutes(shiftMinutes)}-min shifts (sub at the first dead ball after each mark) ·{" "}
         {result.custom ? "coach's own plan" : <>{subSize} in / {subSize} out every sub</>}
         {absentNames.length > 0 && <> · {absentNames.join(", ")} out</>} · <span className="gs-key-justin">Highlighted</span> = just came in ·{" "}
         <span className="gs-up">Underlined</span> = guard playing up a spot (1 at the 2, or 2 at the 3)
       </p>
 
-      <Half half={1} />
-      <Half half={2} />
+      {result.halves.map((h) => <Half key={h.half} half={h.half} />)}
 
       <div className="game-sheet-foot">
         <p>

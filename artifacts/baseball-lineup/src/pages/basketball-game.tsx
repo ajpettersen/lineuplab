@@ -53,6 +53,8 @@ import {
   spotsByShift as shiftSpots,
   formatClock,
   formatMinutes,
+  periodName,
+  periodsOf,
   MAX_SUB_SIZE,
   MIN_SUB_SIZE,
   groupedQueues,
@@ -193,7 +195,7 @@ function SetLineupDialog({
                 className="mt-1"
               />
               <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                {validShift ? `${shiftsPerHalf} shifts a ${formatMinutes(setup.settings.halfMinutes)}-min half` : `0.5 to ${formatMinutes(setup.settings.halfMinutes)} minutes`}
+                {validShift ? `${shiftsPerHalf} shifts a ${formatMinutes(setup.settings.halfMinutes)}-min ${periodsOf(setup.settings) === 4 ? "quarter" : "half"}` : `0.5 to ${formatMinutes(setup.settings.halfMinutes)} minutes`}
               </span>
             </label>
             <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
@@ -548,7 +550,7 @@ export default function BasketballGame() {
             {game.location && <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4" />{game.location}</span>}
             {setup && (
               <span>
-                {formatMinutes(setup.settings.halfMinutes)}-min halves · {formatMinutes(shiftMinutes)}-min shifts
+                {formatMinutes(setup.settings.halfMinutes)}-min {periodsOf(setup.settings) === 4 ? "quarters" : "halves"} · {formatMinutes(shiftMinutes)}-min shifts
                 {lineup ? (lineup.customShifts ? " · your own plan" : ` · ${lineup.subSize} at a time`) : ""}
               </span>
             )}
@@ -713,7 +715,7 @@ export default function BasketballGame() {
                         <tbody key={h.half}>
                           <tr>
                             <td colSpan={8} className="pt-4 pb-1 text-xs font-bold uppercase tracking-wider text-primary">
-                              {h.half === 1 ? "1st half" : "2nd half"}
+                              {periodName(h.half, rotation.halves.length)}
                             </td>
                           </tr>
                           {h.rows.map((row, i) => <GridRow key={row.shift} row={row} first={i === 0} />)}

@@ -20,6 +20,7 @@ import { rebalance, type RebalanceResult, type RebalanceRules } from "./basketba
 import {
   CUSTOM_GROUP,
   groupsFor,
+  periodsOf,
   startingQueues,
   stickySpots,
   subSplit,
@@ -56,7 +57,8 @@ export interface LiveState extends Lineup {
   /** Players taken out of the game (injured, fouled out, left). */
   outIds: string[];
   phase: LivePhase;
-  half: 1 | 2;
+  /** Current period (1–2 halves, or 1–4 quarters). "halftime" phase = a break between periods. */
+  half: number;
   /** Game clock remaining in this half, in seconds, as of `runningSince`. */
   clockSec: number;
   /** Wall-clock ms when the clock was last started, or null while stopped. */
@@ -99,7 +101,7 @@ export interface LiveState extends Lineup {
 export interface ScoreEvent {
   team: "us" | "them";
   pts: number;
-  half: 1 | 2;
+  half: number;
   at: number;
   on: string[];
 }
@@ -107,9 +109,14 @@ export interface ScoreEvent {
 /** Fouls that put a player out of the game. */
 export const FOUL_OUT = 5;
 
-/** Team fouls that put the other team in the bonus (one-and-one) and double bonus (two shots), per half. */
+/**
+ * Team fouls that put the other team in the bonus. Halves: one-and-one at 7,
+ * two shots at 10. Quarters: two shots from the 5th foul each quarter.
+ * Team fouls reset every period.
+ */
 export const BONUS_AT = 7;
 export const DOUBLE_BONUS_AT = 10;
+export const QUARTER_BONUS_AT = 5;
 
 /**
  * Add (or with -1, take back) a personal foul; it counts as a team foul this
@@ -146,8 +153,14 @@ export function addOppFoul(s: LiveState, delta: 1 | -1 = 1): LiveState {
 }
 
 /** "Bonus" / "Double bonus" for whoever is shooting free throws off these fouls, or null. */
-export function bonusLabel(teamFouls: number): string | null {
+export function bonusLabel(teamFouls: number, periods = 2): string | null {
+  if (periods === 4) return teamFouls >= QUARTER_BONUS_AT ? "Bonus" : null;
   return teamFouls >= DOUBLE_BONUS_AT ? "Double bonus" : teamFouls >= BONUS_AT ? "Bonus" : null;
+}
+
+/** 2 = halves, 4 = quarters. */
+export function periodsIn(s: Pick<LiveState, "settings">): number {
+  return periodsOf(s.settings);
 }
 
 /**
@@ -189,11 +202,11 @@ export function timeoutsOf(s: LiveState): number {
 
 /** Game seconds elapsed (both halves). */
 export function elapsedGameSec(s: LiveState): number {
-  const half = s.settings.halfMinutes * 60;
+  const period = s.settings.halfMinutes * 60;
   if (s.phase === "pregame") return 0;
-  if (s.phase === "final") return half * 2;
-  if (s.phase === "halftime") return half;
-  return (s.half - 1) * half + (half - s.clockSec);
+  if (s.phase === "final") return period * periodsIn(s);
+  if (s.phase === "halftime") return period * s.half;
+  return (s.half - 1) * period + (period - s.clockSec);
 }
 
 /** Points for us or them (negative to correct), logged with who was on court. */
@@ -303,7 +316,7 @@ export function settle(s: LiveState, now: number): LiveState {
       playedSec,
       clockSec: 0,
       runningSince: null,
-      phase: s.half === 1 ? "halftime" : "final",
+      phase: s.half < periodsIn(s) ? "halftime" : "final",
     };
   }
   return { ...s, playedSec, clockSec, runningSince: now };
@@ -312,7 +325,7 @@ export function settle(s: LiveState, now: number): LiveState {
 export function startClock(s: LiveState, now: number): LiveState {
   if (s.phase === "final") return s;
   if (s.phase === "halftime") {
-    return { ...s, phase: "live", half: 2, clockSec: s.settings.halfMinutes * 60, runningSince: now };
+    return { ...s, phase: "live", half: s.half + 1, clockSec: s.settings.halfMinutes * 60, runningSince: now };
   }
   const starterIds = s.phase === "pregame" ? onCourtIds(s) : s.starterIds;
   return { ...s, phase: "live", runningSince: s.runningSince ?? now, starterIds };
@@ -348,7 +361,7 @@ export function nudgeClock(s: LiveState, now: number, deltaSec: number): LiveSta
 export function currentShift(s: LiveState): number {
   const lengths = shiftLengths(s.settings);
   if (s.phase === "pregame") return 0;
-  if (s.phase === "halftime") return lengths.length; // the 2nd half's first shift is next
+  if (s.phase === "halftime") return lengths.length * s.half; // the next period's first shift is next
   let elapsed = s.settings.halfMinutes * 60 - s.clockSec;
   let index = 0;
   while (index < lengths.length - 1 && elapsed >= lengths[index] - EPS) {
@@ -359,7 +372,7 @@ export function currentShift(s: LiveState): number {
 }
 
 export function totalShifts(s: LiveState): number {
-  return shiftLengths(s.settings).length * 2;
+  return shiftLengths(s.settings).length * periodsIn(s);
 }
 
 /** True from the first flex shift on: the coach picks, no planned subs. */
@@ -619,7 +632,7 @@ export function courtSpots(s: LiveState, previous: Map<string, CourtSpot> | null
 /** Shift index where a rebalanced plan starts, and seconds left in the current one. */
 function planStart(s: LiveState): { first: number; currentLeftSec: number } {
   const lengths = shiftLengths(s.settings);
-  const all = [...lengths, ...lengths];
+  const all = Array.from({ length: periodsIn(s) }, () => lengths).flat();
   const cur = currentShift(s);
   if (s.phase === "halftime") return { first: cur, currentLeftSec: 0 };
   const end = all.slice(0, cur + 1).reduce((a, b) => a + b, 0);
@@ -647,7 +660,7 @@ export function planRebalance(
 ): RebalanceResult & { firstShift: number } {
   const { first, currentLeftSec } = planStart(s);
   const lengths = shiftLengths(s.settings);
-  const all = [...lengths, ...lengths];
+  const all = Array.from({ length: periodsIn(s) }, () => lengths).flat();
   const planned = all.map((len, i) => ({ len, i })).filter((x) => x.i >= first && !isFlexShift(s, x.i)).map((x) => x.len);
   const on = new Set(onCourtIds(s));
   const groups = s.script ? groupsFor(s.settings) : s.groups;

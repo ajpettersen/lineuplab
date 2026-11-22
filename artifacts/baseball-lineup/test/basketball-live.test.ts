@@ -32,6 +32,8 @@ import {
   bonusLabel,
   callTimeout,
   timeoutsOf,
+  totalShifts,
+  elapsedGameSec,
   type LiveState,
 } from "../src/lib/basketball-live.ts";
 
@@ -356,6 +358,32 @@ for (const subSize of [1, 3, 4]) {
   s = callTimeout(startClock(s, 40_000), 50_000);
   assert.equal(timeoutsOf(s), 2);
   assert.equal(timeoutsOf({ ...s, half: 2 }), 0, "counted per half");
+}
+
+// Quarters: four periods, a break after each, fouls reset each quarter, bonus at 5.
+{
+  const q = { ...input, settings: { ...DEFAULT_BASKETBALL_SETTINGS, periods: 4, halfMinutes: 8, shiftMinutes: 4, flexShifts: 0 } };
+  const r = buildRotation(q);
+  assert.equal(r.halves.length, 4, "four periods on the sheet");
+  assert.equal(r.halves.flatMap((h) => h.rows).length, 8, "2 shifts a quarter");
+  let s = startClock(startState(q), 0);
+  assert.equal(totalShifts(s), 8);
+  s = addFoul(s, onCourt(s).flat()[0], 1, 0);
+  for (let i = 0; i < 4; i++) s = addFoul(s, onCourt(s).flat()[1], 1, 0);
+  assert.equal(teamFoulsOf(s), 5);
+  assert.equal(bonusLabel(teamFoulsOf(s), 4), "Bonus", "quarters: bonus from the 5th");
+  assert.equal(bonusLabel(9, 4), "Bonus", "no double bonus in quarters");
+  s = settle(s, 8 * 60_000);
+  assert.equal(s.phase, "halftime", "a break after Q1");
+  assert.equal(elapsedGameSec(s), 480);
+  s = startClock(s, 9 * 60_000);
+  assert.equal(s.half, 2);
+  assert.equal(teamFoulsOf(s), 0, "team fouls reset for Q2");
+  s = startClock(settle(s, 17 * 60_000), 18 * 60_000);
+  s = startClock(settle(s, 26 * 60_000), 27 * 60_000);
+  s = settle(s, 35 * 60_000);
+  assert.equal(s.half, 4);
+  assert.equal(s.phase, "final", "the game ends after Q4");
 }
 
 console.log("basketball-live: all checks passed");
