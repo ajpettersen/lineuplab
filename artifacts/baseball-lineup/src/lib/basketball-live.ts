@@ -16,8 +16,10 @@
 // Pure functions over plain JSON, so the state can live in localStorage and be
 // tested with plain Node (test/basketball-live.test.ts).
 
+import { rebalance, type RebalanceResult, type RebalanceRules } from "./basketball-rebalance.ts";
 import {
   CUSTOM_GROUP,
+  groupsFor,
   startingQueues,
   stickySpots,
   subSplit,
@@ -40,6 +42,9 @@ interface Lineup {
   starts: number[];
   /** Subs made so far (planned or jumped ahead). */
   subsMade: number;
+  /** Kept so Undo can step back over a Rebalance (which switches to a plan). */
+  groups?: PositionGroup[];
+  script?: string[][] | null;
 }
 
 export interface LiveState extends Lineup {
@@ -82,6 +87,13 @@ export interface LiveState extends Lineup {
   scoreLog?: ScoreEvent[];
   /** Our timeouts by half ("1", "2"). */
   timeouts?: Record<string, number>;
+  /**
+   * When each player's current stretch on court (or on the bench) began, in
+   * game seconds, for the rebalance limits. Kept up to date by trackStints.
+   */
+  stints?: Record<string, { on: boolean; since: number }>;
+  /** True after a change the plan didn't call for (offers Rebalance). */
+  offPlan?: boolean;
 }
 
 export interface ScoreEvent {
@@ -136,6 +148,32 @@ export function addOppFoul(s: LiveState, delta: 1 | -1 = 1): LiveState {
 /** "Bonus" / "Double bonus" for whoever is shooting free throws off these fouls, or null. */
 export function bonusLabel(teamFouls: number): string | null {
   return teamFouls >= DOUBLE_BONUS_AT ? "Double bonus" : teamFouls >= BONUS_AT ? "Bonus" : null;
+}
+
+/**
+ * Note who just went on or off court (call after every change). Players
+ * whose status didn't change keep their stretch.
+ */
+export function trackStints(next: LiveState): LiveState {
+  const at = elapsedGameSec(next);
+  const on = new Set(onCourtIds(next));
+  const stints = { ...(next.stints ?? {}) };
+  let changed = false;
+  for (const p of next.players) {
+    const isOn = on.has(p.id) && !next.outIds.includes(p.id);
+    const cur = stints[p.id];
+    if (!cur || cur.on !== isOn) {
+      stints[p.id] = { on: isOn, since: at };
+      changed = true;
+    }
+  }
+  return changed ? { ...next, stints } : next;
+}
+
+/** Seconds into the current stretch on court / on the bench. */
+export function stintSec(s: LiveState, id: string): number {
+  const st = s.stints?.[id];
+  return st ? Math.max(0, elapsedGameSec(s) - st.since) : 0;
 }
 
 /** Timeout: stop the clock and count it for this half. The clock stays stopped until Start/Resume. */
@@ -444,7 +482,7 @@ export function secondsToNextSub(s: LiveState): number | null {
 }
 
 function lineup(s: LiveState): Lineup {
-  return { queues: s.queues, starts: s.starts, subsMade: s.subsMade };
+  return { queues: s.queues, starts: s.starts, subsMade: s.subsMade, groups: s.groups, script: s.script ?? null };
 }
 
 function withUndo(s: LiveState, now: number, change: (s: LiveState) => LiveState): LiveState {
@@ -467,7 +505,7 @@ export function skipSub(s: LiveState, now: number): LiveState {
 /** Trade two players' places (on court ↔ bench, or across groups). */
 export function swapPlayers(s: LiveState, now: number, a: string, b: string): LiveState {
   if (a === b) return s;
-  return withUndo(s, now, (x) => {
+  return withUndo({ ...s, offPlan: true }, now, (x) => {
     const queues = x.queues.map((q) => [...q]);
     const find = (id: string): [number, number] | null => {
       for (let i = 0; i < queues.length; i++) {
@@ -497,7 +535,7 @@ function removeFrom(queue: string[], start: number, id: string): { queue: string
 
 /** Take a player out of the game; the next player in line fills their spot. */
 export function takeOut(s: LiveState, now: number, id: string): LiveState {
-  return withUndo(s, now, (x) => {
+  return withUndo({ ...s, offPlan: true }, now, (x) => {
     if (x.script) {
       // Whoever has played least on the bench takes their spot.
       const queue = [...(x.queues[0] ?? [])];
@@ -525,7 +563,7 @@ export function takeOut(s: LiveState, now: number, id: string): LiveState {
 
 /** Bring a player back (or add a late arrival) into their group; they're next to go in. */
 export function putBack(s: LiveState, now: number, player: BasketballPlayer, role?: BasketballRole): LiveState {
-  return withUndo(s, now, (x) => {
+  return withUndo({ ...s, offPlan: true }, now, (x) => {
     const asRole = role ?? player.role;
     const players = x.players.some((p) => p.id === player.id) ? x.players : [...x.players, player];
     let gi = x.groups.findIndex((g) => g.key === asRole);
@@ -574,4 +612,81 @@ export function courtSpots(s: LiveState, previous: Map<string, CourtSpot> | null
   if (s.script) return (s.queues[0] ?? []).slice(0, 5).map((id, k) => ({ spot: (k + 1) as CourtSpot, id }));
   const on = onCourt(s);
   return stickySpots(s.groups.map((g, i) => ({ ids: on[i], spots: g.spots })), s.players, previous);
+}
+
+// ── Rebalance rest of game ───────────────────────────────────────────────
+
+/** Shift index where a rebalanced plan starts, and seconds left in the current one. */
+function planStart(s: LiveState): { first: number; currentLeftSec: number } {
+  const lengths = shiftLengths(s.settings);
+  const all = [...lengths, ...lengths];
+  const cur = currentShift(s);
+  if (s.phase === "halftime") return { first: cur, currentLeftSec: 0 };
+  const end = all.slice(0, cur + 1).reduce((a, b) => a + b, 0);
+  return { first: cur + 1, currentLeftSec: Math.max(0, end - elapsedGameSec(s)) };
+}
+
+/** The current five in spot order (spot 1 first). */
+function fiveBySpot(s: LiveState): string[] {
+  return courtSpots(s)
+    .slice()
+    .sort((a, b) => (a.spot ?? 9) - (b.spot ?? 9))
+    .map((x) => x.id);
+}
+
+/**
+ * Plan the rest of the game from where it is now. `targets` are this game's
+ * minute targets (lib/basketball-targets.ts). Returns the plan for preview;
+ * applyRebalance switches the game to it.
+ */
+export function planRebalance(
+  s: LiveState,
+  targets: Map<string, { targetSec: number }>,
+  rules: RebalanceRules,
+  nameOf: (id: string) => string = (id) => id,
+): RebalanceResult & { firstShift: number } {
+  const { first, currentLeftSec } = planStart(s);
+  const lengths = shiftLengths(s.settings);
+  const all = [...lengths, ...lengths];
+  const planned = all.map((len, i) => ({ len, i })).filter((x) => x.i >= first && !isFlexShift(s, x.i)).map((x) => x.len);
+  const on = new Set(onCourtIds(s));
+  const groups = s.script ? groupsFor(s.settings) : s.groups;
+  const available = s.players.filter((p) => !s.outIds.includes(p.id));
+  const result = rebalance(
+    {
+      players: available.map((p) => ({
+        id: p.id,
+        group: s.script ? p.role : groupOf(s, p.id)?.key ?? p.role,
+        playedSec: s.playedSec[p.id] ?? 0,
+        targetSec: targets.get(p.id)?.targetSec ?? 0,
+        on: on.has(p.id) && s.phase !== "halftime" ? true : on.has(p.id),
+        stintSec: stintSec(s, p.id),
+      })),
+      spotOrder: fiveBySpot(s),
+      currentLeftSec,
+      shifts: planned,
+      groups,
+      rules,
+    },
+    nameOf,
+  );
+  return { ...result, firstShift: first };
+}
+
+/** Switch the game to a rebalanced plan (Undo steps back to before it). */
+export function applyRebalance(s: LiveState, now: number, plan: { shifts: string[][]; firstShift: number }): LiveState {
+  return withUndo(s, now, (x) => {
+    const five = fiveBySpot(x);
+    const available = x.players.filter((p) => !x.outIds.includes(p.id)).map((p) => p.id);
+    const script = [...Array.from({ length: plan.firstShift }, () => five), ...plan.shifts];
+    return {
+      ...x,
+      groups: [CUSTOM_GROUP],
+      script,
+      queues: [[...five, ...available.filter((id) => !five.includes(id))]],
+      starts: [0],
+      subsMade: plan.firstShift - 1,
+      offPlan: false,
+    };
+  });
 }

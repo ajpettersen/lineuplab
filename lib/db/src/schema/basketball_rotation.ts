@@ -43,8 +43,31 @@ export const basketballRotationSettingsTable = pgTable("basketball_rotation_sett
   /** Player id (as a string key) → tags. Players missing here get defaults from their eligible positions. */
   playerTags: jsonb("player_tags").$type<Record<string, BasketballPlayerTags>>().notNull().default({}),
   gameDay: jsonb("game_day").$type<BasketballGameDay>().notNull().default({ absentIds: [], guardOrder: [], frontOrder: [] }),
+  /** Rotation limits, game format and pairing rules (see BasketballRules); missing keys use defaults. */
+  rules: jsonb("rules").$type<BasketballRules>().notNull().default({}),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Team rules for basketball rotations. Every field is optional; the app
+ * fills in defaults.
+ */
+export interface BasketballRules {
+  /** Longest stretch on court, seconds (default 8 min). */
+  maxOnSec?: number;
+  /** Longest stretch on the bench, seconds (default 6 min). */
+  maxBenchSec?: number;
+  /** Minimum minutes = equal share minus this many seconds (default 4 min). */
+  minShareGapSec?: number;
+  /** Keep the position-group balance on court when rebalancing (default true). */
+  keepGroupBalance?: boolean;
+  /** Halves or quarters. Absent = two halves of halfMinutes. */
+  format?: { periods: 2 | 4; periodMinutes: number };
+  /** Player ids that should never be on court together (pairs or groups). */
+  neverTogether?: string[][];
+  /** Groups that need at least one player on court at all times (e.g. ball-handlers). */
+  atLeastOne?: { label: string; ids: string[] }[];
+}
 
 export type BasketballRotationSettings = typeof basketballRotationSettingsTable.$inferSelect;
 

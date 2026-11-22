@@ -103,6 +103,7 @@ router.get("/basketball-rotation", async (req, res): Promise<void> => {
           groupLayout: saved.groupLayout,
         }
       : { ...DEFAULTS, groupLayout: "guards-front" },
+    rules: saved?.rules ?? {},
     players: roster.map((p) => ({
       id: p.id,
       name: p.name,
@@ -134,6 +135,46 @@ router.patch("/basketball-rotation/group-layout", async (req, res): Promise<void
     .values({ userId, groupLayout, updatedAt: new Date() })
     .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set: { groupLayout, updatedAt: new Date() } });
   res.json({ ok: true, groupLayout });
+});
+
+// Settings → Rotation: limits for Rebalance, halves or quarters, pairing
+// rules. Each key replaces the saved one; null removes it (back to default).
+const RulesPatchZ = z.object({
+  maxOnSec: z.number().int().min(60).max(2400).nullable().optional(),
+  maxBenchSec: z.number().int().min(60).max(2400).nullable().optional(),
+  minShareGapSec: z.number().int().min(0).max(2400).nullable().optional(),
+  keepGroupBalance: z.boolean().nullable().optional(),
+  format: z.object({ periods: z.union([z.literal(2), z.literal(4)]), periodMinutes: z.number().min(1).max(30) }).nullable().optional(),
+  neverTogether: z.array(z.array(z.string().regex(/^\d+$/)).min(2).max(5)).max(20).nullable().optional(),
+  atLeastOne: z
+    .array(z.object({ label: z.string().trim().min(1).max(40), ids: z.array(z.string().regex(/^\d+$/)).min(1).max(15) }))
+    .max(10)
+    .nullable()
+    .optional(),
+});
+
+router.patch("/basketball-rotation/rules", async (req, res): Promise<void> => {
+  const userId = req.ownerUserId!;
+  const parsed = RulesPatchZ.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid rotation rules" });
+    return;
+  }
+  const [saved] = await db
+    .select({ rules: basketballRotationSettingsTable.rules })
+    .from(basketballRotationSettingsTable)
+    .where(eq(basketballRotationSettingsTable.userId, userId));
+  const rules: Record<string, unknown> = { ...(saved?.rules ?? {}) };
+  for (const [key, value] of Object.entries(parsed.data)) {
+    if (value === undefined) continue;
+    if (value === null) delete rules[key];
+    else rules[key] = value;
+  }
+  await db
+    .insert(basketballRotationSettingsTable)
+    .values({ userId, rules, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: basketballRotationSettingsTable.userId, set: { rules, updatedAt: new Date() } });
+  res.json({ ok: true, rules });
 });
 
 // Settings → Rotation: default subs at a time (1–5), or null to ask for each game.

@@ -58,3 +58,6 @@ CREATE INDEX IF NOT EXISTS "basketball_plays_user_id_idx" ON "basketball_plays" 
 
 -- A coach's own shift-by-shift plan for a game (replaces the generated rotation).
 ALTER TABLE "basketball_game_lineups" ADD COLUMN IF NOT EXISTS "custom_shifts" jsonb;
+
+-- Team rotation rules: limits for rebalancing, halves/quarters, pairing rules.
+ALTER TABLE "basketball_rotation_settings" ADD COLUMN IF NOT EXISTS "rules" jsonb NOT NULL DEFAULT '{}'::jsonb;
