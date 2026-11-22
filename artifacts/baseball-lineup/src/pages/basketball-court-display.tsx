@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { Link, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { minuteTargets, paceOf, seasonBeforeGame } from "@/lib/basketball-targets";
 import { getGetGameQueryKey, useGetGame } from "@workspace/api-client-react";
 import {
   ArrowLeft,
@@ -117,6 +118,18 @@ function syncGameStats(gameId: number, s: LiveState) {
     keepalive: true,
     body: JSON.stringify({ starterIds: s.starterIds.filter((id) => /^\d+$/.test(id)).map(Number), playedSec }),
   }).catch(() => undefined);
+}
+
+/** Owed / on track / over, with how far off pace. */
+function PaceChip({ pace }: { pace: { owedSec: number; status: "owed" | "on-track" | "over" } }) {
+  const off = fmt(Math.abs(pace.owedSec));
+  if (pace.status === "owed") {
+    return <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">Owed {off}</span>;
+  }
+  if (pace.status === "over") {
+    return <span className="whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-900 dark:bg-sky-900/50 dark:text-sky-100">Over {off}</span>;
+  }
+  return <span className="whitespace-nowrap rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-900 dark:bg-green-900/50 dark:text-green-100">On track</span>;
 }
 
 function storageKey(gameId: number) {
@@ -330,6 +343,26 @@ export default function BasketballCourtDisplay() {
   const { teamShortName, teamName } = useTeamSettings();
   const { data: game } = useGetGame(gameId, { query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) } });
   const { data: setup, isLoading: setupLoading } = useQuery({ queryKey: BASKETBALL_SETUP_KEY, queryFn: fetchBasketballSetup, select: normalizeSetup });
+  // Season minutes (before this game) nudge each player's target for today.
+  const { data: season } = useQuery({
+    queryKey: ["basketball-season"],
+    queryFn: async (): Promise<{ gamesTracked: number; players: { playerId: number; seconds: number; games: number }[] }> => {
+      const r = await fetch(`${BASE}/api/basketball-season`);
+      if (!r.ok) throw new Error(`GET /api/basketball-season failed (${r.status})`);
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+  const { data: savedStats } = useQuery({
+    queryKey: ["basketball-game-stats", gameId],
+    enabled: !!gameId,
+    queryFn: async (): Promise<{ players: { playerId: number; seconds: number }[] }> => {
+      const r = await fetch(`${BASE}/api/basketball-games/${gameId}/stats`);
+      if (!r.ok) throw new Error(`GET /api/basketball-games/${gameId}/stats failed (${r.status})`);
+      return r.json();
+    },
+    staleTime: Infinity,
+  });
   const { data: gameLineup, isLoading: lineupLoading } = useQuery({
     queryKey: gameLineupKey(gameId),
     enabled: !!gameId,
@@ -530,12 +563,33 @@ export default function BasketballCourtDisplay() {
     );
   }
 
-  const benchIds = bench(view);
   const onIds = new Set(onCourtIds(view));
+  // Minutes vs. target: an even share of the game among available players,
+  // nudged by season minutes; "owed" = behind where they should be by now.
+  const gameSec = view.settings.halfMinutes * 60 * 2;
+  const elapsedSec =
+    view.phase === "pregame" ? 0
+    : view.phase === "final" ? gameSec
+    : view.phase === "halftime" ? gameSec / 2
+    : (view.half - 1) * (gameSec / 2) + (view.settings.halfMinutes * 60 - view.clockSec);
+  const availableIds = view.players.filter((p) => !view.outIds.includes(p.id)).map((p) => p.id);
+  const seasonLines = season && season.gamesTracked > 0
+    ? seasonBeforeGame(season.players, new Map((savedStats?.players ?? []).map((p) => [p.playerId, p.seconds])))
+    : null;
+  const targets = minuteTargets(availableIds, gameSec, seasonLines);
+  const pace = new Map(
+    availableIds.map((id) => [id, paceOf(view.playedSec[id] ?? 0, targets.get(id)?.targetSec ?? 0, elapsedSec / gameSec)]),
+  );
+  const owed = (id: string) => pace.get(id)?.owedSec ?? -Infinity;
+  // Most-owed first on the bench (ties keep the rotation's order).
+  const benchIds = bench(view)
+    .map((id, i) => ({ id, i }))
+    .sort((a, b) => owed(b.id) - owed(a.id) || a.i - b.i)
+    .map((x) => x.id);
   const roleOf = (id: string) => groupOf(view, id)?.short ?? "";
   const minutes = [...view.players]
     .filter((p) => view.playedSec[p.id] !== undefined)
-    .sort((a, b) => (view.playedSec[b.id] ?? 0) - (view.playedSec[a.id] ?? 0) || a.name.localeCompare(b.name));
+    .sort((a, b) => owed(b.id) - owed(a.id) || a.name.localeCompare(b.name));
   const outPlayers = view.players.filter((p) => view.outIds.includes(p.id));
   const fewest = minutes.length ? Math.min(...minutes.filter((p) => !view.outIds.includes(p.id)).map((p) => view.playedSec[p.id] ?? 0)) : 0;
   const halfLabel = view.phase === "halftime" ? "Halftime" : view.phase === "final" ? "Final" : view.half === 1 ? "1st half" : "2nd half";
@@ -808,7 +862,15 @@ export default function BasketballCourtDisplay() {
                       <span className="font-semibold">{p.name}</span>
                       <span className="ml-2 text-xs text-muted-foreground">{(groupOf(view, p.id) ?? view.groups.find((g) => g.key === p.role))?.one ?? ""}{p.big ? " · Big" : ""}</span>
                     </td>
-                    <td className="py-1.5 text-right font-mono tabular-nums">{fmt(view.playedSec[p.id] ?? 0)}</td>
+                    <td className="py-1.5 text-right font-mono tabular-nums">
+                      {fmt(view.playedSec[p.id] ?? 0)}
+                      {targets.get(p.id) && (
+                        <span className="block text-[11px] font-sans text-muted-foreground">of {fmt(targets.get(p.id)!.targetSec)}</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pl-2 text-right">
+                      {pace.get(p.id) && <PaceChip pace={pace.get(p.id)!} />}
+                    </td>
                     <td className="py-1.5 pl-3">
                       <div className="flex items-center justify-end gap-1">
                         {foulsOf(view, p.id) > 0 && (
@@ -845,7 +907,9 @@ export default function BasketballCourtDisplay() {
               </tbody>
             </table>
             <p className="mt-2 text-xs text-muted-foreground">
-              Tap <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, {FOUL_OUT} fouls them out. Playing time is
+              Target = an even share of the game among available players
+              {seasonLines ? ", nudged toward whoever is behind on season minutes" : ""}. Owed / over = compared with where they should be by now. Tap{" "}
+              <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, {FOUL_OUT} fouls them out. Playing time is
               counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
             </p>
           </div>
