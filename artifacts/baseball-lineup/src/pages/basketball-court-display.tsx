@@ -69,6 +69,9 @@ import {
   subDue,
   swapPlayers,
   takeOut,
+  addFoul,
+  foulsOf,
+  FOUL_OUT,
   totalShifts,
   undoLast,
   type CourtSpot,
@@ -176,12 +179,14 @@ function CourtToken({
   id,
   name,
   selected,
+  fouls = 0,
   onTap,
 }: {
   spot: CourtSpot;
   id: string;
   name: string;
   selected: boolean;
+  fouls?: number;
   onTap: (id: string) => void;
 }) {
   const { ref, attributes, listeners, isDragging, isOver } = usePlayerDnd(id);
@@ -205,6 +210,14 @@ function CourtToken({
         <span className="font-display text-[clamp(1.1rem,3.4vw,1.6rem)] font-bold">{spot}</span>
         <span className="text-[10px] font-semibold opacity-85">{SPOT_LABEL[spot]}</span>
       </span>
+      {fouls >= 3 && (
+        <span
+          className={`absolute -right-2 -top-1 rounded-full px-1.5 py-0.5 text-xs font-bold shadow ${fouls >= FOUL_OUT - 1 ? "bg-red-600 text-white" : "bg-amber-400 text-black"}`}
+          aria-label={`${fouls} fouls`}
+        >
+          {fouls}F
+        </span>
+      )}
       <span className="mt-1 max-w-[9rem] truncate rounded-md border bg-background/95 px-2 py-0.5 text-[clamp(0.8rem,2.2vw,1.05rem)] font-bold text-foreground shadow-sm">
         {name}
       </span>
@@ -216,11 +229,13 @@ function HalfCourt({
   spots,
   nameOf,
   selected,
+  foulCount,
   onTap,
 }: {
   spots: { spot: CourtSpot | null; id: string }[];
   nameOf: (id: string) => string;
   selected: string | null;
+  foulCount: (id: string) => number;
   onTap: (id: string) => void;
 }) {
   const placed = spots.filter((s): s is { spot: CourtSpot; id: string } => s.spot !== null);
@@ -240,7 +255,7 @@ function HalfCourt({
         </g>
       </svg>
       {placed.map(({ spot, id }) => (
-        <CourtToken key={id} spot={spot} id={id} name={nameOf(id)} selected={selected === id} onTap={onTap} />
+        <CourtToken key={id} spot={spot} id={id} name={nameOf(id)} selected={selected === id} fouls={foulCount(id)} onTap={onTap} />
       ))}
     </div>
   );
@@ -720,8 +735,16 @@ export default function BasketballCourtDisplay() {
         {/* Court */}
         <section className="flex flex-col gap-2">
           <div className="mx-auto aspect-[500/470] w-full max-w-[640px]">
-            <HalfCourt spots={spots} nameOf={nameOf} selected={selected} onTap={tapPlayer} />
+            <HalfCourt spots={spots} nameOf={nameOf} selected={selected} foulCount={(id) => foulsOf(view, id)} onTap={tapPlayer} />
           </div>
+          {spots.filter((x) => foulsOf(view, x.id) >= FOUL_OUT).map((x) => (
+            <div key={x.id} className="flex flex-wrap items-center justify-center gap-3 rounded-md border-2 border-red-600 bg-red-50 p-3 text-red-900 dark:bg-red-950/40 dark:text-red-100">
+              <span className="font-bold">{nameOf(x.id)} has {FOUL_OUT} fouls: fouled out.</span>
+              <Button size="sm" variant="destructive" className="gap-1" onClick={() => act((s, t) => takeOut(s, t, x.id))}>
+                <UserMinus className="h-4 w-4" /> Take out
+              </Button>
+            </div>
+          ))}
           {spots.some((s) => s.spot === null) && (
             <p className="text-center text-sm">Also on court: {joinNames(spots.filter((s) => s.spot === null).map((s) => nameOf(s.id)))}</p>
           )}
@@ -786,12 +809,44 @@ export default function BasketballCourtDisplay() {
                       <span className="ml-2 text-xs text-muted-foreground">{(groupOf(view, p.id) ?? view.groups.find((g) => g.key === p.role))?.one ?? ""}{p.big ? " · Big" : ""}</span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">{fmt(view.playedSec[p.id] ?? 0)}</td>
+                    <td className="py-1.5 pl-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {foulsOf(view, p.id) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setState(addFoul(state ?? view, p.id, -1))}
+                            aria-label={`Take back a foul from ${p.name}`}
+                            className="h-8 w-7 rounded-md border text-sm text-muted-foreground hover:bg-muted"
+                          >
+                            −
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setState(addFoul(state ?? view, p.id, 1))}
+                          disabled={foulsOf(view, p.id) >= FOUL_OUT}
+                          aria-label={`Foul on ${p.name} (${foulsOf(view, p.id)} so far)`}
+                          className={`h-8 min-w-[3.25rem] rounded-md border px-2 text-sm font-bold tabular-nums ${
+                            foulsOf(view, p.id) >= FOUL_OUT
+                              ? "border-red-600 bg-red-600 text-white"
+                              : foulsOf(view, p.id) === FOUL_OUT - 1
+                                ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200"
+                                : foulsOf(view, p.id) === 3
+                                  ? "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                  : "hover:bg-muted"
+                          }`}
+                        >
+                          {foulsOf(view, p.id)}F +
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <p className="mt-2 text-xs text-muted-foreground">
-              Counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
+              Tap <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, {FOUL_OUT} fouls them out. Playing time is
+              counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
             </p>
           </div>
 
