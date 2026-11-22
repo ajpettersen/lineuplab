@@ -51,6 +51,7 @@ import {
   rebalanceRules,
 } from "@/lib/basketball-setup";
 import type { RebalanceRules } from "@/lib/basketball-rebalance";
+import { pairingProblems } from "@/lib/basketball-pairing";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   bench,
@@ -919,6 +920,23 @@ export default function BasketballCourtDisplay() {
           </div>
         </div>
       )}
+
+      {/* Pairing rules (Settings → Rotation) the five on court break right now. */}
+      {setup && view.phase !== "final" && (() => {
+        const problems = pairingProblems(
+          onCourtIds(view),
+          { neverTogether: setup.rules.neverTogether ?? [], atLeastOne: setup.rules.atLeastOne ?? [] },
+          new Set(view.players.filter((p) => !view.outIds.includes(p.id)).map((p) => p.id)),
+          nameOf,
+        );
+        if (problems.length === 0) return null;
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-amber-50 px-3 py-2 text-amber-950 md:px-5 dark:bg-amber-950/40 dark:text-amber-100">
+            <span className="font-semibold">Pairing rule: {problems.map((p) => p.text).join("; ")}.</span>
+            <Button size="sm" variant="outline" onClick={() => setRebalanceOpen(true)}>Rebalance rest of game</Button>
+          </div>
+        );
+      })()}
 
       {/* After subs the plan didn't call for: offer to even out the rest of the game. */}
       {view.offPlan && view.phase !== "final" && (

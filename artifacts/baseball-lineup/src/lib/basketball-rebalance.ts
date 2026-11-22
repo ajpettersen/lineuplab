@@ -14,6 +14,9 @@
 // Pure functions, tested in test/basketball-rebalance.test.ts.
 
 import type { BasketballRole, CourtSpot, PositionGroup } from "./basketball-rotation.ts";
+import { pairingProblem } from "./basketball-pairing.ts";
+
+export { pairingProblem } from "./basketball-pairing.ts";
 
 export interface RebalanceRules {
   maxOnSec: number;
@@ -66,21 +69,6 @@ export interface RebalanceResult {
 }
 
 const ON_COURT = 5;
-
-/** Does this five break a pairing rule? Returns the rule's description, or null. */
-export function pairingProblem(five: string[], rules: Pick<RebalanceRules, "neverTogether" | "atLeastOne">, available: Set<string>, nameOf: (id: string) => string = (id) => id): string | null {
-  for (const group of rules.neverTogether) {
-    const together = group.filter((id) => five.includes(id));
-    if (together.length >= 2) return `${together.map(nameOf).join(" and ")} are on court together (never-together rule)`;
-  }
-  for (const rule of rules.atLeastOne) {
-    if (!rule.ids.some((id) => five.includes(id))) {
-      const anyAvailable = rule.ids.some((id) => available.has(id));
-      return anyAvailable ? `No ${rule.label} on court` : `No ${rule.label} available`;
-    }
-  }
-  return null;
-}
 
 /**
  * Choose five from `pool` (best first), honoring forced players, group

@@ -45,6 +45,7 @@ import { useTeamSettings } from "@/hooks/use-team-settings";
 import { toastError } from "@/lib/toast-error";
 import { QuickScoreDialog } from "@/components/quick-score-dialog";
 import { SeasonPriorityButton, SeasonPriorityNotes, useSeasonPriority } from "@/components/basketball/season-priority";
+import { FixOrderForRules } from "@/components/basketball/fix-order-button";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 import { effectiveStatus } from "@/lib/game-status";
@@ -279,6 +280,12 @@ function SetLineupDialog({
                 <Shuffle className="h-4 w-4" /> Reshuffle
               </Button>
               <SeasonPriorityButton ready={priority.ready} onClick={() => { const next = priority.prioritize(); if (next) setOrder(next); }} />
+              {!keepPlan && (
+                <FixOrderForRules
+                  input={{ players, settings: prioritySettings, order, absentIds: absentList, pairing: { neverTogether: setup.rules.neverTogether ?? [], atLeastOne: setup.rules.atLeastOne ?? [] } }}
+                  onOrder={setOrder}
+                />
+              )}
             </div>
             <div className={`grid gap-4 ${queues.length >= 3 ? "md:grid-cols-3" : queues.length === 2 ? "sm:grid-cols-2" : ""}`}>
               {queues.map((q, i) => (
