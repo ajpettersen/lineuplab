@@ -14,6 +14,7 @@ import { useTeamSettings } from "@/hooks/use-team-settings";
 import { BenchSheetTable } from "@/components/basketball/bench-sheet-table";
 import { GameSheetPrint } from "@/components/basketball/game-sheet-print";
 import { QueueList } from "@/components/basketball/queue-list";
+import { SeasonPriorityButton, SeasonPriorityNotes, useSeasonPriority } from "@/components/basketball/season-priority";
 import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
@@ -155,6 +156,13 @@ export default function BenchSheetPage() {
       }),
     [draft, players, queues, absentIds, data?.defaultSubSize],
   );
+  // Season priority: who's behind gets the starts and the extra time (with "why" notes).
+  const prioritySettings = useMemo(
+    () => (draft ? { ...draft.settings, groupLayout: layout, subSize: data?.defaultSubSize ?? 2 } : null),
+    [draft, layout, data?.defaultSubSize],
+  );
+  const benchOrder = useMemo(() => (draft?.gameDay.order ?? []).map(String), [draft]);
+  const priority = useSeasonPriority(players, prioritySettings, benchOrder, absentIds);
 
   const header = (
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -369,6 +377,16 @@ export default function BenchSheetPage() {
                 onReorder={(ids) => setGameDay({ order: reorderGroup(queues, i, ids.map(String), draft.gameDay.order.map(String)).map(Number) })}
               />
             ))}
+          </div>
+          <div className="mt-3">
+            <SeasonPriorityButton
+              ready={priority.ready && !readOnly}
+              onClick={() => {
+                const next = priority.prioritize();
+                if (next) setGameDay({ order: next.map(Number) });
+              }}
+            />
+            <SeasonPriorityNotes notes={priority.notes} />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             In each group, the first {groups.map((g) => `${g.spots.length} ${g.spots.length === 1 ? g.one.toLowerCase() : g.label.toLowerCase()}`).join(", ")} start. Each shift, whoever has been on longest comes out and whoever has sat longest in the same group goes in, straight through halftime.
