@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { toastError } from "@/lib/toast-error";
+import { QuickScoreDialog } from "@/components/quick-score-dialog";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 import { effectiveStatus } from "@/lib/game-status";
@@ -376,6 +377,8 @@ export default function BasketballGame() {
     onError: (err) => toastError(toast, "Couldn't save the lineup", err),
   });
   const [editOpen, setEditOpen] = useState(false);
+  // "Score it" links arrive with ?complete=1: open the score pop-up right away.
+  const [scoreOpen, setScoreOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("complete") === "1");
   const [lineupOpen, setLineupOpen] = useState(false);
   const [ourScore, setOurScore] = useState("");
   const [opponentScore, setOpponentScore] = useState("");
@@ -538,25 +541,15 @@ export default function BasketballGame() {
           </div>
           {game.notes && <p className="whitespace-pre-wrap text-sm">{game.notes}</p>}
           {canEdit && status !== "cancelled" && (
-            <form
-              className={`flex flex-wrap items-end gap-3 rounded-md border p-3 ${final ? "bg-muted/40" : status === "upcoming" ? "" : "border-primary/50 bg-primary/5"}`}
-              onSubmit={(e) => { e.preventDefault(); saveScore(); }}
-            >
-              <div className="flex w-full items-center gap-2 text-sm font-semibold sm:w-auto sm:self-center">
-                <Trophy className="h-4 w-4 text-primary" /> {final ? "Final score" : "Log the result"}
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="ourScore" className="text-xs">{teamName || "Us"}</Label>
-                <Input id="ourScore" type="number" min="0" inputMode="numeric" className="h-11 w-20 text-lg font-bold" value={ourScore} placeholder={game.ourScore != null ? String(game.ourScore) : "0"} onChange={(e) => setOurScore(e.target.value)} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="opponentScore" className="text-xs">{game.opponent}</Label>
-                <Input id="opponentScore" type="number" min="0" inputMode="numeric" className="h-11 w-20 text-lg font-bold" value={opponentScore} placeholder={game.opponentScore != null ? String(game.opponentScore) : "0"} onChange={(e) => setOpponentScore(e.target.value)} />
-              </div>
-              <Button type="submit" className="h-11" disabled={updateGame.isPending || (ourScore === "" && opponentScore === "")}>
-                {final ? "Update score" : "Save final score"}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant={final || status === "upcoming" ? "outline" : "default"}
+                onClick={() => setScoreOpen(true)}
+                className="gap-2"
+              >
+                <Trophy className="h-4 w-4" /> {final ? `Final ${game.ourScore}–${game.opponentScore} · Edit` : "Log the result"}
               </Button>
-            </form>
+            </div>
           )}
           {canEdit && setup && (
             <div className="flex flex-wrap gap-2">
@@ -823,6 +816,11 @@ export default function BasketballGame() {
           saving={saveLineup.isPending}
         />
       )}
+
+      <QuickScoreDialog
+        game={scoreOpen ? { id, opponent: game.opponent, rowVersion: game.rowVersion, ourScore: game.ourScore, opponentScore: game.opponentScore } : null}
+        onClose={() => setScoreOpen(false)}
+      />
 
       {editOpen && (
         <EditGameDialog

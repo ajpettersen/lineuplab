@@ -23,6 +23,9 @@ import {
   swapPlayers,
   takeOut,
   undoLast,
+  addFoul,
+  foulsOf,
+  FOUL_OUT,
   type LiveState,
 } from "../src/lib/basketball-live.ts";
 
@@ -294,6 +297,18 @@ for (const subSize of [1, 3, 4]) {
   assert.deepEqual(courtSpots(s).map((x) => x.id), plan[3]);
   s = undoLast(s, 0);
   assert.deepEqual(courtSpots(s).map((x) => x.id), ["200", "198", "202", "197", "201"], "undo works with a plan");
+}
+
+// Fouls: count up to the limit, take one back, never below zero.
+{
+  let s = startState(input);
+  assert.equal(foulsOf(s, "Brody"), 0);
+  for (let i = 0; i < 7; i++) s = addFoul(s, "Brody");
+  assert.equal(foulsOf(s, "Brody"), FOUL_OUT, "stops at the foul-out limit");
+  s = addFoul(s, "Brody", -1);
+  assert.equal(foulsOf(s, "Brody"), FOUL_OUT - 1);
+  s = addFoul(addFoul(s, "Luke", -1), "Luke", -1);
+  assert.equal(foulsOf(s, "Luke"), 0, "never below zero");
 }
 
 console.log("basketball-live: all checks passed");

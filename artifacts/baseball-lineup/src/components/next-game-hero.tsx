@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Link } from "wouter";
+import { QuickScoreDialog } from "@/components/quick-score-dialog";
 import { format, isToday, isTomorrow } from "date-fns";
 import { CalendarDays, ChevronRight, MapPin, Tv, UserRound } from "lucide-react";
 import { extras, mapsUrl, ScheduleChangeNotice, umpireLabel } from "@/components/game-schedule-info";
@@ -21,6 +23,9 @@ type HeroGame = {
   innings: number;
   type?: string | null;
   status?: string | null;
+  rowVersion?: number;
+  ourScore?: number | null;
+  opponentScore?: number | null;
 };
 
 /**
@@ -70,6 +75,9 @@ export function NextGameHero({
   const label = getHeroLabel(date, isPast);
   const { sportProfile } = useTeamSettings();
   const isBasketball = sportProfile.id === "basketball";
+  // Basketball records a result with a small score pop-up, right here.
+  const [scoring, setScoring] = useState(false);
+  const quickScore = isPast && isBasketball;
 
   return (
     <Card
@@ -174,7 +182,14 @@ export function NextGameHero({
                 {isBasketball ? "Open Court Display" : "Open Field Display"}
               </Button>
             )}
-            <Link href={`/games/${game.id}`}>
+            <Link
+              href={`/games/${game.id}`}
+              onClick={(e) => {
+                if (!quickScore) return;
+                e.preventDefault();
+                setScoring(true);
+              }}
+            >
               <Button
                 size="lg"
                 variant="outline"
@@ -192,6 +207,12 @@ export function NextGameHero({
           </div>
         </div>
       </CardContent>
+      {quickScore && (
+        <QuickScoreDialog
+          game={scoring ? { id: game.id, opponent: game.opponent ?? "Opponent", rowVersion: game.rowVersion, ourScore: game.ourScore, opponentScore: game.opponentScore } : null}
+          onClose={() => setScoring(false)}
+        />
+      )}
     </Card>
   );
 }

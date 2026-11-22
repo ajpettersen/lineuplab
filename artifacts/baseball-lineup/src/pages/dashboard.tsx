@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
 import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info, FileText, Check, Circle, Sparkles, Wand2 } from "lucide-react";
 import { NextGameHero } from "@/components/next-game-hero";
+import { QuickScoreDialog, type ScoreGame } from "@/components/quick-score-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
 import { HelpCard } from "@/components/help-card";
@@ -230,7 +231,7 @@ export default function Dashboard() {
                   : "Use Field Display to manage positions inning by inning, then record the score."
                 : "Once a game is on the books, you'll generate lineups and score it from here.",
             cta: pastUnrecorded
-              ? { href: `/games/${pastUnrecorded.id}`, label: "Score it" }
+              ? { href: `/games/${pastUnrecorded.id}?complete=1`, label: "Score it" }
               : nextUpcoming
                 ? {
                     href: `/games/${nextUpcoming.id}/display`,
@@ -347,7 +348,7 @@ export default function Dashboard() {
 
       {/* Coaching tasks (only renders when the coach has open items, so a
           fresh account stays clean). */}
-      {tasks.length > 0 && <TasksCard tasks={tasks} games={actualGames} />}
+      {tasks.length > 0 && <TasksCard tasks={tasks} games={actualGames} quickScore={isBasketball} />}
 
       {/*
        * Broadcast-style stat cards. Big Roboto Mono numerals, Oswald uppercase
@@ -553,7 +554,9 @@ const TASK_LABEL: Record<DashboardTask["type"], string> = {
  * the server responds, so the card feels instant. The query refetches on
  * success to reconcile the canonical state.
  */
-function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) {
+function TasksCard({ tasks, games, quickScore = false }: { tasks: DashboardTask[]; games: Game[]; quickScore?: boolean }) {
+  // Basketball: "Score it" opens a small score pop-up instead of leaving the page.
+  const [scoring, setScoring] = useState<ScoreGame | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -658,7 +661,11 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
                   size="sm"
                   variant="default"
                   className="h-8"
-                  onClick={() => navigate(`/games/${t.gameId}?complete=1`)}
+                  onClick={() => {
+                    const g = quickScore ? games.find((x) => x.id === t.gameId) : undefined;
+                    if (g) setScoring({ id: g.id, opponent: g.opponent, rowVersion: g.rowVersion, ourScore: g.ourScore, opponentScore: g.opponentScore });
+                    else navigate(`/games/${t.gameId}?complete=1`);
+                  }}
                   data-testid={`button-task-score-${t.id}`}
                 >
                   Score it
@@ -750,6 +757,7 @@ function TasksCard({ tasks, games }: { tasks: DashboardTask[]; games: Game[] }) 
           />
         );
       })()}
+      <QuickScoreDialog game={scoring} onClose={() => setScoring(null)} />
     </Card>
   );
 }

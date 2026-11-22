@@ -68,6 +68,22 @@ export interface LiveState extends Lineup {
    * spot order, and each sub brings on the plan's next five.
    */
   script?: string[][] | null;
+  /** Personal fouls this game, by player id. */
+  fouls?: Record<string, number>;
+}
+
+/** Fouls that put a player out of the game. */
+export const FOUL_OUT = 5;
+
+/** Add (or with -1, take back) a foul. Fouls never go below zero or past the limit. */
+export function addFoul(s: LiveState, id: string, delta: 1 | -1 = 1): LiveState {
+  const current = s.fouls?.[id] ?? 0;
+  const next = Math.max(0, Math.min(FOUL_OUT, current + delta));
+  return { ...s, fouls: { ...(s.fouls ?? {}), [id]: next } };
+}
+
+export function foulsOf(s: LiveState, id: string): number {
+  return s.fouls?.[id] ?? 0;
 }
 
 const EPS = 1e-6;
