@@ -180,7 +180,7 @@ const FAQ: FaqEntry[] = [
 ];
 
 // Basketball teams: the questions above about lineups, innings, the dugout
-// display, batting/pitching stats and tournaments are baseball's.
+// display and batting/pitching stats are baseball's.
 const BASKETBALL_FAQ: FaqEntry[] = [
   FAQ[0],
   FAQ[1],
@@ -192,7 +192,7 @@ const BASKETBALL_FAQ: FaqEntry[] = [
         <Link href="/bench-sheet" className="text-primary underline underline-offset-2">
           Bench Sheet
         </Link>{" "}
-        (Team menu). Tag each player Guard (plays the 1 or 2) or Front (flexes across the 3, 4 and 5), mark your 4s and 5s as Big, and set half length, shift length and how many shifts at the end are your pick. Mark who's here, then reshuffle or drag the starting order. Each sub is one guard and one front-court player: whoever has been on longest comes out and whoever has sat longest goes in, straight through halftime. Print it as a one-page bench sheet.
+        (Team menu), or Set Lineup on a game. Put each player in a position group (Settings → Rotation picks the groups, e.g. 2 guards, 2 forwards, 1 center), mark your bigs, and set shift length, subs at a time and whether the last shift is your pick. Mark who's here, then reshuffle, drag the starting order, or tap Prioritize who's behind to give the starts and extra time to whoever is behind on season minutes. Each sub, whoever has been on longest in a group comes out for whoever has sat longest, straight through halftime. Print it as a one-page bench sheet, or load your own shift-by-shift plan.
       </>
     ),
   },
@@ -200,7 +200,7 @@ const BASKETBALL_FAQ: FaqEntry[] = [
     q: "How do I run the game from the bench?",
     a: (
       <>
-        Open a game and tap Open court display. It shows a half court with your five at the 1 (PG) through 5 (C), a game clock, and an alert when it's time to sub (with a heads-up 30 seconds before). Tap Sub made, or Sub now to jump ahead. Tap any two players to swap them, take a player out if they're hurt, set the clock, or undo. The rotation carries on from whatever you change.
+        Tap Start next game on the dashboard (or Court Display on a game). It shows a half court with your five at the 1 (PG) through 5 (C), a game clock, and an alert when it's time to sub (with a heads-up 30 seconds before). Tap Sub made, or Sub now to jump ahead; drag or tap two players to swap them, take a player out if they're hurt, set the clock, or undo. Keep score with +1/+2/+3, tap F + for fouls (team fouls show the bonus; a fifth foul takes the player out), and tap Timeout to stop the clock and open your plays. Playing time shows each player's minutes against a target. After subs the plan didn't call for, Rebalance rest of game evens out the remaining minutes within your limits (Settings → Rotation).
       </>
     ),
   },
@@ -225,6 +225,18 @@ const BASKETBALL_FAQ: FaqEntry[] = [
           Settings
         </Link>{" "}
         you can invite other coaches and give each one a permission level, from view-only up to a full co-coach who can edit everything. The owner always keeps full control.
+      </>
+    ),
+  },
+  {
+    q: "How do tournaments and pool play work?",
+    a: (
+      <>
+        Under{" "}
+        <Link href="/tournaments" className="text-primary underline underline-offset-2">
+          Tournaments
+        </Link>
+        , add the tournament and link its games. Set up pool play from screenshots of the standings or by hand, pick the rule set (e.g. MYBA: win %, head-to-head, point differential capped at 15 a game) or your own tiebreakers, and the app shows where you can finish and what you need to advance. The tournament page also totals each player's minutes across its games.
       </>
     ),
   },
