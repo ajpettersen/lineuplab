@@ -51,7 +51,7 @@ export function Scene4() {
           animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
           transition={{ duration: 0.8 }}
         >
-          The Field Display view is built for your iPad. It works perfectly, even when the cell service drops.
+          The game-day display is built for your iPad or phone. It keeps working, even when the cell service drops.
         </motion.p>
         
         <motion.div
