@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useRoute } from "wouter";
+import { BASKETBALL_SEASON_KEY, fetchBasketballSeason, normalizeSeason } from "@/lib/basketball-season";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -336,12 +337,9 @@ export default function BasketballGame() {
     },
   });
   const { data: season } = useQuery({
-    queryKey: ["basketball-season"],
-    queryFn: async (): Promise<{ gamesTracked: number; players: { playerId: number; seconds: number }[] }> => {
-      const r = await fetch(`${BASE}/api/basketball-season`);
-      if (!r.ok) throw new Error(`GET /api/basketball-season failed (${r.status})`);
-      return r.json();
-    },
+    queryKey: BASKETBALL_SEASON_KEY,
+    queryFn: fetchBasketballSeason,
+    select: normalizeSeason,
   });
   // Season minutes before this game (the printout shows them next to today's plan).
   const seasonBefore = useMemo(() => {

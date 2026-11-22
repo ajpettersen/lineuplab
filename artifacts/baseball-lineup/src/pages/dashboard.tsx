@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { BoxScoreImportDialog } from "@/components/box-score-import-dialog";
 import { CalendarDays, Users, Trophy, TrendingUp, ChevronRight, Shield, Tv, ClipboardList, X, Info, FileText, Check, Circle, Sparkles, Wand2 } from "lucide-react";
 import { NextGameHero } from "@/components/next-game-hero";
+import { useBasketballSeason } from "@/lib/basketball-season";
 import { QuickScoreDialog, type ScoreGame } from "@/components/quick-score-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BroadcastStatCard } from "@/components/broadcast-stat-card";
@@ -64,7 +65,19 @@ export default function Dashboard() {
   // Default true — coaches who haven't toggled it yet see the score, matching
   // legacy behavior. While prefs are loading we err on the side of showing.
   const { data: prefs } = useGetPreferences();
-  const showFairness = !isBasketball && (prefs?.showFairnessScore ?? true);
+  const showFairness = prefs?.showFairnessScore ?? true;
+  // Basketball measures fairness and heads-ups in minutes (court display / loaded games).
+  const { data: bbSeason } = useBasketballSeason(isBasketball);
+  const fairnessValue = isBasketball ? bbSeason?.fairnessScore ?? null : seasonStats?.fairnessScore ?? null;
+  const bbLeast = isBasketball
+    ? (bbSeason?.players ?? [])
+        .filter((p) => p.pctAvailable !== null && p.availableGames > 0)
+        .sort((a, b) => a.pctAvailable! - b.pctAvailable!)[0] ?? null
+    : null;
+  const bbAvgPct = (() => {
+    const shares = (bbSeason?.players ?? []).map((p) => p.pctAvailable).filter((x): x is number => x !== null);
+    return shares.length ? shares.reduce((a, b) => a + b, 0) / shares.length : null;
+  })();
 
   const actualGames = games.filter((g) => g.type === "game");
   const completedGames = actualGames.filter((g) => g.status === "completed");
@@ -372,13 +385,13 @@ export default function Dashboard() {
         {showFairness && (
           <BroadcastStatCard
             label="Fairness Score"
-            value={seasonStats?.fairnessScore ?? "--"}
+            value={fairnessValue ?? "--"}
             subtext="Playing time equity"
             icon={Shield}
             accent={
-              (seasonStats?.fairnessScore ?? 0) >= 80
+              (fairnessValue ?? 0) >= 80
                 ? "win"
-                : (seasonStats?.fairnessScore ?? 0) >= 60
+                : (fairnessValue ?? 0) >= 60
                   ? "warn"
                   : "loss"
             }
@@ -397,6 +410,16 @@ export default function Dashboard() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-xs text-left leading-relaxed">
                   <p className="font-semibold mb-1">How this is calculated</p>
+                  {isBasketball ? (
+                  <p>
+                    For every active player we take the share of their
+                    available minutes they played (games they were marked
+                    out for don't count). The score is{" "}
+                    <span className="font-mono">100 − stddev × 400</span>,
+                    where stddev is how much those shares vary. 100 means
+                    everyone plays the same share of the games they're at.
+                  </p>
+                  ) : (
                   <p>
                     For every active player we compute their bench rate
                     (innings sat ÷ innings played) across all completed
@@ -409,6 +432,7 @@ export default function Dashboard() {
                     points lands near 20. Practices and uncompleted games
                     don't count.
                   </p>
+                  )}
                 </TooltipContent>
               </Tooltip>
             }
@@ -516,6 +540,24 @@ export default function Dashboard() {
           <HelpCard />
         </div>
 
+        {/* Playing Time Alert (basketball: smallest share of available minutes) */}
+        {isBasketball && bbLeast && bbAvgPct !== null && bbAvgPct - bbLeast.pctAvailable! > 0.03 && (
+          <Card className="border-yellow-200 bg-yellow-50 lg:col-span-2">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-yellow-800 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Playing Time Heads Up
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-yellow-700">
+                <strong>{bbLeast.name}</strong> has played the smallest share of their available minutes this season (
+                {Math.round(bbLeast.pctAvailable! * 100)}% vs. a team average of {Math.round(bbAvgPct * 100)}%). Consider extra
+                court time next game.
+              </p>
+            </CardContent>
+          </Card>
+        )}
         {/* Playing Time Alert */}
         {!isBasketball && mostBenchPlayer && mostBenchPlayer.benchInnings > 0 && (
           <Card className="border-yellow-200 bg-yellow-50 lg:col-span-2">

@@ -768,7 +768,40 @@ export default function FieldDisplay() {
   // and is bumped manually with the arrows so the display doesn't change
   // mid-inning just because somebody saved a future-inning tweak.
   const innings = game?.innings ?? 6;
-  const [currentInning, setCurrentInning] = useState(1);
+  // A completed game opens as FINAL: no LIVE status, no Start Game, and the
+  // screen parks on the last inning instead of snapping back to inning 1.
+  const isFinal = game?.status === "completed";
+  // The inning on screen (and which half) is remembered per game on this
+  // device, so a refresh or an accidental exit mid-game doesn't jump back to
+  // inning 1. Lineups are per inning; TOP/BOTTOM is just what the coach
+  // shows, since a game doesn't record whether we're home or away.
+  const inningStoreKey = `fd-current-inning-v1:${id}`;
+  const [currentInning, setCurrentInningRaw] = useState<number>(() => {
+    const saved = loadJSON<{ inning?: number }>(inningStoreKey);
+    return typeof saved?.inning === "number" && saved.inning >= 1 ? saved.inning : 1;
+  });
+  const [half, setHalf] = useState<"top" | "bottom">(() => {
+    const saved = loadJSON<{ half?: string }>(inningStoreKey);
+    return saved?.half === "bottom" ? "bottom" : "top";
+  });
+  useEffect(() => {
+    saveJSON(inningStoreKey, { inning: currentInning, half });
+  }, [inningStoreKey, currentInning, half]);
+  // Changing innings starts the new inning at the top.
+  const setCurrentInning = (next: number | ((i: number) => number)) => {
+    setCurrentInningRaw((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      if (value !== prev) setHalf("top");
+      return value;
+    });
+  };
+  // Park a completed game on its last inning, once, when it loads as final.
+  const finalSnapRef = useRef(false);
+  useEffect(() => {
+    if (!game || !isFinal || finalSnapRef.current) return;
+    finalSnapRef.current = true;
+    setCurrentInningRaw(game.innings ?? innings);
+  }, [game, isFinal, innings]);
   useEffect(() => {
     // If the game shrinks (end-early) below the inning we're showing, snap
     // back to the last valid inning so the screen never goes blank. Wait
@@ -1335,6 +1368,32 @@ export default function FieldDisplay() {
         : isTournament
           ? "pool"
           : "league";
+
+  // What kind of game this is, in words, from the game's own data — used for
+  // the header ribbon and above the batting order. A tournament game shows
+  // its tournament's name (e.g. "League Playoffs"), never a generic "Pool
+  // Play" / "Tournament": new tournament games default to the "pool" stage
+  // whether or not the event has pool play, so the stage is only added when
+  // the game is in the bracket or the tournament actually has pool-play data.
+  const tournamentName = tournament?.name?.trim() || "";
+  const tournamentHasPoolPlay = Boolean(
+    (tournament as { poolPlay?: unknown } | undefined)?.poolPlay,
+  );
+  const stageLabel =
+    bracketStage === "bracket"
+      ? "Bracket"
+      : bracketStage === "pool" && tournamentHasPoolPlay
+        ? "Pool Play"
+        : "";
+  const gameTypeLabel: string = (() => {
+    if (isTournament && championshipMode) {
+      return tournamentName ? `${tournamentName} · Championship` : "Championship";
+    }
+    if (tournamentName) return stageLabel ? `${tournamentName} · ${stageLabel}` : tournamentName;
+    if (isTournament) return stageLabel ? `Tournament · ${stageLabel}` : "Tournament";
+    if (game?.gameType === "league") return "League";
+    return "";
+  })();
 
   // One-shot joyful "welcome to the championship!" confetti. Fires once
   // when Championship Mode flips ON for this game (game loads as a
@@ -2011,18 +2070,16 @@ export default function FieldDisplay() {
        *  steals flex space from the field. aria-hidden — the same context
        *  is already conveyed by the game record + matchup title for AT
        *  users, and this is decorative chrome. */}
-      {fieldMode !== "league" && (
+      {fieldMode !== "league" && gameTypeLabel && (
         <div
           className="fd-stakes-banner"
           data-fd-mode={fieldMode}
           aria-hidden="true"
           data-testid="fd-stakes-banner"
         >
-          {fieldMode === "pool"
-            ? "Pool Play"
-            : fieldMode === "bracket"
-              ? "Bracket \u00B7 Win or Go Home"
-              : "\u{1F3C6} Championship \u{1F3C6}"}
+          {fieldMode === "champ" || fieldMode === "champ-elevated"
+            ? `\u{1F3C6} ${gameTypeLabel} \u{1F3C6}`
+            : gameTypeLabel}
         </div>
       )}
       {/* Floating trophy flecks — championship PEAK only (our team leading
@@ -3128,28 +3185,23 @@ export default function FieldDisplay() {
            *  TROPHY pre-title above the heading so the panel reads as a
            *  TV "tournament graphic" insert. */}
           <div className={`relative shrink-0 bg-[var(--fd-panel)] ${isTournament ? "border-b-0" : "border-b-2 border-accent"} px-4 py-2 sm:py-3 text-center`}>
-            {isTournament && (
+            {gameTypeLabel && (
               <div
-                className="flex items-center justify-center gap-1.5 mb-1 text-accent/90"
+                className="flex items-center justify-center gap-1.5 mb-1 text-accent/90 min-w-0"
                 data-testid="tournament-pretitle"
               >
-                {championshipMode ? (
-                  <Crown className="fd-champ-crown h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
-                ) : (
-                  <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
-                )}
-                <span className="font-display text-[9px] sm:text-[10px] font-bold tracking-[0.4em] uppercase">
-                  {championshipMode ? "Championship" : "Tournament"}
+                {isTournament && championshipMode ? (
+                  <Crown className="fd-champ-crown h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
+                ) : isTournament ? (
+                  <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" aria-hidden="true" />
+                ) : null}
+                <span className="font-display text-[10px] sm:text-xs lg:text-sm font-bold tracking-[0.25em] uppercase truncate">
+                  {gameTypeLabel}
                 </span>
-                {championshipMode ? (
-                  <Crown className="fd-champ-crown fd-champ-crown--delay h-3.5 w-3.5 sm:h-4 sm:w-4 drop-shadow-[0_0_6px_rgba(245,191,66,0.85)]" aria-hidden="true" />
-                ) : (
-                  <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
-                )}
               </div>
             )}
-            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.3em] uppercase text-accent leading-none">
-              Lineup
+            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-[0.2em] uppercase text-accent leading-none">
+              Batting Order
             </h2>
             {isTournament && (
               <div
@@ -3209,18 +3261,18 @@ export default function FieldDisplay() {
                 return (
                   <li
                     key={r.playerId}
-                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[1.5rem] lg:min-h-[1.875rem] overflow-hidden border border-transparent transition-all ${
+                    className={`relative flex items-stretch h-auto flex-1 basis-0 min-h-[1.5rem] lg:min-h-[2.25rem] overflow-hidden border border-transparent transition-all ${
                       idx % 2 === 0
                         ? "bg-slate-900/60"
                         : "bg-slate-900/30"
                     }`}
                     data-testid={`batter-row-${r.playerId}`}
                   >
-                    <span className="shrink-0 w-10 sm:w-12 flex items-center justify-center font-display font-bold text-lg sm:text-xl tabular-nums bg-white/5 text-slate-400">
+                    <span className="shrink-0 w-10 sm:w-12 lg:w-14 flex items-center justify-center font-display font-bold text-lg sm:text-xl lg:text-2xl tabular-nums bg-white/5 text-slate-300">
                       {slotLabel}
                     </span>
                     <span
-                      className="flex-1 min-w-0 flex items-center px-2 sm:px-3 text-sm sm:text-base font-bold leading-tight truncate text-white"
+                      className="flex-1 min-w-0 flex items-center px-2 sm:px-3 lg:px-4 text-sm sm:text-base lg:text-xl font-bold leading-tight truncate text-white"
                       title={r.playerName}
                     >
                       {formatPlayerNameShort(r.playerName)}
@@ -3764,12 +3816,12 @@ function DraggableFieldChip({
           : `${name} — tap to select, or drag`
       }
     >
-      <span className="text-accent font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 lg:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px]">
+      <span className="text-accent font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 lg:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 lg:py-2 lg:pl-4 lg:pr-2 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs lg:text-base uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px] lg:min-w-[46px]">
         {pos}
       </span>
-      <span className="w-px h-3 max-lg:landscape:h-3 sm:h-4 bg-accent/50" aria-hidden />
-      <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center min-w-[52px] max-lg:landscape:min-w-[52px] sm:min-w-[96px] max-w-[96px] max-lg:landscape:max-w-[96px] sm:max-w-[170px]">
-        <span className="text-[11px] max-lg:landscape:text-[11px] sm:text-sm font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
+      <span className="w-px h-3 max-lg:landscape:h-3 sm:h-4 lg:h-6 bg-accent/50" aria-hidden />
+      <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 lg:py-2 lg:pl-3 lg:pr-5 flex items-center min-w-[52px] max-lg:landscape:min-w-[52px] sm:min-w-[96px] lg:min-w-[130px] max-w-[96px] max-lg:landscape:max-w-[96px] sm:max-w-[170px] lg:max-w-[240px]">
+        <span className="text-[11px] max-lg:landscape:text-[11px] sm:text-sm lg:text-xl font-bold leading-tight truncate text-white tracking-wide whitespace-nowrap">
           {formatPlayerNameShort(name)}
         </span>
       </span>
@@ -3806,21 +3858,21 @@ function EmptyFieldChip({
       data-testid={`field-chip-${pos}-empty`}
     >
       <span
-        className={`font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px] ${
+        className={`font-bold font-['Roboto_Mono'] pl-2 max-lg:landscape:pl-2 sm:pl-3 pr-1 max-lg:landscape:pr-1 sm:pr-2 py-0.5 max-lg:landscape:py-0.5 sm:py-1 lg:py-2 lg:pl-4 lg:pr-2 flex items-center justify-center text-[9px] max-lg:landscape:text-[9px] sm:text-xs lg:text-base uppercase tracking-wider min-w-[24px] max-lg:landscape:min-w-[24px] sm:min-w-[34px] lg:min-w-[46px] ${
           isOver || isSwapTarget ? "text-black" : "text-slate-400"
         }`}
       >
         {pos}
       </span>
       <span
-        className={`w-px h-3 max-lg:landscape:h-3 sm:h-4 ${
+        className={`w-px h-3 max-lg:landscape:h-3 sm:h-4 lg:h-6 ${
           isOver || isSwapTarget ? "bg-accent" : "bg-white/20"
         }`}
         aria-hidden
       />
-      <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 flex items-center min-w-[60px] max-lg:landscape:min-w-[60px] sm:min-w-[96px] max-w-[100px] max-lg:landscape:max-w-[100px] sm:max-w-[170px]">
+      <span className="pl-1 max-lg:landscape:pl-1 sm:pl-2 pr-2 max-lg:landscape:pr-2 sm:pr-3 py-0.5 max-lg:landscape:py-0.5 sm:py-1 lg:py-2 lg:pl-3 lg:pr-5 flex items-center min-w-[60px] max-lg:landscape:min-w-[60px] sm:min-w-[96px] lg:min-w-[130px] max-w-[100px] max-lg:landscape:max-w-[100px] sm:max-w-[170px] lg:max-w-[240px]">
         <span
-          className={`text-[11px] max-lg:landscape:text-[11px] sm:text-sm font-bold leading-tight truncate italic whitespace-nowrap ${
+          className={`text-[11px] max-lg:landscape:text-[11px] sm:text-sm lg:text-xl font-bold leading-tight truncate italic whitespace-nowrap ${
             isOver || isSwapTarget ? "text-accent" : "text-slate-500"
           }`}
         >
@@ -3873,7 +3925,7 @@ function BenchStrip({
       onClick={handleStripClick}
       role={isSwapTarget ? "button" : undefined}
       aria-label={isSwapTarget ? "Send selected player to bench" : undefined}
-      className={`mt-2 sm:mt-3 border bg-[var(--fd-panel-deep)] px-3 sm:px-6 py-2 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
+      className={`mt-2 sm:mt-3 border bg-[var(--fd-panel-deep)] px-3 sm:px-6 py-2 lg:py-3 shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-colors ${
         isOver
           ? "border-accent ring-2 ring-accent/60 bg-amber-950/20"
           : isSwapTarget
@@ -3883,12 +3935,12 @@ function BenchStrip({
       data-testid="bench-strip"
     >
       <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-        <span className="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-slate-400 font-display font-bold">
+        <span className="text-[10px] sm:text-xs lg:text-base uppercase tracking-[0.3em] text-slate-300 font-display font-bold">
           {isSwapTarget ? "Tap to bench" : "Bench"}
         </span>
         {entries.length === 0 ? (
-          <span className="text-sm text-slate-500">
-            {isOver || isSwapTarget ? "Drop here to bench" : "—"}
+          <span className="text-sm lg:text-lg text-slate-500">
+            {isOver || isSwapTarget ? "Drop here to bench" : "Everyone's on the field"}
           </span>
         ) : (
           <div className="flex gap-2 sm:gap-3 flex-wrap">
@@ -3955,7 +4007,7 @@ function DraggableBenchChip({
             : `${name} on bench — tap to select, or drag to a position`
       }
       data-bench-chip
-      className={`text-xs sm:text-sm font-bold text-slate-200 touch-none cursor-grab active:cursor-grabbing select-none px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[var(--fd-chip)] border rounded-full shadow-md transition-all whitespace-nowrap tracking-wide ${
+      className={`text-xs sm:text-sm lg:text-xl font-bold text-slate-100 touch-none cursor-grab active:cursor-grabbing select-none px-2.5 sm:px-3 lg:px-5 py-1 sm:py-1.5 lg:py-2 bg-[var(--fd-chip)] border rounded-full shadow-md transition-all whitespace-nowrap tracking-wide ${
         isSelected
           ? "border-accent ring-2 ring-accent ring-offset-2 ring-offset-[var(--fd-panel-deep)]"
           : isSwapTarget
