@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:basketball-rotation": "node ./test/basketball-rotation.test.ts",
     "test:basketball-live": "node ./test/basketball-live.test.ts",
+    "test:basketball-targets": "node test/basketball-targets.test.ts",
     "test:basketball-plays": "node ./test/basketball-plays.test.ts"
   },
   "devDependencies": {
