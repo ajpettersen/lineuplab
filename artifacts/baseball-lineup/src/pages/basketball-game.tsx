@@ -378,6 +378,12 @@ export default function BasketballGame() {
   });
   const [editOpen, setEditOpen] = useState(false);
   // "Score it" links arrive with ?complete=1: open the score pop-up right away.
+  // The court display's running score, when it sent the coach here to log it.
+  const [liveScore] = useState(() => {
+    const q = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+    const num = (k: string) => (q?.get(k) != null && /^\d+$/.test(q.get(k)!) ? Number(q.get(k)) : null);
+    return { us: num("us"), them: num("them") };
+  });
   const [scoreOpen, setScoreOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("complete") === "1");
   const [lineupOpen, setLineupOpen] = useState(false);
   const [ourScore, setOurScore] = useState("");
@@ -818,7 +824,7 @@ export default function BasketballGame() {
       )}
 
       <QuickScoreDialog
-        game={scoreOpen ? { id, opponent: game.opponent, rowVersion: game.rowVersion, ourScore: game.ourScore, opponentScore: game.opponentScore } : null}
+        game={scoreOpen ? { id, opponent: game.opponent, rowVersion: game.rowVersion, ourScore: game.ourScore ?? liveScore.us, opponentScore: game.opponentScore ?? liveScore.them } : null}
         onClose={() => setScoreOpen(false)}
       />
 

@@ -26,6 +26,10 @@ import {
   addFoul,
   foulsOf,
   FOUL_OUT,
+  addPoints,
+  addOppFoul,
+  teamFoulsOf,
+  bonusLabel,
   type LiveState,
 } from "../src/lib/basketball-live.ts";
 
@@ -299,16 +303,45 @@ for (const subSize of [1, 3, 4]) {
   assert.deepEqual(courtSpots(s).map((x) => x.id), ["200", "198", "202", "197", "201"], "undo works with a plan");
 }
 
-// Fouls: count up to the limit, take one back, never below zero.
+// Fouls: count up to the limit, team fouls per half, the fifth fouls out.
 {
   let s = startState(input);
-  assert.equal(foulsOf(s, "Brody"), 0);
-  for (let i = 0; i < 7; i++) s = addFoul(s, "Brody");
-  assert.equal(foulsOf(s, "Brody"), FOUL_OUT, "stops at the foul-out limit");
-  s = addFoul(s, "Brody", -1);
-  assert.equal(foulsOf(s, "Brody"), FOUL_OUT - 1);
-  s = addFoul(addFoul(s, "Luke", -1), "Luke", -1);
+  const starter = onCourt(s).flat()[0];
+  assert.equal(foulsOf(s, starter), 0);
+  for (let i = 0; i < 4; i++) s = addFoul(s, starter, 1, 0);
+  assert.equal(teamFoulsOf(s), 4);
+  assert.ok(onCourt(s).flat().includes(starter), "4 fouls: still on");
+  s = addFoul(s, starter, 1, 0);
+  assert.equal(foulsOf(s, starter), FOUL_OUT);
+  assert.ok(s.outIds.includes(starter) && !onCourt(s).flat().includes(starter), "5th foul: out of the game");
+  assert.equal(onCourt(s).flat().length, 5, "someone covers the spot");
+  s = addFoul(s, starter, 1, 0);
+  assert.equal(foulsOf(s, starter), FOUL_OUT, "stops at the limit");
+  s = addFoul(s, starter, -1, 0);
+  assert.ok(!s.outIds.includes(starter), "taking the 5th back brings them back");
+  s = addFoul(addFoul(s, "Luke", -1, 0), "Luke", -1, 0);
   assert.equal(foulsOf(s, "Luke"), 0, "never below zero");
+  // Bonus from team fouls; the other team's fouls count separately.
+  assert.equal(bonusLabel(6), null);
+  assert.equal(bonusLabel(7), "Bonus");
+  assert.equal(bonusLabel(10), "Double bonus");
+  s = addOppFoul(addOppFoul(s));
+  assert.equal(teamFoulsOf(s, "them"), 2);
+  // Team fouls reset at the half.
+  assert.equal(teamFoulsOf({ ...s, half: 2 }), 0);
+}
+
+// Score: points for each side, logged with who was on court.
+{
+  let s = startState(input);
+  s = addPoints(s, "us", 2, 0);
+  s = addPoints(s, "us", 3, 0);
+  s = addPoints(s, "them", 2, 0);
+  s = addPoints(s, "them", -5, 0);
+  assert.deepEqual(s.score, { us: 5, them: 0 }, "never below zero");
+  assert.equal(s.scoreLog!.length, 4);
+  assert.equal(s.scoreLog![3].pts, -2, "the log keeps the change actually made");
+  assert.deepEqual(sorted(s.scoreLog![0].on), sorted(onCourt(s).flat()));
 }
 
 console.log("basketball-live: all checks passed");

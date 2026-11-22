@@ -73,6 +73,10 @@ import {
   addFoul,
   foulsOf,
   FOUL_OUT,
+  addPoints,
+  addOppFoul,
+  teamFoulsOf,
+  bonusLabel,
   totalShifts,
   undoLast,
   type CourtSpot,
@@ -684,7 +688,7 @@ export default function BasketballCourtDisplay() {
           {view.runningSince ? (
             <Button size="lg" variant="secondary" onClick={() => act(stopClock)} className="gap-2"><Pause className="h-5 w-5" /> Pause</Button>
           ) : view.phase === "final" ? (
-            <Link href={`/games/${gameId}`}>
+            <Link href={`/games/${gameId}?complete=1${view.score ? `&us=${view.score.us}&them=${view.score.them}` : ""}`}>
               <Button size="lg" className="gap-2"><Trophy className="h-5 w-5" /> Log the final score</Button>
             </Link>
           ) : (
@@ -776,6 +780,47 @@ export default function BasketballCourtDisplay() {
         </div>
       )}
 
+      {/* Score and team fouls */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b px-3 py-2 md:px-5">
+        {(["us", "them"] as const).map((team) => {
+          const pts = view.score?.[team] ?? 0;
+          const label = team === "us" ? teamShortName || teamName || "Us" : game?.opponent || "Them";
+          return (
+            <div key={team} className="flex items-center gap-2">
+              <span className="max-w-[8rem] truncate text-sm font-semibold uppercase text-muted-foreground">{label}</span>
+              <span className="w-12 text-center font-display text-3xl font-bold tabular-nums" aria-label={`${label} ${pts}`}>{pts}</span>
+              {[1, 2, 3].map((n) => (
+                <Button key={n} size="sm" variant="outline" className="h-10 w-11 text-base font-bold" onClick={() => setState(addPoints(state ?? view, team, n, Date.now()))}>
+                  +{n}
+                </Button>
+              ))}
+              <Button size="sm" variant="ghost" className="h-10 w-9 text-muted-foreground" aria-label={`Take a point off ${label}`} disabled={pts === 0} onClick={() => setState(addPoints(state ?? view, team, -1, Date.now()))}>
+                −1
+              </Button>
+            </div>
+          );
+        })}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span>
+            <span className="text-muted-foreground">Our team fouls: </span>
+            <span className="font-bold tabular-nums">{teamFoulsOf(view)}</span>
+            {bonusLabel(teamFoulsOf(view)) && (
+              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/50 dark:text-red-100">They're in the {bonusLabel(teamFoulsOf(view))!.toLowerCase()}</span>
+            )}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-muted-foreground">Their fouls: </span>
+            <span className="font-bold tabular-nums">{teamFoulsOf(view, "them")}</span>
+            <Button size="sm" variant="outline" className="ml-1 h-8 px-2" onClick={() => setState(addOppFoul(state ?? view, 1))}>F +</Button>
+            <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground" disabled={teamFoulsOf(view, "them") === 0} onClick={() => setState(addOppFoul(state ?? view, -1))}>−</Button>
+            {bonusLabel(teamFoulsOf(view, "them")) && (
+              <span className="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-800 dark:bg-green-900/50 dark:text-green-100">We're in the {bonusLabel(teamFoulsOf(view, "them"))!.toLowerCase()}</span>
+            )}
+          </span>
+          <span className="text-xs text-muted-foreground">Reset each half</span>
+        </div>
+      </div>
+
       <DndContext
         sensors={sensors}
         onDragStart={(e: DragStartEvent) => {
@@ -791,14 +836,6 @@ export default function BasketballCourtDisplay() {
           <div className="mx-auto aspect-[500/470] w-full max-w-[640px]">
             <HalfCourt spots={spots} nameOf={nameOf} selected={selected} foulCount={(id) => foulsOf(view, id)} onTap={tapPlayer} />
           </div>
-          {spots.filter((x) => foulsOf(view, x.id) >= FOUL_OUT).map((x) => (
-            <div key={x.id} className="flex flex-wrap items-center justify-center gap-3 rounded-md border-2 border-red-600 bg-red-50 p-3 text-red-900 dark:bg-red-950/40 dark:text-red-100">
-              <span className="font-bold">{nameOf(x.id)} has {FOUL_OUT} fouls: fouled out.</span>
-              <Button size="sm" variant="destructive" className="gap-1" onClick={() => act((s, t) => takeOut(s, t, x.id))}>
-                <UserMinus className="h-4 w-4" /> Take out
-              </Button>
-            </div>
-          ))}
           {spots.some((s) => s.spot === null) && (
             <p className="text-center text-sm">Also on court: {joinNames(spots.filter((s) => s.spot === null).map((s) => nameOf(s.id)))}</p>
           )}
@@ -876,7 +913,7 @@ export default function BasketballCourtDisplay() {
                         {foulsOf(view, p.id) > 0 && (
                           <button
                             type="button"
-                            onClick={() => setState(addFoul(state ?? view, p.id, -1))}
+                            onClick={() => setState(addFoul(state ?? view, p.id, -1, Date.now()))}
                             aria-label={`Take back a foul from ${p.name}`}
                             className="h-8 w-7 rounded-md border text-sm text-muted-foreground hover:bg-muted"
                           >
@@ -885,7 +922,7 @@ export default function BasketballCourtDisplay() {
                         )}
                         <button
                           type="button"
-                          onClick={() => setState(addFoul(state ?? view, p.id, 1))}
+                          onClick={() => setState(addFoul(state ?? view, p.id, 1, Date.now()))}
                           disabled={foulsOf(view, p.id) >= FOUL_OUT}
                           aria-label={`Foul on ${p.name} (${foulsOf(view, p.id)} so far)`}
                           className={`h-8 min-w-[3.25rem] rounded-md border px-2 text-sm font-bold tabular-nums ${
@@ -909,7 +946,7 @@ export default function BasketballCourtDisplay() {
             <p className="mt-2 text-xs text-muted-foreground">
               Target = an even share of the game among available players
               {seasonLines ? ", nudged toward whoever is behind on season minutes" : ""}. Owed / over = compared with where they should be by now. Tap{" "}
-              <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, {FOUL_OUT} fouls them out. Playing time is
+              <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, and the {FOUL_OUT}th takes them out of the game (the plan goes on without them). Playing time is
               counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
             </p>
           </div>
