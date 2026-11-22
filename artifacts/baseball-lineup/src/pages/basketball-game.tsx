@@ -44,6 +44,7 @@ import { usePermission } from "@/hooks/use-permission";
 import { useTeamSettings } from "@/hooks/use-team-settings";
 import { toastError } from "@/lib/toast-error";
 import { QuickScoreDialog } from "@/components/quick-score-dialog";
+import { SeasonPriorityButton, SeasonPriorityNotes, useSeasonPriority } from "@/components/basketball/season-priority";
 import { withSync } from "@/lib/sync-envelope";
 import { isVersionConflict } from "@/lib/conflict-registry";
 import { effectiveStatus } from "@/lib/game-status";
@@ -147,6 +148,13 @@ function SetLineupDialog({
 
   const present = players.filter((p) => !absent.has(p.id));
   const queues = groupedQueues(players, setup.settings, order, [...absent]);
+  // Season priority: who's behind gets the starts and the extra time (with "why" notes).
+  const absentList = useMemo(() => [...absent], [absent]);
+  const prioritySettings = useMemo(
+    () => ({ ...setup.settings, subSize: subSize || 2, shiftMinutes: validShift ? shiftMinutes : setup.settings.shiftMinutes, flexShifts: flexLast ? Math.max(1, setup.settings.flexShifts) : 0 }),
+    [setup.settings, subSize, shiftMinutes, validShift, flexLast],
+  );
+  const priority = useSeasonPriority(players, prioritySettings, order, absentList);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -268,6 +276,7 @@ function SetLineupDialog({
               >
                 <Shuffle className="h-4 w-4" /> Reshuffle
               </Button>
+              <SeasonPriorityButton ready={priority.ready} onClick={() => { const next = priority.prioritize(); if (next) setOrder(next); }} />
             </div>
             <div className={`grid gap-4 ${queues.length >= 3 ? "md:grid-cols-3" : queues.length === 2 ? "sm:grid-cols-2" : ""}`}>
               {queues.map((q, i) => (
@@ -277,6 +286,7 @@ function SetLineupDialog({
             <p className="mt-2 text-xs text-muted-foreground">
               The players at the top of each group start.
             </p>
+            {!keepPlan && <SeasonPriorityNotes notes={priority.notes} />}
           </div>
         </div>
 
