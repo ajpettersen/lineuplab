@@ -26,6 +26,8 @@ import {
   BellOff,
   BookOpen,
   Hand,
+  MoreHorizontal,
+  Users,
   ChevronsRight,
   GripVertical,
   Minus,
@@ -57,6 +59,7 @@ import {
 import type { RebalanceRules } from "@/lib/basketball-rebalance";
 import { pairingProblems } from "@/lib/basketball-pairing";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   bench,
   courtSpots,
@@ -407,6 +410,9 @@ function BenchRow({
   selected,
   onTap,
   onTakeOut,
+  compact = false,
+  minutes,
+  status,
 }: {
   id: string;
   name: string;
@@ -415,6 +421,10 @@ function BenchRow({
   selected: boolean;
   onTap: (id: string) => void;
   onTakeOut: (id: string) => void;
+  /** Phones: a small chip with minutes instead of a full row. */
+  compact?: boolean;
+  minutes?: string;
+  status?: "owed" | "on-track" | "over";
 }) {
   const { ref, attributes, listeners, isDragging, isOver } = usePlayerDnd(id);
   return (
@@ -432,14 +442,25 @@ function BenchRow({
         aria-label={`${name} on the bench. Drag onto a player on the court to sub, or tap.`}
         className="flex min-h-10 flex-1 touch-none select-none items-center gap-2 text-left"
       >
-        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="w-5 text-xs font-bold text-muted-foreground">{role}</span>
-        <span className="flex-1 truncate text-lg font-semibold">{name}</span>
-        {comingIn && <span className="text-xs font-bold uppercase text-primary">Next in</span>}
+        {!compact && <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        <span className="w-4 text-xs font-bold text-muted-foreground">{role}</span>
+        <span className={`flex-1 truncate font-semibold ${compact ? "text-base" : "text-lg"}`}>{name}</span>
+        {compact && minutes && (
+          <span
+            className={`rounded px-1 font-mono text-xs tabular-nums ${
+              status === "owed" ? "bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100" : status === "over" ? "text-sky-700 dark:text-sky-300" : "text-muted-foreground"
+            }`}
+          >
+            {minutes}
+          </span>
+        )}
+        {comingIn && <span className="text-xs font-bold uppercase text-primary">{compact ? "Next" : "Next in"}</span>}
       </button>
-      <Button variant="ghost" size="icon" aria-label={`Take ${name} out of the game`} onClick={() => onTakeOut(id)}>
-        <UserMinus className="h-4 w-4" />
-      </Button>
+      {!compact && (
+        <Button variant="ghost" size="icon" aria-label={`Take ${name} out of the game`} onClick={() => onTakeOut(id)}>
+          <UserMinus className="h-4 w-4" />
+        </Button>
+      )}
     </li>
   );
 }
@@ -500,6 +521,8 @@ export default function BasketballCourtDisplay() {
   const [dragging, setDragging] = useState<string | null>(null);
   const [playsOpen, setPlaysOpen] = useState(false);
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
+  // Phones: the Players & fouls / More panels.
+  const [panel, setPanel] = useState<"players" | "more" | null>(null);
   // This page sits outside the app frame, so it names the browser tab itself.
   useEffect(() => {
     document.title = game?.opponent ? `Court Display · vs ${game.opponent} · Lineup Lab` : "Court Display · Lineup Lab";
@@ -618,7 +641,9 @@ export default function BasketballCourtDisplay() {
       </span>
     ) : (
       <>
-        <span className="font-semibold">Out: {joinNames(sortNames(upcoming.out))}</span>
+        <span className="font-semibold">Stays on: {joinNames(sortNames(onCourtIds(view!).filter((id) => !upcoming.out.includes(id)))) || "nobody"}</span>
+        <span className="mx-2 font-normal">·</span>
+        <span>Out: {joinNames(sortNames(upcoming.out))}</span>
         <span className="ml-2 text-sm opacity-80">(in: {joinNames(sortNames(upcoming.in))})</span>
       </>
     );
@@ -768,28 +793,8 @@ export default function BasketballCourtDisplay() {
     setEditingClock(false);
   };
 
-  return (
-    <div className="flex min-h-[100dvh] flex-col bg-background text-foreground">
-      {/* Header: exit, matchup, half, clock and clock controls */}
-      <header
-        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 pb-2 md:px-5"
-        style={{
-          // The app runs full-screen on iPad/iPhone with a see-through status bar.
-          paddingTop: "max(0.5rem, env(safe-area-inset-top))",
-          paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
-          paddingRight: "max(0.75rem, env(safe-area-inset-right))",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <Link href={`/games/${gameId}`}>
-            <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Exit</Button>
-          </Link>
-          <div className="leading-tight">
-            <div className="font-display text-lg font-bold uppercase">{teamShortName || teamName} {game?.opponent ? `vs ${game.opponent}` : ""}</div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{halfLabel}</div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+  // Pieces shown in the side column on iPad / desktop and in the Players / More panels on phones.
+  const clockPlus = (
           <Button
             variant="outline"
             size="icon"
@@ -800,29 +805,9 @@ export default function BasketballCourtDisplay() {
           >
             <Plus className="h-4 w-4" />
           </Button>
-          {editingClock ? (
-            <form onSubmit={(e) => { e.preventDefault(); saveClock(); }} className="flex items-center gap-1">
-              <input
-                autoFocus
-                onFocus={(e) => e.currentTarget.select()}
-                value={clockInput}
-                onChange={(e) => setClockInput(e.target.value)}
-                onBlur={saveClock}
-                inputMode="numeric"
-                aria-label="Set the clock (minutes:seconds)"
-                className="w-28 rounded-md border bg-background px-2 py-1 text-center font-display text-4xl tabular-nums"
-              />
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => { if (clockLocked) return; setClockInput(fmt(view.clockSec)); setEditingClock(true); }}
-              title="Tap to set the clock"
-              className="min-w-[7.5rem] rounded-md px-2 text-center font-display text-5xl font-bold tabular-nums"
-            >
-              {fmt(view.clockSec)}
-            </button>
-          )}
+  );
+  const clockMinusAndStep = (
+    <>
           <Button
             variant="outline"
             size="icon"
@@ -847,6 +832,183 @@ export default function BasketballCourtDisplay() {
               </button>
             ))}
           </div>
+    </>
+  );
+  const teamFouls = (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span>
+            <span className="text-muted-foreground">Our team fouls: </span>
+            <span className="font-bold tabular-nums">{teamFoulsOf(view)}</span>
+            {bonusLabel(teamFoulsOf(view), periodCount) && (
+              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/50 dark:text-red-100">They're in the {bonusLabel(teamFoulsOf(view), periodCount)!.toLowerCase()}</span>
+            )}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-muted-foreground">Their fouls: </span>
+            <span className="font-bold tabular-nums">{teamFoulsOf(view, "them")}</span>
+            <Button size="sm" variant="outline" className="ml-1 h-8 px-2" onClick={() => setState(addOppFoul(state ?? view, 1))}>F +</Button>
+            <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground" disabled={teamFoulsOf(view, "them") === 0} onClick={() => setState(addOppFoul(state ?? view, -1))}>−</Button>
+            {bonusLabel(teamFoulsOf(view, "them"), periodCount) && (
+              <span className="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-800 dark:bg-green-900/50 dark:text-green-100">We're in the {bonusLabel(teamFoulsOf(view, "them"), periodCount)!.toLowerCase()}</span>
+            )}
+          </span>
+          <span className="text-xs text-muted-foreground">Reset each {periodCount === 4 ? "quarter" : "half"}</span>
+        </div>
+  );
+  const playingTime = (
+    <>
+
+            <h2 className="mb-2 font-display text-xl font-bold uppercase">Playing time</h2>
+            <table className="w-full text-base">
+              <tbody>
+                {minutes.map((p) => (
+                  <tr key={p.id} className={`border-b last:border-0 ${view.outIds.includes(p.id) ? "opacity-50" : ""}`}>
+                    <td className="py-1.5 pr-2">
+                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${onIds.has(p.id) ? "bg-green-500" : "bg-muted-foreground/30"}`} aria-hidden="true" />
+                      <span className="whitespace-nowrap font-semibold">{p.name}</span>
+                      <span className="ml-2 hidden text-xs text-muted-foreground sm:inline">{groupFor(p.id)?.one ?? ""}{p.big ? " · Big" : ""}</span>
+                    </td>
+                    <td className="py-1.5 text-right font-mono tabular-nums">
+                      {fmt(view.playedSec[p.id] ?? 0)}
+                      {targets.get(p.id) && (
+                        <span className="block text-[11px] font-sans text-muted-foreground">of {fmt(targets.get(p.id)!.targetSec)}</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pl-2 text-right">
+                      {pace.get(p.id) && <PaceChip pace={pace.get(p.id)!} />}
+                    </td>
+                    <td className="py-1.5 pl-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {foulsOf(view, p.id) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setState(addFoul(state ?? view, p.id, -1, Date.now()))}
+                            aria-label={`Take back a foul from ${p.name}`}
+                            className="h-8 w-7 rounded-md border text-sm text-muted-foreground hover:bg-muted"
+                          >
+                            −
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setState(addFoul(state ?? view, p.id, 1, Date.now()))}
+                          disabled={foulsOf(view, p.id) >= FOUL_OUT}
+                          aria-label={`Foul on ${p.name} (${foulsOf(view, p.id)} so far)`}
+                          className={`h-8 min-w-[3.25rem] rounded-md border px-2 text-sm font-bold tabular-nums ${
+                            foulsOf(view, p.id) >= FOUL_OUT
+                              ? "border-red-600 bg-red-600 text-white"
+                              : foulsOf(view, p.id) === FOUL_OUT - 1
+                                ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200"
+                                : foulsOf(view, p.id) === 3
+                                  ? "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                  : "hover:bg-muted"
+                          }`}
+                        >
+                          {foulsOf(view, p.id)}F +
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Target = an even share of the game among available players
+              {seasonLines ? ", nudged toward whoever is behind on season minutes" : ""}. Owed / over = compared with where they should be by now. Tap{" "}
+              <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, and the {FOUL_OUT}th takes them out of the game (the plan goes on without them). Playing time is
+              counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
+            </p>
+    </>
+  );
+  const outBlock = (
+    <>
+            {outPlayers.length > 0 && (
+              <div className="mt-3">
+                <div className="eyebrow mb-1 text-muted-foreground">Out of the game</div>
+                <div className="flex flex-wrap gap-2">
+                  {outPlayers.map((p) => (
+                    <Button key={p.id} variant="outline" size="sm" className="gap-1" onClick={() => act((s, t) => putBack(s, t, p))}>
+                      <UserPlus className="h-4 w-4" /> {p.name} back in
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+    </>
+  );
+  const moreActions = (
+          <div className="mt-auto flex flex-wrap gap-2 pt-2">
+            <Link href="/bench-sheet"><Button variant="ghost" size="sm">Bench Sheet</Button></Link>
+            {view.phase !== "final" && (
+              <Button variant="ghost" size="sm" onClick={() => setRebalanceOpen(true)}>Rebalance rest of game</Button>
+            )}
+            {state && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-muted-foreground"
+                onClick={async () => {
+                  if (await confirm({ title: "Reset this game?", description: "The clock, subs and playing time go back to the start, using the Bench Sheet's current setup.", confirmText: "Reset game", variant: "destructive" })) {
+                    setState(null);
+                    void sync.clear();
+                    setSelected(null);
+                    void fetch(`${BASE}/api/basketball-games/${gameId}/stats`, { method: "DELETE" }).catch(() => undefined);
+                  }
+                }}
+              >
+                <RotateCcw className="h-4 w-4" /> Reset game
+              </Button>
+            )}
+          </div>
+  );
+
+  return (
+    <div className="flex min-h-[100dvh] flex-col bg-background pb-16 text-foreground md:pb-0">
+      {/* Header: exit, matchup, half, clock and clock controls */}
+      <header
+        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 pb-2 md:px-5"
+        style={{
+          // The app runs full-screen on iPad/iPhone with a see-through status bar.
+          paddingTop: "max(0.5rem, env(safe-area-inset-top))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <Link href={`/games/${gameId}`}>
+            <Button variant="ghost" size="sm" className="gap-1"><ArrowLeft className="h-4 w-4" /> Exit</Button>
+          </Link>
+          <div className="leading-tight">
+            <div className="font-display text-lg font-bold uppercase">{teamShortName || teamName} {game?.opponent ? `vs ${game.opponent}` : ""}</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{halfLabel}</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="hidden md:block">{clockPlus}</div>
+          {editingClock ? (
+            <form onSubmit={(e) => { e.preventDefault(); saveClock(); }} className="flex items-center gap-1">
+              <input
+                autoFocus
+                onFocus={(e) => e.currentTarget.select()}
+                value={clockInput}
+                onChange={(e) => setClockInput(e.target.value)}
+                onBlur={saveClock}
+                inputMode="numeric"
+                aria-label="Set the clock (minutes:seconds)"
+                className="w-28 rounded-md border bg-background px-2 py-1 text-center font-display text-4xl tabular-nums"
+              />
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { if (clockLocked) return; setClockInput(fmt(view.clockSec)); setEditingClock(true); }}
+              title="Tap to set the clock"
+              className="min-w-[6rem] rounded-md px-2 text-center font-display text-4xl font-bold tabular-nums md:min-w-[7.5rem] md:text-5xl"
+            >
+              {fmt(view.clockSec)}
+            </button>
+          )}
+          <div className="hidden items-center gap-2 md:flex">{clockMinusAndStep}</div>
           {view.runningSince ? (
             <Button size="lg" variant="secondary" onClick={() => act(stopClock)} disabled={clockLocked} className="gap-2"><Pause className="h-5 w-5" /> Pause</Button>
           ) : view.phase === "final" ? (
@@ -880,12 +1042,13 @@ export default function BasketballCourtDisplay() {
               <Hand className="h-5 w-5" /> Timeout{timeoutsOf(view) > 0 ? ` (${timeoutsOf(view)})` : ""}
             </Button>
           )}
-          <Button variant="outline" className="gap-1" onClick={() => setPlaysOpen(true)}>
+          <Button variant="outline" className="hidden gap-1 md:inline-flex" onClick={() => setPlaysOpen(true)}>
             <BookOpen className="h-5 w-5" /> Plays
           </Button>
           <Button
             variant="ghost"
             size="icon"
+            className="hidden md:inline-flex"
             aria-label={alertsOn ? "Turn sub alerts off" : "Turn sub alerts on"}
             onClick={() => (alertsOn ? setAlertsOn(false) : void enableAlerts())}
           >
@@ -943,14 +1106,14 @@ export default function BasketballCourtDisplay() {
         <div
           role="status"
           aria-live="assertive"
-          className={`flex flex-wrap items-center justify-between gap-3 px-3 py-3 md:px-5 ${
+          className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 md:gap-3 md:px-5 md:py-3 ${
             due ? "animate-pulse bg-amber-400 text-black" : headsUp ? "bg-amber-100 text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" : "bg-muted/60"
           }`}
         >
-          <div className="min-w-0 text-lg leading-snug">
+          <div className="min-w-0 text-base leading-snug md:text-lg">
             {due ? (
               <>
-                <span className="mr-2 font-display text-2xl font-bold uppercase">Sub now</span>
+                <span className="mr-2 font-display text-xl font-bold uppercase md:text-2xl">Sub now</span>
                 {subWhat()}
               </>
             ) : flex ? (
@@ -974,8 +1137,8 @@ export default function BasketballCourtDisplay() {
           <div className="flex flex-wrap gap-2">
             {due ? (
               <>
-                <Button size="lg" onClick={() => act(makeSub)} className="bg-black text-white hover:bg-black/80">Sub made</Button>
-                <Button size="lg" variant="outline" onClick={() => act(skipSub)} className="border-black/40 bg-transparent text-black hover:bg-black/10">Skip</Button>
+                <Button onClick={() => act(makeSub)} className="h-10 bg-black text-white hover:bg-black/80 md:h-11 md:px-8">Sub made</Button>
+                <Button variant="outline" onClick={() => act(skipSub)} className="border-black/40 bg-transparent text-black hover:bg-black/10">Skip</Button>
               </>
             ) : (
               upcoming.in.length > 0 && view.phase !== "pregame" && (
@@ -1030,16 +1193,16 @@ export default function BasketballCourtDisplay() {
       )}
 
       {/* Score and team fouls */}
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b px-3 py-2 md:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-3 py-1.5 md:gap-y-2 md:px-5 md:py-2">
         {(["us", "them"] as const).map((team) => {
           const pts = view.score?.[team] ?? 0;
           const label = team === "us" ? teamShortName || teamName || "Us" : game?.opponent || "Them";
           return (
             <div key={team} className="flex items-center gap-2">
-              <span className="max-w-[8rem] truncate text-sm font-semibold uppercase text-muted-foreground">{label}</span>
-              <span className="w-12 text-center font-display text-3xl font-bold tabular-nums" aria-label={`${label} ${pts}`}>{pts}</span>
+              <span className="w-16 truncate text-sm font-semibold uppercase text-muted-foreground md:w-auto md:max-w-[8rem]">{label}</span>
+              <span className="w-10 text-center font-display text-2xl font-bold tabular-nums md:w-12 md:text-3xl" aria-label={`${label} ${pts}`}>{pts}</span>
               {[1, 2, 3].map((n) => (
-                <Button key={n} size="sm" variant="outline" className="h-10 w-11 text-base font-bold" onClick={() => setState(addPoints(state ?? view, team, n, Date.now()))}>
+                <Button key={n} size="sm" variant="outline" className="h-9 w-11 text-base font-bold md:h-10" onClick={() => setState(addPoints(state ?? view, team, n, Date.now()))}>
                   +{n}
                 </Button>
               ))}
@@ -1049,25 +1212,7 @@ export default function BasketballCourtDisplay() {
             </div>
           );
         })}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          <span>
-            <span className="text-muted-foreground">Our team fouls: </span>
-            <span className="font-bold tabular-nums">{teamFoulsOf(view)}</span>
-            {bonusLabel(teamFoulsOf(view), periodCount) && (
-              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/50 dark:text-red-100">They're in the {bonusLabel(teamFoulsOf(view), periodCount)!.toLowerCase()}</span>
-            )}
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-muted-foreground">Their fouls: </span>
-            <span className="font-bold tabular-nums">{teamFoulsOf(view, "them")}</span>
-            <Button size="sm" variant="outline" className="ml-1 h-8 px-2" onClick={() => setState(addOppFoul(state ?? view, 1))}>F +</Button>
-            <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground" disabled={teamFoulsOf(view, "them") === 0} onClick={() => setState(addOppFoul(state ?? view, -1))}>−</Button>
-            {bonusLabel(teamFoulsOf(view, "them"), periodCount) && (
-              <span className="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-800 dark:bg-green-900/50 dark:text-green-100">We're in the {bonusLabel(teamFoulsOf(view, "them"), periodCount)!.toLowerCase()}</span>
-            )}
-          </span>
-          <span className="text-xs text-muted-foreground">Reset each {periodCount === 4 ? "quarter" : "half"}</span>
-        </div>
+        <div className="hidden md:block">{teamFouls}</div>
       </div>
 
       <DndContext
@@ -1079,24 +1224,50 @@ export default function BasketballCourtDisplay() {
         onDragCancel={() => setDragging(null)}
         onDragEnd={onDragEnd}
       >
-      <main className="grid flex-1 gap-4 p-3 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] md:p-5">
+      <main className="grid flex-1 gap-2 p-2 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] md:gap-4 md:p-5">
         {/* Court */}
         <section className="flex flex-col gap-2">
-          <div className="mx-auto aspect-[500/470] w-full max-w-[640px]">
+          <div className="mx-auto aspect-[500/470] w-full max-w-[min(100%,36dvh)] md:max-w-[640px]">
             <HalfCourt spots={spots} nameOf={nameOf} selected={selected} foulCount={(id) => foulsOf(view, id)} onTap={tapPlayer} />
           </div>
           {spots.some((s) => s.spot === null) && (
             <p className="text-center text-sm">Also on court: {joinNames(spots.filter((s) => s.spot === null).map((s) => nameOf(s.id)))}</p>
           )}
-          <p className="text-center text-sm text-muted-foreground">
+          {/* Phones: the bench right under the court, most-owed first, with minutes. */}
+          <div className="md:hidden">
+            {benchIds.length > 0 && (
+              <ul className="grid grid-cols-2 gap-1.5">
+                {benchIds.map((id) => (
+                  <BenchRow
+                    key={id}
+                    id={id}
+                    name={nameOf(id)}
+                    role={roleOf(id)}
+                    comingIn={upcoming.in.includes(id)}
+                    selected={selected === id}
+                    onTap={tapPlayer}
+                    onTakeOut={(pid) => act((s, t) => takeOut(s, t, pid))}
+                    compact
+                    minutes={fmt(view.playedSec[id] ?? 0)}
+                    status={pace.get(id)?.status}
+                  />
+                ))}
+              </ul>
+            )}
+            <div className="mt-1.5"><OutZone active={dragging !== null} /></div>
+            {selected && (
+              <p className="mt-1.5 text-center text-sm text-muted-foreground">Tap a player to swap with {nameOf(selected)}.</p>
+            )}
+          </div>
+          <p className="hidden text-center text-sm text-muted-foreground md:block">
             {selected
               ? `Tap a player on the bench (or court) to swap with ${nameOf(selected)}.`
               : "Drag a bench player onto someone on the court to sub (or tap two players). The rotation carries on from the new lineup."}
           </p>
         </section>
 
-        {/* Bench + playing time */}
-        <section className="flex flex-col gap-4">
+        {/* Bench + playing time (iPad / desktop). Phones: bench strip under the court, the rest in Players / More. */}
+        <section className="hidden flex-col gap-4 md:flex">
           <div>
             <h2 className="mb-2 font-display text-xl font-bold uppercase">Bench</h2>
             {benchIds.length === 0 ? (
@@ -1123,106 +1294,12 @@ export default function BasketballCourtDisplay() {
                 <UserMinus className="h-4 w-4" /> Take {nameOf(selected)} out of the game
               </Button>
             )}
-            {outPlayers.length > 0 && (
-              <div className="mt-3">
-                <div className="eyebrow mb-1 text-muted-foreground">Out of the game</div>
-                <div className="flex flex-wrap gap-2">
-                  {outPlayers.map((p) => (
-                    <Button key={p.id} variant="outline" size="sm" className="gap-1" onClick={() => act((s, t) => putBack(s, t, p))}>
-                      <UserPlus className="h-4 w-4" /> {p.name} back in
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {outBlock}
           </div>
 
-          <div>
-            <h2 className="mb-2 font-display text-xl font-bold uppercase">Playing time</h2>
-            <table className="w-full text-base">
-              <tbody>
-                {minutes.map((p) => (
-                  <tr key={p.id} className={`border-b last:border-0 ${view.outIds.includes(p.id) ? "opacity-50" : ""}`}>
-                    <td className="py-1.5 pr-2">
-                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${onIds.has(p.id) ? "bg-green-500" : "bg-muted-foreground/30"}`} aria-hidden="true" />
-                      <span className="font-semibold">{p.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{groupFor(p.id)?.one ?? ""}{p.big ? " · Big" : ""}</span>
-                    </td>
-                    <td className="py-1.5 text-right font-mono tabular-nums">
-                      {fmt(view.playedSec[p.id] ?? 0)}
-                      {targets.get(p.id) && (
-                        <span className="block text-[11px] font-sans text-muted-foreground">of {fmt(targets.get(p.id)!.targetSec)}</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 pl-2 text-right">
-                      {pace.get(p.id) && <PaceChip pace={pace.get(p.id)!} />}
-                    </td>
-                    <td className="py-1.5 pl-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {foulsOf(view, p.id) > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setState(addFoul(state ?? view, p.id, -1, Date.now()))}
-                            aria-label={`Take back a foul from ${p.name}`}
-                            className="h-8 w-7 rounded-md border text-sm text-muted-foreground hover:bg-muted"
-                          >
-                            −
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setState(addFoul(state ?? view, p.id, 1, Date.now()))}
-                          disabled={foulsOf(view, p.id) >= FOUL_OUT}
-                          aria-label={`Foul on ${p.name} (${foulsOf(view, p.id)} so far)`}
-                          className={`h-8 min-w-[3.25rem] rounded-md border px-2 text-sm font-bold tabular-nums ${
-                            foulsOf(view, p.id) >= FOUL_OUT
-                              ? "border-red-600 bg-red-600 text-white"
-                              : foulsOf(view, p.id) === FOUL_OUT - 1
-                                ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200"
-                                : foulsOf(view, p.id) === 3
-                                  ? "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                                  : "hover:bg-muted"
-                          }`}
-                        >
-                          {foulsOf(view, p.id)}F +
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Target = an even share of the game among available players
-              {seasonLines ? ", nudged toward whoever is behind on season minutes" : ""}. Owed / over = compared with where they should be by now. Tap{" "}
-              <span className="font-semibold">F +</span> for a foul (− takes one back); 3 turns amber, 4 red, and the {FOUL_OUT}th takes them out of the game (the plan goes on without them). Playing time is
-              counted from the game clock. Shift {Math.min(shift + 1, totalShifts(view))} of {totalShifts(view)}.
-            </p>
-          </div>
+          <div>{playingTime}</div>
 
-          <div className="mt-auto flex flex-wrap gap-2 pt-2">
-            <Link href="/bench-sheet"><Button variant="ghost" size="sm">Bench Sheet</Button></Link>
-            {view.phase !== "final" && (
-              <Button variant="ghost" size="sm" onClick={() => setRebalanceOpen(true)}>Rebalance rest of game</Button>
-            )}
-            {state && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-muted-foreground"
-                onClick={async () => {
-                  if (await confirm({ title: "Reset this game?", description: "The clock, subs and playing time go back to the start, using the Bench Sheet's current setup.", confirmText: "Reset game", variant: "destructive" })) {
-                    setState(null);
-                    void sync.clear();
-                    setSelected(null);
-                    void fetch(`${BASE}/api/basketball-games/${gameId}/stats`, { method: "DELETE" }).catch(() => undefined);
-                  }
-                }}
-              >
-                <RotateCcw className="h-4 w-4" /> Reset game
-              </Button>
-            )}
-          </div>
+          {moreActions}
         </section>
       </main>
       <DragOverlay dropAnimation={null}>
@@ -1231,6 +1308,60 @@ export default function BasketballCourtDisplay() {
         )}
       </DragOverlay>
       </DndContext>
+
+      {/* Phones: everything else is one tap away. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t bg-background/95 backdrop-blur md:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        aria-label="Court display"
+      >
+        <button type="button" onClick={() => setPanel("players")} className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">
+          <Users className="h-5 w-5" /> Players &amp; fouls
+        </button>
+        <button type="button" onClick={() => setPlaysOpen(true)} className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">
+          <BookOpen className="h-5 w-5" /> Plays
+        </button>
+        <button type="button" onClick={() => setPanel("more")} className="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold">
+          <MoreHorizontal className="h-5 w-5" /> More
+        </button>
+      </nav>
+      <Sheet open={panel !== null} onOpenChange={(o) => !o && setPanel(null)}>
+        <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto md:hidden">
+          <SheetHeader>
+            <SheetTitle>{panel === "players" ? "Players & fouls" : "More"}</SheetTitle>
+          </SheetHeader>
+          {panel === "players" ? (
+            <div className="mt-3 space-y-4">
+              {teamFouls}
+              {playingTime}
+              {outBlock}
+            </div>
+          ) : (
+            <div className="mt-3 space-y-5">
+              <div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Adjust the clock</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {clockPlus}
+                  <span className="font-display text-2xl font-bold tabular-nums">{fmt(view.clockSec)}</span>
+                  {clockMinusAndStep}
+                </div>
+              </div>
+              <label className="flex items-center justify-between gap-3 text-sm font-semibold">
+                Sub alerts (chime and vibration)
+                <Button size="sm" variant={alertsOn ? "default" : "outline"} onClick={() => (alertsOn ? setAlertsOn(false) : void enableAlerts())}>
+                  {alertsOn ? "On" : "Off"}
+                </Button>
+              </label>
+              {selected && onIds.has(selected) && (
+                <Button variant="outline" className="w-full gap-1" onClick={() => { act((s, t) => takeOut(s, t, selected)); setPanel(null); }}>
+                  <UserMinus className="h-4 w-4" /> Take {nameOf(selected)} out of the game
+                </Button>
+              )}
+              {moreActions}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
