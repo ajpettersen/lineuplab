@@ -17,6 +17,8 @@ export type GuardPosition = "1" | "2";
 /** A position group key: "guard", "front", "forward", "center", "perimeter", "big" or "all". */
 export type BasketballRole = string;
 
+import { hasPairingRules, pairingProblems, type PairingRules } from "./basketball-pairing.ts";
+
 export interface PositionGroup {
   key: BasketballRole;
   /** Plural, for headings: "Guards". */
@@ -206,6 +208,8 @@ export interface RotationInput {
    * (non-flex) shift, the player ids at spots 1–5 in order.
    */
   customShifts?: string[][] | null;
+  /** Pairing rules (never together / at least one on court); broken ones come back as warnings. */
+  pairing?: PairingRules | null;
 }
 
 export interface RowGroup {
@@ -592,6 +596,24 @@ export function buildRotation(input: RotationInput): RotationResult {
     return `${periodName(row.half, periods)} ${row.clock}`;
   };
   const roleLabel = new Map(groups.map(g => [g.key, g.one]));
+
+  // Pairing rules: say where the plan breaks one (never silently).
+  if (hasPairingRules(input.pairing)) {
+    const here = new Set(present.map(p => p.id));
+    const broken = new Map<string, { text: string; at: string[] }>();
+    for (const row of halves.flatMap(h => h.rows)) {
+      if (row.flex) continue;
+      const five = row.groups.flatMap(g => g.ids);
+      for (const problem of pairingProblems(five, input.pairing, here, id => name.get(id) ?? id)) {
+        const entry = broken.get(problem.key) ?? { text: problem.text, at: [] };
+        entry.at.push(describe(row.shift));
+        broken.set(problem.key, entry);
+      }
+    }
+    for (const { text, at } of broken.values()) {
+      warnings.push(`Pairing rule broken: ${text} in ${plural(at.length, "shift")} (${at.slice(0, 3).join(", ")}${at.length > 3 ? ", …" : ""}). Try Fix order for rules.`);
+    }
+  }
 
   const minutes: MinutesLine[] = present.map(p => {
     let played = 0;

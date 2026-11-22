@@ -15,6 +15,7 @@ import { BenchSheetTable } from "@/components/basketball/bench-sheet-table";
 import { GameSheetPrint } from "@/components/basketball/game-sheet-print";
 import { QueueList } from "@/components/basketball/queue-list";
 import { SeasonPriorityButton, SeasonPriorityNotes, useSeasonPriority } from "@/components/basketball/season-priority";
+import { FixOrderForRules } from "@/components/basketball/fix-order-button";
 import {
   BASKETBALL_SETUP_KEY,
   fetchBasketballSetup,
@@ -144,6 +145,11 @@ export default function BenchSheetPage() {
     () => (draft ? groupedQueues(players, { ...draft.settings, groupLayout: layout }, draft.gameDay.order.map(String), absentIds) : []),
     [draft, players, absentIds, layout],
   );
+  // Pairing rules (Settings → Rotation) for the warnings and Fix order.
+  const pairing = useMemo(
+    () => ({ neverTogether: data?.rules.neverTogether ?? [], atLeastOne: data?.rules.atLeastOne ?? [] }),
+    [data?.rules],
+  );
   const rotation = useMemo(
     () =>
       draft &&
@@ -153,8 +159,9 @@ export default function BenchSheetPage() {
         settings: { ...draft.settings, groupLayout: layout, subSize: data?.defaultSubSize ?? 2 },
         order: draft.gameDay.order.map(String),
         absentIds,
+        pairing,
       }),
-    [draft, players, queues, absentIds, data?.defaultSubSize],
+    [draft, players, queues, absentIds, data?.defaultSubSize, pairing],
   );
   // Season priority: who's behind gets the starts and the extra time (with "why" notes).
   const prioritySettings = useMemo(
@@ -387,6 +394,15 @@ export default function BenchSheetPage() {
               }}
             />
             <SeasonPriorityNotes notes={priority.notes} />
+            {prioritySettings && (
+              <div className="mt-2">
+                <FixOrderForRules
+                  input={{ players, settings: prioritySettings, order: benchOrder, absentIds, pairing }}
+                  onOrder={(next) => setGameDay({ order: next.map(Number) })}
+                  disabled={readOnly}
+                />
+              </div>
+            )}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             In each group, the first {groups.map((g) => `${g.spots.length} ${g.spots.length === 1 ? g.one.toLowerCase() : g.label.toLowerCase()}`).join(", ")} start. Each shift, whoever has been on longest comes out and whoever has sat longest in the same group goes in, straight through halftime.

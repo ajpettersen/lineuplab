@@ -147,6 +147,7 @@ export function gameRotationInput(setup: BasketballSetup, lineup: GameLineup | n
     },
     order: day.order.map(String),
     absentIds: day.absentIds.map(String),
+    pairing: { neverTogether: setup.rules?.neverTogether ?? [], atLeastOne: setup.rules?.atLeastOne ?? [] },
     customShifts: lineup?.customShifts ? lineup.customShifts.map((shift) => shift.map(String)) : null,
   };
 }

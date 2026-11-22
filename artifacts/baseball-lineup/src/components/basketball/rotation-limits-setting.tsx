@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { toastError } from "@/lib/toast-error";
 import { DEFAULT_REBALANCE_RULES } from "@/lib/basketball-rebalance";
+import { PairingRulesSetting } from "@/components/basketball/pairing-rules-setting";
 import { BASKETBALL_SETUP_KEY, fetchBasketballSetup, normalizeSetup, rebalanceRules, saveTeamRules, type TeamRules } from "@/lib/basketball-setup";
 
 type MinuteKey = "maxOnSec" | "maxBenchSec" | "minShareGapSec";
@@ -58,6 +59,7 @@ export function RotationLimitsSetting({ disabled }: { disabled: boolean }) {
   return (
     <div className="space-y-6">
     <GameFormatSetting disabled={disabled} />
+    <PairingRulesSetting disabled={disabled} />
     <div className="space-y-3">
       <div>
         <Label className="text-sm font-medium">Rotation limits</Label>
