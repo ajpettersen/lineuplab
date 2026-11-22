@@ -35,6 +35,7 @@ import { Loader2, Save, Trophy, Wand2, Sliders } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
 import { SubSizeSetting } from "@/components/basketball/sub-size-setting";
+import { RotationLimitsSetting } from "@/components/basketball/rotation-limits-setting";
 import { PlaysSettings } from "@/components/basketball/plays-settings";
 import { GroupLayoutSetting } from "@/components/basketball/group-layout-setting";
 import { CoachesCard } from "@/components/coaches-card";
@@ -575,6 +576,7 @@ export default function Settings() {
           <CardContent className="space-y-6">
             <GroupLayoutSetting disabled={!canEditTeam} />
             <SubSizeSetting disabled={!canEditTeam} />
+            <RotationLimitsSetting disabled={!canEditTeam} />
           </CardContent>
         </Card>
       ) : (<>

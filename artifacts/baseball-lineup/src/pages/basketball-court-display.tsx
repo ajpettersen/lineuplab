@@ -37,7 +37,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/confirm";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useTeamSettings } from "@/hooks/use-team-settings";
-import { formatClock } from "@/lib/basketball-rotation";
+import { formatClock, groupsFor } from "@/lib/basketball-rotation";
 import { PlaysViewer } from "@/components/basketball/plays-viewer";
 import {
   BASKETBALL_SETUP_KEY,
@@ -47,7 +47,10 @@ import {
   gameLineupKey,
   gameRotationInput,
   normalizeSetup,
+  rebalanceRules,
 } from "@/lib/basketball-setup";
+import type { RebalanceRules } from "@/lib/basketball-rebalance";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   bench,
   courtSpots,
@@ -78,6 +81,10 @@ import {
   addOppFoul,
   callTimeout,
   timeoutsOf,
+  trackStints,
+  planRebalance,
+  applyRebalance,
+  shiftLengths,
   teamFoulsOf,
   bonusLabel,
   totalShifts,
@@ -125,6 +132,103 @@ function syncGameStats(gameId: number, s: LiveState) {
     keepalive: true,
     body: JSON.stringify({ starterIds: s.starterIds.filter((id) => /^\d+$/.test(id)).map(Number), playedSec }),
   }).catch(() => undefined);
+}
+
+/** Preview of a rebalanced rest of game: the shifts, where minutes end up, and any rule it couldn't meet. */
+function RebalanceDialog({
+  view,
+  targets,
+  rules,
+  nameOf,
+  onClose,
+  onApply,
+}: {
+  view: LiveState;
+  targets: Map<string, { targetSec: number }>;
+  rules: RebalanceRules;
+  nameOf: (id: string) => string;
+  onClose: () => void;
+  onApply: (plan: { shifts: string[][]; firstShift: number }) => void;
+}) {
+  // Planned once when opened (the clock keeps ticking underneath).
+  const [plan] = useState(() => planRebalance(view, targets, rules, nameOf));
+  const lengths = shiftLengths(view.settings);
+  const all = [...lengths, ...lengths];
+  const halfSec = view.settings.halfMinutes * 60;
+  const clockAt = (i: number) => {
+    const start = all.slice(0, i).reduce((a, b) => a + b, 0);
+    return i < lengths.length ? { half: 1, clock: halfSec - start } : { half: 2, clock: 2 * halfSec - start };
+  };
+  const players = view.players.filter((p) => !view.outIds.includes(p.id));
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Rebalance rest of game</DialogTitle>
+          <DialogDescription>
+            The players on court now finish this shift. From the next sub on, the court display follows this plan. Undo puts the old plan back.
+          </DialogDescription>
+        </DialogHeader>
+        {plan.warnings.length > 0 && (
+          <ul className="list-disc space-y-1 rounded-md border border-amber-300 bg-amber-50 py-2 pl-6 pr-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            {plan.warnings.map((w) => <li key={w}>{w}</li>)}
+          </ul>
+        )}
+        {plan.shifts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No planned subs left to rebalance.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="py-1.5 pr-2 text-left">Sub at</th>
+                  {[1, 2, 3, 4, 5].map((n) => <th key={n} className="px-1 py-1.5 text-left">{n}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {plan.shifts.map((five, k) => {
+                  const prev = k === 0 ? courtSpots(view).map((x) => x.id) : plan.shifts[k - 1];
+                  const at = clockAt(plan.firstShift + k);
+                  return (
+                    <tr key={k} className="border-b last:border-0">
+                      <td className="whitespace-nowrap py-1.5 pr-2 font-mono tabular-nums">{at.half === 1 ? "1H" : "2H"} {fmt(at.clock)}</td>
+                      {five.map((id) => (
+                        <td key={id} className={`px-1 py-1.5 ${prev.includes(id) ? "" : "font-bold text-primary"}`}>{nameOf(id)}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Minutes at the end</div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+            {players
+              .slice()
+              .sort((a, b) => (plan.projectedSec.get(b.id) ?? 0) - (plan.projectedSec.get(a.id) ?? 0))
+              .map((p) => {
+                const end = plan.projectedSec.get(p.id) ?? 0;
+                const target = targets.get(p.id)?.targetSec ?? 0;
+                return (
+                  <div key={p.id} className="flex justify-between gap-2">
+                    <span className="truncate">{p.name}</span>
+                    <span className="font-mono tabular-nums">
+                      {fmt(end)} <span className="text-muted-foreground">/ {fmt(target)}</span>
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={plan.shifts.length === 0} onClick={() => onApply(plan)}>Use this plan</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /** Owed / on track / over, with how far off pace. */
@@ -384,6 +488,7 @@ export default function BasketballCourtDisplay() {
   const [selected, setSelected] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [playsOpen, setPlaysOpen] = useState(false);
+  const [rebalanceOpen, setRebalanceOpen] = useState(false);
   // Same feel as the baseball lineup grid: a mouse drag starts after 5px; on
   // touch, press and hold briefly so normal scrolling still works.
   const sensors = useSensors(
@@ -398,7 +503,9 @@ export default function BasketballCourtDisplay() {
   const audio = useRef<AudioContext | null>(null);
 
   const setState = useCallback(
-    (next: LiveState | null) => {
+    (raw: LiveState | null) => {
+      // Note who went on or off (for the rebalance limits).
+      const next = raw ? trackStints(raw) : raw;
       setStateRaw(next);
       saveState(gameId, next);
       if (next) syncGameStats(gameId, next);
@@ -593,7 +700,15 @@ export default function BasketballCourtDisplay() {
     .map((id, i) => ({ id, i }))
     .sort((a, b) => owed(b.id) - owed(a.id) || a.i - b.i)
     .map((x) => x.id);
-  const roleOf = (id: string) => groupOf(view, id)?.short ?? "";
+  // Under a plan (custom or rebalanced) there's one group; show their own role instead.
+  const layoutGroups = groupsFor(view.settings);
+  const groupFor = (id: string) => {
+    const g = groupOf(view, id);
+    if (g && g.key !== "all") return g;
+    const role = view.players.find((p) => p.id === id)?.role;
+    return layoutGroups.find((x) => x.key === role) ?? null;
+  };
+  const roleOf = (id: string) => groupFor(id)?.short ?? "";
   const minutes = [...view.players]
     .filter((p) => view.playedSec[p.id] !== undefined)
     .sort((a, b) => owed(b.id) - owed(a.id) || a.name.localeCompare(b.name));
@@ -799,6 +914,31 @@ export default function BasketballCourtDisplay() {
         </div>
       )}
 
+      {/* After subs the plan didn't call for: offer to even out the rest of the game. */}
+      {view.offPlan && view.phase !== "final" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-sky-50 px-3 py-2 text-sky-950 md:px-5 dark:bg-sky-950/40 dark:text-sky-100">
+          <span className="font-semibold">The lineup changed from the plan.</span>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setRebalanceOpen(true)}>Rebalance rest of game</Button>
+            <Button size="sm" variant="ghost" onClick={() => setState({ ...(state ?? view), offPlan: false })}>Keep the plan</Button>
+          </div>
+        </div>
+      )}
+
+      {rebalanceOpen && setup && (
+        <RebalanceDialog
+          view={view}
+          targets={targets}
+          rules={rebalanceRules(setup.rules)}
+          nameOf={nameOf}
+          onClose={() => setRebalanceOpen(false)}
+          onApply={(plan) => {
+            act((s, t) => applyRebalance(s, t, plan));
+            setRebalanceOpen(false);
+          }}
+        />
+      )}
+
       {/* Score and team fouls */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b px-3 py-2 md:px-5">
         {(["us", "them"] as const).map((team) => {
@@ -916,7 +1056,7 @@ export default function BasketballCourtDisplay() {
                     <td className="py-1.5 pr-2">
                       <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${onIds.has(p.id) ? "bg-green-500" : "bg-muted-foreground/30"}`} aria-hidden="true" />
                       <span className="font-semibold">{p.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{(groupOf(view, p.id) ?? view.groups.find((g) => g.key === p.role))?.one ?? ""}{p.big ? " · Big" : ""}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{groupFor(p.id)?.one ?? ""}{p.big ? " · Big" : ""}</span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
                       {fmt(view.playedSec[p.id] ?? 0)}
@@ -972,6 +1112,9 @@ export default function BasketballCourtDisplay() {
 
           <div className="mt-auto flex flex-wrap gap-2 pt-2">
             <Link href="/bench-sheet"><Button variant="ghost" size="sm">Bench Sheet</Button></Link>
+            {view.phase !== "final" && (
+              <Button variant="ghost" size="sm" onClick={() => setRebalanceOpen(true)}>Rebalance rest of game</Button>
+            )}
             {state && (
               <Button
                 variant="ghost"

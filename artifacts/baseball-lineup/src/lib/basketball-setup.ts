@@ -1,4 +1,5 @@
 import type { BasketballPlayer, BasketballRole, BasketballSettings, GuardPosition, RotationInput } from "@/lib/basketball-rotation";
+import { DEFAULT_REBALANCE_RULES, type RebalanceRules } from "@/lib/basketball-rebalance";
 
 // The team's Bench Sheet setup (GET /api/basketball-rotation), shared by the
 // Bench Sheet page and the basketball court display.
@@ -16,7 +17,44 @@ export interface BasketballSetup {
   gameDay: SetupGameDay;
   /** Subs at a time for new game lineups; null = ask each time. */
   defaultSubSize: number | null;
+  /** Rebalance limits, game format, pairing rules (missing keys = defaults). */
+  rules: TeamRules;
   saved: boolean;
+}
+
+/** Team rules as saved (Settings → Rotation). Player ids are strings. */
+export interface TeamRules {
+  maxOnSec?: number;
+  maxBenchSec?: number;
+  minShareGapSec?: number;
+  keepGroupBalance?: boolean;
+  format?: { periods: 2 | 4; periodMinutes: number };
+  neverTogether?: string[][];
+  atLeastOne?: { label: string; ids: string[] }[];
+}
+
+/** The rebalance limits with defaults filled in. */
+export function rebalanceRules(rules: TeamRules | undefined): RebalanceRules {
+  return {
+    maxOnSec: rules?.maxOnSec ?? DEFAULT_REBALANCE_RULES.maxOnSec,
+    maxBenchSec: rules?.maxBenchSec ?? DEFAULT_REBALANCE_RULES.maxBenchSec,
+    minShareGapSec: rules?.minShareGapSec ?? DEFAULT_REBALANCE_RULES.minShareGapSec,
+    keepGroupBalance: rules?.keepGroupBalance ?? DEFAULT_REBALANCE_RULES.keepGroupBalance,
+    neverTogether: rules?.neverTogether ?? [],
+    atLeastOne: rules?.atLeastOne ?? [],
+  };
+}
+
+export async function saveTeamRules(patch: { [K in keyof TeamRules]?: TeamRules[K] | null }): Promise<void> {
+  const r = await fetch(`${BASE}/api/basketball-rotation/rules`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) {
+    const body = (await r.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Couldn't save (${r.status})`);
+  }
 }
 
 /** A game's own lineup (game page → Set Lineup). */
@@ -53,6 +91,7 @@ export function normalizeSetup(raw: BasketballSetup): BasketballSetup {
     players: Array.isArray(raw.players) ? raw.players : [],
     gameDay: { absentIds: Array.isArray(day.absentIds) ? day.absentIds : [], order: orderOf(day) },
     defaultSubSize: raw.defaultSubSize === undefined ? 2 : raw.defaultSubSize,
+    rules: raw.rules && typeof raw.rules === "object" ? raw.rules : {},
   };
 }
 
